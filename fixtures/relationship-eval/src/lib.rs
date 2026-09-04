@@ -23,3 +23,8 @@ use crate::rust_target as rust_api;
 pub fn rust_alias_caller() -> i32 {
     rust_api::rust_target()
 }
+
+use crate::{rust_target as grouped_api, rust_other as grouped_other};
+pub fn rust_grouped_caller() -> i32 {
+    grouped_api::rust_target()
+}

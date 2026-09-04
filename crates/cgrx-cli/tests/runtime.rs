@@ -3039,3 +3039,72 @@ fn rust_module_alias_local_union_shadows_import() {
     Runtime::index(repo.path(), state.path()).unwrap();
     assert!(rust_alias_targets(&Runtime::open(state.path()).unwrap()).is_empty());
 }
+
+#[test]
+fn rust_grouped_alias_resolves_and_retargets() {
+    for imports in [
+        "use crate::{worker as api, other as backup};",
+        "use {crate::worker as api, crate::other as backup};",
+        "use crate::{ /* primary */ worker as api, // sibling\n other as backup };",
+    ] {
+        let original =
+            format!("mod worker; mod other; {imports} pub fn caller() {{ api::target(); }}");
+        let repo = rust_alias_fixture(&original, "pub fn target() {}");
+        let state = TestDirectory::new("grouped-alias");
+        Runtime::index(repo.path(), state.path()).unwrap();
+        let mut runtime = Runtime::open(state.path()).unwrap();
+        assert_eq!(rust_alias_targets(&runtime), ["src/worker.rs"], "{imports}");
+        assert_eq!(
+            rust_alias_targets(&Runtime::open(state.path()).unwrap()),
+            ["src/worker.rs"]
+        );
+        let changed = original
+            .replace("worker as api", "other as api")
+            .replace("other as backup", "worker as backup");
+        fs::write(repo.path().join("src/lib.rs"), changed).unwrap();
+        runtime.refresh(repo.path()).unwrap();
+        assert_eq!(rust_alias_targets(&runtime), ["src/other.rs"]);
+    }
+}
+
+#[test]
+fn rust_grouped_alias_rejects_conflicts_and_shadowing() {
+    for (imports, body) in [
+        (
+            "use crate::{worker as api, other as api};",
+            "api::target();",
+        ),
+        (
+            "#[cfg(any())] use crate::{worker as api};",
+            "api::target();",
+        ),
+        ("use foreign::{worker as api};", "api::target();"),
+        (
+            "use crate::{worker as api}; use foreign::api;",
+            "api::target();",
+        ),
+        (
+            "use crate::{worker as api};",
+            "union api { x: u32 } impl api { fn target() {} } api::target();",
+        ),
+        (
+            "use crate::{worker as api};",
+            "type api = Other; api::target();",
+        ),
+        (
+            "use crate::{worker as api};",
+            "use crate::other as api; api::target();",
+        ),
+    ] {
+        let repo = rust_alias_fixture(
+            &format!("mod worker; mod other; {imports} pub fn caller() {{ {body} }}"),
+            "pub fn target() {}",
+        );
+        let state = TestDirectory::new("grouped-negative");
+        Runtime::index(repo.path(), state.path()).unwrap();
+        assert!(
+            rust_alias_targets(&Runtime::open(state.path()).unwrap()).is_empty(),
+            "{imports} {body}"
+        );
+    }
+}

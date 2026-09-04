@@ -72,9 +72,11 @@ updates, uninstalling and troubleshooting.
 
 **Alpha.** Rust Cargo-root resolution covers bounded same-package lib/bin/module
 cases. Development builds additionally resolve explicit file-level aliases of
-direct crate-root modules (`use crate::worker as api; api::target()`). Grouped
-imports, aliases with nested suffixes (`api::inner::target()`), function aliases
-and reexport chains are not covered by this alias proof. Extraction revision 13
+direct crate-root modules (`use crate::worker as api; api::target()`). Grouped forms
+`use crate::{worker as api, other as backup}` and
+`use {crate::worker as api}` also preserve exact module identity, including comments.
+Aliases with nested suffixes (`api::inner::target()`), function aliases
+and reexport chains are not covered by this alias proof. Extraction revision 14
 requires rebuilding older indexes.
 
 External dependencies, reexports, custom module paths, macros and dynamic

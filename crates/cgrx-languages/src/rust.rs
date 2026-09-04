@@ -555,22 +555,8 @@ fn file_facts(root: Node<'_>, source: &[u8]) -> RustFileFacts {
         if item.kind() == "use_declaration" {
             if let Some(argument) = item.child_by_field_name("argument") {
                 import_bindings(argument, source, &mut facts);
-                if !attributed(item)
-                    && argument.kind() == "use_as_clause"
-                    && let Some(path) = argument.child_by_field_name("path")
-                    && path.kind() == "scoped_identifier"
-                    && path
-                        .child_by_field_name("path")
-                        .is_some_and(|p| text(p, source) == "crate")
-                    && let Some(module) = path.child_by_field_name("name")
-                    && module.kind() == "identifier"
-                    && let Some(alias) = argument.child_by_field_name("alias")
-                    && alias.kind() == "identifier"
-                    && text(alias, source) != "_"
-                {
-                    facts
-                        .module_aliases
-                        .push((text(alias, source), text(module, source)));
+                if !attributed(item) {
+                    collect_module_aliases(argument, false, source, &mut facts);
                 }
             } else {
                 facts.blocked = true;
@@ -593,8 +579,63 @@ fn file_facts(root: Node<'_>, source: &[u8]) -> RustFileFacts {
     facts
 }
 
+// Only direct crate-root modules: grouping changes syntax, not resolution scope.
+fn collect_module_aliases(
+    node: Node<'_>,
+    crate_group: bool,
+    source: &[u8],
+    facts: &mut RustFileFacts,
+) {
+    match node.kind() {
+        "use_list" => {
+            let mut cursor = node.walk();
+            for child in node.named_children(&mut cursor) {
+                collect_module_aliases(child, crate_group, source, facts);
+            }
+        }
+        "scoped_use_list" if !crate_group => {
+            if node
+                .child_by_field_name("path")
+                .is_some_and(|p| text(p, source) == "crate")
+                && let Some(list) = node.child_by_field_name("list")
+            {
+                collect_module_aliases(list, true, source, facts);
+            }
+        }
+        "use_as_clause" => {
+            let Some(path) = node.child_by_field_name("path") else {
+                return;
+            };
+            let module = if crate_group && path.kind() == "identifier" {
+                Some(path)
+            } else if !crate_group
+                && path.kind() == "scoped_identifier"
+                && path
+                    .child_by_field_name("path")
+                    .is_some_and(|p| text(p, source) == "crate")
+            {
+                path.child_by_field_name("name")
+                    .filter(|n| n.kind() == "identifier")
+            } else {
+                None
+            };
+            if let Some(module) = module
+                && let Some(alias) = node.child_by_field_name("alias")
+                && alias.kind() == "identifier"
+                && text(alias, source) != "_"
+            {
+                facts
+                    .module_aliases
+                    .push((text(alias, source), text(module, source)));
+            }
+        }
+        _ => {}
+    }
+}
+
 fn import_bindings(node: Node<'_>, source: &[u8], facts: &mut RustFileFacts) {
     match node.kind() {
+        "line_comment" | "block_comment" => {}
         "identifier" => facts.blocked_names.push(text(node, source)),
         "self" => {
             let prefix = node

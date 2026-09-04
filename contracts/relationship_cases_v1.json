@@ -24,7 +24,7 @@
       "id": "rust_direct_child_module",
       "language": "rust",
       "target": {"symbol": "rust_target", "path": "src/rust_target.rs"},
-      "expected_callers": [{"symbol": "rust_caller", "path": "src/lib.rs"}, {"symbol": "rust_alias_caller", "path": "src/lib.rs"}]
+      "expected_callers": [{"symbol": "rust_caller", "path": "src/lib.rs"}, {"symbol": "rust_alias_caller", "path": "src/lib.rs"}, {"symbol": "rust_grouped_caller", "path": "src/lib.rs"}]
     },
     {
       "id": "rust_same_name_sibling_module_negative",
