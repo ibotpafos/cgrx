@@ -11,7 +11,7 @@
 ~~~sh
 git clone https://github.com/ibotpafos/cgrx.git
 cd cgrx
-git checkout v0.1.0-alpha.1
+git checkout v0.1.0-alpha.2
 cargo install --locked --path crates/cgrx-cli
 ~~~
 
@@ -23,13 +23,13 @@ Cargo скачивает зависимости при установке; са�
 
 ## Готовый бинарник: macOS Apple Silicon
 
-Из [релиза](https://github.com/ibotpafos/cgrx/releases/tag/v0.1.0-alpha.1)
-скачайте cgrx-v0.1.0-alpha.1-aarch64-apple-darwin.tar.gz и SHA256SUMS.
+Из [релиза](https://github.com/ibotpafos/cgrx/releases/tag/v0.1.0-alpha.2)
+скачайте cgrx-v0.1.0-alpha.2-aarch64-apple-darwin.tar.gz и SHA256SUMS.
 В каталоге со скачанными файлами:
 
 ~~~sh
 shasum -a 256 -c SHA256SUMS
-tar -xzf cgrx-v0.1.0-alpha.1-aarch64-apple-darwin.tar.gz
+tar -xzf cgrx-v0.1.0-alpha.2-aarch64-apple-darwin.tar.gz
 mkdir -p "$HOME/.local/bin"
 install -m 755 cgrx "$HOME/.local/bin/cgrx"
 ~~~
@@ -138,3 +138,18 @@ cargo uninstall cgrx-cli
 
 При ручной установке удалите только установленный вами файл cgrx.
 Не удаляйте весь каталог .git. Удаление индекса потребует повторной индексации.
+
+## Области поиска и покрытия
+
+В `scope`, `paths_or_scope` и `check_index_coverage.scopes` можно передавать:
+
+- `.` или `./` — весь репозиторий;
+- `src`, `src/` или `./src` — сам путь и его потомки;
+- `src/main.rs` — конкретный файл;
+- `src/*.rs` — glob одного уровня; `src/**` — рекурсивный glob.
+
+Те же правила действуют для `scope.exclude`: исключение `src/private`
+не исключает соседний каталог `src/private-other`. Поле
+`check_index_coverage.paths` по-прежнему предназначено для точных путей файлов.
+Область поиска не отменяет лимиты индекса: `partial` и обрезанный обход
+означают, что выводы о полноте требуют дополнительной проверки исходников.

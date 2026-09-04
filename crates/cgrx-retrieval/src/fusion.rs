@@ -312,6 +312,27 @@ pub fn path_in_scope(path: &str, scope: &Scope) -> bool {
 }
 
 fn path_matches(path: &str, pattern: &str) -> bool {
+    // Literal scopes select an exact path or its descendants, at a segment
+    // boundary. Keep wildcard matching separate so `src/*` stays one level.
+    let mut pattern = pattern;
+    while let Some(relative) = pattern.strip_prefix("./") {
+        pattern = relative;
+        if pattern.is_empty() {
+            return true;
+        }
+    }
+    if pattern == "." {
+        return true;
+    }
+    if !pattern.contains(['*', '?']) {
+        let prefix = pattern.trim_end_matches('/');
+        return !prefix.is_empty()
+            && (path == prefix
+                || path
+                    .strip_prefix(prefix)
+                    .is_some_and(|rest| rest.starts_with('/')));
+    }
+
     fn matches(
         path: &[char],
         pattern: &[char],
