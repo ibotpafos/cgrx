@@ -1609,6 +1609,8 @@ fn check_index_coverage_classifies_exact_paths_and_bounded_scopes() {
                 "missing.go".to_owned(),
             ],
             &["*.rs".to_owned()],
+            0,
+            100,
         )
         .expect("check coverage");
 
@@ -1624,6 +1626,34 @@ fn check_index_coverage_classifies_exact_paths_and_bounded_scopes() {
     assert_eq!(report["summary"]["partial"], 1);
     assert_eq!(report["summary"]["excluded"], 1);
     assert_eq!(report["summary"]["unknown"], 1);
+    assert_eq!(report["scopes"][0]["gap_offset"], 0);
+    assert_eq!(report["scopes"][0]["gap_limit"], 100);
+    assert_eq!(report["scopes"][0]["returned"], 0);
+    assert_eq!(report["scopes"][0]["has_more"], false);
+    assert_eq!(report["scope_summary"]["indexed"], 1);
+    assert!(report["scopes"][0]["next_offset"].is_null());
+
+    let first = runtime
+        .check_index_coverage(&[], &["**".to_owned()], 0, 1)
+        .expect("first coverage page");
+    let second = runtime
+        .check_index_coverage(&[], &["**".to_owned()], 1, 1)
+        .expect("second coverage page");
+    assert_eq!(first["scopes"][0]["coverage_gap_count"], 2);
+    assert_eq!(first["scopes"][0]["gaps"].as_array().unwrap().len(), 1);
+    assert_eq!(first["scopes"][0]["returned"], 1);
+    assert_eq!(first["scopes"][0]["has_more"], true);
+    assert_eq!(first["scopes"][0]["next_offset"], 1);
+    assert_eq!(second["scopes"][0]["gaps"].as_array().unwrap().len(), 1);
+    assert_eq!(second["scopes"][0]["has_more"], false);
+    assert_ne!(first["scopes"][0]["gaps"], second["scopes"][0]["gaps"]);
+    assert_eq!(
+        runtime
+            .check_index_coverage(&[], &["**".to_owned()], 0, 0)
+            .unwrap_err()
+            .code(),
+        "cgrx.invalid_arguments"
+    );
 }
 
 #[test]
