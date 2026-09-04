@@ -17,3 +17,9 @@ pub fn rust_noise() -> i32 {
 pub fn rust_private_caller() -> i32 {
     private_child::private_target()
 }
+
+use crate::rust_target as rust_api;
+
+pub fn rust_alias_caller() -> i32 {
+    rust_api::rust_target()
+}

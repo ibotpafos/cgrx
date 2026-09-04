@@ -71,7 +71,13 @@ updates, uninstalling and troubleshooting.
 ## Maturity and privacy
 
 **Alpha.** Rust Cargo-root resolution covers bounded same-package lib/bin/module
-cases. External dependencies, reexports, custom module paths, macros and dynamic
+cases. Development builds additionally resolve explicit file-level aliases of
+direct crate-root modules (`use crate::worker as api; api::target()`). Grouped
+imports, aliases with nested suffixes (`api::inner::target()`), function aliases
+and reexport chains are not covered by this alias proof. Extraction revision 13
+requires rebuilding older indexes.
+
+External dependencies, reexports, custom module paths, macros and dynamic
 dispatch can remain unresolved. No recorded gap does not prove completeness.
 Verify findings against source and compiler/tests. No overall superiority over
 other code-intelligence tools is claimed.

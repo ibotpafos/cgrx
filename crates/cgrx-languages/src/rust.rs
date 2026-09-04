@@ -503,6 +503,9 @@ fn unique_module_member<'a>(module: Node<'a>, name: &str, source: &[u8]) -> Opti
 #[derive(Clone, Debug, Default, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct RustFileFacts {
     pub modules: Vec<String>,
+    /// Explicit, unambiguous aliases of direct crate-root modules.
+    #[serde(default)]
+    pub module_aliases: Vec<(String, String)>,
     pub functions: Vec<(String, usize, usize, bool)>,
     pub calls: Vec<(usize, usize)>,
     pub blocked_names: Vec<String>,
@@ -552,6 +555,23 @@ fn file_facts(root: Node<'_>, source: &[u8]) -> RustFileFacts {
         if item.kind() == "use_declaration" {
             if let Some(argument) = item.child_by_field_name("argument") {
                 import_bindings(argument, source, &mut facts);
+                if !attributed(item)
+                    && argument.kind() == "use_as_clause"
+                    && let Some(path) = argument.child_by_field_name("path")
+                    && path.kind() == "scoped_identifier"
+                    && path
+                        .child_by_field_name("path")
+                        .is_some_and(|p| text(p, source) == "crate")
+                    && let Some(module) = path.child_by_field_name("name")
+                    && module.kind() == "identifier"
+                    && let Some(alias) = argument.child_by_field_name("alias")
+                    && alias.kind() == "identifier"
+                    && text(alias, source) != "_"
+                {
+                    facts
+                        .module_aliases
+                        .push((text(alias, source), text(module, source)));
+                }
             } else {
                 facts.blocked = true;
             }
@@ -564,6 +584,9 @@ fn file_facts(root: Node<'_>, source: &[u8]) -> RustFileFacts {
         .functions
         .retain(|(name, ..)| counts.get(name) == Some(&1));
     facts.modules.retain(|name| counts.get(name) == Some(&1));
+    facts
+        .module_aliases
+        .retain(|(alias, _)| counts.get(alias) == Some(&1));
     collect_root_calls(root, root, source, &mut facts);
     facts.blocked_names.sort();
     facts.blocked_names.dedup();
@@ -661,6 +684,7 @@ fn has_namespace_expansion(node: Node<'_>) -> bool {
             | "mod_item"
             | "type_item"
             | "struct_item"
+            | "union_item"
             | "enum_item"
             | "trait_item"
     ) {

@@ -319,6 +319,14 @@ impl<'a> CargoRoots<'a> {
         if package.unsupported_modules {
             return None;
         }
+        // Expand only source-file aliases with a unique explicit import. The
+        // existing call-span, Cargo ownership and visibility guards still apply.
+        let expanded = facts
+            .module_aliases
+            .iter()
+            .find(|(alias, _)| alias == qualifier)
+            .map(|(_, module)| format!("crate::{module}"));
+        let qualifier = expanded.as_deref().unwrap_or(qualifier);
         let (target, requires_public) = if qualifier == "crate" {
             (owner.1.as_str(), false)
         } else if let Some((_, lib_path)) =
