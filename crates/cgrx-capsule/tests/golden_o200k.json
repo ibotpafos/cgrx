@@ -1,0 +1,402 @@
+[
+  [
+    " #0  тест\nnext_line",
+    7
+  ],
+  [
+    "hello #1 x",
+    4
+  ],
+  [
+    "Hello, world! #2 xx",
+    7
+  ],
+  [
+    "Привет, мир! #3 xxx тест",
+    9
+  ],
+  [
+    "你好，世界 #4 xxxx",
+    6
+  ],
+  [
+    "مرحبا بالعالم #5 xxxxx",
+    8
+  ],
+  [
+    "🙂🚀 #6 xxxxxx тест",
+    8
+  ],
+  [
+    "a_b_c #7 xxxxxxx\nnext_line",
+    11
+  ],
+  [
+    "camelCaseHTTP2 #8 xxxxxxxx",
+    9
+  ],
+  [
+    "fn main() {} #9 xxxxxxxxx тест",
+    9
+  ],
+  [
+    "const charge = async () => await pay(); #10 xxxxxxxxxx",
+    14
+  ],
+  [
+    "def charge(user_id):\n    return gateway.pay(user_id)\n #11 xxxxxxxxxxx",
+    17
+  ],
+  [
+    "src/billing/payment_service.rs #12 xxxxxxxxxxxx тест",
+    12
+  ],
+  [
+    "CALLS IMPLEMENTS #13 xxxxxxxxxxxxx",
+    9
+  ],
+  [
+    "line1\nline2\n #14 xxxxxxxxxxxxxx\nnext_line",
+    14
+  ],
+  [
+    "   spaces   and\ttabs #15 xxxxxxxxxxxxxxx тест",
+    13
+  ],
+  [
+    "naïve café résumé #16 xxxxxxxxxxxxxxxx",
+    11
+  ],
+  [
+    "é combining #17 ",
+    6
+  ],
+  [
+    "<|endoftext|> #18 x тест",
+    11
+  ],
+  [
+    "JSON:{\"a\":1,\"b\":[true,false]} #19 xx",
+    15
+  ],
+  [
+    " #20 xxx",
+    3
+  ],
+  [
+    "hello #21 xxxx тест\nnext_line",
+    8
+  ],
+  [
+    "Hello, world! #22 xxxxx",
+    8
+  ],
+  [
+    "Привет, мир! #23 xxxxxx",
+    9
+  ],
+  [
+    "你好，世界 #24 xxxxxxx тест",
+    9
+  ],
+  [
+    "مرحبا بالعالم #25 xxxxxxxx",
+    9
+  ],
+  [
+    "🙂🚀 #26 xxxxxxxxx",
+    7
+  ],
+  [
+    "a_b_c #27 xxxxxxxxxx тест",
+    9
+  ],
+  [
+    "camelCaseHTTP2 #28 xxxxxxxxxxx\nnext_line",
+    12
+  ],
+  [
+    "fn main() {} #29 xxxxxxxxxxxx",
+    9
+  ],
+  [
+    "const charge = async () => await pay(); #30 xxxxxxxxxxxxx тест",
+    15
+  ],
+  [
+    "def charge(user_id):\n    return gateway.pay(user_id)\n #31 xxxxxxxxxxxxxx",
+    17
+  ],
+  [
+    "src/billing/payment_service.rs #32 xxxxxxxxxxxxxxx",
+    12
+  ],
+  [
+    "CALLS IMPLEMENTS #33 xxxxxxxxxxxxxxxx тест",
+    11
+  ],
+  [
+    "line1\nline2\n #34 ",
+    9
+  ],
+  [
+    "   spaces   and\ttabs #35 x\nnext_line",
+    12
+  ],
+  [
+    "naïve café résumé #36 xx тест",
+    9
+  ],
+  [
+    "é combining #37 xxx",
+    6
+  ],
+  [
+    "<|endoftext|> #38 xxxx",
+    10
+  ],
+  [
+    "JSON:{\"a\":1,\"b\":[true,false]} #39 xxxxx тест",
+    17
+  ],
+  [
+    " #40 xxxxxx",
+    4
+  ],
+  [
+    "hello #41 xxxxxxx",
+    6
+  ],
+  [
+    "Hello, world! #42 xxxxxxxx тест\nnext_line",
+    13
+  ],
+  [
+    "Привет, мир! #43 xxxxxxxxx",
+    9
+  ],
+  [
+    "你好，世界 #44 xxxxxxxxxx",
+    8
+  ],
+  [
+    "مرحبا بالعالم #45 xxxxxxxxxxx тест",
+    10
+  ],
+  [
+    "🙂🚀 #46 xxxxxxxxxxxx",
+    8
+  ],
+  [
+    "a_b_c #47 xxxxxxxxxxxxx",
+    8
+  ],
+  [
+    "camelCaseHTTP2 #48 xxxxxxxxxxxxxx тест",
+    10
+  ],
+  [
+    "fn main() {} #49 xxxxxxxxxxxxxxx\nnext_line",
+    13
+  ],
+  [
+    "const charge = async () => await pay(); #50 xxxxxxxxxxxxxxxx",
+    15
+  ],
+  [
+    "def charge(user_id):\n    return gateway.pay(user_id)\n #51  тест",
+    16
+  ],
+  [
+    "src/billing/payment_service.rs #52 x",
+    9
+  ],
+  [
+    "CALLS IMPLEMENTS #53 xx",
+    7
+  ],
+  [
+    "line1\nline2\n #54 xxx тест",
+    10
+  ],
+  [
+    "   spaces   and\ttabs #55 xxxx",
+    9
+  ],
+  [
+    "naïve café résumé #56 xxxxx\nnext_line",
+    12
+  ],
+  [
+    "é combining #57 xxxxxx тест",
+    8
+  ],
+  [
+    "<|endoftext|> #58 xxxxxxx",
+    12
+  ],
+  [
+    "JSON:{\"a\":1,\"b\":[true,false]} #59 xxxxxxxx",
+    17
+  ],
+  [
+    " #60 xxxxxxxxx тест",
+    5
+  ],
+  [
+    "hello #61 xxxxxxxxxx",
+    6
+  ],
+  [
+    "Hello, world! #62 xxxxxxxxxxx",
+    9
+  ],
+  [
+    "Привет, мир! #63 xxxxxxxxxxxx тест\nnext_line",
+    14
+  ],
+  [
+    "你好，世界 #64 xxxxxxxxxxxxx",
+    8
+  ],
+  [
+    "مرحبا بالعالم #65 xxxxxxxxxxxxxx",
+    9
+  ],
+  [
+    "🙂🚀 #66 xxxxxxxxxxxxxxx тест",
+    10
+  ],
+  [
+    "a_b_c #67 xxxxxxxxxxxxxxxx",
+    9
+  ],
+  [
+    "camelCaseHTTP2 #68 ",
+    7
+  ],
+  [
+    "fn main() {} #69 x тест",
+    8
+  ],
+  [
+    "const charge = async () => await pay(); #70 xx\nnext_line",
+    15
+  ],
+  [
+    "def charge(user_id):\n    return gateway.pay(user_id)\n #71 xxx",
+    15
+  ],
+  [
+    "src/billing/payment_service.rs #72 xxxx тест",
+    10
+  ],
+  [
+    "CALLS IMPLEMENTS #73 xxxxx",
+    8
+  ],
+  [
+    "line1\nline2\n #74 xxxxxx",
+    10
+  ],
+  [
+    "   spaces   and\ttabs #75 xxxxxxx тест",
+    12
+  ],
+  [
+    "naïve café résumé #76 xxxxxxxx",
+    10
+  ],
+  [
+    "é combining #77 xxxxxxxxx\nnext_line",
+    10
+  ],
+  [
+    "<|endoftext|> #78 xxxxxxxxxx тест",
+    13
+  ],
+  [
+    "JSON:{\"a\":1,\"b\":[true,false]} #79 xxxxxxxxxxx",
+    17
+  ],
+  [
+    " #80 xxxxxxxxxxxx",
+    5
+  ],
+  [
+    "hello #81 xxxxxxxxxxxxx тест",
+    7
+  ],
+  [
+    "Hello, world! #82 xxxxxxxxxxxxxx",
+    9
+  ],
+  [
+    "Привет, мир! #83 xxxxxxxxxxxxxxx",
+    11
+  ],
+  [
+    "你好，世界 #84 xxxxxxxxxxxxxxxx тест\nnext_line",
+    13
+  ],
+  [
+    "مرحبا بالعالم #85 ",
+    7
+  ],
+  [
+    "🙂🚀 #86 x",
+    6
+  ],
+  [
+    "a_b_c #87 xx тест",
+    7
+  ],
+  [
+    "camelCaseHTTP2 #88 xxx",
+    7
+  ],
+  [
+    "fn main() {} #89 xxxx",
+    7
+  ],
+  [
+    "const charge = async () => await pay(); #90 xxxxx тест",
+    14
+  ],
+  [
+    "def charge(user_id):\n    return gateway.pay(user_id)\n #91 xxxxxx\nnext_line",
+    19
+  ],
+  [
+    "src/billing/payment_service.rs #92 xxxxxxx",
+    11
+  ],
+  [
+    "CALLS IMPLEMENTS #93 xxxxxxxx тест",
+    10
+  ],
+  [
+    "line1\nline2\n #94 xxxxxxxxx",
+    10
+  ],
+  [
+    "   spaces   and\ttabs #95 xxxxxxxxxx",
+    11
+  ],
+  [
+    "naïve café résumé #96 xxxxxxxxxxx тест",
+    11
+  ],
+  [
+    "é combining #97 xxxxxxxxxxxx",
+    8
+  ],
+  [
+    "<|endoftext|> #98 xxxxxxxxxxxxx\nnext_line",
+    15
+  ],
+  [
+    "JSON:{\"a\":1,\"b\":[true,false]} #99 xxxxxxxxxxxxxx тест",
+    18
+  ]
+]

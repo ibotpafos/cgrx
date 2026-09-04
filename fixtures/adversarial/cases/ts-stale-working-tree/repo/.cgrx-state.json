@@ -1,0 +1,11 @@
+{
+  "indexed": {
+    "path": "indexed/src/main.ts",
+    "sha256": "fd739436809b4bf5e3bec69ada88904c3730c5b91a84ffe926d4aaa361395c28"
+  },
+  "version": 1,
+  "working_tree": {
+    "path": "working-tree/src/main.ts",
+    "sha256": "14057bf5b7b4a18e07bc58306831a26b9d402d881b52a904dfb81dbefdb92dfe"
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "expected_cgcr_status": "PARTIAL",
+  "expected_graph_only": true,
+  "gold_spans": [
+    {
+      "end_byte": 431,
+      "path": "repo/src/main.py",
+      "relation_kind": "CALLS",
+      "risk_class": "medium",
+      "source_sha256": "6b842ea6e741fc24175daeb91210059d0305f4e6754fdd071760f1acd1bd2a7a",
+      "start_byte": 419,
+      "text": "worker.run()"
+    }
+  ],
+  "id": "py-protocol-dispatch",
+  "language": "python",
+  "query": "Which runtime implementation receives the protocol call?",
+  "required_uncertainty": [
+    "protocol_dispatch"
+  ],
+  "scope": {
+    "exclude": [],
+    "include": [
+      "repo/**"
+    ],
+    "max_depth": 4,
+    "relation_kinds": [
+      "CALLS"
+    ]
+  },
+  "scorer_type": "positive_evidence"
+}

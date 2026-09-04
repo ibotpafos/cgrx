@@ -1,0 +1,32 @@
+{
+  "expected_cgcr_status": "PARTIAL",
+  "expected_graph_only": false,
+  "gold_spans": [
+    {
+      "end_byte": 161,
+      "path": "repo/src/main.py",
+      "relation_kind": "CALLS",
+      "risk_class": "high",
+      "source_sha256": "80337ee79c802dd1a62ae6dd83749227efafad7ecb2385ea637a648f6dd5833f",
+      "start_byte": 148,
+      "text": "service.run()"
+    }
+  ],
+  "id": "py-monkey-patch",
+  "language": "python",
+  "query": "Which call target was replaced at runtime?",
+  "required_uncertainty": [
+    "monkey_patch"
+  ],
+  "scope": {
+    "exclude": [],
+    "include": [
+      "repo/**"
+    ],
+    "max_depth": 4,
+    "relation_kinds": [
+      "CALLS"
+    ]
+  },
+  "scorer_type": "positive_evidence"
+}

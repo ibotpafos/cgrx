@@ -1,0 +1,41 @@
+{
+  "expected_cgcr_status": "STALE",
+  "expected_graph_only": false,
+  "gold_spans": [
+    {
+      "end_byte": 88,
+      "path": "repo/indexed/src/main.ts",
+      "relation_kind": "CALLS",
+      "risk_class": "high",
+      "source_sha256": "fd739436809b4bf5e3bec69ada88904c3730c5b91a84ffe926d4aaa361395c28",
+      "start_byte": 65,
+      "text": "currentImplementation()"
+    },
+    {
+      "end_byte": 88,
+      "path": "repo/working-tree/src/main.ts",
+      "relation_kind": "CALLS",
+      "risk_class": "high",
+      "source_sha256": "14057bf5b7b4a18e07bc58306831a26b9d402d881b52a904dfb81dbefdb92dfe",
+      "start_byte": 65,
+      "text": "currentImplementation()"
+    }
+  ],
+  "id": "ts-stale-working-tree",
+  "language": "typescript",
+  "query": "Which call differs between indexed and working-tree state?",
+  "required_uncertainty": [
+    "stale_working_tree"
+  ],
+  "scope": {
+    "exclude": [],
+    "include": [
+      "repo/**"
+    ],
+    "max_depth": 4,
+    "relation_kinds": [
+      "CALLS"
+    ]
+  },
+  "scorer_type": "stale_abstention"
+}

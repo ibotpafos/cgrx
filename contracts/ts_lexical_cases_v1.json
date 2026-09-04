@@ -1,0 +1,188 @@
+{
+  "schema": "cgrx-ts-lexical-cases/1",
+  "cases": [
+    {
+      "id": "direct_const",
+      "path": "src/main.ts",
+      "source": "export function entry() { const tail = () => 1; return tail(); }",
+      "seed": "entry",
+      "expected": [
+        {
+          "name": "tail",
+          "start": 32,
+          "end": 36
+        }
+      ]
+    },
+    {
+      "id": "duplicate_calls_dedup",
+      "path": "src/main.ts",
+      "source": "export function entry(a: string,b: string) { const tail = (value: string) => value.length > 10 ? value.slice(-10) : value; return tail(a) === tail(b); }",
+      "seed": "entry",
+      "expected": [
+        {
+          "name": "tail",
+          "start": 51,
+          "end": 55
+        }
+      ]
+    },
+    {
+      "id": "nested_block",
+      "path": "src/main.ts",
+      "source": "export function entry() { { const tail = () => 1; return tail(); } }",
+      "seed": "entry",
+      "expected": [
+        {
+          "name": "tail",
+          "start": 34,
+          "end": 38
+        }
+      ]
+    },
+    {
+      "id": "sibling_same_name",
+      "path": "src/main.ts",
+      "source": "function sibling() { const tail = () => 2; return tail(); }\nexport function entry() { const tail = () => 1; return tail(); }",
+      "seed": "entry",
+      "expected": [
+        {
+          "name": "tail",
+          "start": 92,
+          "end": 96
+        }
+      ]
+    },
+    {
+      "id": "tsx_const",
+      "path": "src/main.tsx",
+      "source": "export function entry() { const tail = () => <span />; return tail(); }",
+      "seed": "entry",
+      "expected": [
+        {
+          "name": "tail",
+          "start": 32,
+          "end": 36
+        }
+      ]
+    },
+    {
+      "id": "async_const",
+      "path": "src/main.ts",
+      "source": "export async function entry() { const tail = async () => 1; return await tail(); }",
+      "seed": "entry",
+      "expected": [
+        {
+          "name": "tail",
+          "start": 38,
+          "end": 42
+        }
+      ]
+    },
+    {
+      "id": "outside_scope",
+      "path": "src/main.ts",
+      "source": "function sibling() { const tail = () => 1; } export function entry() { return tail(); }",
+      "seed": "entry",
+      "expected": []
+    },
+    {
+      "id": "parameter_shadow",
+      "path": "src/main.ts",
+      "source": "function sibling() { const tail = () => 1; } export function entry(tail: () => number) { return tail(); }",
+      "seed": "entry",
+      "expected": []
+    },
+    {
+      "id": "same_block_tdz",
+      "path": "src/main.ts",
+      "source": "export function entry() { tail(); const tail = () => 1; }",
+      "seed": "entry",
+      "expected": []
+    },
+    {
+      "id": "inner_block_tdz",
+      "path": "src/main.ts",
+      "source": "export function entry() { const tail = () => 1; { tail(); const tail = () => 2; } }",
+      "seed": "entry",
+      "expected": []
+    },
+    {
+      "id": "block_value_shadow",
+      "path": "src/main.ts",
+      "source": "export function entry() { const tail = () => 1; { const tail = 0; tail(); } }",
+      "seed": "entry",
+      "expected": []
+    },
+    {
+      "id": "destructured_parameter",
+      "path": "src/main.ts",
+      "source": "function sibling() { const tail = () => 1; } export function entry({tail}: any) { return tail(); }",
+      "seed": "entry",
+      "expected": []
+    },
+    {
+      "id": "catch_shadow",
+      "path": "src/main.ts",
+      "source": "export function entry() { const tail = () => 1; try { throw 1; } catch (tail) { tail(); } }",
+      "seed": "entry",
+      "expected": []
+    },
+    {
+      "id": "for_of_shadow",
+      "path": "src/main.ts",
+      "source": "export function entry() { const tail = () => 1; for (const tail of values) { tail(); } }",
+      "seed": "entry",
+      "expected": []
+    },
+    {
+      "id": "mutable_let",
+      "path": "src/main.ts",
+      "source": "export function entry() { let tail = () => 1; tail = unknown; return tail(); }",
+      "seed": "entry",
+      "expected": []
+    },
+    {
+      "id": "mutable_var",
+      "path": "src/main.ts",
+      "source": "export function entry() { var tail = () => 1; tail = unknown; return tail(); }",
+      "seed": "entry",
+      "expected": []
+    },
+    {
+      "id": "member_not_lexical",
+      "path": "src/main.ts",
+      "source": "export function entry() { const tail = () => 1; return obj.tail(); }",
+      "seed": "entry",
+      "expected": []
+    },
+    {
+      "id": "nested_function_attribution",
+      "path": "src/main.ts",
+      "source": "export function entry() { const tail = () => 1; const cb = function tail() { return tail(); }; }",
+      "seed": "entry",
+      "expected": []
+    },
+    {
+      "id": "nested_arrow_parameter",
+      "path": "src/main.ts",
+      "source": "export function entry() { const tail = () => 1; const cb = (tail: () => number) => tail(); }",
+      "seed": "entry",
+      "expected": []
+    },
+    {
+      "id": "destructured_local",
+      "path": "src/main.ts",
+      "source": "function sibling() { const tail = () => 1; } export function entry() { const {tail} = obj; return tail(); }",
+      "seed": "entry",
+      "expected": []
+    },
+    {
+      "id": "duplicate_binding",
+      "path": "src/main.ts",
+      "source": "export function entry() { const tail = () => 1; const tail = () => 2; return tail(); }",
+      "seed": "entry",
+      "expected": []
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "expected_cgcr_status": "PARTIAL",
+  "expected_graph_only": false,
+  "gold_spans": [
+    {
+      "end_byte": 122,
+      "path": "repo/src/main.ts",
+      "relation_kind": "ROUTE_HANDLER",
+      "risk_class": "medium",
+      "source_sha256": "627218ee4d3a20e8919fa793b690591bd93a43d6a6384cf543b39e84679d1dd6",
+      "start_byte": 106,
+      "text": "list(): string[]"
+    }
+  ],
+  "id": "ts-decorator-route",
+  "language": "typescript",
+  "query": "Which method handles the decorated route?",
+  "required_uncertainty": [
+    "decorator_semantics"
+  ],
+  "scope": {
+    "exclude": [],
+    "include": [
+      "repo/**"
+    ],
+    "max_depth": 4,
+    "relation_kinds": [
+      "ROUTE_HANDLER"
+    ]
+  },
+  "scorer_type": "positive_evidence"
+}

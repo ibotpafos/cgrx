@@ -1,0 +1,30 @@
+{
+  "expected_cgcr_status": "COMPLETE_BOUNDED",
+  "expected_graph_only": true,
+  "gold_spans": [
+    {
+      "end_byte": 61,
+      "path": "repo/src/main.py",
+      "relation_kind": "CALLS",
+      "risk_class": "low",
+      "source_sha256": "2e52174a1246a7f4e402054aa3588fc88892ff7bb68102343b9f79d0c30624b5",
+      "start_byte": 49,
+      "text": "make_value()"
+    }
+  ],
+  "id": "py-alias-import",
+  "language": "python",
+  "query": "What call uses the aliased import?",
+  "required_uncertainty": [],
+  "scope": {
+    "exclude": [],
+    "include": [
+      "repo/**"
+    ],
+    "max_depth": 4,
+    "relation_kinds": [
+      "CALLS"
+    ]
+  },
+  "scorer_type": "positive_evidence"
+}

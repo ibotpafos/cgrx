@@ -1,0 +1,34 @@
+{
+  "expected_cgcr_status": "PARTIAL",
+  "expected_graph_only": false,
+  "gold_spans": [
+    {
+      "end_byte": 70,
+      "path": "repo/generated/client.py",
+      "relation_kind": "CALLS",
+      "risk_class": "high",
+      "source_sha256": "bcb73d2f93e0852cb6ab6803d1156ab141a2f3932bfd8e2660457983bb8aa03b",
+      "start_byte": 54,
+      "text": "transport.send()"
+    }
+  ],
+  "id": "py-generated-excluded",
+  "language": "python",
+  "query": "What generated client call is excluded from scope?",
+  "required_uncertainty": [
+    "excluded_generated_source"
+  ],
+  "scope": {
+    "exclude": [
+      "repo/generated/**"
+    ],
+    "include": [
+      "repo/**"
+    ],
+    "max_depth": 4,
+    "relation_kinds": [
+      "CALLS"
+    ]
+  },
+  "scorer_type": "unsupported"
+}

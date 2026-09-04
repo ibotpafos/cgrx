@@ -1,0 +1,38 @@
+#!/usr/bin/env python3
+"""End-to-end stdio MCP smoke test on a temporary synthetic repository."""
+import json
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+
+binary = str(Path(sys.argv[1]).resolve())
+with tempfile.TemporaryDirectory(prefix="cgrx-smoke-") as directory:
+    repo = Path(directory)
+    (repo / "main.py").write_text("def target():\n    return 1\n\ndef caller():\n    return target()\n")
+    def git(*args):
+        subprocess.run(["git", "-C", directory, *args], check=True, capture_output=True)
+    git("init", "-q")
+    git("add", "main.py")
+    git("-c", "user.name=CGRX Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "fixture")
+    frames = [
+        {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
+            "protocolVersion": "2025-06-18", "capabilities": {},
+            "clientInfo": {"name": "cgrx-smoke", "version": "1"}}},
+        {"jsonrpc": "2.0", "method": "notifications/initialized"},
+        {"jsonrpc": "2.0", "id": 2, "method": "tools/list"},
+        {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {
+            "name": "trace_path", "arguments": {"repo": directory, "symbol": "target",
+            "path": "main.py", "direction": "callers", "depth": 1, "limit": 10}}},
+    ]
+    result = subprocess.run([binary, "serve", "--multi-repo"],
+                            input="".join(json.dumps(f) + "\n" for f in frames),
+                            text=True, capture_output=True, timeout=60)
+    assert result.returncode == 0, result.stderr
+    responses = [json.loads(line) for line in result.stdout.splitlines()]
+    assert len(responses) == 3, responses
+    assert all("error" not in r for r in responses), responses
+    assert len(responses[1]["result"]["tools"]) == 8, responses[1]
+    nodes = responses[2]["result"]["structuredContent"]["nodes"]
+    assert len(nodes) == 1 and nodes[0]["symbol"] == "caller", responses[2]
+print("MCP_SMOKE=PASS; TOOLS=8; CALLER=caller")

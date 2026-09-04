@@ -1,0 +1,32 @@
+{
+  "expected_cgcr_status": "PARTIAL",
+  "expected_graph_only": false,
+  "gold_spans": [
+    {
+      "end_byte": 125,
+      "path": "repo/src/main.py",
+      "relation_kind": "CALLS",
+      "risk_class": "high",
+      "source_sha256": "f31eb886c51113881e4e4acbfd80072614ad8aaa0e3d1b5314bade61923500cc",
+      "start_byte": 99,
+      "text": "getattr(service, method)()"
+    }
+  ],
+  "id": "py-getattr-call",
+  "language": "python",
+  "query": "What getattr-selected method is called?",
+  "required_uncertainty": [
+    "dynamic_attribute"
+  ],
+  "scope": {
+    "exclude": [],
+    "include": [
+      "repo/**"
+    ],
+    "max_depth": 4,
+    "relation_kinds": [
+      "CALLS"
+    ]
+  },
+  "scorer_type": "positive_evidence"
+}

@@ -1,0 +1,32 @@
+{
+  "expected_cgcr_status": "PARTIAL",
+  "expected_graph_only": false,
+  "gold_spans": [
+    {
+      "end_byte": 42,
+      "path": "repo/src/main.py",
+      "relation_kind": "CALLS",
+      "risk_class": "high",
+      "source_sha256": "503190dcd1fe478574ea7dfe793fee266e76b7391d829a9ddd3445d32a9e286e",
+      "start_byte": 29,
+      "text": "stable_call()"
+    }
+  ],
+  "id": "py-parser-error-range",
+  "language": "python",
+  "query": "What call remains before the parser error range?",
+  "required_uncertainty": [
+    "parser_error_range"
+  ],
+  "scope": {
+    "exclude": [],
+    "include": [
+      "repo/**"
+    ],
+    "max_depth": 4,
+    "relation_kinds": [
+      "CALLS"
+    ]
+  },
+  "scorer_type": "unsupported"
+}

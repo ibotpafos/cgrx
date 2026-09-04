@@ -1,0 +1,22 @@
+[workspace]
+resolver = "3"
+members = [
+  "crates/cgrx-core",
+  "crates/cgrx-store",
+  "crates/cgrx-languages",
+  "crates/cgrx-retrieval",
+  "crates/cgrx-capsule",
+  "crates/cgrx-cgcr",
+  "crates/cgrx-mcp",
+  "crates/cgrx-cli",
+]
+
+[workspace.package]
+edition = "2024"
+license = "MIT"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+strip = "symbols"

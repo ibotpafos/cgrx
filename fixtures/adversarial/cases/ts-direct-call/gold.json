@@ -1,0 +1,30 @@
+{
+  "expected_cgcr_status": "COMPLETE_BOUNDED",
+  "expected_graph_only": true,
+  "gold_spans": [
+    {
+      "end_byte": 69,
+      "path": "repo/src/main.ts",
+      "relation_kind": "CALLS",
+      "risk_class": "low",
+      "source_sha256": "6557d69ca86df1186ebb5e8c88bafeb4b8fae5c0917088ed0e21f88a71d5ce2d",
+      "start_byte": 45,
+      "text": "const message = greet();"
+    }
+  ],
+  "id": "ts-direct-call",
+  "language": "typescript",
+  "query": "Where is greet called?",
+  "required_uncertainty": [],
+  "scope": {
+    "exclude": [],
+    "include": [
+      "repo/**"
+    ],
+    "max_depth": 4,
+    "relation_kinds": [
+      "CALLS"
+    ]
+  },
+  "scorer_type": "positive_evidence"
+}

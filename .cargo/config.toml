@@ -1,0 +1,2 @@
+[env]
+CGRX_NETWORK = { value = "deny", force = true }

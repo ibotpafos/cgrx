@@ -1,0 +1,12 @@
+.worktrees/
+.superpowers/
+.cgrx/
+__pycache__/
+*.py[cod]
+target/
+.DS_Store
+.venv/
+dist/
+*.jsonl
+.env
+.env.*

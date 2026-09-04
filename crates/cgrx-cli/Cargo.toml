@@ -1,0 +1,31 @@
+[package]
+name = "cgrx-cli"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+autobins = false
+
+[[bin]]
+name = "cgrx"
+path = "src/main.rs"
+
+[dependencies]
+toml = { version = "=0.8.23", default-features = false, features = ["parse"] }
+cgrx-capsule = { path = "../cgrx-capsule" }
+cgrx-core = { path = "../cgrx-core" }
+cgrx-cgcr = { path = "../cgrx-cgcr" }
+cgrx-languages = { path = "../cgrx-languages" }
+cgrx-mcp = { path = "../cgrx-mcp" }
+cgrx-retrieval = { path = "../cgrx-retrieval" }
+cgrx-store = { path = "../cgrx-store" }
+blake3 = "1.8.7"
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = "1.0.143"
+
+[[test]]
+name = "cli"
+path = "../../tests/cli.rs"
+
+[[test]]
+name = "multi_repo"
+path = "../../tests/multi_repo.rs"

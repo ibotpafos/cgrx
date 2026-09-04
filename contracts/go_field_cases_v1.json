@@ -1,0 +1,235 @@
+{
+  "schema": "cgrx-go-field-cases/1",
+  "cases": [
+    {
+      "id": "named_slice",
+      "path": "src/main.go",
+      "source": "package queue\ntype Items []int\ntype Queue struct { items Items }\nfunc (p Items) Len() int { return 1 }\nfunc (q *Queue) Peek() int { return q.items.Len() }\n",
+      "seed": "Peek",
+      "expected": [
+        {
+          "name": "Len",
+          "start": 80,
+          "end": 83
+        }
+      ],
+      "extra_files": {}
+    },
+    {
+      "id": "named_struct",
+      "path": "src/main.go",
+      "source": "package queue\ntype Items struct {}\ntype Queue struct { items Items }\nfunc (p Items) Len() int { return 1 }\nfunc (q *Queue) Peek() int { return q.items.Len() }\n",
+      "seed": "Peek",
+      "expected": [
+        {
+          "name": "Len",
+          "start": 84,
+          "end": 87
+        }
+      ],
+      "extra_files": {}
+    },
+    {
+      "id": "pointer_field",
+      "path": "src/main.go",
+      "source": "package queue\ntype Items []int\ntype Queue struct { items *Items }\nfunc (p Items) Len() int { return 1 }\nfunc (q *Queue) Peek() int { return q.items.Len() }\n",
+      "seed": "Peek",
+      "expected": [
+        {
+          "name": "Len",
+          "start": 81,
+          "end": 84
+        }
+      ],
+      "extra_files": {}
+    },
+    {
+      "id": "pointer_method",
+      "path": "src/main.go",
+      "source": "package queue\ntype Items []int\ntype Queue struct { items Items }\nfunc (p *Items) Len() int { return 1 }\nfunc (q *Queue) Peek() int { return q.items.Len() }\n",
+      "seed": "Peek",
+      "expected": [
+        {
+          "name": "Len",
+          "start": 81,
+          "end": 84
+        }
+      ],
+      "extra_files": {}
+    },
+    {
+      "id": "grouped_fields",
+      "path": "src/main.go",
+      "source": "package queue\ntype Items []int\ntype Queue struct { first, items Items }\nfunc (p Items) Len() int { return 1 }\nfunc (q *Queue) Peek() int { return q.items.Len() }\n",
+      "seed": "Peek",
+      "expected": [
+        {
+          "name": "Len",
+          "start": 87,
+          "end": 90
+        }
+      ],
+      "extra_files": {}
+    },
+    {
+      "id": "field_assignment_static_type",
+      "path": "src/main.go",
+      "source": "package queue\ntype Items []int\ntype Queue struct { items Items }\nfunc (p Items) Len() int { return 1 }\nfunc (q *Queue) Peek() int { q.items = Items{}; return q.items.Len() }\n",
+      "seed": "Peek",
+      "expected": [
+        {
+          "name": "Len",
+          "start": 80,
+          "end": 83
+        }
+      ],
+      "extra_files": {}
+    },
+    {
+      "id": "interface_field",
+      "path": "src/main.go",
+      "source": "package queue\ntype Items []int\ntype Queue struct { items interface { Len() int } }\nfunc (p Items) Len() int { return 1 }\nfunc (q *Queue) Peek() int { return q.items.Len() }\n",
+      "seed": "Peek",
+      "expected": [],
+      "extra_files": {}
+    },
+    {
+      "id": "named_interface",
+      "path": "src/main.go",
+      "source": "package queue\ntype Items interface { Len() int }; type Queue struct { items Items }\n\nfunc (q *Queue) Peek() int { return q.items.Len() }\n",
+      "seed": "Peek",
+      "expected": [],
+      "extra_files": {}
+    },
+    {
+      "id": "alias_field_type",
+      "path": "src/main.go",
+      "source": "package queue\ntype Original []int; type Items = Original; type Queue struct { items Items }\nfunc (p Original) Len() int { return 1 }\nfunc (q *Queue) Peek() int { return q.items.Len() }\n",
+      "seed": "Peek",
+      "expected": [],
+      "extra_files": {}
+    },
+    {
+      "id": "embedded_field",
+      "path": "src/main.go",
+      "source": "package queue\ntype Items []int; type Queue struct { Items }\nfunc (p Items) Len() int { return 1 }\nfunc (q *Queue) Peek() int { return q.Items.Len() }\n",
+      "seed": "Peek",
+      "expected": [],
+      "extra_files": {}
+    },
+    {
+      "id": "promoted_nested_field",
+      "path": "src/main.go",
+      "source": "package queue\ntype Items []int; type Inner struct { items Items }; type Queue struct { Inner }\nfunc (p Items) Len() int { return 1 }\nfunc (q *Queue) Peek() int { return q.items.Len() }\n",
+      "seed": "Peek",
+      "expected": [],
+      "extra_files": {}
+    },
+    {
+      "id": "nested_selector_chain",
+      "path": "src/main.go",
+      "source": "package queue\ntype Items []int; type Inner struct { items Items }; type Queue struct { inner Inner }\nfunc (p Items) Len() int { return 1 }\nfunc (q *Queue) Peek() int { return q.inner.items.Len() }\n",
+      "seed": "Peek",
+      "expected": [],
+      "extra_files": {}
+    },
+    {
+      "id": "indexed_receiver",
+      "path": "src/main.go",
+      "source": "package queue\ntype Items []int; type Queue struct { items []Items }\nfunc (p Items) Len() int { return 1 }\nfunc (q *Queue) Peek() int { return q.items[0].Len() }\n",
+      "seed": "Peek",
+      "expected": [],
+      "extra_files": {}
+    },
+    {
+      "id": "missing_field",
+      "path": "src/main.go",
+      "source": "package queue\ntype Items []int; type Queue struct {}\nfunc (p Items) Len() int { return 1 }\nfunc (q *Queue) Peek() int { return q.items.Len() }\n",
+      "seed": "Peek",
+      "expected": [],
+      "extra_files": {}
+    },
+    {
+      "id": "duplicate_field",
+      "path": "src/main.go",
+      "source": "package queue\ntype Items []int; type Queue struct { items Items; items Items }\nfunc (p Items) Len() int { return 1 }\nfunc (q *Queue) Peek() int { return q.items.Len() }\n",
+      "seed": "Peek",
+      "expected": [],
+      "extra_files": {}
+    },
+    {
+      "id": "duplicate_type",
+      "path": "src/main.go",
+      "source": "package queue\ntype Items []int; type Items struct {}; type Queue struct { items Items }\nfunc (p Items) Len() int { return 1 }\nfunc (q *Queue) Peek() int { return q.items.Len() }\n",
+      "seed": "Peek",
+      "expected": [],
+      "extra_files": {}
+    },
+    {
+      "id": "duplicate_method",
+      "path": "src/main.go",
+      "source": "package queue\ntype Items []int; type Queue struct { items Items }\nfunc (p Items) Len() int { return 1 }; func (p Items) Len() int { return 2 }\nfunc (q *Queue) Peek() int { return q.items.Len() }\n",
+      "seed": "Peek",
+      "expected": [],
+      "extra_files": {}
+    },
+    {
+      "id": "wrong_receiver_type",
+      "path": "src/main.go",
+      "source": "package queue\ntype Items []int; type Other []int; type Queue struct { items Other }\nfunc (p Items) Len() int { return 1 }\nfunc (q *Queue) Peek() int { return q.items.Len() }\n",
+      "seed": "Peek",
+      "expected": [],
+      "extra_files": {}
+    },
+    {
+      "id": "function_value_field",
+      "path": "src/main.go",
+      "source": "package queue\ntype Items struct { Len func() int }; type Queue struct { items Items }\nfunc Len() int { return 1 }\nfunc (q *Queue) Peek() int { return q.items.Len() }\n",
+      "seed": "Peek",
+      "expected": [],
+      "extra_files": {}
+    },
+    {
+      "id": "field_method_conflict",
+      "path": "src/main.go",
+      "source": "package queue\ntype Items struct { Len func() int }; type Queue struct { items Items }\nfunc (p Items) Len() int { return 1 }\nfunc (q *Queue) Peek() int { return q.items.Len() }\n",
+      "seed": "Peek",
+      "expected": [],
+      "extra_files": {}
+    },
+    {
+      "id": "receiver_shadow",
+      "path": "src/main.go",
+      "source": "package queue\ntype Items []int; type Queue struct { items Items }\nfunc (p Items) Len() int { return 1 }\nfunc (q *Queue) Peek() int { { q := struct { items interface { Len() int } }{}; return q.items.Len() } }\n",
+      "seed": "Peek",
+      "expected": [],
+      "extra_files": {}
+    },
+    {
+      "id": "closure_capture",
+      "path": "src/main.go",
+      "source": "package queue\ntype Items []int; type Queue struct { items Items }\nfunc (p Items) Len() int { return 1 }\nfunc (q *Queue) Peek() int { f := func() int { return q.items.Len() }; _ = f; return 0 }\n",
+      "seed": "Peek",
+      "expected": [],
+      "extra_files": {}
+    },
+    {
+      "id": "generic_field",
+      "path": "src/main.go",
+      "source": "package queue\ntype Items[T any] []T; type Queue struct { items Items[int] }\nfunc (p Items[T]) Len() int { return 1 }\nfunc (q *Queue) Peek() int { return q.items.Len() }\n",
+      "seed": "Peek",
+      "expected": [],
+      "extra_files": {}
+    },
+    {
+      "id": "other_file_target",
+      "path": "src/main.go",
+      "source": "package queue\ntype Items []int; type Queue struct { items Items }\n\nfunc (q *Queue) Peek() int { return q.items.Len() }\n",
+      "seed": "Peek",
+      "expected": [],
+      "extra_files": {
+        "src/other.go": "package queue\nfunc (p Items) Len() int { return 1 }\n"
+      }
+    }
+  ]
+}

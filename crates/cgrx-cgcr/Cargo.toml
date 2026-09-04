@@ -1,0 +1,10 @@
+[package]
+name = "cgrx-cgcr"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+cgrx-core = { path = "../cgrx-core" }
+cgrx-capsule = { path = "../cgrx-capsule" }
+serde = { version = "1.0.219", features = ["derive"] }

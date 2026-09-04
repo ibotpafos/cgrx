@@ -1,0 +1,32 @@
+{
+  "expected_cgcr_status": "PARTIAL",
+  "expected_graph_only": true,
+  "gold_spans": [
+    {
+      "end_byte": 63,
+      "path": "repo/src/main.py",
+      "relation_kind": "CALLS",
+      "risk_class": "medium",
+      "source_sha256": "65fc3164b79ffe633939f1deb2b1b954c308c2fbfcc6fb00e0826b46a9779916",
+      "start_byte": 50,
+      "text": "level_three()"
+    }
+  ],
+  "id": "py-depth-truncation",
+  "language": "python",
+  "query": "What call lies beyond the bounded traversal depth?",
+  "required_uncertainty": [
+    "depth_truncation"
+  ],
+  "scope": {
+    "exclude": [],
+    "include": [
+      "repo/**"
+    ],
+    "max_depth": 1,
+    "relation_kinds": [
+      "CALLS"
+    ]
+  },
+  "scorer_type": "positive_evidence"
+}

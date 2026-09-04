@@ -1,0 +1,5 @@
+(function_item name: (identifier) @symbol)
+(struct_item name: (type_identifier) @symbol)
+(enum_item name: (type_identifier) @symbol)
+(trait_item name: (type_identifier) @symbol)
+(type_item name: (type_identifier) @symbol)

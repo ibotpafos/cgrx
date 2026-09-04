@@ -1,0 +1,30 @@
+{
+  "expected_cgcr_status": "COMPLETE_BOUNDED",
+  "expected_graph_only": true,
+  "gold_spans": [
+    {
+      "end_byte": 80,
+      "path": "repo/src/main.ts",
+      "relation_kind": "CALLS",
+      "risk_class": "low",
+      "source_sha256": "1a50ca7951125632df8c61d9f5da07ff91436747abd6d063dd8d825357b1e2d2",
+      "start_byte": 69,
+      "text": "makeValue()"
+    }
+  ],
+  "id": "ts-alias-import",
+  "language": "typescript",
+  "query": "What call uses the aliased import?",
+  "required_uncertainty": [],
+  "scope": {
+    "exclude": [],
+    "include": [
+      "repo/**"
+    ],
+    "max_depth": 4,
+    "relation_kinds": [
+      "CALLS"
+    ]
+  },
+  "scorer_type": "positive_evidence"
+}

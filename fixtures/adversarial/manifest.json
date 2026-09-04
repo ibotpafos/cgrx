@@ -1,0 +1,85 @@
+{
+  "cases": [
+    {
+      "path": "cases/ts-direct-call/gold.json",
+      "sha256": "b3f5c4d4202673e56a7f5388860ee66b676912fe6d867aecbfff84a34cf9504d"
+    },
+    {
+      "path": "cases/ts-overload/gold.json",
+      "sha256": "ae280a11bda0ed64903ecef007e324f7a3c057d2038d8a566086487389e992e5"
+    },
+    {
+      "path": "cases/ts-interface-dispatch/gold.json",
+      "sha256": "72334e39e7a31aaa04baef84005370f996f69de9114281f8fc9c8ac090bb8073"
+    },
+    {
+      "path": "cases/ts-alias-import/gold.json",
+      "sha256": "629a936a041ae2ea229ecddeb25b18b6892ed4339825d7e9078fc7e7df7bef25"
+    },
+    {
+      "path": "cases/ts-dynamic-property/gold.json",
+      "sha256": "ed484d6a964adf78beda1d3a85f0cc42c257a60e2116aca20b8e9b57635090af"
+    },
+    {
+      "path": "cases/ts-decorator-route/gold.json",
+      "sha256": "655e20d5a8c3421e97d99008407157780ce96adcaef908fd2ee747dcfc5d46c2"
+    },
+    {
+      "path": "cases/ts-generated-excluded/gold.json",
+      "sha256": "6939544254c3aedf9fd0fd08239d772b23dcaa21114ff90422b95f89605451b0"
+    },
+    {
+      "path": "cases/ts-parser-error-range/gold.json",
+      "sha256": "bc6367f09fd12b290ac8bc8761153cc76ec2d97c9a1169a77ba36606b04a408b"
+    },
+    {
+      "path": "cases/ts-stale-working-tree/gold.json",
+      "sha256": "a79f9bcbf25481d8dc9c9fb011fce91da3b87aaf2b762b27102c91054978ff04"
+    },
+    {
+      "path": "cases/ts-depth-truncation/gold.json",
+      "sha256": "66b2e539f4829e9d37017f217582b056dd3bf6ae68ce41d1c35d1c2d5a250b76"
+    },
+    {
+      "path": "cases/py-direct-call/gold.json",
+      "sha256": "6db7badf69f8c00c943cb10e43fe6c148ad8e26e2628739b0c05f0214eb526de"
+    },
+    {
+      "path": "cases/py-alias-import/gold.json",
+      "sha256": "8148dfa2ff3ae9f0688a62adbfeb58e3194999185aeb005c553363ed5eaaa041"
+    },
+    {
+      "path": "cases/py-monkey-patch/gold.json",
+      "sha256": "47a926ee13d8fe269e33dbb2302d157349ebc87484fa1a8c3dfc741dba5a7006"
+    },
+    {
+      "path": "cases/py-protocol-dispatch/gold.json",
+      "sha256": "9cfcb50f9e5ed1732fdd2ea5d62d6e61181c4e2bb4217a7b2005487ff2f35f81"
+    },
+    {
+      "path": "cases/py-getattr-call/gold.json",
+      "sha256": "38c58093dd94e37c120cc4e99d342df3f3bbca3e3d296553a57e105bdef1e213"
+    },
+    {
+      "path": "cases/py-decorator-route/gold.json",
+      "sha256": "297c394ddbf4d1706700c1487cb7b4d8b5fe9f1cccb8520096ed632796c019c1"
+    },
+    {
+      "path": "cases/py-generated-excluded/gold.json",
+      "sha256": "632d21a43f6fc16c78badea5a8c058bd0c7b77a880889ae9c8c9d19e0f7f9de6"
+    },
+    {
+      "path": "cases/py-parser-error-range/gold.json",
+      "sha256": "4f6b53e28957fa12ced6bb3a474aa044cbf913ea54dfdd0bd3c1f8b22f65f689"
+    },
+    {
+      "path": "cases/py-stale-working-tree/gold.json",
+      "sha256": "e663804056adaabad49459bc8f9e3e5241736f925c69c012ab4777e3252e72b4"
+    },
+    {
+      "path": "cases/py-depth-truncation/gold.json",
+      "sha256": "2ae346cedaae5df6a82da7422efab7553a6a370c9b7648176572832ceb243775"
+    }
+  ],
+  "version": 1
+}

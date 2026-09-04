@@ -1,0 +1,32 @@
+{
+  "expected_cgcr_status": "PARTIAL",
+  "expected_graph_only": false,
+  "gold_spans": [
+    {
+      "end_byte": 88,
+      "path": "repo/src/main.py",
+      "relation_kind": "ROUTE_HANDLER",
+      "risk_class": "medium",
+      "source_sha256": "796d8ae44609364a2849a5d3f4792449213f2479c8f66b80c70ff9f9891339d7",
+      "start_byte": 72,
+      "text": "def list_users()"
+    }
+  ],
+  "id": "py-decorator-route",
+  "language": "python",
+  "query": "Which function handles the decorated route?",
+  "required_uncertainty": [
+    "decorator_semantics"
+  ],
+  "scope": {
+    "exclude": [],
+    "include": [
+      "repo/**"
+    ],
+    "max_depth": 4,
+    "relation_kinds": [
+      "ROUTE_HANDLER"
+    ]
+  },
+  "scorer_type": "positive_evidence"
+}

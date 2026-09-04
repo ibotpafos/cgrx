@@ -1,0 +1,41 @@
+{
+  "expected_cgcr_status": "STALE",
+  "expected_graph_only": false,
+  "gold_spans": [
+    {
+      "end_byte": 76,
+      "path": "repo/indexed/src/main.py",
+      "relation_kind": "CALLS",
+      "risk_class": "high",
+      "source_sha256": "8ee76dd66e0fd8120fd79c21877ee6a3c8a31bc6822e21bdd0aeaea6f32a13b6",
+      "start_byte": 52,
+      "text": "current_implementation()"
+    },
+    {
+      "end_byte": 76,
+      "path": "repo/working-tree/src/main.py",
+      "relation_kind": "CALLS",
+      "risk_class": "high",
+      "source_sha256": "f50c781dee81993cdcb99c534379b02305998f9cfdad9aec40844974a9e770c7",
+      "start_byte": 52,
+      "text": "current_implementation()"
+    }
+  ],
+  "id": "py-stale-working-tree",
+  "language": "python",
+  "query": "Which call differs between indexed and working-tree state?",
+  "required_uncertainty": [
+    "stale_working_tree"
+  ],
+  "scope": {
+    "exclude": [],
+    "include": [
+      "repo/**"
+    ],
+    "max_depth": 4,
+    "relation_kinds": [
+      "CALLS"
+    ]
+  },
+  "scorer_type": "stale_abstention"
+}
