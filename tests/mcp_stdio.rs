@@ -243,9 +243,8 @@ fn tools_list_advertises_bounded_graph_search_and_trace() {
         &mut server,
         json!({"jsonrpc":"2.0","id":4,"method":"tools/list","params":{}}),
     );
-    let names: Vec<_> = response["result"]["tools"]
-        .as_array()
-        .expect("tools array")
+    let tools = response["result"]["tools"].as_array().expect("tools array");
+    let names: Vec<_> = tools
         .iter()
         .filter_map(|tool| tool["name"].as_str())
         .collect();
@@ -254,6 +253,18 @@ fn tools_list_advertises_bounded_graph_search_and_trace() {
     assert!(names.contains(&"trace_path"), "tools: {names:?}");
     assert!(names.contains(&"get_code_snippet"), "tools: {names:?}");
     assert!(names.contains(&"check_index_coverage"), "tools: {names:?}");
+    let coverage = tools
+        .iter()
+        .find(|tool| tool["name"] == "check_index_coverage")
+        .unwrap();
+    assert_eq!(
+        coverage["inputSchema"]["properties"]["offset"]["minimum"],
+        0
+    );
+    assert_eq!(
+        coverage["inputSchema"]["properties"]["limit"]["maximum"],
+        500
+    );
 }
 
 #[test]
@@ -358,4 +369,21 @@ fn initialize_advertises_compact_evidence_workflow() {
     assert!(instructions.len() <= 512);
     assert!(instructions.contains("coverage"));
     assert!(instructions.contains("repo"));
+}
+
+#[test]
+fn coverage_pagination_rejects_unbounded_limits_before_backend_access() {
+    let mut server = Server::new(snapshot());
+    for limit in [0, 501] {
+        let response = dispatch(
+            &mut server,
+            json!({
+                "jsonrpc":"2.0","id":44,"method":"tools/call",
+                "params":{"name":"check_index_coverage","arguments":{
+                    "scopes":["."],"offset":0,"limit":limit
+                }}
+            }),
+        );
+        assert_eq!(response["error"]["data"]["code"], "cgrx.invalid_arguments");
+    }
 }

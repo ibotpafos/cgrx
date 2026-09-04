@@ -55,6 +55,8 @@ pub trait ToolBackend: Send + Sync {
         &mut self,
         paths: &[String],
         scopes: &[String],
+        offset: usize,
+        limit: usize,
     ) -> Result<Value, BackendError>;
 }
 
@@ -392,6 +394,13 @@ impl Server {
         &mut self,
         arguments: CheckIndexCoverageArguments,
     ) -> Result<Value, JsonRpcError> {
+        if arguments.limit == 0 || arguments.limit > 500 {
+            return Err(JsonRpcError::typed(
+                -32602,
+                "cgrx.invalid_arguments",
+                "coverage limit must be from 1 to 500",
+            ));
+        }
         let Some(backend) = &mut self.backend else {
             return Err(JsonRpcError::typed(
                 -32020,
@@ -400,7 +409,12 @@ impl Server {
             ));
         };
         backend
-            .check_index_coverage(&arguments.paths, &arguments.scopes)
+            .check_index_coverage(
+                &arguments.paths,
+                &arguments.scopes,
+                arguments.offset,
+                arguments.limit,
+            )
             .map_err(backend_error)
     }
 
@@ -634,6 +648,7 @@ fn compact_coverage(value: &Value) -> Value {
         "rows":rows,
         "scopes":value.get("scopes"),
         "summary":value.get("summary"),
+        "scope_summary":value.get("scope_summary"),
     })
 }
 
@@ -739,6 +754,14 @@ struct CheckIndexCoverageArguments {
     paths: Vec<String>,
     #[serde(default)]
     scopes: Vec<String>,
+    #[serde(default)]
+    offset: usize,
+    #[serde(default = "default_coverage_limit")]
+    limit: usize,
+}
+
+const fn default_coverage_limit() -> usize {
+    100
 }
 
 const fn default_graph_limit() -> u32 {
@@ -826,7 +849,7 @@ fn model_visible_schema() -> Value {
         {"name":"search_graph","description":"Symbols","inputSchema":{"type":"object","required":["query"],"properties":{"query":{"type":"string"},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":50}}}},
         {"name":"trace_path","description":"Calls","inputSchema":{"type":"object","required":["symbol"],"properties":{"symbol":{"type":"string"},"path":{"type":"string"},"direction":{"enum":["callers","callees","both"]},"depth":{"type":"integer","minimum":1,"maximum":4},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":50}}}},
         {"name":"get_code_snippet","description":"Source","inputSchema":{"type":"object","required":["symbol"],"properties":{"symbol":{"type":"string"},"path":{"type":"string"}}}},
-        {"name":"check_index_coverage","description":"Coverage","inputSchema":{"type":"object","properties":{"paths":{"type":"array","items":{"type":"string"}},"scopes":{"type":"array","items":{"type":"string"}}}}},
+        {"name":"check_index_coverage","description":"Coverage","inputSchema":{"type":"object","properties":{"paths":{"type":"array","items":{"type":"string"}},"scopes":{"type":"array","items":{"type":"string"}},"offset":{"type":"integer","minimum":0},"limit":{"type":"integer","minimum":1,"maximum":500}}}},
         {"name":"expand","description":"Expand","inputSchema":{"type":"object","required":["handle","budget"],"properties":{"handle":{"type":"string"},"budget":{"type":"integer","minimum":1}}}},
         {"name":"status","inputSchema":{"type":"object","required":["paths_or_scope"],"properties":{"paths_or_scope":{}}}}
     ]);

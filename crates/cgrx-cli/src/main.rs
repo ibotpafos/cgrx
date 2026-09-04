@@ -667,10 +667,12 @@ impl ToolBackend for RuntimeMcpBackend {
         &mut self,
         paths: &[String],
         scopes: &[String],
+        offset: usize,
+        limit: usize,
     ) -> Result<Value, BackendError> {
         self.refresh()?;
         self.runtime
-            .check_index_coverage(paths, scopes)
+            .check_index_coverage(paths, scopes, offset, limit)
             .map_err(|error| BackendError::new(error.code(), error.to_string()))
     }
 
