@@ -409,3 +409,45 @@ fn body_edit_overlay_with_same_node_id_does_not_reuse_base_arc() {
             .any(|c| c.node_id == 2 && c.scores.graph > 0)
     );
 }
+
+#[test]
+fn directory_scopes_accept_root_and_relative_prefixes() {
+    for pattern in [".", "./", "././", "src", "src/", "./src", "./src/"] {
+        let mut scope = request("", 1).scope;
+        scope.include = vec![pattern.to_owned()];
+        assert!(path_in_scope("src/nested/main.rs", &scope), "{pattern}");
+        if ![".", "./", "././"].contains(&pattern) {
+            assert!(!path_in_scope("src-other/main.rs", &scope), "{pattern}");
+            assert!(!path_in_scope("other/src/main.rs", &scope), "{pattern}");
+        }
+    }
+}
+
+#[test]
+fn directory_scopes_preserve_exclusions_files_and_globs() {
+    let mut scope = request("", 1).scope;
+    scope.include = vec![".".to_owned()];
+    scope.exclude = vec!["src/private".to_owned()];
+    assert!(!path_in_scope("src/private/a.rs", &scope));
+    assert!(path_in_scope("src/private-other/a.rs", &scope));
+    scope.include = vec!["src/main.rs".to_owned()];
+    assert!(path_in_scope("src/main.rs", &scope));
+    assert!(!path_in_scope("src/main.rs.bak", &scope));
+    scope.include = vec!["./src/*.rs".to_owned()];
+    assert!(path_in_scope("src/main.rs", &scope));
+    assert!(!path_in_scope("src/nested/main.rs", &scope));
+    scope.exclude = vec![".".to_owned()];
+    assert!(!path_in_scope("src/main.rs", &scope));
+}
+
+#[test]
+fn directory_scopes_do_not_broaden_empty_absolute_or_parent_patterns() {
+    let mut scope = request("", 1).scope;
+    for pattern in ["", "/", "../src", "/src"] {
+        scope.include = vec![pattern.to_owned()];
+        assert!(!path_in_scope("src/main.rs", &scope), "{pattern}");
+    }
+    scope.include = vec!["данные".to_owned()];
+    assert!(path_in_scope("данные/main.rs", &scope));
+    assert!(!path_in_scope("данные2/main.rs", &scope));
+}
