@@ -89,7 +89,17 @@ cargo clippy --locked --workspace --all-targets -- -D warnings
 cargo test --locked --workspace
 cargo build --locked --release -p cgrx-cli
 python3 scripts/smoke_mcp.py target/release/cgrx
+python3 scripts/eval_relationships.py target/release/cgrx
 ~~~
+
+The relationship evaluator copies the public synthetic fixture into a temporary
+committed repository, queries the real stdio MCP server, and reports exact
+TP/FP/FN, precision, recall and F1 for direct caller-to-callee edges. Its v1
+contract covers seven Rust, Go, TypeScript and Python cases, including same-name
+package/module competitors and a private Rust target. A changed resolver must
+keep the default 1.0 precision and recall thresholds; extend the fixture when
+adding a new relationship shape. Truncated traces fail instead of producing
+incomplete "exact" metrics.
 
 ## License
 
