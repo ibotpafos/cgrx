@@ -8,6 +8,7 @@ struct Package {
     unsupported_modules: bool,
     library: Option<(String, String)>,
     dependencies: BTreeSet<String>,
+    modules: BTreeMap<(String, String), BTreeSet<String>>,
 }
 
 pub(crate) struct CargoRoots<'a> {
@@ -237,10 +238,11 @@ impl<'a> CargoRoots<'a> {
             }
             let index = this.packages.len();
             let mut unsupported_modules = false;
+            let mut modules = BTreeMap::<(String, String), BTreeSet<String>>::new();
             for root in &roots {
-                let mut pending = vec![(root.clone(), true, 0usize)];
+                let mut pending = vec![(root.clone(), true, 0usize, Vec::<String>::new())];
                 let mut seen = BTreeSet::new();
-                while let Some((file, is_root, depth)) = pending.pop() {
+                while let Some((file, is_root, depth, module_path)) = pending.pop() {
                     if depth > 64 || seen.len() > 10000 {
                         unsupported_modules = true;
                         continue;
@@ -258,6 +260,10 @@ impl<'a> CargoRoots<'a> {
                         .entry(file.clone())
                         .or_default()
                         .push((index, root.clone()));
+                    modules
+                        .entry((root.clone(), module_path.join("::")))
+                        .or_default()
+                        .insert(file.clone());
                     let path = Path::new(&file);
                     let parent = path.parent().unwrap_or(Path::new(""));
                     let module_dir = if is_root || path.file_name().is_some_and(|n| n == "mod.rs") {
@@ -274,7 +280,9 @@ impl<'a> CargoRoots<'a> {
                             .filter(|p| files.contains_key(*p))
                             .collect();
                         if let [child] = live.as_slice() {
-                            pending.push(((*child).to_owned(), false, depth + 1));
+                            let mut child_path = module_path.clone();
+                            child_path.push(module.clone());
+                            pending.push(((*child).to_owned(), false, depth + 1, child_path));
                         }
                     }
                 }
@@ -283,6 +291,7 @@ impl<'a> CargoRoots<'a> {
                 unsupported_modules,
                 library,
                 dependencies,
+                modules,
             });
         }
         this
@@ -299,7 +308,7 @@ impl<'a> CargoRoots<'a> {
         if !facts.calls.contains(&(start, end)) {
             return None;
         }
-        let (qualifier, name) = qualified.split_once("::")?;
+        let (qualifier, name) = qualified.rsplit_once("::")?;
         if qualifier.is_empty() || name.contains("::") {
             return None;
         }
@@ -310,18 +319,32 @@ impl<'a> CargoRoots<'a> {
         if package.unsupported_modules {
             return None;
         }
-        let (target, external) = if qualifier == "crate" {
+        let (target, requires_public) = if qualifier == "crate" {
             (owner.1.as_str(), false)
-        } else {
-            let (lib_name, lib_path) = package.library.as_ref()?;
-            if qualifier != lib_name
-                || &owner.1 == lib_path
-                || package.dependencies.contains(qualifier)
-                || facts.blocked_names.iter().any(|n| n == qualifier)
-            {
+        } else if let Some((_, lib_path)) =
+            package.library.as_ref().filter(|(lib_name, lib_path)| {
+                qualifier == lib_name.as_str()
+                    && &owner.1 != lib_path
+                    && !package.dependencies.contains(qualifier)
+                    && !facts.blocked_names.iter().any(|n| n == qualifier)
+            })
+        {
+            (lib_path.as_str(), true)
+        } else if let Some(module) = qualifier.strip_prefix("crate::").or_else(|| {
+            (path == owner.1 && !matches!(qualifier, "self" | "super")).then_some(qualifier)
+        }) {
+            let paths = package.modules.get(&(owner.1.clone(), module.to_owned()))?;
+            let mut targets = paths.iter();
+            let target = targets.next()?;
+            if targets.next().is_some() {
                 return None;
             }
-            (lib_path.as_str(), true)
+            // Crossing from a crate root into a child module requires target
+            // visibility proof. The compact facts currently prove only plain
+            // `pub`; restricted visibility remains an explicit gap.
+            (target.as_str(), true)
+        } else {
+            return None;
         };
         // Both target and source must belong to this exact package/root.
         let target_facts = self.files.get(target).filter(|f| !f.blocked)?;
@@ -329,14 +352,14 @@ impl<'a> CargoRoots<'a> {
             .owners
             .get(target)?
             .iter()
-            .any(|(i, root)| *i == owner.0 && root == target)
+            .any(|(i, root)| *i == owner.0 && (root == target || root == &owner.1))
         {
             return None;
         }
         let mut matches = target_facts
             .functions
             .iter()
-            .filter(|(n, _, _, public)| n == name && (!external || *public));
+            .filter(|(n, _, _, public)| n == name && (!requires_public || *public));
         let (_, start, end, _) = matches.next()?;
         if matches.next().is_some() {
             return None;
@@ -378,6 +401,80 @@ mod tests {
             CargoRoots::new(&manifests, &files)
                 .target("src/lib.rs", 20, 30, "crate::target")
                 .is_none()
+        );
+    }
+
+    #[test]
+    fn resolves_a_direct_child_module_function_from_the_crate_root() {
+        let manifests = BTreeMap::from([(
+            String::new(),
+            "[package]\nname=\"sample\"\nversion=\"0.1.0\"\nedition=\"2024\"".to_owned(),
+        )]);
+        let files = BTreeMap::from([
+            (
+                "src/lib.rs".to_owned(),
+                RustFileFacts {
+                    modules: vec!["worker".into()],
+                    calls: vec![(20, 36)],
+                    ..Default::default()
+                },
+            ),
+            (
+                "src/worker.rs".to_owned(),
+                RustFileFacts {
+                    functions: vec![("target".into(), 7, 13, true)],
+                    ..Default::default()
+                },
+            ),
+        ]);
+        let roots = CargoRoots::new(&manifests, &files);
+        assert_eq!(
+            roots.target("src/lib.rs", 20, 36, "worker::target"),
+            Some(("src/worker.rs", 7, 13))
+        );
+
+        let mut private_files = files;
+        private_files.get_mut("src/worker.rs").unwrap().functions[0].3 = false;
+        assert_eq!(
+            CargoRoots::new(&manifests, &private_files).target(
+                "src/lib.rs",
+                20,
+                36,
+                "worker::target"
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn isolates_equal_module_paths_between_library_and_binary_roots() {
+        let manifests = BTreeMap::from([(
+            String::new(),
+            "[package]\nname=\"sample\"\nversion=\"0.1.0\"\nedition=\"2024\"".to_owned(),
+        )]);
+        let root = |call| RustFileFacts {
+            modules: vec!["worker".into()],
+            calls: vec![call],
+            ..Default::default()
+        };
+        let target = |start, end| RustFileFacts {
+            functions: vec![("target".into(), start, end, true)],
+            ..Default::default()
+        };
+        let files = BTreeMap::from([
+            ("src/lib.rs".to_owned(), root((20, 36))),
+            ("src/worker.rs".to_owned(), target(7, 13)),
+            ("src/bin/tool.rs".to_owned(), root((40, 56))),
+            ("src/bin/worker.rs".to_owned(), target(17, 23)),
+        ]);
+        let roots = CargoRoots::new(&manifests, &files);
+        assert_eq!(
+            roots.target("src/lib.rs", 20, 36, "worker::target"),
+            Some(("src/worker.rs", 7, 13))
+        );
+        assert_eq!(
+            roots.target("src/bin/tool.rs", 40, 56, "worker::target"),
+            Some(("src/bin/worker.rs", 17, 23))
         );
     }
 }

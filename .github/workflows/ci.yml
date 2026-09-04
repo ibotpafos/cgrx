@@ -23,3 +23,4 @@ jobs:
       - run: cargo build --locked --release -p cgrx-cli
       - run: python3 scripts/smoke_mcp.py target/release/cgrx
       - run: python3 scripts/smoke_scopes.py target/release/cgrx
+      - run: python3 scripts/eval_relationships.py target/release/cgrx

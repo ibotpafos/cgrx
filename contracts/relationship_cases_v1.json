@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "description": "Exact direct caller-to-callee relationships on a synthetic four-language repository.",
+  "cases": [
+    {
+      "id": "python_direct_cross_file",
+      "language": "python",
+      "target": {"symbol": "py_target", "path": "py_target.py"},
+      "expected_callers": [{"symbol": "py_caller", "path": "py_caller.py"}]
+    },
+    {
+      "id": "go_direct_same_package",
+      "language": "go",
+      "target": {"symbol": "goTarget", "path": "go_target.go"},
+      "expected_callers": [{"symbol": "goCaller", "path": "go_caller.go"}]
+    },
+    {
+      "id": "go_same_name_other_package_negative",
+      "language": "go",
+      "target": {"symbol": "goTarget", "path": "other/go_target.go"},
+      "expected_callers": []
+    },
+    {
+      "id": "rust_direct_child_module",
+      "language": "rust",
+      "target": {"symbol": "rust_target", "path": "src/rust_target.rs"},
+      "expected_callers": [{"symbol": "rust_caller", "path": "src/lib.rs"}]
+    },
+    {
+      "id": "rust_same_name_sibling_module_negative",
+      "language": "rust",
+      "target": {"symbol": "rust_target", "path": "src/rust_other.rs"},
+      "expected_callers": []
+    },
+    {
+      "id": "rust_private_child_negative",
+      "language": "rust",
+      "target": {"symbol": "private_target", "path": "src/private_child.rs"},
+      "expected_callers": []
+    },
+    {
+      "id": "typescript_direct_cross_file",
+      "language": "typescript",
+      "target": {"symbol": "tsTarget", "path": "ts_target.ts"},
+      "expected_callers": [{"symbol": "tsCaller", "path": "ts_caller.ts"}]
+    }
+  ]
+}
