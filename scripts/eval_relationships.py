@@ -81,7 +81,17 @@ def main() -> int:
         if result.returncode != 0:
             raise RuntimeError(f"CGRX exited {result.returncode}: {result.stderr}")
         responses = [json.loads(line) for line in result.stdout.splitlines()]
-        by_id = {response.get("id"): response for response in responses}
+        by_id = {}
+        expected_ids = set(range(1, len(contract["cases"]) + 2))
+        for response in responses:
+            request_id = response.get("id")
+            if type(request_id) is not int or request_id not in expected_ids or request_id in by_id:
+                raise RuntimeError("unexpected or duplicate MCP response id")
+            by_id[request_id] = response
+        if set(by_id) != expected_ids:
+            raise RuntimeError("missing MCP responses")
+        if "error" in by_id[1] or not isinstance(by_id[1].get("result"), dict):
+            raise RuntimeError("MCP initialize failed")
 
         totals = {"tp": 0, "fp": 0, "fn": 0}
         scored_cases = []
@@ -95,7 +105,17 @@ def main() -> int:
                     f"trace truncated for {case['id']}; exact scoring requires all callers"
                 )
             nodes = structured["nodes"]
-            observed = {(node["symbol"], node["path"]) for node in nodes if node["hop"] == 1}
+            if structured.get("truncated") is not False or type(structured.get("total")) is not int:
+                raise RuntimeError(f"missing or invalid completeness metadata for {case['id']}")
+            if structured["total"] != len(nodes):
+                raise RuntimeError(f"incomplete trace for {case['id']}: total does not match rows")
+            if any(type(node.get("hop")) is not int or node["hop"] != 1 for node in nodes):
+                raise RuntimeError(f"unexpected hop in depth-one trace for {case['id']}")
+            observed = {(node["symbol"], node["path"]) for node in nodes}
+            # Contract scoring projects to symbol/path, but distinct nodes may
+            # legitimately share that pair. Reject only repeated transport rows.
+            if len({json.dumps(node, sort_keys=True) for node in nodes}) != len(nodes):
+                raise RuntimeError(f"duplicate caller nodes for {case['id']}")
             expected = {
                 (caller["symbol"], caller["path"]) for caller in case["expected_callers"]
             }
