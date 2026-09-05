@@ -217,6 +217,8 @@ struct GoContext<'tree> {
     methods: BTreeMap<(String, String), Vec<Span>>,
     imports: BTreeMap<String, Vec<(Span, bool)>>,
     concrete_types: BTreeMap<String, ConcreteType>,
+    // Owners with explicit embedded fields; never used as promoted target types.
+    embedded_owners: BTreeMap<String, ConcreteType>,
     field_methods: BTreeMap<(String, String), Vec<Span>>,
     bindings: BTreeMap<usize, BTreeSet<String>>,
     receiver_shadows: BTreeSet<usize>,
@@ -232,6 +234,7 @@ impl<'tree> GoContext<'tree> {
             methods: BTreeMap::new(),
             imports: BTreeMap::new(),
             concrete_types: BTreeMap::new(),
+            embedded_owners: BTreeMap::new(),
             field_methods: BTreeMap::new(),
             bindings: BTreeMap::new(),
             receiver_shadows: BTreeSet::new(),
@@ -241,10 +244,12 @@ impl<'tree> GoContext<'tree> {
         context.collect(file, source);
         // Build once from complete package-level declarations, not per selector.
         for (name, declarations) in &context.types {
-            if let [declaration] = declarations.as_slice()
-                && let Some(concrete) = concrete_type(*declaration, source)
-            {
-                context.concrete_types.insert(name.clone(), concrete);
+            if let [declaration] = declarations.as_slice() {
+                if let Some(concrete) = concrete_type(*declaration, source, false) {
+                    context.concrete_types.insert(name.clone(), concrete);
+                } else if let Some(owner) = concrete_type(*declaration, source, true) {
+                    context.embedded_owners.insert(name.clone(), owner);
+                }
             }
         }
         context
@@ -482,7 +487,11 @@ fn method_receiver_type(method: Node<'_>) -> Option<Node<'_>> {
     }
     named_type(parameters.named_child(0)?.child_by_field_name("type")?)
 }
-fn concrete_type(declaration: Node<'_>, source: &[u8]) -> Option<ConcreteType> {
+fn concrete_type(
+    declaration: Node<'_>,
+    source: &[u8],
+    allow_embedded_fields: bool,
+) -> Option<ConcreteType> {
     if declaration.kind() != "type_spec"
         || declaration.child_by_field_name("type_parameters").is_some()
     {
@@ -506,11 +515,17 @@ fn concrete_type(declaration: Node<'_>, source: &[u8]) -> Option<ConcreteType> {
                 .filter(|n| n.kind() == "field_declaration")
             {
                 let mut cursor = field.walk();
-                let names: Vec<_> = field.children_by_field_name("name", &mut cursor).collect();
-                // Promoted/embedded members and duplicates require a wider
-                // selector resolver. Reject the type rather than infer priority.
+                let mut names: Vec<_> = field.children_by_field_name("name", &mut cursor).collect();
                 if names.is_empty() {
-                    return None;
+                    // Embedded T or *T declares a direct field named T. Support
+                    // only explicit s.T.Method selectors, not s.Method promotion:
+                    // another file may declare an overriding method on s's type.
+                    // Qualified/generic fields need additional identity evidence.
+                    let ty = field.child_by_field_name("type")?;
+                    if !allow_embedded_fields || ty.kind() != "type_identifier" {
+                        return None;
+                    }
+                    names.push(ty);
                 }
                 let ty = field
                     .child_by_field_name("type")
@@ -573,7 +588,10 @@ fn field_receiver_target(
         return None;
     }
     let receiver_type_name = text(receiver_type, source);
-    let owner = context.concrete_types.get(&receiver_type_name)?;
+    let owner = context
+        .concrete_types
+        .get(&receiver_type_name)
+        .or_else(|| context.embedded_owners.get(&receiver_type_name))?;
     if !owner.is_struct
         || context
             .field_methods
@@ -590,6 +608,8 @@ fn field_receiver_target(
     }
     let field = owner.fields.get(&field_name)?;
     let field_type_name = field.type_name.as_ref()?;
+    // A target must still have a direct local method on a concrete leaf type.
+    // Interfaces (even one visible implementation) and promotion trees are gaps.
     let field_type = context.concrete_types.get(field_type_name)?;
     if field_type.fields.contains_key(&target_name) {
         return None;
