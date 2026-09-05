@@ -19,6 +19,21 @@ explicitly on each request. No embedding service, hosted index or API key.
 - Rust, Go, TypeScript/JavaScript/TSX and Python parsing. Resolution depth varies
   by language; this does not replace a compiler or language server.
 
+## Install with one command
+
+~~~sh
+curl -fsSL https://raw.githubusercontent.com/ibotpafos/cgrx/v0.1.0-alpha.3/install.sh | sh
+~~~
+
+Installs to `$HOME/.local/bin/cgrx`, without sudo. Apple Silicon macOS downloads
+and verifies the release archive; Linux and Intel macOS build the pinned tag
+(requires rustup with Rust 1.89.0, Git and a C compiler). Existing binaries are
+backed up before replacement. MCP initialization is checked before activation.
+Client configurations and shell profiles are left unchanged.
+
+Override the destination with `CGRX_INSTALL_DIR=/absolute/path` on the `sh` side
+of the pipeline; use `sh -s -- --source` to force a source build.
+
 ## Install from source
 
 Prerequisites: Git, Rust **1.89.0**, and a C compiler for Tree-sitter.
@@ -41,7 +56,7 @@ A macOS Apple Silicon binary with SHA-256 checksums is available on the release 
 OpenAI Codex CLI:
 
 ~~~sh
-codex mcp add cgrx -- "$HOME/.cargo/bin/cgrx" serve --multi-repo
+codex mcp add cgrx -- "$HOME/.local/bin/cgrx" serve --multi-repo
 ~~~
 
 Restart the MCP client after configuration changes. Every tool request must
