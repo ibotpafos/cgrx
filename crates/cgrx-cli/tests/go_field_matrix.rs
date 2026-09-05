@@ -16,9 +16,9 @@ impl Drop for Fixture {
 }
 
 #[test]
-fn frozen_go_field_matrix_preserves_exact_targets_and_rejects_false_edges() {
+fn version_two_go_field_matrix_preserves_exact_targets_and_rejects_false_edges() {
     let corpus: Value =
-        serde_json::from_str(include_str!("../../../contracts/go_field_cases_v1.json")).unwrap();
+        serde_json::from_str(include_str!("../../../contracts/go_field_cases_v2.json")).unwrap();
     let scope = Scope {
         include: vec![],
         exclude: vec![],
@@ -115,4 +115,29 @@ fn frozen_go_field_matrix_preserves_exact_targets_and_rejects_false_edges() {
         }
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+#[test]
+fn version_two_preserves_frozen_sources_and_only_promotes_explicit_embedding() {
+    let old: Value =
+        serde_json::from_str(include_str!("../../../contracts/go_field_cases_v1.json")).unwrap();
+    let new: Value =
+        serde_json::from_str(include_str!("../../../contracts/go_field_cases_v2.json")).unwrap();
+    let old = old["cases"].as_array().unwrap();
+    let new = new["cases"].as_array().unwrap();
+    assert_eq!(old.len(), new.len());
+    let mut changed = 0;
+    for (before, after) in old.iter().zip(new) {
+        if before == after {
+            continue;
+        }
+        assert_eq!(before["id"], "embedded_field");
+        assert!(before["expected"].as_array().unwrap().is_empty());
+        let mut restored = after.clone();
+        restored["expected"] = before["expected"].clone();
+        assert_eq!(&restored, before);
+        assert_eq!(after["expected"].as_array().unwrap().len(), 1);
+        changed += 1;
+    }
+    assert_eq!(changed, 1);
 }

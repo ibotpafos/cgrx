@@ -254,15 +254,15 @@ impl TsFileFacts {
             if token(item, "type") || token(item, "default") {
                 continue;
             }
-            if let Some(decl) = declaration {
-                if let Some(name) = decl.child_by_field_name("name") {
-                    let name = text(name, source);
-                    facts
-                        .exports
-                        .entry(name.clone())
-                        .or_default()
-                        .push(Export::Local(name));
-                }
+            if let Some(decl) = declaration
+                && let Some(name) = decl.child_by_field_name("name")
+            {
+                let name = text(name, source);
+                facts
+                    .exports
+                    .entry(name.clone())
+                    .or_default()
+                    .push(Export::Local(name));
             }
             let module = item.child_by_field_name("source");
             let mut cursor = item.walk();
@@ -355,7 +355,7 @@ impl TsFileFacts {
                 let owner = context.binding_scope(site.scope, &local);
                 if let Some(owner) = owner {
                     if !context.import_aliases.contains(&(owner, local.clone()))
-                        && !(owner == 0 && !imports.is_empty())
+                        && (owner != 0 || imports.is_empty())
                     {
                         // A real local shadow is not an imported call. This
                         // does NOT authorize name guessing for parameters/vars.

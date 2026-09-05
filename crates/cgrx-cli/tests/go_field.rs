@@ -187,15 +187,21 @@ negative!(
     go_field_owner_alias_gap,
     good("return q.items.Len()").replace("type TaskQueue struct", "type TaskQueue = struct")
 );
-negative!(
-    go_field_embedded_gap,
-    source(
+#[test]
+fn go_field_explicit_embedded_has_exact_target() {
+    let source = source(
         "PriorityQueue",
         "[]*QueueItem",
         "PriorityQueue",
-        "return q.PriorityQueue.Len()"
-    )
-);
+        "return q.PriorityQueue.Len()",
+    );
+    let fixture = Fixture::new(&source);
+    assert_len(&fixture.runtime(), &source);
+    let stored = fixture.stored();
+    let arcs = stored["arcs"].as_array().unwrap();
+    assert_eq!(arcs.len(), 1);
+    assert_eq!(arcs[0]["evidence"]["confidence"], "PROVEN");
+}
 negative!(
     go_field_promoted_gap,
     good("return q.items.Len()")

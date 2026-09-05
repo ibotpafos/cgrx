@@ -63,7 +63,7 @@ impl Fixture {
         Runtime::open(&self.state()).unwrap()
     }
     fn stored(&self) -> Value {
-        let reader = GenerationReader::open_current(&self.state()).unwrap();
+        let reader = GenerationReader::open_current(self.state()).unwrap();
         serde_json::from_slice(&reader.read_segment("nodes.seg").unwrap()).unwrap()
     }
 }
