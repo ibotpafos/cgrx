@@ -78,6 +78,16 @@ pub fn classify_call(
     path: &str,
     call: [usize; 2],
 ) -> ClassifiedImportSite {
+    classify_call_with_modules(files, path, call, &BTreeMap::new())
+}
+/// Overrides are config-proven relative specifiers, keyed by exact importer and
+/// original module. They never change lexical binding or source span identity.
+pub fn classify_call_with_modules(
+    files: &BTreeMap<String, TsFileFacts>,
+    path: &str,
+    call: [usize; 2],
+    modules: &BTreeMap<(String, String), String>,
+) -> ClassifiedImportSite {
     let mut result = ClassifiedImportSite {
         call,
         caller: None,
@@ -108,7 +118,7 @@ pub fn classify_call(
             if matching.len() != 1 {
                 return result;
             }
-            resolve_call(files, path, call[0])
+            resolve_call_with_modules(files, path, call[0], modules)
                 .map(ImportClassification::Exact)
                 .unwrap_or(ImportClassification::Rejected)
         }
@@ -304,7 +314,7 @@ impl TsFileFacts {
                     .push(export);
             });
         }
-        let context = super::LexicalContext::new(root, source);
+        let context = super::LexicalContext::with_import_proof(root, source, true);
         // Hoisted var declarations may collide from inside nested blocks.
         // Reuse the lexical collector's unique function-binding verdict.
         for (name, declarations) in &mut facts.declarations {
@@ -393,54 +403,76 @@ impl TsFileFacts {
 
 /// Inventory keys must be canonical repository-relative paths and must include
 /// competing JS/declaration files, even if their facts are invalid/unavailable.
-fn module_path(files: &BTreeMap<String, TsFileFacts>, from: &str, module: &str) -> Option<String> {
-    if !module.starts_with("./") && !module.starts_with("../") {
-        return None;
-    }
-    if module.contains(['\\', '?', '#']) {
-        return None;
-    }
-    let mut parts: Vec<&str> = from.split('/').collect();
-    parts.pop()?;
-    for part in module.split('/') {
-        match part {
-            "." => {}
-            ".." => {
-                parts.pop()?;
-            }
-            "" => return None,
-            _ => parts.push(part),
-        }
-    }
-    let base = parts.join("/");
-    let mut candidates = Vec::new();
-    if base.ends_with(".ts") || base.ends_with(".tsx") {
-        if !base.ends_with(".d.ts") {
-            candidates.push(base);
-        }
-    } else if !parts.last()?.contains('.') {
-        // Directory metadata may redirect resolution away from index.ts.
-        if files.contains_key(&format!("{base}/package.json")) {
+pub fn module_candidates(from: &str, module: &str) -> Vec<String> {
+    fn candidates(from: &str, module: &str) -> Option<Vec<String>> {
+        if !module.starts_with("./") && !module.starts_with("../") {
             return None;
         }
-        for suffix in [
-            ".ts",
-            ".tsx",
-            ".js",
-            ".jsx",
-            ".d.ts",
-            "/index.ts",
-            "/index.tsx",
-            "/index.js",
-            "/index.jsx",
-            "/index.d.ts",
-        ] {
-            candidates.push(format!("{base}{suffix}"));
+        if module.contains(['\\', '?', '#', ':']) {
+            return None;
         }
-    } else {
-        return None;
+        let mut parts: Vec<&str> = from.split('/').collect();
+        parts.pop()?;
+        for part in module.split('/') {
+            match part {
+                "." => {}
+                ".." => {
+                    parts.pop()?;
+                }
+                "" => return None,
+                _ => parts.push(part),
+            }
+        }
+        let base = parts.join("/");
+        if base.ends_with(".ts") || base.ends_with(".tsx") {
+            return (!base.ends_with(".d.ts")).then(|| vec![base]);
+        }
+        // .utils is an extensionless TS module basename, unlike explicit
+        // JS/JSON/ESM/declaration/resource extensions we do not support.
+        if [
+            ".js", ".jsx", ".json", ".mts", ".cts", ".mjs", ".cjs", ".css", ".node",
+        ]
+        .iter()
+        .any(|ext| base.ends_with(ext))
+        {
+            return None;
+        }
+        Some(
+            [
+                ".ts",
+                ".tsx",
+                ".js",
+                ".jsx",
+                ".d.ts",
+                ".json",
+                ".mts",
+                ".cts",
+                ".mjs",
+                ".cjs",
+                "/index.ts",
+                "/index.tsx",
+                "/index.js",
+                "/index.jsx",
+                "/index.d.ts",
+                "/index.json",
+                "/package.json",
+            ]
+            .iter()
+            .map(|suffix| format!("{base}{suffix}"))
+            .collect(),
+        )
     }
-    let found: Vec<_> = candidates
+    candidates(from, module).unwrap_or_default()
+}
+fn module_path(
+    files: &BTreeMap<String, TsFileFacts>,
+    from: &str,
+    module: &str,
+    modules: &BTreeMap<(String, String), String>,
+) -> Option<String> {
+    let mapped = modules.get(&(from.to_owned(), module.to_owned()));
+    let module = mapped.map_or(module, String::as_str);
+    let found: Vec<_> = module_candidates(from, module)
         .into_iter()
         .filter(|p| files.contains_key(p))
         .collect();
@@ -457,6 +489,14 @@ pub fn resolve_call(
     path: &str,
     call_start: usize,
 ) -> Option<ResolvedImport> {
+    resolve_call_with_modules(files, path, call_start, &BTreeMap::new())
+}
+fn resolve_call_with_modules(
+    files: &BTreeMap<String, TsFileFacts>,
+    path: &str,
+    call_start: usize,
+    modules: &BTreeMap<(String, String), String>,
+) -> Option<ResolvedImport> {
     let file = files.get(path)?;
     if !file.valid {
         return None;
@@ -469,7 +509,7 @@ pub fn resolve_call(
     let [call] = calls.as_slice() else {
         return None;
     };
-    let target = module_path(files, path, &call.import.module)?;
+    let target = module_path(files, path, &call.import.module, modules)?;
     let mut dependencies = vec![path.to_owned()];
     let (path, target) = resolve_export(
         files,
@@ -478,6 +518,7 @@ pub fn resolve_call(
         &mut BTreeSet::new(),
         &mut dependencies,
         0,
+        modules,
     )?;
     Some(ResolvedImport {
         path,
@@ -493,6 +534,7 @@ fn resolve_export(
     seen: &mut BTreeSet<(String, String)>,
     dependencies: &mut Vec<String>,
     depth: usize,
+    modules: &BTreeMap<(String, String), String>,
 ) -> Option<(String, [usize; 2])> {
     if depth >= 8 || !seen.insert((path.to_owned(), name.to_owned())) {
         return None;
@@ -524,8 +566,16 @@ fn resolve_export(
         }
         Export::From { module, imported } => (module, imported),
     };
-    let next = module_path(files, path, module)?;
-    resolve_export(files, &next, imported, seen, dependencies, depth + 1)
+    let next = module_path(files, path, module, modules)?;
+    resolve_export(
+        files,
+        &next,
+        imported,
+        seen,
+        dependencies,
+        depth + 1,
+        modules,
+    )
 }
 
 #[cfg(test)]

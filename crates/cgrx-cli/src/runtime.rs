@@ -1,5 +1,7 @@
 mod risks;
+mod ts_config;
 pub use risks::RiskBaseline;
+use ts_config::TsResolutionConfig;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -36,7 +38,7 @@ use serde_json::{Value, json};
 
 use crate::intent::{TaskIntent, classify};
 
-const EXTRACTION_REVISION: u32 = 18;
+const EXTRACTION_REVISION: u32 = 20;
 
 const NODES_SEGMENT: &str = "nodes.seg";
 const EDGES_SEGMENT: &str = "edges.seg";
@@ -190,7 +192,7 @@ struct StoredIndex {
     #[serde(default)]
     ts_files: BTreeMap<String, StoredTsFileFacts>,
     #[serde(default)]
-    ts_resolution_configs: BTreeMap<String, bool>,
+    ts_resolution_configs: BTreeMap<String, TsResolutionConfig>,
     #[serde(default)]
     extraction_revision: u32,
     #[serde(default)]
@@ -876,8 +878,6 @@ impl Runtime {
                     let source = fs::read(&absolute)
                         .map_err(|error| RuntimeError::new("source_read", error.to_string()))?;
                     let hash = Hash32(*blake3::hash(&source).as_bytes());
-                    let config = is_ts_resolution_config(&relative_path)
-                        .then(|| ts_resolution_config_supported(&source));
                     if self.stored.path_hashes.get(&relative) != Some(&hash)
                         || self
                             .stored
@@ -885,8 +885,6 @@ impl Runtime {
                             .get(&relative)
                             .map(|facts| facts.source_hash)
                             != Some(hash)
-                        || config.is_some()
-                            && self.stored.ts_resolution_configs.get(&relative).copied() != config
                     {
                         self.stored.path_hashes.insert(relative.clone(), hash);
                         self.stored.ts_files.insert(
@@ -897,11 +895,6 @@ impl Runtime {
                                 inventory_only: true,
                             },
                         );
-                        if let Some(supported) = config {
-                            self.stored
-                                .ts_resolution_configs
-                                .insert(relative.clone(), supported);
-                        }
                         requires_normalize = true;
                     }
                 } else if self.stored.path_hashes.contains_key(&relative) {
@@ -1168,7 +1161,7 @@ impl Runtime {
                 );
                 if is_ts_resolution_config(relative_path) {
                     ts_resolution_configs
-                        .insert(relative.clone(), ts_resolution_config_supported(&source));
+                        .insert(relative.clone(), TsResolutionConfig::legacy(&source));
                 }
                 excluded_paths.push(relative);
                 continue;
@@ -2294,7 +2287,7 @@ fn is_ts_inventory_path(path: &Path) -> bool {
         || path.file_name().and_then(|name| name.to_str()) == Some("package.json")
         || matches!(
             path.extension().and_then(|extension| extension.to_str()),
-            Some("js" | "jsx")
+            Some("js" | "jsx" | "json")
         )
 }
 
@@ -2324,25 +2317,35 @@ fn ts_resolution_config_supported(source: &[u8]) -> bool {
     !RESOLUTION_KEYS.iter().any(|key| options.contains_key(*key))
 }
 
-fn ts_config_supported_for(path: &str, configs: &BTreeMap<String, bool>) -> bool {
-    let mut directory: Vec<_> = path.split('/').collect();
-    directory.pop();
-    loop {
-        let prefix = directory.join("/");
-        for name in ["tsconfig.json", "jsconfig.json"] {
-            let candidate = if prefix.is_empty() {
-                name.to_owned()
-            } else {
-                format!("{prefix}/{name}")
-            };
-            if let Some(supported) = configs.get(&candidate) {
-                return *supported;
+fn ts_config_supported_for(path: &str, configs: &BTreeMap<String, TsResolutionConfig>) -> bool {
+    ts_config::nearest(path, configs).is_none_or(|config| config.supported)
+}
+
+fn ts_config_modules(
+    files: &BTreeMap<String, StoredTsFileFacts>,
+    configs: &BTreeMap<String, TsResolutionConfig>,
+) -> BTreeMap<(String, String), String> {
+    let mut modules = BTreeMap::new();
+    for (path, stored) in files {
+        for module in stored
+            .facts
+            .imports
+            .iter()
+            .map(|i| i.module.as_str())
+            .chain(stored.facts.exports.values().flatten().filter_map(|e| {
+                if let cgrx_languages::ts_imports::Export::From { module, .. } = e {
+                    Some(module.as_str())
+                } else {
+                    None
+                }
+            }))
+        {
+            if let Some(mapped) = ts_config::mapped(path, module, configs) {
+                modules.insert((path.clone(), module.to_owned()), mapped);
             }
         }
-        if directory.pop().is_none() {
-            return true;
-        }
     }
+    modules
 }
 
 fn ts_inventory_candidates(ts_files: &BTreeMap<String, StoredTsFileFacts>) -> BTreeSet<String> {
@@ -2386,50 +2389,9 @@ fn ts_inventory_candidates(ts_files: &BTreeMap<String, StoredTsFileFacts>) -> BT
                     }),
             );
         for module in modules {
-            if !module.starts_with("./") && !module.starts_with("../") {
-                continue;
-            }
-            let mut parts = directory.clone();
-            let mut valid = true;
-            for part in module.split('/') {
-                match part {
-                    "." => {}
-                    ".." => {
-                        if parts.pop().is_none() {
-                            valid = false;
-                            break;
-                        }
-                    }
-                    "" => {
-                        valid = false;
-                        break;
-                    }
-                    _ => parts.push(part),
-                }
-            }
-            if !valid {
-                continue;
-            }
-            let base = parts.join("/");
-            if base.ends_with(".ts") || base.ends_with(".tsx") {
-                paths.insert(base);
-            } else if parts.last().is_some_and(|part| !part.contains('.')) {
-                paths.insert(format!("{base}/package.json"));
-                for suffix in [
-                    ".ts",
-                    ".tsx",
-                    ".js",
-                    ".jsx",
-                    ".d.ts",
-                    "/index.ts",
-                    "/index.tsx",
-                    "/index.js",
-                    "/index.jsx",
-                    "/index.d.ts",
-                ] {
-                    paths.insert(format!("{base}{suffix}"));
-                }
-            }
+            paths.extend(cgrx_languages::ts_imports::module_candidates(
+                caller, module,
+            ));
         }
     }
     paths
@@ -2438,6 +2400,7 @@ fn ts_inventory_candidates(ts_files: &BTreeMap<String, StoredTsFileFacts>) -> BT
 fn ts_paths_portable_for(
     dependencies: &[String],
     ts_files: &BTreeMap<String, StoredTsFileFacts>,
+    configs: &BTreeMap<String, TsResolutionConfig>,
 ) -> bool {
     let dependency_files: BTreeMap<_, _> = dependencies
         .iter()
@@ -2447,7 +2410,12 @@ fn ts_paths_portable_for(
                 .map(|facts| (path.clone(), facts.clone()))
         })
         .collect();
-    let expected = ts_inventory_candidates(&dependency_files);
+    let mut expected = ts_inventory_candidates(&dependency_files);
+    for ((from, _), mapped) in ts_config_modules(&dependency_files, configs) {
+        expected.extend(cgrx_languages::ts_imports::module_candidates(
+            &from, &mapped,
+        ));
+    }
     let mut folded = BTreeMap::<String, &str>::new();
     for path in &expected {
         let key = path.to_ascii_lowercase();
@@ -2467,10 +2435,10 @@ fn store_ts_presence_blocker(
     marker: Hash32,
     path_hashes: &mut BTreeMap<String, Hash32>,
     ts_files: &mut BTreeMap<String, StoredTsFileFacts>,
-    configs: &mut BTreeMap<String, bool>,
+    configs: &mut BTreeMap<String, TsResolutionConfig>,
 ) {
     if is_ts_resolution_config(Path::new(relative)) {
-        configs.insert(relative.to_owned(), false);
+        configs.insert(relative.to_owned(), TsResolutionConfig::default());
     }
     ts_files.insert(
         relative.to_owned(),
@@ -2487,13 +2455,24 @@ fn scan_ts_inventory(
     root: &Path,
     path_hashes: &mut BTreeMap<String, Hash32>,
     ts_files: &mut BTreeMap<String, StoredTsFileFacts>,
-    configs: &mut BTreeMap<String, bool>,
+    configs: &mut BTreeMap<String, TsResolutionConfig>,
 ) -> Result<(bool, Vec<(String, Hash32)>), RuntimeError> {
-    let candidates = ts_inventory_candidates(ts_files);
-    let mut changed = false;
+    let mut directory_cache = TsDirectoryCache::default();
+    let (collected_configs, config_paths, config_witness) =
+        ts_config::collect(root, ts_files, &mut directory_cache);
+    #[cfg(test)]
+    ts_config::tests::after_collect(root);
+    let mut changed = *configs != collected_configs;
+    *configs = collected_configs;
+    let mut candidates = ts_inventory_candidates(ts_files);
+    candidates.extend(config_paths.iter().cloned());
+    for ((from, _), mapped) in ts_config_modules(ts_files, configs) {
+        candidates.extend(cgrx_languages::ts_imports::module_candidates(
+            &from, &mapped,
+        ));
+    }
     let mut invalid_sources = Vec::new();
     let mut nested_boundary_cache = BTreeMap::new();
-    let mut directory_cache = TsDirectoryCache::default();
     for relative in candidates {
         let absolute = root.join(&relative);
         let metadata = match fs::symlink_metadata(&absolute) {
@@ -2585,13 +2564,11 @@ fn scan_ts_inventory(
             path_hashes.insert(relative.clone(), hash);
             changed = true;
         }
-        if is_ts_resolution_config(Path::new(&relative)) {
-            let supported = metadata.is_file() && ts_resolution_config_supported(&source);
-            if configs.insert(relative.clone(), supported) != Some(supported) {
-                changed = true;
-            }
-        }
     }
+    // Configs read during discovery must still equal the bytes inventoried in
+    // this pass; a race invalidates proof rather than retargeting stale candidates.
+    changed |=
+        ts_config::validate_final(root, configs, path_hashes, &config_witness, |p| fs::read(p));
     Ok((changed, invalid_sources))
 }
 
@@ -3122,7 +3099,7 @@ fn rebuild_arcs_with_cargo(
     cargo_manifests: &BTreeMap<String, String>,
     rust_files: &BTreeMap<String, cgrx_languages::RustFileFacts>,
     ts_files: &BTreeMap<String, StoredTsFileFacts>,
-    ts_resolution_configs: &BTreeMap<String, bool>,
+    ts_resolution_configs: &BTreeMap<String, TsResolutionConfig>,
 ) -> Vec<StoredArc> {
     let cargo = crate::cargo_roots::CargoRoots::new(cargo_manifests, rust_files);
     let ts_inventory: BTreeMap<_, _> = ts_files
@@ -3130,6 +3107,7 @@ fn rebuild_arcs_with_cargo(
         .filter(|(path, stored)| path_hashes.get(*path) == Some(&stored.source_hash))
         .map(|(path, stored)| (path.clone(), stored.facts.clone()))
         .collect();
+    let modules = ts_config_modules(ts_files, ts_resolution_configs);
     let mut by_name = BTreeMap::<&str, Vec<&StoredDocument>>::new();
     let mut syntax_by_path = BTreeMap::<&str, Vec<&StoredDocument>>::new();
     // Only exact-proof files need this auxiliary identity lookup. Do not
@@ -3241,10 +3219,11 @@ fn rebuild_arcs_with_cargo(
             if !ts_config_supported_for(&call.path, ts_resolution_configs) {
                 None
             } else {
-                let classified = cgrx_languages::ts_imports::classify_call(
+                let classified = cgrx_languages::ts_imports::classify_call_with_modules(
                     &ts_inventory,
                     &call.path,
                     [call.span_start, call.span_end],
+                    &modules,
                 );
                 match classified.classification {
                     ImportClassification::Exact(resolved) => (|| {
@@ -3257,7 +3236,18 @@ fn rebuild_arcs_with_cargo(
                                     path_hashes.get(path) != Some(&facts.source_hash)
                                 })
                             })
-                            || !ts_paths_portable_for(&resolved.dependencies, ts_files)
+                            || resolved.dependencies.iter().any(|p| {
+                                ts_config::nearest(p, ts_resolution_configs).is_some_and(|c| {
+                                    c.dependencies
+                                        .iter()
+                                        .any(|(p, h)| path_hashes.get(p) != Some(h))
+                                })
+                            })
+                            || !ts_paths_portable_for(
+                                &resolved.dependencies,
+                                ts_files,
+                                ts_resolution_configs,
+                            )
                             || resolved
                                 .dependencies
                                 .iter()
@@ -4097,7 +4087,7 @@ mod proof_edge_tests {
             &mut configs,
         );
         assert_eq!(hashes.get("src/tsconfig.json"), Some(&marker));
-        assert_eq!(configs.get("src/tsconfig.json"), Some(&false));
+        assert!(!configs["src/tsconfig.json"].supported);
         assert!(files["src/tsconfig.json"].inventory_only);
         assert!(!ts_config_supported_for("src/main.ts", &configs));
     }
@@ -5171,7 +5161,7 @@ mod compact_storage_tests {
             serde_json::from_value::<StoredDocument>(encoded).unwrap(),
             doc
         );
-        assert_eq!(EXTRACTION_REVISION, 18);
+        assert_eq!(EXTRACTION_REVISION, 20);
     }
 
     #[test]

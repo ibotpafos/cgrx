@@ -168,6 +168,7 @@ struct CallScope {
     unsupported: bool,
 }
 struct LexicalContext {
+    import_proof: bool,
     scopes: Vec<LexicalScope>,
     calls: BTreeMap<usize, CallScope>,
     writes: Vec<(usize, String)>,
@@ -238,7 +239,11 @@ fn binding_names(node: Node<'_>, source: &[u8], out: &mut Vec<String>) {
 }
 impl LexicalContext {
     fn new(root: Node<'_>, source: &[u8]) -> Self {
+        Self::with_import_proof(root, source, false)
+    }
+    fn with_import_proof(root: Node<'_>, source: &[u8], import_proof: bool) -> Self {
         let mut context = Self {
+            import_proof,
             scopes: vec![LexicalScope::default()],
             calls: BTreeMap::new(),
             writes: Vec::new(),
@@ -284,6 +289,9 @@ impl LexicalContext {
     }
     fn collect(&mut self, node: Node<'_>, source: &[u8], mut scope: usize, unsupported: bool) {
         if node.kind() == "import_statement" {
+            if self.import_proof {
+                return;
+            }
             let mut cursor = node.walk();
             let module = node.child_by_field_name("source").or_else(|| {
                 node.named_children(&mut cursor)

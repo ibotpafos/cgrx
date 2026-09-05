@@ -519,3 +519,368 @@ fn unreadable_inventory_cannot_preserve_an_old_arc() {
     assert!(f.targets().is_empty());
     fs::set_permissions(f.root.join("blocked.js"), fs::Permissions::from_mode(0o600)).unwrap();
 }
+
+fn gd_alias_fixture() -> Fixture {
+    Fixture::new(&[
+        (
+            "package.json",
+            r#"{"workspaces":["apps/CRM","packages/*"],"devDependencies":{"@repo/tsconfig":"workspace:*"}}"#,
+        ),
+        (
+            "packages/tsconfig/package.json",
+            r#"{"name":"@repo/tsconfig","exports":{"./nextjs.json":"./nextjs.json","./base.json":"./base.json"}}"#,
+        ),
+        (
+            "packages/tsconfig/base.json",
+            r#"{"compilerOptions":{"module":"esnext","moduleResolution":"bundler","resolveJsonModule":true}}"#,
+        ),
+        (
+            "packages/tsconfig/nextjs.json",
+            r#"{"extends":"./base.json","compilerOptions":{"allowJs":true,"noEmit":true}}"#,
+        ),
+        (
+            "apps/CRM/tsconfig.json",
+            r#"{"extends":"@repo/tsconfig/nextjs.json","compilerOptions":{"baseUrl":".","paths":{"@/*":["./*"]}}}"#,
+        ),
+        (
+            "apps/CRM/main.ts",
+            "import { parseTimeValueToMinutes } from '@/utils/time.utils'; function buildSlotInstant(){ return parseTimeValueToMinutes('12:00'); }",
+        ),
+        (
+            "apps/CRM/utils/time.utils.ts",
+            "export function parseTimeValueToMinutes(value: string){ return value.length; }",
+        ),
+        (
+            "decoy.ts",
+            "export function parseTimeValueToMinutes(){ return 99; }",
+        ),
+    ])
+}
+fn gd_targets(f: &Fixture) -> Vec<String> {
+    f.runtime
+        .trace_path(
+            "buildSlotInstant",
+            Some("apps/CRM/main.ts"),
+            "callees",
+            1,
+            &Scope {
+                include: vec![],
+                exclude: vec![],
+                relation_kinds: vec![RelationKind::Calls],
+                max_depth: 1,
+            },
+            20,
+        )
+        .unwrap()["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|n| n["path"].as_str().unwrap().to_owned())
+        .collect()
+}
+#[test]
+fn gd_config_alias_workspace_chain_exact_identity() {
+    let mut f = gd_alias_fixture();
+    assert_eq!(gd_targets(&f), ["apps/CRM/utils/time.utils.ts"]);
+    f.runtime = Runtime::open(&f.state).unwrap();
+    assert_eq!(gd_targets(&f), ["apps/CRM/utils/time.utils.ts"]);
+}
+
+#[test]
+fn gd_config_alias_retarget_delete_and_hash_dependencies() {
+    let mut f = gd_alias_fixture();
+    let stored = f.stored();
+    for p in [
+        "package.json",
+        "packages/tsconfig/package.json",
+        "packages/tsconfig/base.json",
+        "packages/tsconfig/nextjs.json",
+        "apps/CRM/tsconfig.json",
+    ] {
+        assert_eq!(
+            stored["ts_resolution_configs"]["apps/CRM/tsconfig.json"]["dependencies"][p],
+            stored["path_hashes"][p],
+            "{p}"
+        );
+        assert!(!stored["path_hashes"][p].is_null(), "{p}");
+    }
+    fs::create_dir_all(f.root.join("other/utils")).unwrap();
+    fs::write(
+        f.root.join("other/utils/time.utils.ts"),
+        "export function parseTimeValueToMinutes(s:string){ return 42; }",
+    )
+    .unwrap();
+    fs::write(f.root.join("apps/CRM/tsconfig.json"), r#"{"extends":"@repo/tsconfig/nextjs.json","compilerOptions":{"baseUrl":"../../other","paths":{"@/*":["./*"]}}}"#).unwrap();
+    f.refresh();
+    assert_eq!(gd_targets(&f), ["other/utils/time.utils.ts"]);
+    fs::remove_file(f.root.join("packages/tsconfig/base.json")).unwrap();
+    f.refresh();
+    assert!(gd_targets(&f).is_empty());
+    fs::write(f.root.join("packages/tsconfig/base.json"), "{}").unwrap();
+    f.refresh();
+    assert_eq!(gd_targets(&f), ["other/utils/time.utils.ts"]);
+    fs::remove_file(f.root.join("apps/CRM/tsconfig.json")).unwrap();
+    f.refresh();
+    assert!(gd_targets(&f).is_empty());
+}
+#[test]
+fn gd_config_alias_competitors_including_ignored_files() {
+    let mut f = gd_alias_fixture();
+    for suffix in [
+        ".tsx",
+        ".js",
+        ".jsx",
+        ".json",
+        ".d.ts",
+        ".mts",
+        ".cts",
+        ".mjs",
+        ".cjs",
+        "/index.ts",
+        "/package.json",
+    ] {
+        let p = format!("apps/CRM/utils/time.utils{suffix}");
+        fs::write(f.root.join(".gitignore"), format!("/{p}\n")).unwrap();
+        let absolute = f.root.join(&p);
+        fs::create_dir_all(absolute.parent().unwrap()).unwrap();
+        fs::write(&absolute, "{}").unwrap();
+        f.refresh();
+        assert!(gd_targets(&f).is_empty(), "competitor {suffix}");
+        fs::remove_file(&absolute).unwrap();
+        f.refresh();
+        assert_eq!(
+            gd_targets(&f),
+            ["apps/CRM/utils/time.utils.ts"],
+            "restore {suffix}"
+        );
+    }
+}
+#[test]
+fn gd_config_alias_local_shadow_write_and_root_collision() {
+    let mut f = gd_alias_fixture();
+    for body in [
+        "function buildSlotInstant(parseTimeValueToMinutes:()=>number){ return parseTimeValueToMinutes(); }",
+        "function buildSlotInstant(){ const parseTimeValueToMinutes = other; return parseTimeValueToMinutes(); }",
+        "function buildSlotInstant(){ return parseTimeValueToMinutes('a'); } parseTimeValueToMinutes = other;",
+        "const parseTimeValueToMinutes = other; function buildSlotInstant(){ return parseTimeValueToMinutes('a'); }",
+    ] {
+        fs::write(
+            f.root.join("apps/CRM/main.ts"),
+            format!("import {{ parseTimeValueToMinutes }} from '@/utils/time.utils'; {body}"),
+        )
+        .unwrap();
+        f.refresh();
+        assert!(gd_targets(&f).is_empty(), "{body}");
+    }
+    fs::write(f.root.join("apps/CRM/main.ts"), "import { parseTimeValueToMinutes } from '@/utils/time.utils'; function buildSlotInstant(){ function parseTimeValueToMinutes(){} return parseTimeValueToMinutes(); }").unwrap();
+    f.refresh();
+    assert_eq!(gd_targets(&f), ["apps/CRM/main.ts"]);
+}
+#[test]
+fn gd_config_alias_unsupported_inherited_options_fail_closed() {
+    let mut f = gd_alias_fixture();
+    for config in [
+        r#"{"compilerOptions":{"moduleSuffixes":[".native",""]}}"#,
+        r#"{"compilerOptions":{"rootDirs":["a","b"]}}"#,
+        r#"{"compilerOptions":{"customConditions":["development"]}}"#,
+        r#"{"compilerOptions":{"moduleResolution":"nodenext"}}"#,
+        r#"{"references":[]}"#,
+        r#"{"extends":["./nextjs.json"]}"#,
+        r#"{"extends":"./nextjs.json"}"#,
+        r#"{"compilerOptions":{"baseUrl":".","baseUrl":"../.."}}"#,
+    ] {
+        fs::write(f.root.join("packages/tsconfig/base.json"), config).unwrap();
+        f.refresh();
+        assert!(gd_targets(&f).is_empty(), "{config}");
+    }
+}
+#[test]
+fn gd_config_alias_package_export_duplicate_and_mutation() {
+    let mut f = gd_alias_fixture();
+    let package = f.root.join("packages/tsconfig/package.json");
+    for content in [
+        r#"{"name":"different","exports":{"./nextjs.json":"./nextjs.json"}}"#,
+        r#"{"name":"@repo/tsconfig","exports":{"./nextjs.json":{"default":"./nextjs.json"}}}"#,
+        r#"{"name":"@repo/tsconfig","exports":{"./nextjs.json":"../outside.json"}}"#,
+        r#"{"name":"@repo/tsconfig","exports":{"./nextjs.json":"./missing.json"}}"#,
+        r#"{"name":"@repo/tsconfig","name":"different","exports":{"./nextjs.json":"./nextjs.json"}}"#,
+    ] {
+        fs::write(&package, content).unwrap();
+        f.refresh();
+        assert!(gd_targets(&f).is_empty(), "{content}");
+    }
+    let valid = r#"{"name":"@repo/tsconfig","exports":{"./nextjs.json":"./nextjs.json"}}"#;
+    fs::write(&package, valid).unwrap();
+    f.refresh();
+    assert_eq!(gd_targets(&f), ["apps/CRM/utils/time.utils.ts"]);
+    fs::create_dir_all(f.root.join("packages/duplicate")).unwrap();
+    fs::write(f.root.join("packages/duplicate/package.json"), valid).unwrap();
+    f.refresh();
+    assert!(gd_targets(&f).is_empty());
+}
+#[test]
+fn gd_config_alias_symlink_config_dependency_and_candidate() {
+    let mut f = gd_alias_fixture();
+    for path in [
+        "packages/tsconfig/base.json",
+        "apps/CRM/tsconfig.json",
+        "apps/CRM/utils/time.utils.ts",
+    ] {
+        let p = f.root.join(path);
+        let original = fs::read(&p).unwrap();
+        fs::write(f.root.join("copy"), &original).unwrap();
+        fs::remove_file(&p).unwrap();
+        symlink(f.root.join("copy"), &p).unwrap();
+        f.refresh();
+        assert!(gd_targets(&f).is_empty(), "{path}");
+        fs::remove_file(&p).unwrap();
+        fs::write(&p, original).unwrap();
+        f.refresh();
+        assert_eq!(gd_targets(&f), ["apps/CRM/utils/time.utils.ts"]);
+    }
+}
+#[test]
+fn gd_config_alias_inheritance_retains_declaring_origin() {
+    let f = Fixture::new(&[
+        (
+            "main.ts",
+            "import { target } from '@/worker'; function caller(){ target(); }",
+        ),
+        ("tsconfig.json", r#"{"extends":"./config/base.json"}"#),
+        (
+            "config/base.json",
+            r#"{"compilerOptions":{"paths":{"@/*":["./*"]}}}"#,
+        ),
+        ("config/worker.ts", "export function target() {}"),
+        ("worker.ts", "export function target() {}"),
+    ]);
+    assert_eq!(f.targets(), ["config/worker.ts"]);
+    let f = Fixture::new(&[
+        (
+            "main.ts",
+            "import { target } from '@/worker'; function caller(){ target(); }",
+        ),
+        (
+            "tsconfig.json",
+            r#"{"extends":"./config/base.json","compilerOptions":{"paths":{"@/*":["./*"]}}}"#,
+        ),
+        (
+            "config/base.json",
+            r#"{"compilerOptions":{"baseUrl":"../actual"}}"#,
+        ),
+        ("actual/worker.ts", "export function target() {}"),
+        ("worker.ts", "export function target() {}"),
+    ]);
+    assert_eq!(f.targets(), ["actual/worker.ts"]);
+}
+#[test]
+fn gd_config_alias_overlapping_and_fallback_mappings_abstain() {
+    let mut f = gd_alias_fixture();
+    for paths in [
+        r#"{"@/*":["./*","../../other/*"]}"#,
+        r#"{"@/*":["./*"],"@/utils/*":["./utils/*"]}"#,
+    ] {
+        fs::write(
+            f.root.join("apps/CRM/tsconfig.json"),
+            format!(r#"{{"compilerOptions":{{"baseUrl":".","paths":{paths}}}}}"#),
+        )
+        .unwrap();
+        f.refresh();
+        assert!(gd_targets(&f).is_empty());
+    }
+}
+
+#[test]
+fn gd_config_alias_noop_refresh_stable_generation() {
+    let mut f = gd_alias_fixture();
+    // Enter Git's changed-path scan with a dirty but supported config.
+    fs::write(f.root.join("apps/CRM/tsconfig.json"), r#"{"extends":"@repo/tsconfig/nextjs.json","compilerOptions":{"baseUrl":".","paths":{"@/*":["./*"]},"strict":true}}"#).unwrap();
+    f.refresh();
+    let snapshot = f.runtime.snapshot().clone();
+    let start = std::time::Instant::now();
+    for _ in 0..5 {
+        assert!(
+            !f.runtime.refresh(&f.root).unwrap(),
+            "unchanged dirty config normalized again"
+        );
+        assert_eq!(&snapshot, f.runtime.snapshot());
+        assert_eq!(gd_targets(&f), ["apps/CRM/utils/time.utils.ts"]);
+    }
+    eprintln!("GD_ALIAS_WARM_REFRESH_5_MS={}", start.elapsed().as_millis());
+}
+
+#[test]
+fn gd_config_alias_nearer_installed_config_package_abstains() {
+    let mut f = gd_alias_fixture();
+    let dir = f.root.join("apps/CRM/node_modules/@repo/tsconfig");
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(dir.join("package.json"), r#"{"name":"@repo/tsconfig"}"#).unwrap();
+    f.refresh();
+    assert!(gd_targets(&f).is_empty());
+    fs::remove_dir_all(&dir).unwrap();
+    f.refresh();
+    assert_eq!(gd_targets(&f), ["apps/CRM/utils/time.utils.ts"]);
+    symlink(f.root.join("packages/tsconfig"), &dir).unwrap();
+    f.refresh();
+    assert!(gd_targets(&f).is_empty());
+}
+
+#[test]
+fn gd_config_alias_v18_published_boolean_state_requests_reindex() {
+    let f = gd_alias_fixture();
+    let reader = GenerationReader::open_current(&f.state).unwrap();
+    let mut snapshot = reader.snapshot().clone();
+    snapshot.graph_generation += 1;
+    let mut nodes = f.stored();
+    nodes["snapshot"] = serde_json::to_value(&snapshot).unwrap();
+    nodes["extraction_revision"] = serde_json::json!(18);
+    nodes["ts_resolution_configs"] = serde_json::json!({"apps/CRM/tsconfig.json":true});
+    let mut writer = cgrx_store::GenerationWriter::begin(&f.state, snapshot).unwrap();
+    writer
+        .write_segment("nodes.seg", &serde_json::to_vec(&nodes).unwrap())
+        .unwrap();
+    for name in ["edges.seg", "terms.fst"] {
+        writer
+            .write_segment(name, &reader.read_segment(name).unwrap())
+            .unwrap();
+    }
+    writer.validate().unwrap();
+    writer.publish().unwrap();
+    let error = Runtime::open(&f.state).err().expect("v18 rejected");
+    assert_eq!(error.code(), "extraction_revision");
+    Runtime::index(&f.root, &f.state).unwrap();
+    assert!(Runtime::open(&f.state).is_ok());
+}
+#[test]
+#[ignore = "requires CGRX_V18_BASELINE executable; never installs a binary"]
+fn gd_config_alias_real_v18_binary_state_requests_reindex() {
+    let mut f = gd_alias_fixture();
+    let baseline = std::env::var_os("CGRX_V18_BASELINE").expect("CGRX_V18_BASELINE");
+    let state = f.root.parent().unwrap().join("v18-state");
+    let output = Command::new(baseline)
+        .args(["index", "--root"])
+        .arg(&f.root)
+        .arg("--state")
+        .arg(&state)
+        .arg("--json")
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let reader = GenerationReader::open_current(&state).unwrap();
+    let old: serde_json::Value =
+        serde_json::from_slice(&reader.read_segment("nodes.seg").unwrap()).unwrap();
+    assert_eq!(old["extraction_revision"], 18);
+    assert!(old["ts_resolution_configs"]["apps/CRM/tsconfig.json"].is_boolean());
+    assert_eq!(
+        Runtime::open(&state).err().expect("v18 rejected").code(),
+        "extraction_revision"
+    );
+    Runtime::index(&f.root, &state).unwrap();
+    f.runtime = Runtime::open(&state).unwrap();
+    assert_eq!(gd_targets(&f), ["apps/CRM/utils/time.utils.ts"]);
+    eprintln!("REAL_V18_BOOL_STATE_REINDEXED_TO_V20_EXACT_ALIAS");
+}
