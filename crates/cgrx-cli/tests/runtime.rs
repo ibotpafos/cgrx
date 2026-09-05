@@ -3108,3 +3108,78 @@ fn rust_grouped_alias_rejects_conflicts_and_shadowing() {
         );
     }
 }
+
+#[test]
+fn rust_self_alias_resolves_and_retargets() {
+    for import in [
+        "use crate::worker::{self as api};",
+        "use crate::{worker::{self as api}};",
+        "use crate::worker::{ /* module */ self as api};",
+    ] {
+        let original =
+            format!("mod worker; mod other; {import} pub fn caller() {{ api::target(); }}");
+        let repo = rust_alias_fixture(&original, "pub fn target() {}");
+        let state = TestDirectory::new("self-alias");
+        Runtime::index(repo.path(), state.path()).unwrap();
+        let mut runtime = Runtime::open(state.path()).unwrap();
+        assert_eq!(rust_alias_targets(&runtime), ["src/worker.rs"], "{import}");
+        assert_eq!(
+            rust_alias_targets(&Runtime::open(state.path()).unwrap()),
+            ["src/worker.rs"]
+        );
+        fs::write(
+            repo.path().join("src/lib.rs"),
+            original.replace("worker::{", "other::{"),
+        )
+        .unwrap();
+        runtime.refresh(repo.path()).unwrap();
+        assert_eq!(rust_alias_targets(&runtime), ["src/other.rs"]);
+    }
+}
+
+#[test]
+fn rust_self_alias_keeps_namespace_and_visibility_guards() {
+    for (import, body, target) in [
+        (
+            "#[cfg(any())] use crate::worker::{self as api};",
+            "api::target();",
+            "pub fn target() {}",
+        ),
+        (
+            "use foreign::worker::{self as api};",
+            "api::target();",
+            "pub fn target() {}",
+        ),
+        (
+            "use crate::worker::{self as api}; use crate::other as api;",
+            "api::target();",
+            "pub fn target() {}",
+        ),
+        (
+            "use crate::worker::{self as api};",
+            "api::target();",
+            "fn target() {}",
+        ),
+        (
+            "use crate::worker::{self as api};",
+            "union api { x: u32 } impl api { fn target() {} } api::target();",
+            "pub fn target() {}",
+        ),
+        (
+            "use crate::worker::{self as api};",
+            "use crate::other as api; api::target();",
+            "pub fn target() {}",
+        ),
+    ] {
+        let repo = rust_alias_fixture(
+            &format!("mod worker; mod other; {import} pub fn caller() {{ {body} }}"),
+            target,
+        );
+        let state = TestDirectory::new("self-alias-negative");
+        Runtime::index(repo.path(), state.path()).unwrap();
+        assert!(
+            rust_alias_targets(&Runtime::open(state.path()).unwrap()).is_empty(),
+            "{import} {body}"
+        );
+    }
+}

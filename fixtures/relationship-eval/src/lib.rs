@@ -28,3 +28,8 @@ use crate::{rust_target as grouped_api, rust_other as grouped_other};
 pub fn rust_grouped_caller() -> i32 {
     grouped_api::rust_target()
 }
+
+use crate::rust_target::{self as self_api};
+pub fn rust_self_import_caller() -> i32 {
+    self_api::rust_target()
+}

@@ -75,8 +75,10 @@ cases. Development builds additionally resolve explicit file-level aliases of
 direct crate-root modules (`use crate::worker as api; api::target()`). Grouped forms
 `use crate::{worker as api, other as backup}` and
 `use {crate::worker as api}` also preserve exact module identity, including comments.
+Module-self imports `use crate::worker::{self as api}` and
+`use crate::{worker::{self as api}}` resolve the same direct module.
 Aliases with nested suffixes (`api::inner::target()`), function aliases
-and reexport chains are not covered by this alias proof. Extraction revision 14
+and reexport chains are not covered by this alias proof. Extraction revision 15
 requires rebuilding older indexes.
 
 External dependencies, reexports, custom module paths, macros and dynamic

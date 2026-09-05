@@ -593,32 +593,38 @@ fn collect_module_aliases(
                 collect_module_aliases(child, crate_group, source, facts);
             }
         }
-        "scoped_use_list" if !crate_group => {
-            if node
-                .child_by_field_name("path")
-                .is_some_and(|p| text(p, source) == "crate")
-                && let Some(list) = node.child_by_field_name("list")
-            {
+        "scoped_use_list" => {
+            let (Some(path), Some(list)) = (
+                node.child_by_field_name("path"),
+                node.child_by_field_name("list"),
+            ) else {
+                return;
+            };
+            if !crate_group && text(path, source) == "crate" {
                 collect_module_aliases(list, true, source, facts);
+            } else if let Some(module) = direct_crate_module(path, crate_group, source) {
+                let mut cursor = list.walk();
+                for child in list.named_children(&mut cursor) {
+                    if child.kind() == "use_as_clause"
+                        && child
+                            .child_by_field_name("path")
+                            .is_some_and(|p| p.kind() == "self")
+                        && let Some(alias) = child.child_by_field_name("alias")
+                        && alias.kind() == "identifier"
+                        && text(alias, source) != "_"
+                    {
+                        facts
+                            .module_aliases
+                            .push((text(alias, source), text(module, source)));
+                    }
+                }
             }
         }
         "use_as_clause" => {
             let Some(path) = node.child_by_field_name("path") else {
                 return;
             };
-            let module = if crate_group && path.kind() == "identifier" {
-                Some(path)
-            } else if !crate_group
-                && path.kind() == "scoped_identifier"
-                && path
-                    .child_by_field_name("path")
-                    .is_some_and(|p| text(p, source) == "crate")
-            {
-                path.child_by_field_name("name")
-                    .filter(|n| n.kind() == "identifier")
-            } else {
-                None
-            };
+            let module = direct_crate_module(path, crate_group, source);
             if let Some(module) = module
                 && let Some(alias) = node.child_by_field_name("alias")
                 && alias.kind() == "identifier"
@@ -630,6 +636,22 @@ fn collect_module_aliases(
             }
         }
         _ => {}
+    }
+}
+
+fn direct_crate_module<'a>(path: Node<'a>, crate_group: bool, source: &[u8]) -> Option<Node<'a>> {
+    if crate_group && path.kind() == "identifier" {
+        Some(path)
+    } else if !crate_group
+        && path.kind() == "scoped_identifier"
+        && path
+            .child_by_field_name("path")
+            .is_some_and(|p| text(p, source) == "crate")
+    {
+        path.child_by_field_name("name")
+            .filter(|n| n.kind() == "identifier")
+    } else {
+        None
     }
 }
 
