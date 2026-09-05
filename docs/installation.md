@@ -11,7 +11,7 @@
 ~~~sh
 git clone https://github.com/ibotpafos/cgrx.git
 cd cgrx
-git checkout v0.1.0-alpha.2
+git checkout v0.1.0-alpha.3
 cargo install --locked --path crates/cgrx-cli
 ~~~
 
@@ -23,13 +23,13 @@ Cargo скачивает зависимости при установке; са�
 
 ## Готовый бинарник: macOS Apple Silicon
 
-Из [релиза](https://github.com/ibotpafos/cgrx/releases/tag/v0.1.0-alpha.2)
-скачайте cgrx-v0.1.0-alpha.2-aarch64-apple-darwin.tar.gz и SHA256SUMS.
+Из [релиза](https://github.com/ibotpafos/cgrx/releases/tag/v0.1.0-alpha.3)
+скачайте cgrx-v0.1.0-alpha.3-aarch64-apple-darwin.tar.gz и SHA256SUMS.
 В каталоге со скачанными файлами:
 
 ~~~sh
 shasum -a 256 -c SHA256SUMS
-tar -xzf cgrx-v0.1.0-alpha.2-aarch64-apple-darwin.tar.gz
+tar -xzf cgrx-v0.1.0-alpha.3-aarch64-apple-darwin.tar.gz
 mkdir -p "$HOME/.local/bin"
 install -m 755 cgrx "$HOME/.local/bin/cgrx"
 ~~~
@@ -124,6 +124,21 @@ python3 scripts/smoke_mcp.py "$HOME/.cargo/bin/cgrx"
 Выберите опубликованный tag, повторите cargo install с --force, затем
 перезапустите MCP-клиенты. При ручной замене сохраните старый бинарник для отката.
 Изменения формата индекса обнаруживаются движком.
+
+В alpha.3 используется extraction revision 20. При возврате к старому бинарнику
+старый движок может отклонить уже обновлённый индекс. Сначала закройте все
+MCP-соединения, использующие репозиторий. В корне каждого затронутого Git worktree
+сохраните только производный индекс в отдельном каталоге:
+
+~~~sh
+state=$(git rev-parse --git-path cgrx/managed) || exit 1
+backup="${state}.before-downgrade-$(date +%Y%m%dT%H%M%S)"
+test ! -e "$backup" && test -d "$state" && mv "$state" "$backup"
+~~~
+
+Затем выберите сохранённый старый бинарник и переподключите MCP. Индекс будет
+построен заново; исходники и Git-история остаются на месте. Повторите для каждого
+репозитория, открытого новой версией. Не перемещайте индекс при активном сервере.
 
 Логи выключены по умолчанию. CGRX_USAGE_LOG=/absolute/path/to/usage.jsonl
 в окружении сервера включает локальную диагностику; каталог должен существовать.

@@ -128,7 +128,7 @@ pub struct GenerationWriter {
     snapshot: RepoSnapshot,
     validated: bool,
     crash_injection: Option<CrashInjection>,
-    _writer_lock: File,
+    _writer_lock: WriterLock,
 }
 
 impl GenerationWriter {
@@ -298,9 +298,28 @@ impl GenerationWriter {
     }
 }
 
-// Persistent inode: never unlink this file, including after crashes. OS locks
-// release when the process/file closes; deleting the inode would split writers.
-fn acquire_writer_lock(root: &Path) -> io::Result<File> {
+// Persistent inode: never unlink this file, including after crashes. flock is
+// tied to the open file description: close alone can leave it held by a
+// concurrently forked child's descriptor until that child execs/exits.
+struct WriterLock {
+    file: File,
+    owner_pid: u32,
+}
+
+impl Drop for WriterLock {
+    fn drop(&mut self) {
+        // Only the acquiring process may unlock the shared description. A fork
+        // child dropping its copied guard must only close its descriptor, not
+        // release a lock protecting the still-live parent's publication.
+        if self.owner_pid == std::process::id() {
+            let _ = self.file.unlock();
+        }
+        // File then closes normally. No pid-file/unlink scheme: the OS still
+        // releases the lock if its owner exits or is killed without running Drop.
+    }
+}
+
+fn acquire_writer_lock(root: &Path) -> io::Result<WriterLock> {
     let directory = root.join(".cgrx");
     fs::create_dir_all(&directory)?;
     let file = OpenOptions::new()
@@ -310,7 +329,10 @@ fn acquire_writer_lock(root: &Path) -> io::Result<File> {
         .truncate(false)
         .open(directory.join("WRITER.lock"))?;
     file.try_lock().map_err(io::Error::from)?;
-    Ok(file)
+    Ok(WriterLock {
+        file,
+        owner_pid: std::process::id(),
+    })
 }
 
 fn publish_current(
@@ -421,4 +443,130 @@ fn invalid_data(error: impl std::fmt::Display) -> io::Error {
 
 fn invalid_input(error: impl std::fmt::Display) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidInput, error.to_string())
+}
+
+#[cfg(all(test, unix))]
+mod writer_lock_fork_tests {
+    use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static ID: AtomicU64 = AtomicU64::new(0);
+
+    struct Fixture(PathBuf);
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+    struct Child(libc::pid_t);
+    impl Drop for Child {
+        fn drop(&mut self) {
+            if self.0 > 0 {
+                // SAFETY: this PID is our unreaped child. Reap even on panic.
+                unsafe {
+                    libc::kill(self.0, libc::SIGKILL);
+                    while libc::waitpid(self.0, std::ptr::null_mut(), 0) == -1
+                        && io::Error::last_os_error().kind() == io::ErrorKind::Interrupted
+                    {
+                    }
+                }
+            }
+        }
+    }
+    fn receive(fd: libc::c_int) -> bool {
+        let mut poll = libc::pollfd {
+            fd,
+            events: libc::POLLIN,
+            revents: 0,
+        };
+        let mut byte = 0u8;
+        // SAFETY: valid pipe descriptor and initialized stack buffers. Timeout
+        // bounds a failing child without lock retries or scheduler sleeps.
+        unsafe {
+            libc::poll(&mut poll, 1, 5000) == 1
+                && libc::read(fd, (&mut byte as *mut u8).cast(), 1) == 1
+        }
+    }
+    fn fork_case(child_drops_first: bool) {
+        let root = Fixture(std::env::temp_dir().join(format!(
+            "cgrx-fork-lock-{}-{}",
+            std::process::id(),
+            ID.fetch_add(1, Ordering::Relaxed)
+        )));
+        let lock = acquire_writer_lock(&root.0).unwrap();
+        let mut ready = [-1; 2];
+        let mut release = [-1; 2];
+        // SAFETY: the child executes only raw async-signal-safe syscalls and
+        // drops the File/lock guard (PID check, unlock/close), never the test
+        // harness or heap-backed parent state. _exit skips other destructors.
+        let pid = unsafe {
+            assert_eq!(libc::pipe(ready.as_mut_ptr()), 0);
+            assert_eq!(libc::pipe(release.as_mut_ptr()), 0);
+            libc::fork()
+        };
+        assert!(pid >= 0, "fork failed");
+        if pid == 0 {
+            unsafe {
+                libc::close(ready[0]);
+                libc::close(release[1]);
+                libc::alarm(5);
+                if child_drops_first {
+                    drop(lock);
+                }
+                let byte = 1u8;
+                if libc::write(ready[1], (&byte as *const u8).cast(), 1) != 1 {
+                    libc::_exit(91);
+                }
+                let mut input = 0u8;
+                if libc::read(release[0], (&mut input as *mut u8).cast(), 1) != 1 {
+                    libc::_exit(92);
+                }
+                // In the other case retain the inherited descriptor until exit.
+                libc::_exit(0);
+            }
+        }
+        let mut child = Child(pid);
+        unsafe {
+            libc::close(ready[1]);
+            libc::close(release[0]);
+        }
+        let ready_ok = receive(ready[0]);
+        let held_result = acquire_writer_lock(&root.0).err().map(|e| e.kind());
+        drop(lock);
+        // Single immediate attempt while the child still owns its inherited FD.
+        let released_result = acquire_writer_lock(&root.0);
+        let released_error = released_result.as_ref().err().map(|e| e.kind());
+        drop(released_result);
+        let mut status = 0;
+        let byte = 1u8;
+        let sent = unsafe { libc::write(release[1], (&byte as *const u8).cast(), 1) };
+        unsafe {
+            libc::close(ready[0]);
+            libc::close(release[1]);
+        }
+        let waited = unsafe { libc::waitpid(pid, &mut status, 0) };
+        if waited == pid {
+            child.0 = 0;
+        }
+        assert!(ready_ok, "fork child failed to signal readiness");
+        assert_eq!(sent, 1);
+        assert_eq!(waited, pid);
+        assert_eq!(status, 0);
+        assert_eq!(
+            held_result,
+            Some(io::ErrorKind::WouldBlock),
+            "fork child Drop must not unlock live parent"
+        );
+        assert_eq!(
+            released_error, None,
+            "parent Drop must unlock despite a live inherited descriptor"
+        );
+    }
+    #[test]
+    fn writer_lock_fork_parent_drop_releases_with_live_inherited_fd() {
+        fork_case(false);
+    }
+    #[test]
+    fn writer_lock_fork_child_drop_preserves_parent_lock() {
+        fork_case(true);
+    }
 }

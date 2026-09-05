@@ -28,7 +28,7 @@ Native Windows is not supported.
 ~~~sh
 git clone https://github.com/ibotpafos/cgrx.git
 cd cgrx
-git checkout v0.1.0-alpha.2
+git checkout v0.1.0-alpha.3
 cargo install --locked --path crates/cgrx-cli
 ~~~
 
