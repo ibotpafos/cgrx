@@ -335,3 +335,151 @@ fn hoisted_var_collision_does_not_preserve_export_identity() {
         );
     }
 }
+
+#[test]
+fn assignment_form_loops_invalidate_exported_function_identity() {
+    for statement in [
+        "for (run of replacements) {}",
+        "for (run in replacements) {}",
+        "for ([run] of replacements) {}",
+        "for ({ value: run } of replacements) {}",
+    ] {
+        let api = format!("export function run() {{}} {statement}");
+        assert!(
+            target(&[
+                (
+                    "main.ts",
+                    "import { run } from './api'; function caller() { run(); }"
+                ),
+                ("api.ts", &api),
+            ])
+            .is_none(),
+            "{statement}"
+        );
+    }
+}
+
+#[test]
+fn namespace_import_alias_shadows_outer_relative_import() {
+    assert!(target(&[
+        ("main.ts", "import { run } from './api'; namespace Other { export function run() {} } namespace N { import run = Other.run; export function caller() { run(); } }"),
+        ("api.ts", "export function run() {}"),
+    ]).is_none());
+}
+
+fn classified(source: &str, api: &str) -> ClassifiedImportSite {
+    let map = files(&[("main.ts", source), ("api.ts", api)]);
+    let start = source.rfind("run()").unwrap();
+    classify_call(&map, "main.ts", [start, start + 5])
+}
+
+#[test]
+fn classified_exact_import_has_full_call_and_caller_spans() {
+    let source = "import { actual as run } from './api'; function caller() { run(); }";
+    let site = classified(source, "export function actual() {}");
+    assert_eq!(
+        site.call,
+        [
+            source.rfind("run()").unwrap(),
+            source.rfind("run()").unwrap() + 5
+        ]
+    );
+    let caller = source.find("caller").unwrap();
+    assert_eq!(site.caller, Some([caller, caller + 6]));
+    let ImportClassification::Exact(target) = site.classification else {
+        panic!("{site:?}")
+    };
+    assert_eq!(target.path, "api.ts");
+}
+
+#[test]
+fn rejected_sites_keep_spans_instead_of_disappearing() {
+    for source in [
+        "import { run } from './missing'; function caller() { run(); }",
+        "import { run } from './api'; function caller() { run(); }",
+        "import type { run } from './api'; function caller() { run(); }",
+        "import run from './api'; function caller() { run(); }",
+        "import { run } from './api'; import { run } from './other'; function caller() { run(); }",
+        "import { run } from './api'; function caller() { run = other; run(); }",
+        "import { run } from './api'; function caller() { for (run of values) {} run(); }",
+        "import { run } from './api'; function caller(value = run()) {}",
+    ] {
+        let site = classified(source, "function run() {}");
+        assert_eq!(
+            site.classification,
+            ImportClassification::Rejected,
+            "{source}: {site:?}"
+        );
+        let caller = source.find("caller").unwrap();
+        assert_eq!(site.caller, Some([caller, caller + 6]), "{source}");
+    }
+}
+
+#[test]
+fn classified_local_shadows_and_unrelated_calls_are_not_imports() {
+    for source in [
+        "function run() {} function caller() { run(); }",
+        "import { run } from './api'; function caller(run: () => void) { run(); }",
+        "import { run } from './api'; function caller() { const run = () => 0; run(); }",
+        "import { run } from './api'; function caller() { function run() {} run(); }",
+    ] {
+        assert_eq!(
+            classified(source, "export function run() {}").classification,
+            ImportClassification::NotImport,
+            "{source}"
+        );
+    }
+}
+
+#[test]
+fn missing_facts_wrong_full_span_and_top_level_are_rejected() {
+    let source = "import { run } from './api'; run();";
+    let map = files(&[("main.ts", source), ("api.ts", "export function run() {}")]);
+    let start = source.rfind("run()").unwrap();
+    for span in [[start, start + 5], [start, start + 3], [0, 0]] {
+        assert_eq!(
+            classify_call(&map, "main.ts", span).classification,
+            ImportClassification::Rejected
+        );
+    }
+    assert_eq!(
+        classify_call(&BTreeMap::new(), "main.ts", [start, start + 5]).classification,
+        ImportClassification::Rejected
+    );
+}
+
+#[test]
+fn classified_namespace_import_alias_is_rejected_not_local_fallback() {
+    let source = "import { run } from './api'; namespace Other { export function run() {} } namespace N { import run = Other.run; export function caller() { run(); } }";
+    let site = classified(source, "export function run() {}");
+    assert_eq!(site.classification, ImportClassification::Rejected);
+    let caller = source.find("caller").unwrap();
+    assert_eq!(site.caller, Some([caller, caller + 6]));
+}
+
+#[test]
+fn declared_loop_shadow_does_not_invalidate_export() {
+    for keyword in ["let", "const"] {
+        let api = format!("export function run() {{}} for ({keyword} run of values) {{}}");
+        assert!(
+            target(&[
+                (
+                    "main.ts",
+                    "import { run } from './api'; function caller() { run(); }"
+                ),
+                ("api.ts", &api),
+            ])
+            .is_some(),
+            "{keyword}"
+        );
+    }
+}
+
+#[test]
+fn malformed_file_keeps_rejected_site_and_known_caller_span() {
+    let source = "import { run } from './api'; function caller() { run(); } const = ;";
+    let site = classified(source, "export function run() {}");
+    assert_eq!(site.classification, ImportClassification::Rejected);
+    let caller = source.find("caller").unwrap();
+    assert_eq!(site.caller, Some([caller, caller + 6]));
+}

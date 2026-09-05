@@ -9,6 +9,10 @@ use tree_sitter::{Node, Parser};
 pub struct TsFileFacts {
     pub imports: Vec<Import>,
     pub calls: Vec<ImportCall>,
+    /// All observed direct identifier call sites, including rejected ones.
+    /// Old facts without sites fail closed in classify_call.
+    #[serde(default)]
+    pub sites: Vec<ImportSiteFact>,
     pub exports: BTreeMap<String, Vec<Export>>,
     pub declarations: BTreeMap<String, Vec<[usize; 2]>>,
     pub valid: bool,
@@ -36,6 +40,80 @@ pub struct ResolvedImport {
     pub path: String,
     pub target: [usize; 2],
     pub dependencies: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SiteBinding {
+    /// This is not an import proof: retain the ordinary lexical classifier.
+    NotImport,
+    Rejected,
+    Candidate(Import),
+}
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ImportSiteFact {
+    pub call: [usize; 2],
+    pub caller: Option<[usize; 2]>,
+    pub binding: SiteBinding,
+}
+
+/// Result for one exact full call-expression span. Rejected never permits name fallback.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ImportClassification {
+    NotImport,
+    Rejected,
+    Exact(ResolvedImport),
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ClassifiedImportSite {
+    pub call: [usize; 2],
+    /// Enclosing callable name span; None for top-level/anonymous contexts.
+    pub caller: Option<[usize; 2]>,
+    pub classification: ImportClassification,
+}
+/// Classify a FULL call-expression span, never just a name or start offset.
+/// Missing/old/invalid facts and unknown spans are Rejected, not NotImport.
+/// The caller must bind facts to current source hashes and a coherent inventory.
+pub fn classify_call(
+    files: &BTreeMap<String, TsFileFacts>,
+    path: &str,
+    call: [usize; 2],
+) -> ClassifiedImportSite {
+    let mut result = ClassifiedImportSite {
+        call,
+        caller: None,
+        classification: ImportClassification::Rejected,
+    };
+    let Some(file) = files.get(path) else {
+        return result;
+    };
+    let sites: Vec<_> = file.sites.iter().filter(|site| site.call == call).collect();
+    let [site] = sites.as_slice() else {
+        return result;
+    };
+    result.caller = site.caller;
+    if !file.valid || call[0] >= call[1] {
+        return result;
+    }
+    result.classification = match &site.binding {
+        SiteBinding::NotImport => ImportClassification::NotImport,
+        SiteBinding::Rejected => ImportClassification::Rejected,
+        SiteBinding::Candidate(import) => {
+            // Require the same full span, caller and local import identity in
+            // the accepted candidate ledger before invoking repository lookup.
+            let matching: Vec<_> = file
+                .calls
+                .iter()
+                .filter(|c| c.call == call && Some(c.caller) == site.caller && &c.import == import)
+                .collect();
+            if matching.len() != 1 {
+                return result;
+            }
+            resolve_call(files, path, call[0])
+                .map(ImportClassification::Exact)
+                .unwrap_or(ImportClassification::Rejected)
+        }
+    };
+    result
 }
 
 fn span(node: Node<'_>) -> [usize; 2] {
@@ -80,9 +158,6 @@ impl TsFileFacts {
             valid: !root.has_error(),
             ..Self::default()
         };
-        if !facts.valid {
-            return facts;
-        }
         let mut cursor = root.walk();
         for item in root.named_children(&mut cursor) {
             if item.kind() == "import_statement" {
@@ -269,32 +344,47 @@ impl TsFileFacts {
             };
             let local = text(function, source);
             let imports: Vec<_> = facts.imports.iter().filter(|i| i.local == local).collect();
-            let [import] = imports.as_slice() else {
-                return;
-            };
-            if import.imported.is_empty() {
-                return;
-            }
-            let Some(site) = context.calls.get(&node.id()) else {
-                return;
-            };
-            let scope = &context.scopes[site.scope];
-            let Some(caller) = scope.owner else {
-                return;
-            };
-            if site.unsupported
-                || context.binding_scope(site.scope, &local).is_some()
-                || context
-                    .writes
-                    .iter()
-                    .any(|(s, n)| n == &local && context.binding_scope(*s, n).is_none())
+            let site = context.calls.get(&node.id());
+            let caller = site
+                .and_then(|site| context.scopes[site.scope].owner)
+                .map(|caller| [caller.start, caller.end]);
+            let mut binding = SiteBinding::Rejected;
+            if facts.valid
+                && let Some(site) = site
             {
-                return;
+                let owner = context.binding_scope(site.scope, &local);
+                if let Some(owner) = owner {
+                    if !context.import_aliases.contains(&(owner, local.clone()))
+                        && !(owner == 0 && !imports.is_empty())
+                    {
+                        // A real local shadow is not an imported call. This
+                        // does NOT authorize name guessing for parameters/vars.
+                        binding = SiteBinding::NotImport;
+                    }
+                } else if imports.is_empty() {
+                    binding = SiteBinding::NotImport;
+                } else if let [import] = imports.as_slice()
+                    && !import.imported.is_empty()
+                    && !site.unsupported
+                    && let Some(caller) = caller
+                    && !context
+                        .writes
+                        .iter()
+                        .any(|(s, n)| n == &local && context.binding_scope(*s, n).is_none())
+                {
+                    let import = (*import).clone();
+                    facts.calls.push(ImportCall {
+                        caller,
+                        call: span(node),
+                        import: import.clone(),
+                    });
+                    binding = SiteBinding::Candidate(import);
+                }
             }
-            facts.calls.push(ImportCall {
-                caller: [caller.start, caller.end],
+            facts.sites.push(ImportSiteFact {
                 call: span(node),
-                import: (*import).clone(),
+                caller,
+                binding,
             });
         });
         facts
