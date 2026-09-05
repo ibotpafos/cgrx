@@ -278,7 +278,25 @@ impl LexicalContext {
         }
     }
     fn collect(&mut self, node: Node<'_>, source: &[u8], mut scope: usize, unsupported: bool) {
-        // Imports establish local identity, not a same-name repository target.
+        if node.kind() == "import_statement" {
+            let mut cursor = node.walk();
+            let module = node.child_by_field_name("source").or_else(|| {
+                node.named_children(&mut cursor)
+                    .find(|child| child.kind() == "import_require_clause")
+                    .and_then(|clause| clause.child_by_field_name("source"))
+            });
+            if module.is_some_and(|module| {
+                let specifier = text(module, source);
+                let specifier = specifier.trim_matches(['\'', '"']);
+                specifier.starts_with("./") || specifier.starts_with("../")
+            }) {
+                // Preserve legacy relative-import recall. This is not module/
+                // export identity proof; exact relative resolution is separate.
+                // Skip binding collection only; classify still emits the import.
+                return;
+            }
+        }
+        // Non-relative imports establish local identity, not a repository target.
         // Until module/export identity is proven, block syntax fallback for the
         // local binding only (never the exported name of an aliased specifier).
         match node.kind() {
