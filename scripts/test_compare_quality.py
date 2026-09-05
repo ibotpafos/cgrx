@@ -34,7 +34,7 @@ class ComparisonTests(unittest.TestCase):
             gate.read_json('{"cases": [], "cases": [1]}')
 
     def test_json_nonfinite_constants_invalid(self):
-        for literal in ['NaN', 'Infinity', '-Infinity']:
+        for literal in ['NaN', 'Infinity', '-Infinity', '1e309']:
             with self.assertRaises(ValueError):
                 gate.read_json('{"metric": ' + literal + '}')
 
@@ -79,9 +79,19 @@ class ComparisonTests(unittest.TestCase):
         with self.assertRaises(ValueError): evaluate(data)
 
     def test_bad_numbers_invalid(self):
-        for value in [True, -1, float('nan'), float('inf')]:
-            data = fixture(); data['cases'][0]['cgrx']['latency_ms'] = [value]
+        for value in [True, -1, float('nan'), float('inf'), 10**400]:
+            data = fixture(); data['cases'][0]['cgrx']['latency_ms'] = [value, 2, 3]
             with self.assertRaises(ValueError): evaluate(data)
+
+    def test_pooled_latency_regression_fails(self):
+        data = fixture()
+        # Both per-task p95s are zero, but pooled nearest-rank p95 differs.
+        for row in data['cases']:
+            row['cgrx']['latency_ms'] = [0] * 19 + [100]
+            row['cbm']['latency_ms'] = [0] * 20
+        data['cases'][0]['cgrx']['latency_ms'] = [0, 0, 100]
+        data['cases'][0]['cbm']['latency_ms'] = [0, 0, 100]
+        self.assertFalse(evaluate(data)['passed'])
 
     def test_missing_measurement_invalid(self):
         data = fixture(); del data['cases'][0]['cbm']['response_tokens']

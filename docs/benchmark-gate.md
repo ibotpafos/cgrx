@@ -2,7 +2,7 @@
 
 `python3 scripts/compare_quality.py measured-runs.json` consumes collector output. It does not collect measurements, run CBM, or establish oracle correctness. A passing unit test is not a benchmark win.
 
-Default acceptance: at least 100 heldout tasks, at least 20 for each of Go/TypeScript/Python/Rust, positive and negative cases in each language, F1 improvement at least 0.005, no per-language precision/recall regression, no per-task FP/FN, p95 latency, peak RSS or response-token regression. A tie is not superiority. Every result must be successful and untruncated; malformed evidence exits 2, a failed comparison exits 1, a pass exits 0. Performance comparisons use nearest-rank p95 and require at least three paired samples; stronger statistical confidence requires more repetitions and independent analysis. This is a strict screening gate, not a significance test.
+Default acceptance: at least 100 heldout tasks, at least 20 for each of Go/TypeScript/Python/Rust, positive and negative cases in each language, F1 improvement at least 0.005, no per-language precision/recall regression, no pooled p95 latency regression and no per-task FP/FN, p95 latency, peak RSS or response-token regression. A tie is not superiority. Every result must be successful and untruncated; malformed evidence exits 2, a failed comparison exits 1, a pass exits 0. Performance comparisons use nearest-rank p95 and require at least three paired samples; stronger statistical confidence requires more repetitions and independent analysis. This is a strict screening gate, not a significance test.
 
 ## Input v1
 

@@ -26,7 +26,12 @@ def nonempty(value):
 
 
 def number(value):
-    return type(value) in (int, float) and math.isfinite(value) and value >= 0
+    if type(value) not in (int, float):
+        return False
+    try:
+        return math.isfinite(value) and value >= 0
+    except OverflowError:
+        return False
 
 
 def records(value):
@@ -134,6 +139,9 @@ def compare(data, minimum_cases=100, minimum_per_language=20, minimum_gain=0.005
             'peak_rss_bytes': max((row[engine]['peak_rss_bytes'] for row in rows), default=None),
             'response_tokens': sum(row[engine]['response_tokens'] for row in rows),
         }
+    if rows:
+        check(resources['cgrx']['p95_latency_ms'] <= resources['cbm']['p95_latency_ms'],
+              'pooled p95 latency regression')
     return {'passed': not failures, 'failures': failures, 'heldout_cases': len(rows),
             'quality': scores, 'f1_gain': gain, 'languages': per_language,
             'resources': resources, 'engines': engines, 'environment': data['environment'],
@@ -155,7 +163,13 @@ def read_json(text):
     def reject_constant(value):
         raise ValueError(f'non-finite JSON constant: {value}')
 
-    return json.loads(text, object_pairs_hook=object_pairs, parse_constant=reject_constant)
+    def finite_float(value):
+        parsed = float(value)
+        require(math.isfinite(parsed), 'non-finite JSON float')
+        return parsed
+
+    return json.loads(text, object_pairs_hook=object_pairs, parse_constant=reject_constant,
+                      parse_float=finite_float)
 
 
 def main():
