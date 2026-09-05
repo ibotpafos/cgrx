@@ -30,6 +30,10 @@ Example configuration (replace paths and project mapping with verified inputs):
 ```json
 {
   "tokenizer": "cl100k_base",
+  "selection": {
+    "relations": ["CALLS"], "splits": ["train"],
+    "repos": ["/absolute/canonical/repo"]
+  },
   "protocol": {
     "cache": "warm", "repetitions": 3, "warmups": 1, "retries": 0,
     "limit": 20, "timeout_seconds": 60, "max_response_bytes": 2000000,
@@ -59,6 +63,10 @@ server versions and tools/list digests are recorded and must stay stable.
 The config/corpus content hashes and tokenizer implementation/version/encoding
 vocabulary digest are retained. Tool protocol/schema failures are not successes.
 Use dedicated endpoint state where supported; a shared daemon is not isolated.
+`selection` is optional and preregistered: it may contain nonempty `ids`,
+`relations`, `splits`, `repos`, or `categories` arrays. Unknown keys, duplicate
+values, or a selection matching no tasks fail before an endpoint starts. The
+output retains both the full-corpus hash and a hash of the selected task records.
 
 ```sh
 /absolute/venv/bin/python /absolute/checkout/scripts/collect_quality.py \
@@ -70,6 +78,10 @@ The collector returns 2 on missing inputs, errors, unsupported tasks or unknown
 required measurements. Per-arm failures remain in the output; a corpus-level
 validation failure is printed before launching engines. The unchanged comparator
 rejects incomplete or unknown measurements. Do not substitute zero for null.
+Every selected repository is frozen before the first engine starts. Its snapshot
+is then checked before each arm. If an engine changes a tracked source or index
+artifact, that arm fails and later arms on other clean repositories continue;
+the collector never resets or hides the mutation.
 
 ## Query semantics and truth
 

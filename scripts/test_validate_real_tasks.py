@@ -21,7 +21,8 @@ class ManifestTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name).resolve()
-        self.source = b'def caller():\n    return callee()\ndef callee():\n    return 1\n'
+        self.source = (b'def caller():\n    return callee()\ndef callee():\n    return 1\n'
+                       b'def other():\n    return callee()\n')
         (self.root / 'sample.py').write_bytes(self.source)
         self.git('init', '-q')
         self.git('add', 'sample.py')

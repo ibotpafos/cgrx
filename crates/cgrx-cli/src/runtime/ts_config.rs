@@ -339,6 +339,10 @@ impl Reader<'_> {
                 "target",
                 "lib",
                 "module",
+                "declaration",
+                "emitDecoratorMetadata",
+                "experimentalDecorators",
+                "outDir",
                 "strict",
                 "esModuleInterop",
                 "skipLibCheck",
@@ -358,7 +362,7 @@ impl Reader<'_> {
                 match key.as_str() {
                     "baseUrl" | "paths" => {}
                     "allowJs" | "resolveJsonModule" if value.is_boolean() => {}
-                    "moduleResolution" if value.as_str() == Some("bundler") => {}
+                    "moduleResolution" if matches!(value.as_str(), Some("bundler" | "node")) => {}
                     key if NEUTRAL.contains(&key) => {}
                     _ => return None,
                 }

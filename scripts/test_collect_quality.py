@@ -38,6 +38,25 @@ class CollectorTests(unittest.TestCase):
         self.assertIsNone(c.sample_rss(-1))
 
     @unittest.skipIf(c is None, 'collector not implemented')
+    def test_selection_is_explicit_strict_and_outcome_independent(self):
+        tasks = [
+            {'id':'train-call','repo':'/a','split':'train','category':'call',
+             'expected':{'relation':'CALLS'}},
+            {'id':'heldout-call','repo':'/b','split':'heldout','category':'receiver',
+             'expected':{'relation':'CALLS'}},
+            {'id':'heldout-import','repo':'/b','split':'heldout','category':'import',
+             'expected':{'relation':'IMPORTS'}},
+        ]
+        selected = c.select_tasks(tasks, {
+            'relations':['CALLS'], 'splits':['heldout'], 'repos':['/b'],
+            'ids':['heldout-call']})
+        self.assertEqual([task['id'] for task in selected], ['heldout-call'])
+        for bad in ({'unknown':['x']}, {'relations':[]},
+                    {'relations':['CALLS','CALLS']}, {'repos':['/missing']}):
+            with self.subTest(selection=bad), self.assertRaises(ValueError):
+                c.select_tasks(tasks, bad)
+
+    @unittest.skipIf(c is None, 'collector not implemented')
     def test_cbm_unknown_shape_rejected(self):
         with self.assertRaises(ValueError): c.cbm_nodes({'total':0}, '/repo', 20)
 
@@ -123,6 +142,8 @@ class PairedMockTests(unittest.TestCase):
                         else:
                             self.queries+=1
                             data={'results':[{'path':'sample.py','name':'callee','line':3,'strategy':'synthetic','confidence':'1'}],'total':1}
+                            if outer.mode == 'mutate-source':
+                                (outer.fixture.root/'sample.py').write_text('reference changed source')
                             if outer.mode == 'unknown-schema': data={}
                             if outer.mode == 'empty-unknown-columns':
                                 return {'content':[{'type':'text','text':'rows: 0  (cols: unexpected)\ntotal: 0'}]}, '{}'
@@ -207,6 +228,26 @@ class PairedMockTests(unittest.TestCase):
         for engine in ('cgrx','cbm'):
             self.assertFalse(result['cases'][0][engine]['success'])
             self.assertIn('unsupported',result['cases'][0][engine]['errors'][0])
+
+    def test_reference_source_mutation_does_not_abort_remaining_cases(self):
+        other = copy.deepcopy(self.doc['tasks'][0])
+        other['id'] = 'fixture-2'
+        data = self.fixture.source
+        def anchor(start, end, symbol):
+            lines = data.splitlines(keepends=True)
+            return dict(path='sample.py', sha256=task_tests.sha(data), start_line=start,
+                        end_line=end, span_sha256=task_tests.sha(b''.join(lines[start-1:end])),
+                        symbol=symbol)
+        other['evidence']['source'] = anchor(5, 6, 'other')
+        other['evidence']['site'] = anchor(6, 6, 'callee')
+        self.doc['tasks'].append(other)
+        self.mode = 'mutate-source'
+        result = self.run_mock()
+        self.assertEqual(len(result['cases']), 2)
+        self.assertTrue(result['cases'][0]['cgrx']['success'])
+        self.assertFalse(result['cases'][0]['cbm']['success'])
+        self.assertTrue(result['cases'][1]['cgrx']['errors'])
+        self.assertTrue(result['cases'][1]['cbm']['errors'])
 
     def test_dirty_source_rejected_before_transport(self):
         (self.fixture.root/'sample.py').write_text('changed')

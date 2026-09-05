@@ -38,7 +38,7 @@ use serde_json::{Value, json};
 
 use crate::intent::{TaskIntent, classify};
 
-const EXTRACTION_REVISION: u32 = 21;
+const EXTRACTION_REVISION: u32 = 22;
 
 const NODES_SEGMENT: &str = "nodes.seg";
 const EDGES_SEGMENT: &str = "edges.seg";
@@ -2066,6 +2066,11 @@ fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPath, RuntimeE
             });
         }
     }
+    let ts_receiver_spans: BTreeSet<_> = ts_file
+        .as_ref()
+        .into_iter()
+        .flat_map(|facts| facts.receiver_calls.iter().map(|receiver| receiver.call))
+        .collect();
     if let Some(facts) = ts_file.as_ref() {
         for site in &facts.sites {
             let tag = match &site.binding {
@@ -2120,9 +2125,60 @@ fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPath, RuntimeE
                 semantic_tags: vec!["EXACT_CALL".to_owned(), tag.to_owned()],
             });
         }
+        for receiver in &facts.receiver_calls {
+            let span = Span {
+                start: receiver.call[0],
+                end: receiver.call[1],
+            };
+            if let Some(document) = documents.iter_mut().find(|document| {
+                document.provenance == "CALLS"
+                    && document.span_start == span.start
+                    && document.span_end == span.end
+                    && document.qualified_name == receiver.method
+            }) {
+                document
+                    .semantic_tags
+                    .retain(|value| value != "DYNAMIC_DISPATCH");
+                for tag in ["EXACT_CALL", "TS_RECEIVER_CALL"] {
+                    if !document.semantic_tags.iter().any(|value| value == tag) {
+                        document.semantic_tags.push(tag.to_owned());
+                    }
+                }
+                continue;
+            }
+            let slice = slice_source(
+                source,
+                ByteRange::new(span.start, span.end),
+                ContextWindow::lines(0),
+            );
+            documents.push(StoredDocument {
+                rust_module_target: None,
+                rust_self_target: None,
+                ts_lexical_target: None,
+                go_field_target: None,
+                go_import_path: None,
+                go_import_explicit_alias: false,
+                go_package: None,
+                go_receiver_target: None,
+                node_id: stable_node_id(relative, span, &format!("call:{}", receiver.method)),
+                qualified_name: receiver.method.clone(),
+                path: relative.to_owned(),
+                text: String::from_utf8_lossy(&slice.bytes).into_owned(),
+                search_text: String::from_utf8_lossy(&slice.bytes).into_owned(),
+                span_start: span.start,
+                span_end: span.end,
+                body_start: span.start,
+                body_end: span.end,
+                provenance: "CALLS".to_owned(),
+                semantic_tags: vec!["EXACT_CALL".to_owned(), "TS_RECEIVER_CALL".to_owned()],
+            });
+        }
     }
     let mut unresolved_by_span = BTreeMap::<(usize, usize), Vec<UnresolvedKind>>::new();
     for candidate in &unresolved {
+        if ts_receiver_spans.contains(&[candidate.span.start, candidate.span.end]) {
+            continue;
+        }
         unresolved_by_span
             .entry((candidate.span.start, candidate.span.end))
             .or_default()
@@ -3203,6 +3259,64 @@ fn rebuild_arcs_with_cargo(
         // A receiver proof is never eligible for name/package guessing, even
         // when its target has disappeared during refresh or metadata is absent.
         let target = if call
+            .semantic_tags
+            .iter()
+            .any(|tag| tag == "TS_RECEIVER_CALL")
+        {
+            if !ts_config_supported_for(&call.path, ts_resolution_configs) {
+                None
+            } else {
+                let classified = cgrx_languages::ts_imports::classify_receiver_call_with_modules(
+                    &ts_inventory,
+                    &call.path,
+                    [call.span_start, call.span_end],
+                    &modules,
+                );
+                match classified.classification {
+                    ImportClassification::Exact(resolved) => (|| {
+                        let caller = source_document?;
+                        let caller_span = classified.caller?;
+                        if caller.span_start != caller_span[0]
+                            || caller.span_end != caller_span[1]
+                            || resolved.dependencies.iter().any(|path| {
+                                ts_files.get(path).is_none_or(|facts| {
+                                    path_hashes.get(path) != Some(&facts.source_hash)
+                                })
+                            })
+                            || resolved.dependencies.iter().any(|path| {
+                                ts_config::nearest(path, ts_resolution_configs).is_some_and(|c| {
+                                    c.dependencies
+                                        .iter()
+                                        .any(|(path, hash)| path_hashes.get(path) != Some(hash))
+                                })
+                            })
+                            || !ts_paths_portable_for(
+                                &resolved.dependencies,
+                                ts_files,
+                                ts_resolution_configs,
+                            )
+                            || resolved
+                                .dependencies
+                                .iter()
+                                .any(|path| !ts_config_supported_for(path, ts_resolution_configs))
+                        {
+                            return None;
+                        }
+                        let mut matches = syntax_by_path
+                            .get(resolved.path.as_str())?
+                            .iter()
+                            .filter(|document| {
+                                document.qualified_name == target_name
+                                    && document.span_start == resolved.target[0]
+                                    && document.span_end == resolved.target[1]
+                            });
+                        let target = matches.next()?;
+                        matches.next().is_none().then_some(target.node_id)
+                    })(),
+                    ImportClassification::Rejected | ImportClassification::NotImport => None,
+                }
+            }
+        } else if call
             .semantic_tags
             .iter()
             .any(|tag| tag == "TS_IMPORT_CALL" || tag == "TS_IMPORT_REJECTED")
@@ -5156,7 +5270,7 @@ mod compact_storage_tests {
             serde_json::from_value::<StoredDocument>(encoded).unwrap(),
             doc
         );
-        assert_eq!(EXTRACTION_REVISION, 21);
+        assert_eq!(EXTRACTION_REVISION, 22);
     }
 
     #[test]

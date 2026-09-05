@@ -4,7 +4,7 @@
   "tasks": [
     {
       "id": "gd-notification-preferences",
-      "repo": "/Volumes/D/Projects/gd-main",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/SAME-SNAPSHOT-CBM/snapshots/gd",
       "revision": "9d77eb9b8feea3c9063240eeefdacdd1b4b83bc0",
       "split": "train",
       "question": "Which local type describes the preferences accepted by resolveNotificationChannels?",
@@ -54,7 +54,7 @@
     },
     {
       "id": "gd-dedupe-envelope",
-      "repo": "/Volumes/D/Projects/gd-main",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/SAME-SNAPSHOT-CBM/snapshots/gd",
       "revision": "9d77eb9b8feea3c9063240eeefdacdd1b4b83bc0",
       "split": "train",
       "question": "Which local envelope type is referenced by resolveChannelDedupeKey?",
@@ -104,7 +104,7 @@
     },
     {
       "id": "gd-channel-schema",
-      "repo": "/Volumes/D/Projects/gd-main",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/SAME-SNAPSHOT-CBM/snapshots/gd",
       "revision": "9d77eb9b8feea3c9063240eeefdacdd1b4b83bc0",
       "split": "train",
       "question": "Which schema does the NotificationChannel type reference through typeof?",
@@ -154,7 +154,7 @@
     },
     {
       "id": "gd-envelope-payload",
-      "repo": "/Volumes/D/Projects/gd-main",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/SAME-SNAPSHOT-CBM/snapshots/gd",
       "revision": "9d77eb9b8feea3c9063240eeefdacdd1b4b83bc0",
       "split": "train",
       "question": "Which local schema is extended when constructing notificationEnvelopeSchema?",
@@ -204,7 +204,7 @@
     },
     {
       "id": "vpn-bool-default",
-      "repo": "/Volumes/D/Projects/vpn-main",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/SAME-SNAPSHOT-CBM/snapshots/vex",
       "revision": "da5cd1a21f8f4650798cc19c92ff8790b324e6d3",
       "split": "train",
       "question": "Which same-package helper does BoolDefault call after its empty-value guard?",
@@ -254,7 +254,7 @@
     },
     {
       "id": "vpn-int64-list",
-      "repo": "/Volumes/D/Projects/vpn-main",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/SAME-SNAPSHOT-CBM/snapshots/vex",
       "revision": "da5cd1a21f8f4650798cc19c92ff8790b324e6d3",
       "split": "train",
       "question": "Which same-package list helper provides values to Int64List?",
@@ -304,7 +304,7 @@
     },
     {
       "id": "vpn-positive-int-test",
-      "repo": "/Volumes/D/Projects/vpn-main",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/SAME-SNAPSHOT-CBM/snapshots/vex",
       "revision": "da5cd1a21f8f4650798cc19c92ff8790b324e6d3",
       "split": "train",
       "question": "Which local parser does TestPositiveIntFallback call for the missing-value case?",
@@ -354,7 +354,7 @@
     },
     {
       "id": "vpn-bool-default-test",
-      "repo": "/Volumes/D/Projects/vpn-main",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/SAME-SNAPSHOT-CBM/snapshots/vex",
       "revision": "da5cd1a21f8f4650798cc19c92ff8790b324e6d3",
       "split": "train",
       "question": "Which helper does TestBoolDefault call in its initial missing-value assertion?",
@@ -404,7 +404,7 @@
     },
     {
       "id": "pyramid-execution-dependencies",
-      "repo": "/Volumes/D/Projects/pyramid-agent",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/EXPANDED-GRAPH-CORPUS/snapshots/pyramid",
       "revision": "dbca43c53d7f49bbf988813cd97720098be3ac3f",
       "split": "heldout",
       "question": "Which Engine method does CanExecute call to obtain dependencies?",
@@ -454,7 +454,7 @@
     },
     {
       "id": "pyramid-ready-lock-helper",
-      "repo": "/Volumes/D/Projects/pyramid-agent",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/EXPANDED-GRAPH-CORPUS/snapshots/pyramid",
       "revision": "dbca43c53d7f49bbf988813cd97720098be3ac3f",
       "split": "heldout",
       "question": "Which Engine helper does GetReadyTasks call while holding its read lock?",
@@ -504,7 +504,7 @@
     },
     {
       "id": "pyramid-dependency-edge-type",
-      "repo": "/Volumes/D/Projects/pyramid-agent",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/EXPANDED-GRAPH-CORPUS/snapshots/pyramid",
       "revision": "dbca43c53d7f49bbf988813cd97720098be3ac3f",
       "split": "heldout",
       "question": "Which edge-type constant does GetDepends compare against?",
@@ -554,7 +554,7 @@
     },
     {
       "id": "pyramid-agent-edge-type",
-      "repo": "/Volumes/D/Projects/pyramid-agent",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/EXPANDED-GRAPH-CORPUS/snapshots/pyramid",
       "revision": "dbca43c53d7f49bbf988813cd97720098be3ac3f",
       "split": "heldout",
       "question": "Which edge-type constant selects delegated agents in GetAssignedAgents?",
@@ -604,7 +604,7 @@
     },
     {
       "id": "itsdangerous-encoding-import-BadData",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "split": "heldout",
       "category": "import",
@@ -650,7 +650,7 @@
     },
     {
       "id": "itsdangerous-url_safe-import-_CompactJSON",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "split": "heldout",
       "category": "import",
@@ -696,7 +696,7 @@
     },
     {
       "id": "itsdangerous-url_safe-import-base64_decode",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "split": "heldout",
       "category": "import",
@@ -742,7 +742,7 @@
     },
     {
       "id": "itsdangerous-url_safe-import-base64_encode",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "split": "heldout",
       "category": "import",
@@ -788,7 +788,7 @@
     },
     {
       "id": "itsdangerous-url_safe-import-BadPayload",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "split": "heldout",
       "category": "import",
@@ -834,7 +834,7 @@
     },
     {
       "id": "itsdangerous-url_safe-import-Serializer",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "split": "heldout",
       "category": "import",
@@ -880,7 +880,7 @@
     },
     {
       "id": "itsdangerous-url_safe-import-TimedSerializer",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "split": "heldout",
       "category": "import",
@@ -926,7 +926,7 @@
     },
     {
       "id": "itsdangerous-signer-import-base64_decode",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "split": "heldout",
       "category": "import",
@@ -972,7 +972,7 @@
     },
     {
       "id": "itsdangerous-signer-import-base64_encode",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "split": "heldout",
       "category": "import",
@@ -1018,7 +1018,7 @@
     },
     {
       "id": "itsdangerous-signer-import-want_bytes",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "split": "heldout",
       "category": "import",
@@ -1064,7 +1064,7 @@
     },
     {
       "id": "itsdangerous-signer-import-BadSignature",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "split": "heldout",
       "category": "import",
@@ -1110,7 +1110,7 @@
     },
     {
       "id": "itsdangerous-timed-import-bytes_to_int",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "split": "heldout",
       "category": "import",
@@ -1156,7 +1156,7 @@
     },
     {
       "id": "itsdangerous-timed-import-int_to_bytes",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "split": "heldout",
       "category": "import",
@@ -1202,7 +1202,7 @@
     },
     {
       "id": "itsdangerous-timed-import-BadTimeSignature",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "split": "heldout",
       "category": "import",
@@ -1248,7 +1248,7 @@
     },
     {
       "id": "itsdangerous-timed-import-SignatureExpired",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "split": "heldout",
       "category": "import",
@@ -1294,7 +1294,7 @@
     },
     {
       "id": "itsdangerous-timed-import-Signer",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "split": "heldout",
       "category": "import",
@@ -1340,7 +1340,7 @@
     },
     {
       "id": "itsdangerous-serializer-import-_make_keys_list",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "split": "heldout",
       "category": "import",
@@ -1386,7 +1386,7 @@
     },
     {
       "id": "itsdangerous-serializer-import-Signer",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "split": "heldout",
       "category": "import",
@@ -1432,7 +1432,7 @@
     },
     {
       "id": "itsdangerous-encoding-base64_encode-want_bytes",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "split": "heldout",
       "category": "call",
@@ -1484,7 +1484,7 @@
     },
     {
       "id": "itsdangerous-encoding-base64_decode-want_bytes",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "split": "heldout",
       "category": "call",
@@ -1536,7 +1536,7 @@
     },
     {
       "id": "itsdangerous-encoding-base64_decode-BadData",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "split": "heldout",
       "category": "call",
@@ -1582,7 +1582,7 @@
     },
     {
       "id": "itsdangerous-url_safe-load_payload-base64_decode",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "split": "heldout",
       "category": "call",
@@ -1628,7 +1628,7 @@
     },
     {
       "id": "itsdangerous-url_safe-load_payload-BadPayload",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "split": "heldout",
       "category": "call",
@@ -1674,7 +1674,7 @@
     },
     {
       "id": "itsdangerous-url_safe-dump_payload-base64_encode",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "split": "heldout",
       "category": "impact",
@@ -1720,7 +1720,7 @@
     },
     {
       "id": "itsdangerous-signer-_make_keys_list-want_bytes",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "split": "heldout",
       "category": "call",
@@ -1766,7 +1766,7 @@
     },
     {
       "id": "itsdangerous-signer-__init__-_make_keys_list",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "split": "heldout",
       "category": "impact",
@@ -1812,7 +1812,7 @@
     },
     {
       "id": "itsdangerous-signer-__init__-want_bytes",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "split": "heldout",
       "category": "call",
@@ -1858,7 +1858,7 @@
     },
     {
       "id": "itsdangerous-signer-__init__-HMACAlgorithm",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "split": "heldout",
       "category": "call",
@@ -1904,7 +1904,7 @@
     },
     {
       "id": "itsdangerous-signer-derive_key-want_bytes",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "split": "heldout",
       "category": "call",
@@ -1950,7 +1950,7 @@
     },
     {
       "id": "itsdangerous-signer-get_signature-want_bytes",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "split": "heldout",
       "category": "call",
@@ -1996,7 +1996,7 @@
     },
     {
       "id": "itsdangerous-signer-get_signature-base64_encode",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "split": "heldout",
       "category": "call",
@@ -2042,7 +2042,7 @@
     },
     {
       "id": "itsdangerous-signer-sign-want_bytes",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "split": "heldout",
       "category": "call",
@@ -2088,7 +2088,7 @@
     },
     {
       "id": "itsdangerous-signer-verify_signature-base64_decode",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "split": "heldout",
       "category": "call",
@@ -2134,7 +2134,7 @@
     },
     {
       "id": "itsdangerous-signer-verify_signature-want_bytes",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "split": "heldout",
       "category": "call",
@@ -2180,7 +2180,7 @@
     },
     {
       "id": "itsdangerous-signer-unsign-want_bytes",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "split": "heldout",
       "category": "call",
@@ -2226,7 +2226,7 @@
     },
     {
       "id": "itsdangerous-signer-unsign-BadSignature",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "split": "heldout",
       "category": "call",
@@ -2272,7 +2272,7 @@
     },
     {
       "id": "itsdangerous-timed-sign-want_bytes",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "split": "heldout",
       "category": "call",
@@ -2318,7 +2318,7 @@
     },
     {
       "id": "itsdangerous-timed-sign-base64_encode",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "split": "heldout",
       "category": "call",
@@ -2364,7 +2364,7 @@
     },
     {
       "id": "itsdangerous-timed-sign-int_to_bytes",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "split": "heldout",
       "category": "call",
@@ -2410,7 +2410,7 @@
     },
     {
       "id": "itsdangerous-timed-unsign-want_bytes",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "split": "heldout",
       "category": "call",
@@ -2456,7 +2456,7 @@
     },
     {
       "id": "itsdangerous-timed-unsign-bytes_to_int",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "split": "heldout",
       "category": "call",
@@ -2502,7 +2502,7 @@
     },
     {
       "id": "itsdangerous-timed-unsign-base64_decode",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "split": "heldout",
       "category": "call",
@@ -2548,7 +2548,7 @@
     },
     {
       "id": "itsdangerous-timed-unsign-BadTimeSignature",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "split": "heldout",
       "category": "call",
@@ -2594,7 +2594,7 @@
     },
     {
       "id": "itsdangerous-timed-unsign-SignatureExpired",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "split": "heldout",
       "category": "call",
@@ -2640,7 +2640,7 @@
     },
     {
       "id": "itsdangerous-timed-loads-want_bytes",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "split": "heldout",
       "category": "call",
@@ -2686,7 +2686,7 @@
     },
     {
       "id": "itsdangerous-serializer-__init__-_make_keys_list",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "split": "heldout",
       "category": "call",
@@ -2732,7 +2732,7 @@
     },
     {
       "id": "itsdangerous-serializer-__init__-want_bytes",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "split": "heldout",
       "category": "call",
@@ -2778,7 +2778,7 @@
     },
     {
       "id": "itsdangerous-serializer-__init__-is_text_serializer",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "split": "heldout",
       "category": "call",
@@ -2824,7 +2824,7 @@
     },
     {
       "id": "itsdangerous-serializer-load_payload-is_text_serializer",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "split": "heldout",
       "category": "impact",
@@ -2870,7 +2870,7 @@
     },
     {
       "id": "itsdangerous-serializer-load_payload-BadPayload",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "split": "heldout",
       "category": "call",
@@ -2916,7 +2916,7 @@
     },
     {
       "id": "itsdangerous-serializer-dump_payload-want_bytes",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "split": "heldout",
       "category": "call",
@@ -2962,7 +2962,7 @@
     },
     {
       "id": "itsdangerous-serializer-dumps-want_bytes",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "split": "heldout",
       "category": "call",
@@ -3008,7 +3008,7 @@
     },
     {
       "id": "itsdangerous-url_safe-URLSafeSerializerMixin-reference",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "split": "heldout",
       "category": "reference",
@@ -3054,7 +3054,7 @@
     },
     {
       "id": "itsdangerous-url_safe-default_serializer-reference",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "split": "heldout",
       "category": "reference",
@@ -3100,7 +3100,7 @@
     },
     {
       "id": "itsdangerous-url_safe-URLSafeTimedSerializer-reference",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "split": "heldout",
       "category": "reference",
@@ -3146,7 +3146,7 @@
     },
     {
       "id": "itsdangerous-signer-NoneAlgorithm-reference",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "split": "heldout",
       "category": "reference",
@@ -3192,7 +3192,7 @@
     },
     {
       "id": "itsdangerous-signer-HMACAlgorithm-reference",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "split": "heldout",
       "category": "reference",
@@ -3238,7 +3238,7 @@
     },
     {
       "id": "itsdangerous-timed-TimestampSigner-reference",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "split": "heldout",
       "category": "reference",
@@ -3284,7 +3284,7 @@
     },
     {
       "id": "itsdangerous-timed-default_signer-reference",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "split": "heldout",
       "category": "reference",
@@ -3330,7 +3330,7 @@
     },
     {
       "id": "itsdangerous-signer-verify_signature-unresolved-get_signature",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "split": "heldout",
       "category": "ambiguous",
@@ -3368,7 +3368,7 @@
     },
     {
       "id": "itsdangerous-signer-derive_key-unresolved-digest_method",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "split": "heldout",
       "category": "ambiguous",
@@ -3406,7 +3406,7 @@
     },
     {
       "id": "itsdangerous-signer-get_signature-unresolved-get_signature",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "split": "heldout",
       "category": "ambiguous",
@@ -3444,7 +3444,7 @@
     },
     {
       "id": "itsdangerous-signer-verify_signature-unresolved-verify_signature",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "split": "heldout",
       "category": "ambiguous",
@@ -3482,7 +3482,7 @@
     },
     {
       "id": "itsdangerous-serializer-is_text_serializer-unresolved-dumps",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "split": "heldout",
       "category": "ambiguous",
@@ -3520,7 +3520,7 @@
     },
     {
       "id": "itsdangerous-serializer-load_payload-unresolved-loads",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "split": "heldout",
       "category": "ambiguous",
@@ -3558,7 +3558,7 @@
     },
     {
       "id": "itsdangerous-serializer-dump_payload-unresolved-dumps",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "split": "heldout",
       "category": "ambiguous",
@@ -3596,7 +3596,7 @@
     },
     {
       "id": "itsdangerous-serializer-make_signer-unresolved-signer",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "split": "heldout",
       "category": "ambiguous",
@@ -3634,7 +3634,7 @@
     },
     {
       "id": "itsdangerous-serializer-iter_unsigners-unresolved-fallback",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "split": "heldout",
       "category": "ambiguous",
@@ -3672,7 +3672,7 @@
     },
     {
       "id": "itsdangerous-timed-loads-unresolved-unsign",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "split": "heldout",
       "category": "ambiguous",
@@ -3710,7 +3710,7 @@
     },
     {
       "id": "blinker-base-import-make_id",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/blinker",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/blinker",
       "revision": "c3364059663df1ddce32799d6b1922af89a345f6",
       "split": "heldout",
       "category": "import",
@@ -3756,7 +3756,7 @@
     },
     {
       "id": "blinker-base-import-make_ref",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/blinker",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/blinker",
       "revision": "c3364059663df1ddce32799d6b1922af89a345f6",
       "split": "heldout",
       "category": "import",
@@ -3802,7 +3802,7 @@
     },
     {
       "id": "blinker-base-import-Symbol",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/blinker",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/blinker",
       "revision": "c3364059663df1ddce32799d6b1922af89a345f6",
       "split": "heldout",
       "category": "import",
@@ -3848,7 +3848,7 @@
     },
     {
       "id": "blinker-__init__-import-NamedSignal",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/blinker",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/blinker",
       "revision": "c3364059663df1ddce32799d6b1922af89a345f6",
       "split": "heldout",
       "category": "import",
@@ -3894,7 +3894,7 @@
     },
     {
       "id": "blinker-__init__-import-Namespace",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/blinker",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/blinker",
       "revision": "c3364059663df1ddce32799d6b1922af89a345f6",
       "split": "heldout",
       "category": "import",
@@ -3940,7 +3940,7 @@
     },
     {
       "id": "blinker-__init__-import-Signal",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/blinker",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/blinker",
       "revision": "c3364059663df1ddce32799d6b1922af89a345f6",
       "split": "heldout",
       "category": "import",
@@ -3986,7 +3986,7 @@
     },
     {
       "id": "blinker-receiver_connected-Signal",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/blinker",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/blinker",
       "revision": "c3364059663df1ddce32799d6b1922af89a345f6",
       "split": "heldout",
       "category": "call",
@@ -4032,7 +4032,7 @@
     },
     {
       "id": "blinker-receiver_disconnected-Signal",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/blinker",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/blinker",
       "revision": "c3364059663df1ddce32799d6b1922af89a345f6",
       "split": "heldout",
       "category": "call",
@@ -4078,7 +4078,7 @@
     },
     {
       "id": "blinker-connect-make_id",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/blinker",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/blinker",
       "revision": "c3364059663df1ddce32799d6b1922af89a345f6",
       "split": "heldout",
       "category": "call",
@@ -4124,7 +4124,7 @@
     },
     {
       "id": "blinker-connect-make_ref",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/blinker",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/blinker",
       "revision": "c3364059663df1ddce32799d6b1922af89a345f6",
       "split": "heldout",
       "category": "call",
@@ -4170,7 +4170,7 @@
     },
     {
       "id": "blinker-has_receivers_for-make_id",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/blinker",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/blinker",
       "revision": "c3364059663df1ddce32799d6b1922af89a345f6",
       "split": "heldout",
       "category": "call",
@@ -4222,7 +4222,7 @@
     },
     {
       "id": "blinker-receivers_for-make_id",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/blinker",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/blinker",
       "revision": "c3364059663df1ddce32799d6b1922af89a345f6",
       "split": "heldout",
       "category": "call",
@@ -4274,7 +4274,7 @@
     },
     {
       "id": "blinker-disconnect-make_id",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/blinker",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/blinker",
       "revision": "c3364059663df1ddce32799d6b1922af89a345f6",
       "split": "heldout",
       "category": "call",
@@ -4320,7 +4320,7 @@
     },
     {
       "id": "blinker-signal-NamedSignal",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/blinker",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/blinker",
       "revision": "c3364059663df1ddce32799d6b1922af89a345f6",
       "split": "heldout",
       "category": "call",
@@ -4366,7 +4366,7 @@
     },
     {
       "id": "blinker-send-unresolved-receiver",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/blinker",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/blinker",
       "revision": "c3364059663df1ddce32799d6b1922af89a345f6",
       "split": "heldout",
       "category": "ambiguous",
@@ -4404,7 +4404,7 @@
     },
     {
       "id": "blinker-send-unresolved-_async_wrapper",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/blinker",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/blinker",
       "revision": "c3364059663df1ddce32799d6b1922af89a345f6",
       "split": "heldout",
       "category": "ambiguous",
@@ -4442,7 +4442,7 @@
     },
     {
       "id": "blinker-send_async-unresolved-receiver",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/blinker",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/blinker",
       "revision": "c3364059663df1ddce32799d6b1922af89a345f6",
       "split": "heldout",
       "category": "ambiguous",
@@ -4480,7 +4480,7 @@
     },
     {
       "id": "blinker-send_async-unresolved-_sync_wrapper",
-      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/blinker",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/blinker",
       "revision": "c3364059663df1ddce32799d6b1922af89a345f6",
       "split": "heldout",
       "category": "ambiguous",
@@ -4518,7 +4518,7 @@
     },
     {
       "id": "gd-main-NotificationOutboxStatus-schema",
-      "repo": "/Volumes/D/Projects/gd-main",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/SAME-SNAPSHOT-CBM/snapshots/gd",
       "revision": "9d77eb9b8feea3c9063240eeefdacdd1b4b83bc0",
       "split": "train",
       "category": "reference",
@@ -4569,7 +4569,7 @@
     },
     {
       "id": "gd-main-CoreNotificationType-schema",
-      "repo": "/Volumes/D/Projects/gd-main",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/SAME-SNAPSHOT-CBM/snapshots/gd",
       "revision": "9d77eb9b8feea3c9063240eeefdacdd1b4b83bc0",
       "split": "train",
       "category": "reference",
@@ -4620,7 +4620,7 @@
     },
     {
       "id": "gd-main-CoreNotificationCategory-schema",
-      "repo": "/Volumes/D/Projects/gd-main",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/SAME-SNAPSHOT-CBM/snapshots/gd",
       "revision": "9d77eb9b8feea3c9063240eeefdacdd1b4b83bc0",
       "split": "train",
       "category": "reference",
@@ -4671,7 +4671,7 @@
     },
     {
       "id": "gd-main-NotificationDeliveryResult-schema",
-      "repo": "/Volumes/D/Projects/gd-main",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/SAME-SNAPSHOT-CBM/snapshots/gd",
       "revision": "9d77eb9b8feea3c9063240eeefdacdd1b4b83bc0",
       "split": "train",
       "category": "reference",
@@ -4722,7 +4722,7 @@
     },
     {
       "id": "vpn-main-TestListTrimsEmptyValues-helper",
-      "repo": "/Volumes/D/Projects/vpn-main",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/SAME-SNAPSHOT-CBM/snapshots/vex",
       "revision": "da5cd1a21f8f4650798cc19c92ff8790b324e6d3",
       "split": "train",
       "category": "call",
@@ -4773,7 +4773,7 @@
     },
     {
       "id": "vpn-main-TestFirstNonEmpty-helper",
-      "repo": "/Volumes/D/Projects/vpn-main",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/SAME-SNAPSHOT-CBM/snapshots/vex",
       "revision": "da5cd1a21f8f4650798cc19c92ff8790b324e6d3",
       "split": "train",
       "category": "call",
@@ -4824,7 +4824,7 @@
     },
     {
       "id": "vpn-main-TestSplitListTrimsAndDropsEmpty-helper",
-      "repo": "/Volumes/D/Projects/vpn-main",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/SAME-SNAPSHOT-CBM/snapshots/vex",
       "revision": "da5cd1a21f8f4650798cc19c92ff8790b324e6d3",
       "split": "train",
       "category": "call",
@@ -4875,7 +4875,7 @@
     },
     {
       "id": "vpn-main-TestUniqueNonEmpty-helper",
-      "repo": "/Volumes/D/Projects/vpn-main",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/SAME-SNAPSHOT-CBM/snapshots/vex",
       "revision": "da5cd1a21f8f4650798cc19c92ff8790b324e6d3",
       "split": "train",
       "category": "call",
@@ -4926,7 +4926,7 @@
     },
     {
       "id": "pyramid-agent-TestAddNode-receiver",
-      "repo": "/Volumes/D/Projects/pyramid-agent",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/EXPANDED-GRAPH-CORPUS/snapshots/pyramid",
       "revision": "dbca43c53d7f49bbf988813cd97720098be3ac3f",
       "split": "heldout",
       "category": "receiver",
@@ -4971,7 +4971,7 @@
     },
     {
       "id": "pyramid-agent-TestAddEdge-receiver",
-      "repo": "/Volumes/D/Projects/pyramid-agent",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/EXPANDED-GRAPH-CORPUS/snapshots/pyramid",
       "revision": "dbca43c53d7f49bbf988813cd97720098be3ac3f",
       "split": "heldout",
       "category": "receiver",
@@ -5016,7 +5016,7 @@
     },
     {
       "id": "pyramid-agent-TestCanExecute-receiver",
-      "repo": "/Volumes/D/Projects/pyramid-agent",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/EXPANDED-GRAPH-CORPUS/snapshots/pyramid",
       "revision": "dbca43c53d7f49bbf988813cd97720098be3ac3f",
       "split": "heldout",
       "category": "receiver",
@@ -5061,7 +5061,7 @@
     },
     {
       "id": "pyramid-agent-TestGetDependents-receiver",
-      "repo": "/Volumes/D/Projects/pyramid-agent",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/EXPANDED-GRAPH-CORPUS/snapshots/pyramid",
       "revision": "dbca43c53d7f49bbf988813cd97720098be3ac3f",
       "split": "heldout",
       "category": "receiver",
@@ -5103,6 +5103,102 @@
         "site": "site"
       },
       "rationale": "The local engine variable is assigned NewEngine(), whose source declaration returns *Engine (engine.go lines 56-63). The call is engine.GetDependents and the target has receiver *Engine. No interface or method-name-only inference is used."
+    },
+    {
+      "id": "vocal-chat-rooms-getRooms",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/IBO-271-MULTIPROJECT-20260905/vocal-snapshot",
+      "revision": "8613b9fc15a0989ccc5bd1d5fb41dcc0d350d578",
+      "split": "train",
+      "category": "receiver",
+      "question": "Which ChatService method does ChatController.rooms invoke?",
+      "provenance": {"method": "manual-source-read", "verified_on": "2026-09-05"},
+      "evidence": {
+        "source": {"path": "apps/api/src/chat/chat.controller.ts", "start_line": 13, "end_line": 15, "symbol": "rooms", "sha256": "58a698e43518febbae2fa538241d14c76bfb9c94c587368296f89e3834c9e7d6", "span_sha256": "26334a4550bb6d7cd87d18837cd3983b4c2708b05e4a6841efece7d7ea68b379"},
+        "site": {"path": "apps/api/src/chat/chat.controller.ts", "start_line": 14, "end_line": 14, "symbol": "getRooms", "sha256": "58a698e43518febbae2fa538241d14c76bfb9c94c587368296f89e3834c9e7d6", "span_sha256": "71701d25af1fa81b95e0b491bf7135873d309546b2e8c64ebb2bf1a23144a4a3"},
+        "target": {"path": "apps/api/src/chat/chat.service.ts", "start_line": 18, "end_line": 23, "symbol": "getRooms", "sha256": "8697e90392fd7e7ab0d0cdd9417f3ef75afcbde23febfb58c4770d135b8f75ce", "span_sha256": "074a4b465955cabf5cefb9376b4398cef268ea8416a700cec829c632611572a8"}
+      },
+      "expected": {"relation": "CALLS", "source": "source", "target": "target", "site": "site"},
+      "rationale": "The constructor types chat as ChatService, imported from ./chat.service; rooms directly invokes this.chat.getRooms."
+    },
+    {
+      "id": "vocal-chat-messages-getMessages",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/IBO-271-MULTIPROJECT-20260905/vocal-snapshot",
+      "revision": "8613b9fc15a0989ccc5bd1d5fb41dcc0d350d578",
+      "split": "train",
+      "category": "receiver",
+      "question": "Which ChatService method does ChatController.messages invoke?",
+      "provenance": {"method": "manual-source-read", "verified_on": "2026-09-05"},
+      "evidence": {
+        "source": {"path": "apps/api/src/chat/chat.controller.ts", "start_line": 19, "end_line": 24, "symbol": "messages", "sha256": "58a698e43518febbae2fa538241d14c76bfb9c94c587368296f89e3834c9e7d6", "span_sha256": "814a5a86f178fe35f107d27bc3b97e16743047449d8dd97107914b9a9f857ea4"},
+        "site": {"path": "apps/api/src/chat/chat.controller.ts", "start_line": 23, "end_line": 23, "symbol": "getMessages", "sha256": "58a698e43518febbae2fa538241d14c76bfb9c94c587368296f89e3834c9e7d6", "span_sha256": "2b920db8f55d1c6168c341082a0a2008d221030c262fbb7f78476d3c5a1d19fe"},
+        "target": {"path": "apps/api/src/chat/chat.service.ts", "start_line": 25, "end_line": 32, "symbol": "getMessages", "sha256": "8697e90392fd7e7ab0d0cdd9417f3ef75afcbde23febfb58c4770d135b8f75ce", "span_sha256": "c62dc8c5d35d2bec1926a5b53f0ca8405316109c99f73efea0fc062b73815b0d"}
+      },
+      "expected": {"relation": "CALLS", "source": "source", "target": "target", "site": "site"},
+      "rationale": "The constructor types chat as ChatService, imported from ./chat.service; messages directly invokes this.chat.getMessages."
+    },
+    {
+      "id": "vocal-chat-createRoom-service",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/IBO-271-MULTIPROJECT-20260905/vocal-snapshot",
+      "revision": "8613b9fc15a0989ccc5bd1d5fb41dcc0d350d578",
+      "split": "train",
+      "category": "receiver",
+      "question": "Which ChatService method does ChatController.createRoom invoke?",
+      "provenance": {"method": "manual-source-read", "verified_on": "2026-09-05"},
+      "evidence": {
+        "source": {"path": "apps/api/src/chat/chat.controller.ts", "start_line": 28, "end_line": 33, "symbol": "createRoom", "sha256": "58a698e43518febbae2fa538241d14c76bfb9c94c587368296f89e3834c9e7d6", "span_sha256": "cb589942445735f3c7541f556accd7c809bb5026b3aa98ee2b7a8205a93ec601"},
+        "site": {"path": "apps/api/src/chat/chat.controller.ts", "start_line": 32, "end_line": 32, "symbol": "createRoom", "sha256": "58a698e43518febbae2fa538241d14c76bfb9c94c587368296f89e3834c9e7d6", "span_sha256": "313656f4f6e7ea7110d0f30899d2380efd4543435a68157fc3dfaaefc4163bff"},
+        "target": {"path": "apps/api/src/chat/chat.service.ts", "start_line": 8, "end_line": 16, "symbol": "createRoom", "sha256": "8697e90392fd7e7ab0d0cdd9417f3ef75afcbde23febfb58c4770d135b8f75ce", "span_sha256": "c305a7159402df66a59197a4e4ce0bb78995ed7b6ddd2c016a096e5e84d05ad0"}
+      },
+      "expected": {"relation": "CALLS", "source": "source", "target": "target", "site": "site"},
+      "rationale": "The constructor types chat as ChatService, imported from ./chat.service; createRoom directly invokes the same-named service method."
+    },
+    {
+      "id": "gd-analytics-page-dashboard",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/SAME-SNAPSHOT-CBM/snapshots/gd",
+      "revision": "9d77eb9b8feea3c9063240eeefdacdd1b4b83bc0",
+      "split": "train",
+      "category": "call",
+      "question": "Which imported query does getAnalyticsPageData call for dashboard data?",
+      "provenance": {"method": "manual-source-read", "verified_on": "2026-09-05"},
+      "evidence": {
+        "source": {"path": "apps/CRM/app/actions/analytics/page-data.ts", "start_line": 13, "end_line": 26, "symbol": "getAnalyticsPageData", "sha256": "1428f736b14f76d931cac9b6aac42eaea7a2d584d80b9169acfe83cc5842b7ef", "span_sha256": "9c61e02b15e6d6eddcdfdbe82440f162a944375d450fbd8e952700f5f3eb7478"},
+        "site": {"path": "apps/CRM/app/actions/analytics/page-data.ts", "start_line": 17, "end_line": 17, "symbol": "getAnalyticsDashboard", "sha256": "1428f736b14f76d931cac9b6aac42eaea7a2d584d80b9169acfe83cc5842b7ef", "span_sha256": "a61c9b12bdc38f67e4b27776e9dbd4fedb4f980966ae3f2ce5cc2dadb019354f"},
+        "target": {"path": "apps/CRM/app/actions/analytics/queries.ts", "start_line": 167, "end_line": 169, "symbol": "getAnalyticsDashboard", "sha256": "62b80393057adb8649ed6e4969c2769b0cfca602901a71b32488950c60859deb", "span_sha256": "4525b596aa33bfd7e8a6ac09e53d61292e57d484d713d72fcf0dea6c2f55aa93"}
+      },
+      "expected": {"relation": "CALLS", "source": "source", "target": "target", "site": "site"},
+      "rationale": "The source imports getAnalyticsDashboard through the root @ alias and directly calls it inside Promise.all."
+    },
+    {
+      "id": "gd-analytics-page-engineers",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/SAME-SNAPSHOT-CBM/snapshots/gd",
+      "revision": "9d77eb9b8feea3c9063240eeefdacdd1b4b83bc0",
+      "split": "train",
+      "category": "call",
+      "question": "Which imported query does getAnalyticsPageData call for engineers?",
+      "provenance": {"method": "manual-source-read", "verified_on": "2026-09-05"},
+      "evidence": {
+        "source": {"path": "apps/CRM/app/actions/analytics/page-data.ts", "start_line": 13, "end_line": 26, "symbol": "getAnalyticsPageData", "sha256": "1428f736b14f76d931cac9b6aac42eaea7a2d584d80b9169acfe83cc5842b7ef", "span_sha256": "9c61e02b15e6d6eddcdfdbe82440f162a944375d450fbd8e952700f5f3eb7478"},
+        "site": {"path": "apps/CRM/app/actions/analytics/page-data.ts", "start_line": 18, "end_line": 18, "symbol": "getEngineers", "sha256": "1428f736b14f76d931cac9b6aac42eaea7a2d584d80b9169acfe83cc5842b7ef", "span_sha256": "4774058a42ebacee8c8a5cf15c0f216cb95811ba7c614f9789cb019c5448bb73"},
+        "target": {"path": "apps/CRM/app/actions/sessions/queries.ts", "start_line": 119, "end_line": 127, "symbol": "getEngineers", "sha256": "349539afc0b5ca35f3673863745ad6672f06816168f091fb08495639ff45a9da", "span_sha256": "ff1c35217884f62c3fdb3ec28852e75a54005ab2ef2c52c0e74bf9aeac953fb7"}
+      },
+      "expected": {"relation": "CALLS", "source": "source", "target": "target", "site": "site"},
+      "rationale": "The source imports getEngineers through the root @ alias and directly calls it inside Promise.all."
+    },
+    {
+      "id": "cgrx-git-text-git-bytes",
+      "repo": "/Volumes/D/Projects/cgrx-opensource",
+      "revision": "b8d828524b903abeb053db9faef5abba40fea509",
+      "split": "train",
+      "category": "call",
+      "question": "Which helper does git_text call to execute Git and obtain bytes?",
+      "provenance": {"method": "manual-source-read", "verified_on": "2026-09-05"},
+      "evidence": {
+        "source": {"path": "crates/cgrx-cli/src/runtime.rs", "start_line": 4067, "end_line": 4071, "symbol": "git_text", "sha256": "8ddaaf4d0b6cf752715c86e9b9e2cead8a89ca186d9221e6698d12f05e7ec6dc", "span_sha256": "639395c0dff844e473e2ce3cdc137818eafec5457e9ee398adf51c0dcc3e2dc7"},
+        "site": {"path": "crates/cgrx-cli/src/runtime.rs", "start_line": 4068, "end_line": 4068, "symbol": "git_bytes", "sha256": "8ddaaf4d0b6cf752715c86e9b9e2cead8a89ca186d9221e6698d12f05e7ec6dc", "span_sha256": "584af571f53328cbfd7bc1bf0e2ef039cc428079cc074ce774996ac9cbabf553"},
+        "target": {"path": "crates/cgrx-cli/src/runtime.rs", "start_line": 4044, "end_line": 4054, "symbol": "git_bytes", "sha256": "8ddaaf4d0b6cf752715c86e9b9e2cead8a89ca186d9221e6698d12f05e7ec6dc", "span_sha256": "0c317511bcad802784fdd6ab3bd077fa8d69623b38bd19e810af2d6634a84b38"}
+      },
+      "expected": {"relation": "CALLS", "source": "source", "target": "target", "site": "site"},
+      "rationale": "git_text directly passes root and args to the same-module git_bytes helper before UTF-8 decoding."
     }
   ]
 }

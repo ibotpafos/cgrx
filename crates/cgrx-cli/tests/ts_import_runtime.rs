@@ -140,6 +140,101 @@ fn imported_alias_uses_export_identity_not_decoy_and_reopens() {
     f.runtime = Runtime::open(&f.state).unwrap();
     assert_eq!(f.targets(), ["worker.ts"]);
 }
+
+#[test]
+fn imported_constructor_parameter_property_receiver_resolves_exact_method() {
+    let mut f = Fixture::new(&[
+        (
+            "main.ts",
+            "import { ChatService } from './chat.service'; class Controller { constructor(private readonly chat: ChatService) {} caller() { this.chat.getRooms(); } }",
+        ),
+        (
+            "chat.service.ts",
+            "export class ChatService { getRooms() {} }",
+        ),
+        ("decoy.ts", "export class Decoy { getRooms() {} }"),
+    ]);
+    let trace = f.trace();
+    assert_eq!(f.targets(), ["chat.service.ts"]);
+    assert_eq!(trace["nodes"][0]["symbol"], "getRooms");
+    f.runtime = Runtime::open(&f.state).unwrap();
+    assert_eq!(f.targets(), ["chat.service.ts"]);
+}
+
+#[test]
+fn decorated_async_controller_receiver_resolves_exact_method() {
+    let f = Fixture::new(&[
+        (
+            "tsconfig.base.json",
+            r#"{"compilerOptions":{"strict":true,"resolveJsonModule":true}}"#,
+        ),
+        (
+            "tsconfig.json",
+            r#"{"extends":"./tsconfig.base.json","compilerOptions":{"declaration":true,"emitDecoratorMetadata":true,"experimentalDecorators":true,"module":"commonjs","moduleResolution":"node","outDir":"dist","target":"es2022"}}"#,
+        ),
+        (
+            "main.ts",
+            "import { Controller, Get, Req } from '@nestjs/common'; import { ChatService } from './chat.service'; import type { Request } from 'express'; @Controller('chat') export class ChatController { constructor(private readonly chat: ChatService) {} @Get('rooms') async caller(@Req() request: Request) { return this.chat.getRooms(request); } }",
+        ),
+        (
+            "chat.service.ts",
+            "export class ChatService { async getRooms(request: unknown) {} }",
+        ),
+    ]);
+    assert_eq!(f.targets(), ["chat.service.ts"]);
+    let documents = f.stored()["documents"].as_array().unwrap().clone();
+    let receiver_documents: Vec<_> = documents
+        .iter()
+        .filter(|document| {
+            document["path"] == "main.ts"
+                && document["provenance"] == "CALLS"
+                && document["text"]
+                    .as_str()
+                    .is_some_and(|text| text.contains("this.chat.getRooms"))
+        })
+        .collect();
+    assert_eq!(receiver_documents.len(), 1);
+    assert_eq!(receiver_documents[0]["qualified_name"], "getRooms");
+}
+
+#[test]
+fn mutable_or_non_property_constructor_parameters_do_not_prove_receiver() {
+    for constructor in [
+        "constructor(private chat: ChatService) {}",
+        "constructor(chat: ChatService) {}",
+        "constructor(private chat: readonly ChatService[]) {}",
+        "constructor(private readonly chat: ChatService | null) {}",
+    ] {
+        let f = Fixture::new(&[
+            (
+                "main.ts",
+                &format!(
+                    "import {{ ChatService }} from './chat.service'; class Controller {{ {constructor} caller() {{ this.chat.getRooms(); }} }}"
+                ),
+            ),
+            (
+                "chat.service.ts",
+                "export class ChatService { getRooms() {} }",
+            ),
+        ]);
+        assert!(f.targets().is_empty(), "{constructor}");
+    }
+}
+
+#[test]
+fn nested_regular_function_does_not_inherit_parameter_property_receiver() {
+    let f = Fixture::new(&[
+        (
+            "main.ts",
+            "import { ChatService } from './chat.service'; class Controller { constructor(private readonly chat: ChatService) {} caller() { function nested() { this.chat.getRooms(); } nested(); } }",
+        ),
+        (
+            "chat.service.ts",
+            "export class ChatService { getRooms() {} }",
+        ),
+    ]);
+    assert!(f.targets().iter().all(|path| path != "chat.service.ts"));
+}
 #[test]
 fn unexported_and_duplicate_imports_never_fall_back() {
     for source in [
