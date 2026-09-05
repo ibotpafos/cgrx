@@ -2321,25 +2321,30 @@ fn ts_config_supported_for(path: &str, configs: &BTreeMap<String, TsResolutionCo
     ts_config::nearest(path, configs).is_none_or(|config| config.supported)
 }
 
+// Only immutable specifiers are deduplicated, within one source/pass. File,
+// config and directory witnesses are still re-observed on every refresh.
+fn ts_module_specifiers(facts: &TsFileFacts) -> BTreeSet<&str> {
+    facts
+        .imports
+        .iter()
+        .map(|import| import.module.as_str())
+        .chain(facts.exports.values().flatten().filter_map(|export| {
+            if let cgrx_languages::ts_imports::Export::From { module, .. } = export {
+                Some(module.as_str())
+            } else {
+                None
+            }
+        }))
+        .collect()
+}
+
 fn ts_config_modules(
     files: &BTreeMap<String, StoredTsFileFacts>,
     configs: &BTreeMap<String, TsResolutionConfig>,
 ) -> BTreeMap<(String, String), String> {
     let mut modules = BTreeMap::new();
     for (path, stored) in files {
-        for module in stored
-            .facts
-            .imports
-            .iter()
-            .map(|i| i.module.as_str())
-            .chain(stored.facts.exports.values().flatten().filter_map(|e| {
-                if let cgrx_languages::ts_imports::Export::From { module, .. } = e {
-                    Some(module.as_str())
-                } else {
-                    None
-                }
-            }))
-        {
+        for module in ts_module_specifiers(&stored.facts) {
             if let Some(mapped) = ts_config::mapped(path, module, configs) {
                 modules.insert((path.clone(), module.to_owned()), mapped);
             }
@@ -2349,6 +2354,8 @@ fn ts_config_modules(
 }
 
 fn ts_inventory_candidates(ts_files: &BTreeMap<String, StoredTsFileFacts>) -> BTreeSet<String> {
+    #[cfg(test)]
+    ts_inventory_cache_tests::INVENTORY_BUILDS.with(|n| n.set(n.get() + 1));
     let mut paths = BTreeSet::new();
     for (caller, stored) in ts_files.iter().filter(|(path, _)| {
         path.ends_with(".ts") && !path.ends_with(".d.ts") || path.ends_with(".tsx")
@@ -2370,25 +2377,9 @@ fn ts_inventory_candidates(ts_files: &BTreeMap<String, StoredTsFileFacts>) -> BT
                 break;
             }
         }
-        let modules = stored
-            .facts
-            .imports
-            .iter()
-            .map(|import| import.module.as_str())
-            .chain(
-                stored
-                    .facts
-                    .exports
-                    .values()
-                    .flatten()
-                    .filter_map(|export| {
-                        let cgrx_languages::ts_imports::Export::From { module, .. } = export else {
-                            return None;
-                        };
-                        Some(module.as_str())
-                    }),
-            );
-        for module in modules {
+        for module in ts_module_specifiers(&stored.facts) {
+            #[cfg(test)]
+            ts_inventory_cache_tests::MODULE_EXPANSIONS.with(|n| n.set(n.get() + 1));
             paths.extend(cgrx_languages::ts_imports::module_candidates(
                 caller, module,
             ));
@@ -2458,13 +2449,13 @@ fn scan_ts_inventory(
     configs: &mut BTreeMap<String, TsResolutionConfig>,
 ) -> Result<(bool, Vec<(String, Hash32)>), RuntimeError> {
     let mut directory_cache = TsDirectoryCache::default();
+    let mut candidates = ts_inventory_candidates(ts_files);
     let (collected_configs, config_paths, config_witness) =
-        ts_config::collect(root, ts_files, &mut directory_cache);
+        ts_config::collect(root, &candidates, &mut directory_cache);
     #[cfg(test)]
     ts_config::tests::after_collect(root);
     let mut changed = *configs != collected_configs;
     *configs = collected_configs;
-    let mut candidates = ts_inventory_candidates(ts_files);
     candidates.extend(config_paths.iter().cloned());
     for ((from, _), mapped) in ts_config_modules(ts_files, configs) {
         candidates.extend(cgrx_languages::ts_imports::module_candidates(
@@ -5268,6 +5259,10 @@ mod ts_inventory_cache_tests {
     use std::cell::Cell;
     use std::sync::atomic::{AtomicU64, Ordering};
     thread_local! { pub(super) static DIRECTORY_READS: Cell<usize> = const { Cell::new(0) }; }
+    thread_local! {
+        pub(super) static INVENTORY_BUILDS: Cell<usize> = const { Cell::new(0) };
+        pub(super) static MODULE_EXPANSIONS: Cell<usize> = const { Cell::new(0) };
+    }
     static ID: AtomicU64 = AtomicU64::new(0);
     struct Fixture(PathBuf);
     impl Drop for Fixture {
@@ -5275,6 +5270,54 @@ mod ts_inventory_cache_tests {
             let _ = fs::remove_dir_all(&self.0);
         }
     }
+    #[test]
+    fn repeated_named_imports_expand_once_per_inventory_pass() {
+        let fixture = Fixture(std::env::temp_dir().join(format!(
+            "cgrx-candidate-cache-{}-{}",
+            std::process::id(),
+            ID.fetch_add(1, Ordering::Relaxed)
+        )));
+        fs::create_dir_all(&fixture.0).unwrap();
+        let source = "import { a, b, c } from './worker'; export { d, e } from './worker';";
+        fs::write(fixture.0.join("main.ts"), source).unwrap();
+        let hash = Hash32(*blake3::hash(source.as_bytes()).as_bytes());
+        let mut files = BTreeMap::from([(
+            "main.ts".to_owned(),
+            StoredTsFileFacts {
+                source_hash: hash,
+                facts: TsFileFacts::parse("main.ts", source.as_bytes()),
+                inventory_only: false,
+            },
+        )]);
+        let mut hashes = BTreeMap::from([("main.ts".to_owned(), hash)]);
+        let mut configs = BTreeMap::new();
+        for pass in 0..2 {
+            INVENTORY_BUILDS.with(|n| n.set(0));
+            MODULE_EXPANSIONS.with(|n| n.set(0));
+            let (_, invalid) =
+                scan_ts_inventory(&fixture.0, &mut hashes, &mut files, &mut configs).unwrap();
+            assert!(invalid.is_empty());
+            assert_eq!(
+                INVENTORY_BUILDS.with(Cell::get),
+                1,
+                "one candidate set per pass"
+            );
+            assert_eq!(
+                MODULE_EXPANSIONS.with(Cell::get),
+                1,
+                "one expansion per distinct module"
+            );
+            if pass == 0 {
+                fs::write(fixture.0.join("worker.ts"), "export function a() {}").unwrap();
+            } else {
+                assert!(
+                    files["worker.ts"].inventory_only,
+                    "new filesystem target remains a presence blocker"
+                );
+            }
+        }
+    }
+
     #[test]
     fn directory_reads_are_shared_within_inventory_but_not_across_refreshes() {
         let fixture = Fixture(std::env::temp_dir().join(format!(
