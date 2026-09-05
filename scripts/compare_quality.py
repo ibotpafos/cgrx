@@ -144,6 +144,20 @@ def compare(data, minimum_cases=100, minimum_per_language=20, minimum_gain=0.005
                             'Passing proves only the supplied heldout workload, not universal superiority.']}
 
 
+def read_json(text):
+    def object_pairs(pairs):
+        result = {}
+        for key, value in pairs:
+            require(key not in result, f'duplicate JSON key: {key}')
+            result[key] = value
+        return result
+
+    def reject_constant(value):
+        raise ValueError(f'non-finite JSON constant: {value}')
+
+    return json.loads(text, object_pairs_hook=object_pairs, parse_constant=reject_constant)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('input', type=Path)
@@ -152,7 +166,7 @@ def main():
     parser.add_argument('--minimum-gain', type=float, default=0.005)
     args = parser.parse_args()
     try:
-        data = json.loads(args.input.read_text())
+        data = read_json(args.input.read_text())
         report = compare(data, args.minimum_cases, args.minimum_per_language, args.minimum_gain)
     except (ValueError, OSError) as exc:
         print(json.dumps({'passed': False, 'invalid': str(exc)}))

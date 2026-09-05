@@ -29,6 +29,15 @@ def evaluate(data):
 
 
 class ComparisonTests(unittest.TestCase):
+    def test_duplicate_json_keys_invalid(self):
+        with self.assertRaises(ValueError):
+            gate.read_json('{"cases": [], "cases": [1]}')
+
+    def test_json_nonfinite_constants_invalid(self):
+        for literal in ['NaN', 'Infinity', '-Infinity']:
+            with self.assertRaises(ValueError):
+                gate.read_json('{"metric": ' + literal + '}')
+
     def test_real_improvement_passes(self):
         result = evaluate(fixture())
         self.assertTrue(result['passed'])
