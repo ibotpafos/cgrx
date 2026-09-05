@@ -3,7 +3,10 @@ use std::io::{BufRead, BufReader, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+static TEST_DIRECTORY_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 fn cli() -> Command {
     Command::new(env!("CARGO_BIN_EXE_cgrx"))
@@ -17,9 +20,16 @@ impl TestDirectory {
             .duration_since(UNIX_EPOCH)
             .expect("clock after epoch")
             .as_nanos();
-        let path =
-            std::env::temp_dir().join(format!("cgrx-cli-{label}-{}-{nonce}", std::process::id()));
-        fs::create_dir_all(&path).expect("create test directory");
+        Self::with_nonce(label, nonce)
+    }
+
+    fn with_nonce(label: &str, nonce: u128) -> Self {
+        let sequence = TEST_DIRECTORY_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        let path = std::env::temp_dir().join(format!(
+            "cgrx-cli-{label}-{}-{nonce}-{sequence}",
+            std::process::id()
+        ));
+        fs::create_dir(&path).expect("exclusively create test directory");
         Self(path)
     }
 
@@ -1523,4 +1533,34 @@ fn invalid_git_override_does_not_fall_back_to_path() {
         "{:?}",
         output
     );
+}
+
+#[test]
+fn fixture_clock_collision_preserves_independent_lifetimes() {
+    let first = TestDirectory::with_nonce("same-clock-tick", 42);
+    let second = TestDirectory::with_nonce("same-clock-tick", 42);
+    assert_ne!(
+        first.path(),
+        second.path(),
+        "clock timestamps are not unique IDs"
+    );
+    fs::write(first.path().join("git"), "first wrapper").unwrap();
+    fs::write(second.path().join("git"), "second wrapper").unwrap();
+    drop(first);
+    assert_eq!(
+        fs::read_to_string(second.path().join("git")).unwrap(),
+        "second wrapper"
+    );
+}
+
+#[test]
+fn fixture_clock_parallel_allocations_are_unique() {
+    let directories: Vec<_> = std::thread::scope(|scope| {
+        let handles: Vec<_> = (0..16)
+            .map(|_| scope.spawn(|| TestDirectory::with_nonce("parallel-same-clock", 42)))
+            .collect();
+        handles.into_iter().map(|h| h.join().unwrap()).collect()
+    });
+    let paths: std::collections::BTreeSet<_> = directories.iter().map(|d| d.path()).collect();
+    assert_eq!(paths.len(), 16);
 }
