@@ -164,3 +164,39 @@ fn import_and_same_scope_declaration_collision_is_not_proof() {
     );
     assert_eq!(result["total"], 0, "{result}");
 }
+
+#[test]
+fn relative_import_preserves_existing_cross_file_relationship() {
+    // Compatibility regression, not proof of exact module/export resolution:
+    // the existing runtime still uses name matching for relative imports.
+    let result = trace("import { invoke } from './decoy'; export function caller() { invoke(); }");
+    assert_eq!(result["total"], 1, "{result}");
+    assert_eq!(result["nodes"][0]["symbol"], "invoke");
+    assert_eq!(result["nodes"][0]["path"], "decoy.ts");
+}
+
+#[test]
+fn relative_import_forms_preserve_existing_syntax_candidates() {
+    for import in [
+        "import { invoke } from './target';",
+        "import { invoke } from \"../target\";",
+        "import { remote as invoke } from './target';",
+        "import invoke from './target';",
+        "import invoke = require('../target');",
+    ] {
+        let source = format!("{import} function caller() {{ invoke(); }}");
+        let path = Path::new("main.ts");
+        let extraction = pack_for_path(path)
+            .unwrap()
+            .extract(path, source.as_bytes())
+            .unwrap();
+        assert!(
+            extraction
+                .edges
+                .iter()
+                .any(|e| e.relation == LanguageRelation::Calls && e.target == "invoke"),
+            "{source}: {:?}",
+            extraction
+        );
+    }
+}
