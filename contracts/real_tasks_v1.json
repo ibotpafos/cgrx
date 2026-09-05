@@ -1,0 +1,606 @@
+{
+  "schema_version": 1,
+  "provenance": "Initial bounded source-truth slice: 12 manually read tasks, five committed source files in three canonical repositories. Anchors contain identifiers, one-based inclusive line ranges, SHA-256 of full file and raw line-span bytes; no source bodies or configuration values are stored. All referenced working files were compared to their recorded HEAD blobs. GD and VPN CGRX indexing was unavailable; Pyramid engine coverage was partial. Graph output is not the oracle. Eight train tasks cover GD notifications and VPN envutil; four heldout tasks cover Pyramid Engine, with no shared evidence file across splits. Optional negatives assert only identifier absence within the recorded source span. This is not exhaustive and validation does not prove semantic correctness or runtime behavior.",
+  "tasks": [
+    {
+      "id": "gd-notification-preferences",
+      "repo": "/Volumes/D/Projects/gd-main",
+      "revision": "9d77eb9b8feea3c9063240eeefdacdd1b4b83bc0",
+      "split": "train",
+      "question": "Which local type describes the preferences accepted by resolveNotificationChannels?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05"
+      },
+      "evidence": {
+        "source": {
+          "path": "packages/notifications-core/src/policy.ts",
+          "sha256": "44503610d201e46b911a9000c5fe7aee0c5eeaaefded2ec562e3da52feae9186",
+          "start_line": 14,
+          "end_line": 38,
+          "span_sha256": "8cf2e10a4d7a0a127cebff068aab14703f1525b22a814bbab3cd05383b1efea7",
+          "symbol": "resolveNotificationChannels"
+        },
+        "target": {
+          "path": "packages/notifications-core/src/contracts.ts",
+          "sha256": "9cbac6eb1f0c67e37192e3fdfb5f3cbb4c7a0995e7b9cabcff0486c449864a06",
+          "start_line": 65,
+          "end_line": 67,
+          "span_sha256": "eff872aa4ef7cec3e5872bf999dbd7dc9b9c1eaf42f0aa8d854900c49d13d028",
+          "symbol": "NotificationPreferencesSnapshot"
+        },
+        "site": {
+          "path": "packages/notifications-core/src/policy.ts",
+          "sha256": "44503610d201e46b911a9000c5fe7aee0c5eeaaefded2ec562e3da52feae9186",
+          "start_line": 15,
+          "end_line": 15,
+          "span_sha256": "8c34a63701af1ef02a6701b61b2bc3aa3adf9a17c0298639ed5e6097465c3311",
+          "symbol": "NotificationPreferencesSnapshot"
+        }
+      },
+      "expected": {
+        "relation": "REFERENCE",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The parameter annotation names the type imported from ./contracts (policy lines 1-5); contracts lines 65-67 define it from notificationPreferencesSchema.",
+      "negative": {
+        "kind": "identifier_absent",
+        "symbol": "NotificationEnvelope",
+        "scope": "source",
+        "rationale": "Manual read of the complete source span confirms this identifier is absent; this is only a bounded lexical distractor, not a whole-repository or runtime non-call claim."
+      }
+    },
+    {
+      "id": "gd-dedupe-envelope",
+      "repo": "/Volumes/D/Projects/gd-main",
+      "revision": "9d77eb9b8feea3c9063240eeefdacdd1b4b83bc0",
+      "split": "train",
+      "question": "Which local envelope type is referenced by resolveChannelDedupeKey?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05"
+      },
+      "evidence": {
+        "source": {
+          "path": "packages/notifications-core/src/policy.ts",
+          "sha256": "44503610d201e46b911a9000c5fe7aee0c5eeaaefded2ec562e3da52feae9186",
+          "start_line": 40,
+          "end_line": 46,
+          "span_sha256": "53d77ad6164326eed2b8dfea8c951ba53d2460c879f005582b4fbaa35c3f4141",
+          "symbol": "resolveChannelDedupeKey"
+        },
+        "target": {
+          "path": "packages/notifications-core/src/contracts.ts",
+          "sha256": "9cbac6eb1f0c67e37192e3fdfb5f3cbb4c7a0995e7b9cabcff0486c449864a06",
+          "start_line": 75,
+          "end_line": 75,
+          "span_sha256": "92ea5dbddaf0f3fc24ef18183e5e1701e6b4c596d2ec9529301dac5f3cd829f7",
+          "symbol": "NotificationEnvelope"
+        },
+        "site": {
+          "path": "packages/notifications-core/src/policy.ts",
+          "sha256": "44503610d201e46b911a9000c5fe7aee0c5eeaaefded2ec562e3da52feae9186",
+          "start_line": 41,
+          "end_line": 41,
+          "span_sha256": "0e9652e00bcba1c0fd130a01f5a26cafa17e04a514e36bd37427cf644324fe0f",
+          "symbol": "NotificationEnvelope"
+        }
+      },
+      "expected": {
+        "relation": "REFERENCE",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The envelope parameter uses the explicit ./contracts type import; the target line declares that exact exported alias.",
+      "negative": {
+        "kind": "identifier_absent",
+        "symbol": "NotificationPreferencesSnapshot",
+        "scope": "source",
+        "rationale": "Manual read of the complete source span confirms this identifier is absent; this is only a bounded lexical distractor, not a whole-repository or runtime non-call claim."
+      }
+    },
+    {
+      "id": "gd-channel-schema",
+      "repo": "/Volumes/D/Projects/gd-main",
+      "revision": "9d77eb9b8feea3c9063240eeefdacdd1b4b83bc0",
+      "split": "train",
+      "question": "Which schema does the NotificationChannel type reference through typeof?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05"
+      },
+      "evidence": {
+        "source": {
+          "path": "packages/notifications-core/src/contracts.ts",
+          "sha256": "9cbac6eb1f0c67e37192e3fdfb5f3cbb4c7a0995e7b9cabcff0486c449864a06",
+          "start_line": 11,
+          "end_line": 11,
+          "span_sha256": "b462820b2befefa6a497e86cd748600749b0f09f50f020a369a3d594db9703ea",
+          "symbol": "NotificationChannel"
+        },
+        "target": {
+          "path": "packages/notifications-core/src/contracts.ts",
+          "sha256": "9cbac6eb1f0c67e37192e3fdfb5f3cbb4c7a0995e7b9cabcff0486c449864a06",
+          "start_line": 4,
+          "end_line": 9,
+          "span_sha256": "af87e498a64f5baea0cdc8342342f85cbdb793a594994fc5fff936cdfcd1160a",
+          "symbol": "notificationChannelSchema"
+        },
+        "site": {
+          "path": "packages/notifications-core/src/contracts.ts",
+          "sha256": "9cbac6eb1f0c67e37192e3fdfb5f3cbb4c7a0995e7b9cabcff0486c449864a06",
+          "start_line": 11,
+          "end_line": 11,
+          "span_sha256": "b462820b2befefa6a497e86cd748600749b0f09f50f020a369a3d594db9703ea",
+          "symbol": "notificationChannelSchema"
+        }
+      },
+      "expected": {
+        "relation": "REFERENCE",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The alias explicitly applies z.infer to typeof notificationChannelSchema; the same module declares that schema.",
+      "negative": {
+        "kind": "identifier_absent",
+        "symbol": "notificationOutboxStatusSchema",
+        "scope": "source",
+        "rationale": "Manual read of the complete source span confirms this identifier is absent; this is only a bounded lexical distractor, not a whole-repository or runtime non-call claim."
+      }
+    },
+    {
+      "id": "gd-envelope-payload",
+      "repo": "/Volumes/D/Projects/gd-main",
+      "revision": "9d77eb9b8feea3c9063240eeefdacdd1b4b83bc0",
+      "split": "train",
+      "question": "Which local schema is extended when constructing notificationEnvelopeSchema?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05"
+      },
+      "evidence": {
+        "source": {
+          "path": "packages/notifications-core/src/contracts.ts",
+          "sha256": "9cbac6eb1f0c67e37192e3fdfb5f3cbb4c7a0995e7b9cabcff0486c449864a06",
+          "start_line": 69,
+          "end_line": 73,
+          "span_sha256": "4abb37be6fe9d51ec7f437f363441d4427cb8dcafcdf7abb0c37ff3a8f4db7b8",
+          "symbol": "notificationEnvelopeSchema"
+        },
+        "target": {
+          "path": "packages/notifications-core/src/contracts.ts",
+          "sha256": "9cbac6eb1f0c67e37192e3fdfb5f3cbb4c7a0995e7b9cabcff0486c449864a06",
+          "start_line": 45,
+          "end_line": 55,
+          "span_sha256": "fe3a64fc9f7c59cda5710292fc3f7e89063c702c3e39c54766131d6897f1e6a3",
+          "symbol": "notificationPayloadSchema"
+        },
+        "site": {
+          "path": "packages/notifications-core/src/contracts.ts",
+          "sha256": "9cbac6eb1f0c67e37192e3fdfb5f3cbb4c7a0995e7b9cabcff0486c449864a06",
+          "start_line": 69,
+          "end_line": 69,
+          "span_sha256": "15359c5c4d2a5b24677d2ce100f9e6a4a3736eabe8b1f29fd058bf5ceed06916",
+          "symbol": "notificationPayloadSchema"
+        }
+      },
+      "expected": {
+        "relation": "REFERENCE",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The receiver of extend is the same-module notificationPayloadSchema constant. This asserts the lexical schema reference, not resolution of Zod extend.",
+      "negative": {
+        "kind": "identifier_absent",
+        "symbol": "notificationPreferencesSchema",
+        "scope": "source",
+        "rationale": "Manual read of the complete source span confirms this identifier is absent; this is only a bounded lexical distractor, not a whole-repository or runtime non-call claim."
+      }
+    },
+    {
+      "id": "vpn-bool-default",
+      "repo": "/Volumes/D/Projects/vpn-main",
+      "revision": "da5cd1a21f8f4650798cc19c92ff8790b324e6d3",
+      "split": "train",
+      "question": "Which same-package helper does BoolDefault call after its empty-value guard?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05"
+      },
+      "evidence": {
+        "source": {
+          "path": "internal/envutil/envutil.go",
+          "sha256": "ca46cd9169634c45cccf6904c07897498125e0f39b269ac978cadf68773afe02",
+          "start_line": 27,
+          "end_line": 32,
+          "span_sha256": "24ce7177c520f35a4caba75b79738b1cd1338827dcdf8644e483f189a6b762ce",
+          "symbol": "BoolDefault"
+        },
+        "target": {
+          "path": "internal/envutil/envutil.go",
+          "sha256": "ca46cd9169634c45cccf6904c07897498125e0f39b269ac978cadf68773afe02",
+          "start_line": 18,
+          "end_line": 25,
+          "span_sha256": "0e40179dd3bbca890bc5ffd41ca36525e3a86996a92745646c91c794e8f662c3",
+          "symbol": "Bool"
+        },
+        "site": {
+          "path": "internal/envutil/envutil.go",
+          "sha256": "ca46cd9169634c45cccf6904c07897498125e0f39b269ac978cadf68773afe02",
+          "start_line": 31,
+          "end_line": 31,
+          "span_sha256": "51e6385e39dd0e222425b97f16108fbee6261ac1c66b7867a11b3645577e8108",
+          "symbol": "Bool"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The nonempty path directly returns Bool(key); the package-level Bool declaration appears above it with no local shadowing.",
+      "negative": {
+        "kind": "identifier_absent",
+        "symbol": "PositiveInt",
+        "scope": "source",
+        "rationale": "Manual read of the complete source span confirms this identifier is absent; this is only a bounded lexical distractor, not a whole-repository or runtime non-call claim."
+      }
+    },
+    {
+      "id": "vpn-int64-list",
+      "repo": "/Volumes/D/Projects/vpn-main",
+      "revision": "da5cd1a21f8f4650798cc19c92ff8790b324e6d3",
+      "split": "train",
+      "question": "Which same-package list helper provides values to Int64List?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05"
+      },
+      "evidence": {
+        "source": {
+          "path": "internal/envutil/envutil.go",
+          "sha256": "ca46cd9169634c45cccf6904c07897498125e0f39b269ac978cadf68773afe02",
+          "start_line": 74,
+          "end_line": 84,
+          "span_sha256": "6f253340e387c03dd9f156c91f1b206d6ff190df1b4073c96e1f9c6709406ff4",
+          "symbol": "Int64List"
+        },
+        "target": {
+          "path": "internal/envutil/envutil.go",
+          "sha256": "ca46cd9169634c45cccf6904c07897498125e0f39b269ac978cadf68773afe02",
+          "start_line": 46,
+          "end_line": 60,
+          "span_sha256": "090dc7e1df2b81302d6a08b813dbea778613bdbe2552aad7eeb47ba4b82698bb",
+          "symbol": "List"
+        },
+        "site": {
+          "path": "internal/envutil/envutil.go",
+          "sha256": "ca46cd9169634c45cccf6904c07897498125e0f39b269ac978cadf68773afe02",
+          "start_line": 75,
+          "end_line": 75,
+          "span_sha256": "8da41b4a6e6581097e26ca1c00689af07c3e50d94366c6138283f3307c526e0b",
+          "symbol": "List"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The first statement invokes List(key); List is declared in the same Go file and is not shadowed. SplitList is a distinct helper.",
+      "negative": {
+        "kind": "identifier_absent",
+        "symbol": "SplitList",
+        "scope": "source",
+        "rationale": "Manual read of the complete source span confirms this identifier is absent; this is only a bounded lexical distractor, not a whole-repository or runtime non-call claim."
+      }
+    },
+    {
+      "id": "vpn-positive-int-test",
+      "repo": "/Volumes/D/Projects/vpn-main",
+      "revision": "da5cd1a21f8f4650798cc19c92ff8790b324e6d3",
+      "split": "train",
+      "question": "Which local parser does TestPositiveIntFallback call for the missing-value case?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05"
+      },
+      "evidence": {
+        "source": {
+          "path": "internal/envutil/envutil_test.go",
+          "sha256": "85fb694a4cf5758ca807ace04c45d33dd8c377fb3ce36b95e7d6337966cd11ff",
+          "start_line": 17,
+          "end_line": 29,
+          "span_sha256": "fc57649e79eb82a5f9bea8edc66959c2f9140c59c59e18e33b18583afcca3b71",
+          "symbol": "TestPositiveIntFallback"
+        },
+        "target": {
+          "path": "internal/envutil/envutil.go",
+          "sha256": "ca46cd9169634c45cccf6904c07897498125e0f39b269ac978cadf68773afe02",
+          "start_line": 34,
+          "end_line": 44,
+          "span_sha256": "6e69c5aab8cbd28253263c23baf5091e0b71169e3d95687c331f45106d336890",
+          "symbol": "PositiveInt"
+        },
+        "site": {
+          "path": "internal/envutil/envutil_test.go",
+          "sha256": "85fb694a4cf5758ca807ace04c45d33dd8c377fb3ce36b95e7d6337966cd11ff",
+          "start_line": 18,
+          "end_line": 18,
+          "span_sha256": "130fe5135844a842b78135990f9a038bafb341fdf2fc8ddcb86c9ffec1890e0e",
+          "symbol": "PositiveInt"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Both files declare package envutil. The test directly invokes PositiveInt; the production declaration parses with a fallback.",
+      "negative": {
+        "kind": "identifier_absent",
+        "symbol": "BoolDefault",
+        "scope": "source",
+        "rationale": "Manual read of the complete source span confirms this identifier is absent; this is only a bounded lexical distractor, not a whole-repository or runtime non-call claim."
+      }
+    },
+    {
+      "id": "vpn-bool-default-test",
+      "repo": "/Volumes/D/Projects/vpn-main",
+      "revision": "da5cd1a21f8f4650798cc19c92ff8790b324e6d3",
+      "split": "train",
+      "question": "Which helper does TestBoolDefault call in its initial missing-value assertion?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05"
+      },
+      "evidence": {
+        "source": {
+          "path": "internal/envutil/envutil_test.go",
+          "sha256": "85fb694a4cf5758ca807ace04c45d33dd8c377fb3ce36b95e7d6337966cd11ff",
+          "start_line": 31,
+          "end_line": 43,
+          "span_sha256": "682a8b9ada29c0253808158630815f55596a688deb9499b72fe9bdcdb623cfdf",
+          "symbol": "TestBoolDefault"
+        },
+        "target": {
+          "path": "internal/envutil/envutil.go",
+          "sha256": "ca46cd9169634c45cccf6904c07897498125e0f39b269ac978cadf68773afe02",
+          "start_line": 27,
+          "end_line": 32,
+          "span_sha256": "24ce7177c520f35a4caba75b79738b1cd1338827dcdf8644e483f189a6b762ce",
+          "symbol": "BoolDefault"
+        },
+        "site": {
+          "path": "internal/envutil/envutil_test.go",
+          "sha256": "85fb694a4cf5758ca807ace04c45d33dd8c377fb3ce36b95e7d6337966cd11ff",
+          "start_line": 32,
+          "end_line": 32,
+          "span_sha256": "51637067ff54856a9889ac61489c5c6a4d630142379dd55757acebdecffd9dbc",
+          "symbol": "BoolDefault"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The test is in package envutil and the initial condition directly calls the package function BoolDefault without a local binding.",
+      "negative": {
+        "kind": "identifier_absent",
+        "symbol": "PositiveInt",
+        "scope": "source",
+        "rationale": "Manual read of the complete source span confirms this identifier is absent; this is only a bounded lexical distractor, not a whole-repository or runtime non-call claim."
+      }
+    },
+    {
+      "id": "pyramid-execution-dependencies",
+      "repo": "/Volumes/D/Projects/pyramid-agent",
+      "revision": "dbca43c53d7f49bbf988813cd97720098be3ac3f",
+      "split": "heldout",
+      "question": "Which Engine method does CanExecute call to obtain dependencies?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05"
+      },
+      "evidence": {
+        "source": {
+          "path": "backend/internal/graph/engine.go",
+          "sha256": "c153a068556279c956ffce82616d6991a2f9a7941dfcd4aadc45ffd9b87bda5c",
+          "start_line": 181,
+          "end_line": 189,
+          "span_sha256": "7583fcdaf007b997d26eba0b514fad8f3ae9db2c2b7ff6cd6bbe669116ce48b9",
+          "symbol": "CanExecute"
+        },
+        "target": {
+          "path": "backend/internal/graph/engine.go",
+          "sha256": "c153a068556279c956ffce82616d6991a2f9a7941dfcd4aadc45ffd9b87bda5c",
+          "start_line": 130,
+          "end_line": 144,
+          "span_sha256": "ab35d0722e7c7013419ee1a614bea3251948edde912af86b295eadbc21c91b6e",
+          "symbol": "GetDepends"
+        },
+        "site": {
+          "path": "backend/internal/graph/engine.go",
+          "sha256": "c153a068556279c956ffce82616d6991a2f9a7941dfcd4aadc45ffd9b87bda5c",
+          "start_line": 182,
+          "end_line": 182,
+          "span_sha256": "5362f7566c2e948391d13711e1e3cb033e385c5dd92d9a3e4cfd39be47808301",
+          "symbol": "GetDepends"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "CanExecute has receiver e *Engine and directly invokes e.GetDepends. The target declaration has the same concrete receiver type.",
+      "negative": {
+        "kind": "identifier_absent",
+        "symbol": "GetDependents",
+        "scope": "source",
+        "rationale": "Manual read of the complete source span confirms this identifier is absent; this is only a bounded lexical distractor, not a whole-repository or runtime non-call claim."
+      }
+    },
+    {
+      "id": "pyramid-ready-lock-helper",
+      "repo": "/Volumes/D/Projects/pyramid-agent",
+      "revision": "dbca43c53d7f49bbf988813cd97720098be3ac3f",
+      "split": "heldout",
+      "question": "Which Engine helper does GetReadyTasks call while holding its read lock?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05"
+      },
+      "evidence": {
+        "source": {
+          "path": "backend/internal/graph/engine.go",
+          "sha256": "c153a068556279c956ffce82616d6991a2f9a7941dfcd4aadc45ffd9b87bda5c",
+          "start_line": 192,
+          "end_line": 205,
+          "span_sha256": "1263be331278b7ed469b663a2a0bf4ca22a7e852f32442a4fc682095a294fc33",
+          "symbol": "GetReadyTasks"
+        },
+        "target": {
+          "path": "backend/internal/graph/engine.go",
+          "sha256": "c153a068556279c956ffce82616d6991a2f9a7941dfcd4aadc45ffd9b87bda5c",
+          "start_line": 207,
+          "end_line": 219,
+          "span_sha256": "40d12a56c813d961ba40b4fb1380d354e7b413bd1a26f8cc2458fc2a072adba9",
+          "symbol": "canExecuteLocked"
+        },
+        "site": {
+          "path": "backend/internal/graph/engine.go",
+          "sha256": "c153a068556279c956ffce82616d6991a2f9a7941dfcd4aadc45ffd9b87bda5c",
+          "start_line": 199,
+          "end_line": 199,
+          "span_sha256": "e050f5457b9a5034965f1fef9c4e4be6c7e1c109537b8d10fd8919402d9394c3",
+          "symbol": "canExecuteLocked"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The method locks e.mu and calls e.canExecuteLocked; both declarations use *Engine. It does not call the public CanExecute identifier in this body.",
+      "negative": {
+        "kind": "identifier_absent",
+        "symbol": "CanExecute",
+        "scope": "source",
+        "rationale": "Manual read of the complete source span confirms this identifier is absent; this is only a bounded lexical distractor, not a whole-repository or runtime non-call claim."
+      }
+    },
+    {
+      "id": "pyramid-dependency-edge-type",
+      "repo": "/Volumes/D/Projects/pyramid-agent",
+      "revision": "dbca43c53d7f49bbf988813cd97720098be3ac3f",
+      "split": "heldout",
+      "question": "Which edge-type constant does GetDepends compare against?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05"
+      },
+      "evidence": {
+        "source": {
+          "path": "backend/internal/graph/engine.go",
+          "sha256": "c153a068556279c956ffce82616d6991a2f9a7941dfcd4aadc45ffd9b87bda5c",
+          "start_line": 130,
+          "end_line": 144,
+          "span_sha256": "ab35d0722e7c7013419ee1a614bea3251948edde912af86b295eadbc21c91b6e",
+          "symbol": "GetDepends"
+        },
+        "target": {
+          "path": "backend/internal/graph/engine.go",
+          "sha256": "c153a068556279c956ffce82616d6991a2f9a7941dfcd4aadc45ffd9b87bda5c",
+          "start_line": 23,
+          "end_line": 23,
+          "span_sha256": "f8b3f894312bc79afd0ee31a7c2f9a46bca35c7ba5333342b72ce382f863d6b3",
+          "symbol": "EdgeTypeDepends"
+        },
+        "site": {
+          "path": "backend/internal/graph/engine.go",
+          "sha256": "c153a068556279c956ffce82616d6991a2f9a7941dfcd4aadc45ffd9b87bda5c",
+          "start_line": 137,
+          "end_line": 137,
+          "span_sha256": "c3d4ffd5028e172d7497dff8e584c920ded454a637036b1c843f5c243fd83c86",
+          "symbol": "EdgeTypeDepends"
+        }
+      },
+      "expected": {
+        "relation": "REFERENCE",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The comparison explicitly names the package constant declared at line 23; no local declaration shadows it.",
+      "negative": {
+        "kind": "identifier_absent",
+        "symbol": "EdgeTypeDelegates",
+        "scope": "source",
+        "rationale": "Manual read of the complete source span confirms this identifier is absent; this is only a bounded lexical distractor, not a whole-repository or runtime non-call claim."
+      }
+    },
+    {
+      "id": "pyramid-agent-edge-type",
+      "repo": "/Volumes/D/Projects/pyramid-agent",
+      "revision": "dbca43c53d7f49bbf988813cd97720098be3ac3f",
+      "split": "heldout",
+      "question": "Which edge-type constant selects delegated agents in GetAssignedAgents?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05"
+      },
+      "evidence": {
+        "source": {
+          "path": "backend/internal/graph/engine.go",
+          "sha256": "c153a068556279c956ffce82616d6991a2f9a7941dfcd4aadc45ffd9b87bda5c",
+          "start_line": 164,
+          "end_line": 178,
+          "span_sha256": "4ebaa126d4def2d2c4db686ff20e980c47aff8bd209c2a7edd72667ca6eca431",
+          "symbol": "GetAssignedAgents"
+        },
+        "target": {
+          "path": "backend/internal/graph/engine.go",
+          "sha256": "c153a068556279c956ffce82616d6991a2f9a7941dfcd4aadc45ffd9b87bda5c",
+          "start_line": 24,
+          "end_line": 24,
+          "span_sha256": "c2c377a21ccbda1e77732d2df6992f3a92f2ea32ffcdb011348a1cf032c9b37f",
+          "symbol": "EdgeTypeDelegates"
+        },
+        "site": {
+          "path": "backend/internal/graph/engine.go",
+          "sha256": "c153a068556279c956ffce82616d6991a2f9a7941dfcd4aadc45ffd9b87bda5c",
+          "start_line": 171,
+          "end_line": 171,
+          "span_sha256": "da4644beeb14d3c026edafb113c0f27c9bc2328cd8db10a1f522acce6867f0b2",
+          "symbol": "EdgeTypeDelegates"
+        }
+      },
+      "expected": {
+        "relation": "REFERENCE",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The edge filter explicitly references EdgeTypeDelegates from the same module; the node-type check is a separate predicate.",
+      "negative": {
+        "kind": "identifier_absent",
+        "symbol": "EdgeTypeReviews",
+        "scope": "source",
+        "rationale": "Manual read of the complete source span confirms this identifier is absent; this is only a bounded lexical distractor, not a whole-repository or runtime non-call claim."
+      }
+    }
+  ]
+}
