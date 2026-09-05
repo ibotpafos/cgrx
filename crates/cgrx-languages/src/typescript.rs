@@ -5,7 +5,7 @@ use crate::pack::{
     Edge, ExtractError, Extraction, LanguagePack, Provenance, RelationKind, Span, UnresolvedKind,
     evidence_span, has_ancestor, normalize_extraction, symbol, text, unresolved, walk_with,
 };
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use tree_sitter::{Language, Node, Parser};
 
 pub(crate) static TYPESCRIPT: TypeScript = TypeScript;
@@ -171,6 +171,7 @@ struct LexicalContext {
     scopes: Vec<LexicalScope>,
     calls: BTreeMap<usize, CallScope>,
     writes: Vec<(usize, String)>,
+    import_aliases: BTreeSet<(usize, String)>,
     has_error: bool,
 }
 enum CallBinding {
@@ -241,6 +242,7 @@ impl LexicalContext {
             scopes: vec![LexicalScope::default()],
             calls: BTreeMap::new(),
             writes: Vec::new(),
+            import_aliases: BTreeSet::new(),
             has_error: root.has_error(),
         };
         context.collect(root, source, 0, false);
@@ -407,6 +409,16 @@ impl LexicalContext {
                 self.block_pattern(scope, name, source);
             }
         }
+        if node.kind() == "import_alias" {
+            let mut cursor = node.walk();
+            if let Some(name) = node
+                .named_children(&mut cursor)
+                .find(|n| n.kind() == "identifier")
+            {
+                self.import_aliases.insert((scope, text(name, source)));
+                self.block_pattern(scope, name, source);
+            }
+        }
         if node.kind() == "catch_clause"
             && let Some(param) = node.child_by_field_name("parameter")
         {
@@ -415,14 +427,18 @@ impl LexicalContext {
         if node.kind() == "for_in_statement"
             && let Some(left) = node.child_by_field_name("left")
         {
-            // for-of/in grammar puts the binding directly under the loop.
-            // Var may escape its block: block it at function scope as well.
-            self.block_pattern(scope, left, source);
-            if node
-                .child_by_field_name("kind")
-                .is_some_and(|k| k.utf8_text(source).ok() == Some("var"))
-            {
-                self.block_pattern(self.scopes[scope].function, left, source);
+            // No declaration keyword means assignment to an existing binding,
+            // including destructuring; it must not create a loop-local shadow.
+            if let Some(kind) = node.child_by_field_name("kind") {
+                self.block_pattern(scope, left, source);
+                if kind.utf8_text(source).ok() == Some("var") {
+                    self.block_pattern(self.scopes[scope].function, left, source);
+                }
+            } else {
+                let mut names = Vec::new();
+                binding_names(left, source, &mut names);
+                self.writes
+                    .extend(names.into_iter().map(|name| (scope, name)));
             }
         }
         if node.kind() == "variable_declarator"
