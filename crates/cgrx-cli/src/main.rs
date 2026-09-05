@@ -33,6 +33,12 @@ fn run(args: Vec<String>) -> Result<(), String> {
         );
     };
     match command {
+        "--version" | "-V" => {
+            if args.len() != 1 {
+                return Err("version accepts no arguments".to_owned());
+            }
+            println!("cgrx {}", env!("CARGO_PKG_VERSION"));
+        }
         "init" => init(args.get(1).map(PathBuf::from))?,
         "index" => index(&args[1..])?,
         "serve" => serve(&args[1..])?,
