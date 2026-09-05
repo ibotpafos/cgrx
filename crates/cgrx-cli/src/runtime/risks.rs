@@ -1,5 +1,6 @@
 //! Conservative change-risk candidates, not a whole-program bug detector.
 use super::*;
+mod review;
 
 const DOCUMENT_LIMIT: usize = 100_000;
 const EDGE_LIMIT: usize = 20_000;
@@ -257,10 +258,21 @@ impl Runtime {
             partial = true;
             gaps.insert((".".to_owned(), "RESULT_LIMIT".to_owned()));
         }
+        let mut verification_plan = review::build(
+            &self.stored,
+            &impacts,
+            &live_pairs,
+            &mut evidence,
+            limit,
+            &mut gaps,
+        );
         partial |= !gaps.is_empty();
+        verification_plan["partial"] = json!(partial);
+        verification_plan["review_findings"] = json!((0..findings.len()).collect::<Vec<_>>());
+        verification_plan["review_changed_paths"] = json!(!self.changed_paths.is_empty());
         let gap_count = gaps.len();
         Ok(
-            json!({"snapshot":self.snapshot(),"base_revision":baseline.snapshot.repo_revision,"mode":"changes","findings":findings,"impacts":impacts,"partial":partial,"coverage_gaps":gaps.into_iter().take(20).map(|(path,code)|json!({"path":path,"code":code})).collect::<Vec<_>>(),"coverage_gap_count":gap_count,"coverage_gaps_truncated":gap_count>20,"inspected_base_edges":inspected,"changed_paths":self.changed_paths.iter().take(20).collect::<Vec<_>>(),"changed_path_count":self.changed_paths.len(),"evidence_bytes":EVIDENCE_BYTES-evidence.bytes_left,"limitations":["Candidates, not confirmed bugs; no whole-program absence proof.","Compares working tree with HEAD; no historical commit-range scan.","Cycles, architecture rules and data-flow bugs are not covered by this first slice."]}),
+            json!({"snapshot":self.snapshot(),"base_revision":baseline.snapshot.repo_revision,"mode":"changes","findings":findings,"impacts":impacts,"verification_plan":verification_plan,"partial":partial,"coverage_gaps":gaps.into_iter().take(20).map(|(path,code)|json!({"path":path,"code":code})).collect::<Vec<_>>(),"coverage_gap_count":gap_count,"coverage_gaps_truncated":gap_count>20,"inspected_base_edges":inspected,"changed_paths":self.changed_paths.iter().take(20).collect::<Vec<_>>(),"changed_path_count":self.changed_paths.len(),"evidence_bytes":EVIDENCE_BYTES-evidence.bytes_left,"limitations":["Candidates, not confirmed bugs; no whole-program absence proof.","Compares working tree with HEAD; no historical commit-range scan.","Cycles, architecture rules and data-flow bugs are not covered by this first slice."]}),
         )
     }
 }

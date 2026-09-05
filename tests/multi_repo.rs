@@ -681,3 +681,29 @@ fn risk_scan_limit_matrix_preserves_real_truncation_and_priority() {
         );
     }
 }
+
+#[test]
+fn risk_verification_plan_visible_over_mcp_and_repo_isolated() {
+    let d = Dir::new();
+    let source =
+        "fn target() -> u32 { 1 }\nfn caller() { target(); }\nfn test_feature() { caller(); }\n";
+    let a = d.repo("a", source);
+    let b = d.repo("b", source);
+    let mut m = Mcp::new(&d.0, "2", &d.0.join("log"));
+    fs::write(a.join("main.rs"), source.replace("{ 1 }", "{ 2 }")).unwrap();
+    let response = risks(&mut m, &a);
+    let result = &response["result"]["structuredContent"];
+    let visible: Value =
+        serde_json::from_str(response["result"]["content"][0]["text"].as_str().unwrap()).unwrap();
+    assert_eq!(
+        result["verification_plan"]["related_tests"][0]["symbol"], "test_feature",
+        "{response}"
+    );
+    assert_eq!(visible["verification_plan"], result["verification_plan"]);
+    assert_eq!(result["verification_plan"]["execution_status"], "not_run");
+    let unchanged = risks(&mut m, &b);
+    assert_eq!(
+        unchanged["result"]["structuredContent"]["verification_plan"]["related_tests"],
+        json!([])
+    );
+}
