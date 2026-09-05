@@ -1,3 +1,6 @@
+#[path = "ts_imports.rs"]
+pub mod ts_imports;
+
 use crate::pack::{
     Edge, ExtractError, Extraction, LanguagePack, Provenance, RelationKind, Span, UnresolvedKind,
     evidence_span, has_ancestor, normalize_extraction, symbol, text, unresolved, walk_with,
@@ -241,7 +244,7 @@ impl LexicalContext {
             has_error: root.has_error(),
         };
         context.collect(root, source, 0, false);
-        for (scope, name) in std::mem::take(&mut context.writes) {
+        for (scope, name) in context.writes.clone() {
             if let Some(owner) = context.binding_scope(scope, &name)
                 && let Some(binding) = context.scopes[owner].bindings.get_mut(&name)
             {
