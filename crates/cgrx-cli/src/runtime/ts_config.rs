@@ -41,11 +41,23 @@ impl<'de> Deserialize<'de> for TsResolutionConfig {
 pub(super) struct Witness {
     entries: BTreeMap<String, Option<SourceFingerprint>>,
     invalid: bool,
+    #[cfg(test)]
+    metadata_reads: usize,
 }
 impl Witness {
     fn watch(&mut self, root: &Path, path: &str) {
         let mut current = path;
         loop {
+            // First observation is immutable within a pass. Every observed
+            // path already has all ancestors recorded; final valid() rechecks
+            // each entry, including absence, after config/content reads.
+            if self.entries.contains_key(current) {
+                break;
+            }
+            #[cfg(test)]
+            {
+                self.metadata_reads += 1;
+            }
             let expected = match fs::symlink_metadata(root.join(current)) {
                 Ok(m) => Some(source_fingerprint(&m)),
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
@@ -591,6 +603,39 @@ pub(super) mod tests {
             let _ = fs::remove_dir_all(&self.0);
         }
     }
+    #[test]
+    fn witness_reads_each_path_once_per_pass() {
+        let (temp, _, _) = fixture();
+        for _ in 0..2 {
+            let mut witness = Witness::default();
+            for _ in 0..10 {
+                witness.watch(&temp.0, "src/sub/main.ts");
+                witness.watch(&temp.0, "src/sub/tsconfig.json");
+                witness.watch(&temp.0, "src/sub/jsconfig.json");
+            }
+            assert!(witness.valid(&temp.0));
+            assert_eq!(witness.entries.len(), 6);
+            assert_eq!(witness.metadata_reads, 6);
+        }
+    }
+
+    #[test]
+    fn witness_reuse_preserves_original_absence_and_parent_identity() {
+        let (temp, _, _) = fixture();
+        let mut witness = Witness::default();
+        witness.watch(&temp.0, "src/sub/tsconfig.json");
+        fs::write(temp.0.join("src/sub/tsconfig.json"), "{}").unwrap();
+        witness.watch(&temp.0, "src/sub/tsconfig.json");
+        assert!(!witness.valid(&temp.0));
+        let mut next_pass = Witness::default();
+        next_pass.watch(&temp.0, "src/sub/tsconfig.json");
+        assert!(next_pass.valid(&temp.0));
+        fs::rename(temp.0.join("src/sub"), temp.0.join("src/old")).unwrap();
+        std::os::unix::fs::symlink("old", temp.0.join("src/sub")).unwrap();
+        next_pass.watch(&temp.0, "src/sub/tsconfig.json");
+        assert!(!next_pass.valid(&temp.0));
+    }
+
     fn fixture() -> (
         Temp,
         BTreeMap<String, StoredTsFileFacts>,
