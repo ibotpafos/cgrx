@@ -100,3 +100,10 @@ when related_tests is empty. Refresh after further edits; do not reuse old spans
 
 This first slice has bounded regression/MCP tests, not a measured improvement
 in end-task agent accuracy or total token consumption.
+
+Positive impact evidence is independent of unrelated unresolved calls in the
+same file: those gaps keep `partial=true`, but do not erase an existing proven
+CALLS relationship. Both caller and changed-target source hashes are checked
+before emitting an impact. Parser/stale/exclusion gaps still suppress affected
+impacts. Removed-target findings remain stricter: any relevant baseline/current
+coverage gap prevents an absence-based candidate.

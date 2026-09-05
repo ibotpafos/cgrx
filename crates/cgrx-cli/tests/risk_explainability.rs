@@ -285,3 +285,65 @@ fn verification_plan_cross_file_test_source_is_verified() {
             .any(|g| g["path"] == "src/checks.rs" && g["code"] == "SOURCE_UNVERIFIED_OR_BUDGET")
     );
 }
+
+const DYNAMIC_NEIGHBOR: &str = "fn target() -> u32 { 1 }\nfn caller() { target(); }\nfn test_feature() { caller(); }\ntrait Service { fn run(&self); }\nfn unrelated(service: &dyn Service) { service.run(); }\n";
+
+#[test]
+fn positive_impact_survives_unrelated_dynamic_gap() {
+    let mut f = Fixture::with_source(DYNAMIC_NEIGHBOR);
+    f.change(&DYNAMIC_NEIGHBOR.replace("{ 1 }", "{ 2 }"));
+    let r = f.scan(20);
+    assert_eq!(r["partial"], true, "fixture must contain a real gap: {r}");
+    assert!(
+        r["coverage_gaps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|g| g["code"] == "DYNAMIC_DISPATCH")
+    );
+    assert_eq!(r["impacts"].as_array().unwrap().len(), 1, "{r}");
+    assert_eq!(r["impacts"][0]["current_edge"]["confidence"], "PROVEN");
+    assert_eq!(
+        r["verification_plan"]["related_tests"][0]["symbol"],
+        "test_feature"
+    );
+    assert_eq!(r["verification_plan"]["partial"], true);
+    assert_eq!(r["verification_plan"]["execution_status"], "not_run");
+}
+
+#[test]
+fn removed_target_still_abstains_with_dynamic_gap() {
+    let mut f = Fixture::with_source(DYNAMIC_NEIGHBOR);
+    f.change(&DYNAMIC_NEIGHBOR.replace("fn target() -> u32 { 1 }\n", ""));
+    let r = f.scan(20);
+    assert_eq!(r["partial"], true);
+    assert_eq!(r["findings"], json!([]));
+    assert_eq!(r["verification_plan"]["related_tests"], json!([]));
+}
+
+#[test]
+fn positive_impact_requires_current_target_source_across_files() {
+    let source = "mod worker; pub fn target() -> u32 { 1 }\n";
+    let mut f = Fixture::with_files(&[
+        (
+            "Cargo.toml",
+            "[package]\nname=\"target-proof\"\nversion=\"0.1.0\"\nedition=\"2021\"\n",
+        ),
+        ("src/lib.rs", source),
+        ("src/worker.rs", "fn test_feature() { crate::target(); }\n"),
+    ]);
+    fs::write(f.root.join("src/lib.rs"), source.replace("{ 1 }", "{ 2 }")).unwrap();
+    f.runtime.refresh(&f.root).unwrap();
+    assert_eq!(f.scan(20)["impacts"].as_array().unwrap().len(), 1);
+    fs::write(f.root.join("src/lib.rs"), source).unwrap();
+    let r = f.scan(20);
+    assert_eq!(r["impacts"], json!([]));
+    assert_eq!(r["partial"], true);
+    assert!(
+        r["coverage_gaps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|g| g["path"] == "src/lib.rs" && g["code"] == "SOURCE_UNVERIFIED_OR_BUDGET")
+    );
+}

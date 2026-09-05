@@ -162,11 +162,15 @@ impl Runtime {
                 break;
             }
             let mut material_gap = false;
+            let mut relation_gap = false;
             for path in [&caller.path, &target.path] {
                 for coverage in [&baseline.coverage, &self.stored.coverage] {
                     for reason in path_gaps(coverage, path) {
                         gaps.insert((path.clone(), reason.to_owned()));
-                        material_gap = true;
+                        relation_gap = true;
+                        // Missing other calls is not counter-evidence to a
+                        // definitive positive edge. Keep absence checks strict.
+                        material_gap |= reason != "DYNAMIC_DISPATCH";
                     }
                 }
             }
@@ -202,6 +206,14 @@ impl Runtime {
                         ));
                         continue;
                     };
+                    if evidence.line(&target.path, now_target.span_start).is_none() {
+                        partial = true;
+                        gaps.insert((
+                            target.path.clone(),
+                            "SOURCE_UNVERIFIED_OR_BUDGET".to_owned(),
+                        ));
+                        continue;
+                    }
                     if impacts.len() >= limit {
                         partial = true;
                         gaps.insert((".".to_owned(), "RESULT_LIMIT".to_owned()));
@@ -214,6 +226,7 @@ impl Runtime {
             // Absence alone is insufficient. Require prior exact proof, unchanged caller,
             // retained parsed call, clean coverage and no current alternate resolution.
             if global_incomplete
+                || relation_gap
                 || body_hash(now_caller) != caller.body_hash
                 || names.contains(target.symbol.as_str())
             {
