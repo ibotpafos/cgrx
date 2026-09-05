@@ -2493,6 +2493,7 @@ fn scan_ts_inventory(
     let mut changed = false;
     let mut invalid_sources = Vec::new();
     let mut nested_boundary_cache = BTreeMap::new();
+    let mut directory_cache = TsDirectoryCache::default();
     for relative in candidates {
         let absolute = root.join(&relative);
         let metadata = match fs::symlink_metadata(&absolute) {
@@ -2533,7 +2534,7 @@ fn scan_ts_inventory(
                 continue;
             }
         };
-        let plain = ts_path_is_plain(root, Path::new(&relative));
+        let plain = ts_path_is_plain(root, Path::new(&relative), &mut directory_cache);
         if ts_files
             .get(&relative)
             .is_some_and(|stored| !stored.inventory_only)
@@ -2594,18 +2595,60 @@ fn scan_ts_inventory(
     Ok((changed, invalid_sources))
 }
 
-fn ts_path_is_plain(root: &Path, relative: &Path) -> bool {
+// Pass-local only: do not retain filesystem absence/presence across refreshes.
+#[derive(Default)]
+struct TsDirectoryCache {
+    entries: BTreeMap<PathBuf, (SourceFingerprint, BTreeSet<std::ffi::OsString>)>,
+}
+
+impl TsDirectoryCache {
+    fn contains_exact(&mut self, directory: &Path, name: &std::ffi::OsStr) -> bool {
+        let Ok(metadata) = fs::symlink_metadata(directory) else {
+            self.entries.remove(directory);
+            return false;
+        };
+        if !metadata.is_dir() || metadata.file_type().is_symlink() {
+            self.entries.remove(directory);
+            return false;
+        }
+        let fingerprint = source_fingerprint(&metadata);
+        if let Some((cached, names)) = self.entries.get(directory)
+            && *cached == fingerprint
+        {
+            return names.contains(name);
+        }
+        self.entries.remove(directory);
+        #[cfg(test)]
+        ts_inventory_cache_tests::DIRECTORY_READS.with(|count| count.set(count.get() + 1));
+        let Ok(entries) = fs::read_dir(directory) else {
+            return false;
+        };
+        let names: std::io::Result<BTreeSet<_>> = entries
+            .map(|entry| entry.map(|entry| entry.file_name()))
+            .collect();
+        let Ok(names) = names else {
+            return false;
+        };
+        // An enumeration racing with a directory update cannot prove identity.
+        if !fs::symlink_metadata(directory)
+            .is_ok_and(|after| source_fingerprint(&after) == fingerprint)
+        {
+            return false;
+        }
+        let exact = names.contains(name);
+        self.entries
+            .insert(directory.to_path_buf(), (fingerprint, names));
+        exact
+    }
+}
+
+fn ts_path_is_plain(root: &Path, relative: &Path, cache: &mut TsDirectoryCache) -> bool {
     let mut current = root.to_path_buf();
     for component in relative.components() {
         let std::path::Component::Normal(name) = component else {
             return false;
         };
-        let exact = fs::read_dir(&current).ok().is_some_and(|entries| {
-            entries
-                .filter_map(Result::ok)
-                .any(|entry| entry.file_name() == name)
-        });
-        if !exact {
+        if !cache.contains_exact(&current, name) {
             return false;
         }
         current.push(name);
@@ -5226,5 +5269,141 @@ mod compact_storage_tests {
                 "{key}"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod ts_inventory_cache_tests {
+    use super::*;
+    use std::cell::Cell;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    thread_local! { pub(super) static DIRECTORY_READS: Cell<usize> = const { Cell::new(0) }; }
+    static ID: AtomicU64 = AtomicU64::new(0);
+    struct Fixture(PathBuf);
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+    #[test]
+    fn directory_reads_are_shared_within_inventory_but_not_across_refreshes() {
+        let fixture = Fixture(std::env::temp_dir().join(format!(
+            "cgrx-dir-cache-{}-{}",
+            std::process::id(),
+            ID.fetch_add(1, Ordering::Relaxed)
+        )));
+        fs::create_dir_all(fixture.0.join("src/nested")).unwrap();
+        let mut files = BTreeMap::new();
+        let mut hashes = BTreeMap::new();
+        let mut add = |path: String, source: String| {
+            fs::write(fixture.0.join(&path), &source).unwrap();
+            let hash = Hash32(*blake3::hash(source.as_bytes()).as_bytes());
+            hashes.insert(path.clone(), hash);
+            files.insert(
+                path.clone(),
+                StoredTsFileFacts {
+                    source_hash: hash,
+                    facts: TsFileFacts::parse(&path, source.as_bytes()),
+                    inventory_only: false,
+                },
+            );
+        };
+        let mut imports = String::new();
+        for i in 0..8 {
+            add(
+                format!("src/nested/worker{i}.ts"),
+                format!("export function f{i}() {{}}"),
+            );
+            imports.push_str(&format!("import {{ f{i} }} from './worker{i}';\n"));
+        }
+        add("src/nested/main.ts".into(), imports);
+        let mut configs = BTreeMap::new();
+        DIRECTORY_READS.with(|n| n.set(0));
+        assert!(
+            !scan_ts_inventory(&fixture.0, &mut hashes, &mut files, &mut configs)
+                .unwrap()
+                .0
+        );
+        assert_eq!(
+            DIRECTORY_READS.with(Cell::get),
+            3,
+            "enumerate root/src/nested once, not once for every import target"
+        );
+        assert!(
+            !scan_ts_inventory(&fixture.0, &mut hashes, &mut files, &mut configs)
+                .unwrap()
+                .0
+        );
+        assert_eq!(
+            DIRECTORY_READS.with(Cell::get),
+            6,
+            "a new refresh must re-enumerate directories"
+        );
+    }
+    #[test]
+    fn cached_directory_identity_rechecks_case_and_symlink_changes() {
+        let fixture = Fixture(std::env::temp_dir().join(format!(
+            "cgrx-dir-mutation-{}-{}",
+            std::process::id(),
+            ID.fetch_add(1, Ordering::Relaxed)
+        )));
+        fs::create_dir_all(fixture.0.join("src")).unwrap();
+        fs::write(fixture.0.join("src/worker.ts"), "export function run() {}").unwrap();
+        let mut cache = TsDirectoryCache::default();
+        assert!(ts_path_is_plain(
+            &fixture.0,
+            Path::new("src/worker.ts"),
+            &mut cache
+        ));
+        fs::rename(
+            fixture.0.join("src/worker.ts"),
+            fixture.0.join("src/temp.ts"),
+        )
+        .unwrap();
+        fs::rename(
+            fixture.0.join("src/temp.ts"),
+            fixture.0.join("src/Worker.ts"),
+        )
+        .unwrap();
+        assert!(!ts_path_is_plain(
+            &fixture.0,
+            Path::new("src/worker.ts"),
+            &mut cache
+        ));
+        assert!(ts_path_is_plain(
+            &fixture.0,
+            Path::new("src/Worker.ts"),
+            &mut cache
+        ));
+        fs::rename(fixture.0.join("src"), fixture.0.join("real")).unwrap();
+        std::os::unix::fs::symlink("real", fixture.0.join("src")).unwrap();
+        assert!(!ts_path_is_plain(
+            &fixture.0,
+            Path::new("src/Worker.ts"),
+            &mut cache
+        ));
+    }
+
+    #[test]
+    fn missing_directory_can_be_created_without_reusing_absence() {
+        let fixture = Fixture(std::env::temp_dir().join(format!(
+            "cgrx-dir-missing-{}-{}",
+            std::process::id(),
+            ID.fetch_add(1, Ordering::Relaxed)
+        )));
+        fs::create_dir_all(&fixture.0).unwrap();
+        let mut cache = TsDirectoryCache::default();
+        assert!(!ts_path_is_plain(
+            &fixture.0,
+            Path::new("src/worker.ts"),
+            &mut cache
+        ));
+        fs::create_dir(fixture.0.join("src")).unwrap();
+        fs::write(fixture.0.join("src/worker.ts"), "export function run() {}").unwrap();
+        assert!(ts_path_is_plain(
+            &fixture.0,
+            Path::new("src/worker.ts"),
+            &mut cache
+        ));
     }
 }
