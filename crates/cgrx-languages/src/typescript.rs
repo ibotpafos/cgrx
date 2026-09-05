@@ -278,6 +278,28 @@ impl LexicalContext {
         }
     }
     fn collect(&mut self, node: Node<'_>, source: &[u8], mut scope: usize, unsupported: bool) {
+        // Imports establish local identity, not a same-name repository target.
+        // Until module/export identity is proven, block syntax fallback for the
+        // local binding only (never the exported name of an aliased specifier).
+        match node.kind() {
+            "import_specifier" => {
+                if let Some(local) = node
+                    .child_by_field_name("alias")
+                    .or_else(|| node.child_by_field_name("name"))
+                {
+                    self.block_pattern(scope, local, source);
+                }
+            }
+            "import_clause" | "namespace_import" | "import_require_clause" => {
+                let mut cursor = node.walk();
+                for local in node.named_children(&mut cursor) {
+                    if local.kind() == "identifier" {
+                        self.block_pattern(scope, local, source);
+                    }
+                }
+            }
+            _ => {}
+        }
         if matches!(
             node.kind(),
             "function_declaration"
