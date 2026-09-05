@@ -160,3 +160,12 @@ Remaining product work: independently curated semantic negatives/exhaustive
 oracles where required, REFERENCE adapter, controlled daemon/process memory,
 true cold-index protocol if desired, and a separately preregistered agent-level
 plain-source/CGRX/CBM experiment measuring end-task correctness and all tokens.
+
+### Frozen-source validation cost
+
+The collector streams committed blobs through one `git cat-file --batch` process
+per snapshot instead of spawning `git show` once per tracked file. It still
+compares every working file byte-for-byte with its pinned blob (including files
+marked assume-unchanged), checks inventory, and preserves the framed SHA-256
+source digest. Symlinks/submodules remain unsupported. This reduces validation
+setup cost; it is not an improvement to the measured engine query latency.

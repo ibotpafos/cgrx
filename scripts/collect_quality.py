@@ -213,15 +213,52 @@ def frozen_snapshot(repo, revision):
     require(git(repo, 'rev-parse', '--show-toplevel').decode().strip() == repo, 'Git root mismatch')
     require(git(repo, 'rev-parse', 'HEAD').decode().strip() == revision, 'revision mismatch')
     require(not git(repo, 'status', '--porcelain', '--untracked-files=normal'), 'repository must be clean')
+    # Resolve committed names once, then stream blobs through one Git process.
+    # Working bytes are still compared with every committed blob, including
+    # assume-unchanged files; this is not a git-status-only shortcut.
+    entries = {}
+    for row in git(repo, 'ls-tree', '-r', '-z', '--full-tree', revision).split(b'\0'):
+        if not row: continue
+        metadata, name = row.split(b'\t', 1)
+        mode, kind, oid = metadata.split()
+        require(kind == b'blob' and mode in (b'100644', b'100755'),
+                'submodules/symlinks unsupported')
+        entries[name] = oid
+    names = sorted(name for name in git(repo, 'ls-files', '-z').split(b'\0') if name)
+    require(set(names) == set(entries), 'tracked inventory changed')
     h = hashlib.sha256()
-    for name in sorted(git(repo, 'ls-files', '-z').split(b'\0')):
-        if not name: continue
-        p = root / os.fsdecode(name)
-        require(p.is_file() and not p.is_symlink(), 'submodules/symlinks unsupported')
-        data = p.read_bytes()
-        require(data == git(repo, 'show', revision+':'+os.fsdecode(name)), 'source changed')
-        h.update(len(name).to_bytes(8,'big')); h.update(name)
-        h.update(len(data).to_bytes(8,'big')); h.update(data)
+    proc = subprocess.Popen(['git', '-C', repo, 'cat-file', '--batch'],
+                            stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                            stderr=subprocess.DEVNULL)
+    try:
+        for name in names:
+            p = root / os.fsdecode(name)
+            require(p.is_file() and not p.is_symlink() and p.resolve() == p,
+                    'submodules/symlinks unsupported')
+            data = p.read_bytes()
+            oid = entries[name]
+            proc.stdin.write(oid + b'\n'); proc.stdin.flush()
+            header = proc.stdout.readline(256).split()
+            require(len(header) == 3 and header[:2] == [oid, b'blob']
+                    and header[2].isdigit(), 'invalid Git blob header')
+            size = int(header[2])
+            require(size == len(data), 'source changed')
+            require(proc.stdout.read(size) == data and proc.stdout.read(1) == b'\n',
+                    'source changed')
+            h.update(len(name).to_bytes(8,'big')); h.update(name)
+            h.update(len(data).to_bytes(8,'big')); h.update(data)
+        proc.stdin.close()
+        require(proc.wait(timeout=10) == 0, 'Git blob reader failed')
+    finally:
+        try:
+            proc.stdin.close()
+        except OSError:
+            pass
+        try:
+            proc.stdout.close()
+        finally:
+            if proc.poll() is None:
+                proc.kill(); proc.wait(timeout=10)
     return {'repo':repo,'revision':revision,'source_digest':h.hexdigest()}
 
 
