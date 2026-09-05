@@ -503,6 +503,12 @@ fn unique_module_member<'a>(module: Node<'a>, name: &str, source: &[u8]) -> Opti
 #[derive(Clone, Debug, Default, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct RustFileFacts {
     pub modules: Vec<String>,
+    /// Plain-public out-of-line modules; restricted visibility stays unproven.
+    #[serde(default)]
+    pub public_modules: Vec<String>,
+    /// Explicit, unambiguous aliases of direct crate-root modules.
+    #[serde(default)]
+    pub module_aliases: Vec<(String, String)>,
     pub functions: Vec<(String, usize, usize, bool)>,
     pub calls: Vec<(usize, usize)>,
     pub blocked_names: Vec<String>,
@@ -536,6 +542,13 @@ fn file_facts(root: Node<'_>, source: &[u8]) -> RustFileFacts {
             if !attributed(item) {
                 if item.kind() == "mod_item" && item.child_by_field_name("body").is_none() {
                     facts.modules.push(name.clone());
+                    let mut cursor = item.walk();
+                    if item
+                        .named_children(&mut cursor)
+                        .any(|n| n.kind() == "visibility_modifier" && text(n, source) == "pub")
+                    {
+                        facts.public_modules.push(name.clone());
+                    }
                 }
                 if item.kind() == "function_item" {
                     let span = item.child_by_field_name("name").unwrap();
@@ -552,6 +565,9 @@ fn file_facts(root: Node<'_>, source: &[u8]) -> RustFileFacts {
         if item.kind() == "use_declaration" {
             if let Some(argument) = item.child_by_field_name("argument") {
                 import_bindings(argument, source, &mut facts);
+                if !attributed(item) {
+                    collect_module_aliases(argument, false, source, &mut facts);
+                }
             } else {
                 facts.blocked = true;
             }
@@ -564,14 +580,97 @@ fn file_facts(root: Node<'_>, source: &[u8]) -> RustFileFacts {
         .functions
         .retain(|(name, ..)| counts.get(name) == Some(&1));
     facts.modules.retain(|name| counts.get(name) == Some(&1));
+    facts
+        .public_modules
+        .retain(|name| counts.get(name) == Some(&1));
+    facts
+        .module_aliases
+        .retain(|(alias, _)| counts.get(alias) == Some(&1));
     collect_root_calls(root, root, source, &mut facts);
     facts.blocked_names.sort();
     facts.blocked_names.dedup();
     facts
 }
 
+// Only direct crate-root modules: grouping changes syntax, not resolution scope.
+fn collect_module_aliases(
+    node: Node<'_>,
+    crate_group: bool,
+    source: &[u8],
+    facts: &mut RustFileFacts,
+) {
+    match node.kind() {
+        "use_list" => {
+            let mut cursor = node.walk();
+            for child in node.named_children(&mut cursor) {
+                collect_module_aliases(child, crate_group, source, facts);
+            }
+        }
+        "scoped_use_list" => {
+            let (Some(path), Some(list)) = (
+                node.child_by_field_name("path"),
+                node.child_by_field_name("list"),
+            ) else {
+                return;
+            };
+            if !crate_group && text(path, source) == "crate" {
+                collect_module_aliases(list, true, source, facts);
+            } else if let Some(module) = direct_crate_module(path, crate_group, source) {
+                let mut cursor = list.walk();
+                for child in list.named_children(&mut cursor) {
+                    if child.kind() == "use_as_clause"
+                        && child
+                            .child_by_field_name("path")
+                            .is_some_and(|p| p.kind() == "self")
+                        && let Some(alias) = child.child_by_field_name("alias")
+                        && alias.kind() == "identifier"
+                        && text(alias, source) != "_"
+                    {
+                        facts
+                            .module_aliases
+                            .push((text(alias, source), text(module, source)));
+                    }
+                }
+            }
+        }
+        "use_as_clause" => {
+            let Some(path) = node.child_by_field_name("path") else {
+                return;
+            };
+            let module = direct_crate_module(path, crate_group, source);
+            if let Some(module) = module
+                && let Some(alias) = node.child_by_field_name("alias")
+                && alias.kind() == "identifier"
+                && text(alias, source) != "_"
+            {
+                facts
+                    .module_aliases
+                    .push((text(alias, source), text(module, source)));
+            }
+        }
+        _ => {}
+    }
+}
+
+fn direct_crate_module<'a>(path: Node<'a>, crate_group: bool, source: &[u8]) -> Option<Node<'a>> {
+    if crate_group && path.kind() == "identifier" {
+        Some(path)
+    } else if !crate_group
+        && path.kind() == "scoped_identifier"
+        && path
+            .child_by_field_name("path")
+            .is_some_and(|p| text(p, source) == "crate")
+    {
+        path.child_by_field_name("name")
+            .filter(|n| n.kind() == "identifier")
+    } else {
+        None
+    }
+}
+
 fn import_bindings(node: Node<'_>, source: &[u8], facts: &mut RustFileFacts) {
     match node.kind() {
+        "line_comment" | "block_comment" => {}
         "identifier" => facts.blocked_names.push(text(node, source)),
         "self" => {
             let prefix = node
@@ -661,6 +760,7 @@ fn has_namespace_expansion(node: Node<'_>) -> bool {
             | "mod_item"
             | "type_item"
             | "struct_item"
+            | "union_item"
             | "enum_item"
             | "trait_item"
     ) {

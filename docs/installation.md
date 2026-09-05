@@ -3,6 +3,41 @@
 Один локальный MCP-сервер работает с разными Git-репозиториями.
 Отдельный сервер на каждый проект не нужен. Версия: alpha.
 
+## Одной командой
+
+~~~sh
+curl -fsSL https://raw.githubusercontent.com/ibotpafos/cgrx/v0.1.0-alpha.3/install.sh | sh
+~~~
+
+Путь: `$HOME/.local/bin/cgrx`. Установщик не использует sudo и не меняет
+настройки клиентов или shell. На macOS Apple Silicon скачивает готовый архив,
+проверяет SHA-256 и выполняет MCP initialize до замены бинарника. На Linux и
+Intel macOS собирает закреплённый tag: заранее нужны rustup с Rust 1.89.0,
+Git и C-компилятор. Установка системных зависимостей не автоматизирована.
+SHA-256 проверяет соответствие опубликованному checksum, а не подпись автора.
+
+Свой каталог или принудительная сборка:
+
+~~~sh
+curl -fsSL https://raw.githubusercontent.com/ibotpafos/cgrx/v0.1.0-alpha.3/install.sh | CGRX_INSTALL_DIR="$HOME/tools/bin" sh -s -- --source
+~~~
+
+Повтор команды обновляет бинарник; прежняя версия сохраняется рядом в
+`cgrx.backup.XXXXXX` (точный путь печатается). При ошибке скачивания, checksum,
+сборки или initialize действующий бинарник остаётся на месте. Параллельная
+установка в тот же каталог отклоняется. После аварийного SIGKILL может остаться
+`.cgrx-install.lock`: удаляйте только пустой lock-каталог через `rmdir`, убедившись,
+что другой установщик не работает.
+
+Для отката закройте MCP-клиенты, восстановите сохранённый бинарник через
+`cp -p /точный/путь/cgrx.backup.XXXXXX "$HOME/.local/bin/cgrx"` и учтите раздел
+об откате формата индекса ниже. Для обновления на будущий релиз используйте
+команду из документации соответствующего tag, а не плавающую ветку main.
+
+После этого подключите один MCP к каждому нужному клиенту по инструкции ниже.
+Во всех примерах подключения замените `$HOME/.cargo/bin/cgrx` на
+`$HOME/.local/bin/cgrx`, если использовали установщик одной командой.
+
 ## Из исходников
 
 Нужны Git, Rust 1.89.0 через rustup и C-компилятор.
@@ -11,7 +46,7 @@
 ~~~sh
 git clone https://github.com/ibotpafos/cgrx.git
 cd cgrx
-git checkout v0.1.0-alpha.2
+git checkout v0.1.0-alpha.3
 cargo install --locked --path crates/cgrx-cli
 ~~~
 
@@ -23,13 +58,13 @@ Cargo скачивает зависимости при установке; са�
 
 ## Готовый бинарник: macOS Apple Silicon
 
-Из [релиза](https://github.com/ibotpafos/cgrx/releases/tag/v0.1.0-alpha.2)
-скачайте cgrx-v0.1.0-alpha.2-aarch64-apple-darwin.tar.gz и SHA256SUMS.
+Из [релиза](https://github.com/ibotpafos/cgrx/releases/tag/v0.1.0-alpha.3)
+скачайте cgrx-v0.1.0-alpha.3-aarch64-apple-darwin.tar.gz и SHA256SUMS.
 В каталоге со скачанными файлами:
 
 ~~~sh
 shasum -a 256 -c SHA256SUMS
-tar -xzf cgrx-v0.1.0-alpha.2-aarch64-apple-darwin.tar.gz
+tar -xzf cgrx-v0.1.0-alpha.3-aarch64-apple-darwin.tar.gz
 mkdir -p "$HOME/.local/bin"
 install -m 755 cgrx "$HOME/.local/bin/cgrx"
 ~~~
@@ -124,6 +159,21 @@ python3 scripts/smoke_mcp.py "$HOME/.cargo/bin/cgrx"
 Выберите опубликованный tag, повторите cargo install с --force, затем
 перезапустите MCP-клиенты. При ручной замене сохраните старый бинарник для отката.
 Изменения формата индекса обнаруживаются движком.
+
+В alpha.3 используется extraction revision 20. При возврате к старому бинарнику
+старый движок может отклонить уже обновлённый индекс. Сначала закройте все
+MCP-соединения, использующие репозиторий. В корне каждого затронутого Git worktree
+сохраните только производный индекс в отдельном каталоге:
+
+~~~sh
+state=$(git rev-parse --git-path cgrx/managed) || exit 1
+backup="${state}.before-downgrade-$(date +%Y%m%dT%H%M%S)"
+test ! -e "$backup" && test -d "$state" && mv "$state" "$backup"
+~~~
+
+Затем выберите сохранённый старый бинарник и переподключите MCP. Индекс будет
+построен заново; исходники и Git-история остаются на месте. Повторите для каждого
+репозитория, открытого новой версией. Не перемещайте индекс при активном сервере.
 
 Логи выключены по умолчанию. CGRX_USAGE_LOG=/absolute/path/to/usage.jsonl
 в окружении сервера включает локальную диагностику; каталог должен существовать.

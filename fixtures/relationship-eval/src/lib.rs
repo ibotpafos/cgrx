@@ -17,3 +17,24 @@ pub fn rust_noise() -> i32 {
 pub fn rust_private_caller() -> i32 {
     private_child::private_target()
 }
+
+use crate::rust_target as rust_api;
+
+pub fn rust_alias_caller() -> i32 {
+    rust_api::rust_target()
+}
+
+use crate::{rust_target as grouped_api, rust_other as grouped_other};
+pub fn rust_grouped_caller() -> i32 {
+    grouped_api::rust_target()
+}
+
+use crate::rust_target::{self as self_api};
+pub fn rust_self_import_caller() -> i32 {
+    self_api::rust_target()
+}
+
+mod nested_primary;
+mod nested_other;
+use crate::nested_primary as nested_api;
+pub fn rust_nested_alias_caller() { nested_api::child::nested_target(); }

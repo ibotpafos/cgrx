@@ -19,6 +19,21 @@ explicitly on each request. No embedding service, hosted index or API key.
 - Rust, Go, TypeScript/JavaScript/TSX and Python parsing. Resolution depth varies
   by language; this does not replace a compiler or language server.
 
+## Install with one command
+
+~~~sh
+curl -fsSL https://raw.githubusercontent.com/ibotpafos/cgrx/v0.1.0-alpha.3/install.sh | sh
+~~~
+
+Installs to `$HOME/.local/bin/cgrx`, without sudo. Apple Silicon macOS downloads
+and verifies the release archive; Linux and Intel macOS build the pinned tag
+(requires rustup with Rust 1.89.0, Git and a C compiler). Existing binaries are
+backed up before replacement. MCP initialization is checked before activation.
+Client configurations and shell profiles are left unchanged.
+
+Override the destination with `CGRX_INSTALL_DIR=/absolute/path` on the `sh` side
+of the pipeline; use `sh -s -- --source` to force a source build.
+
 ## Install from source
 
 Prerequisites: Git, Rust **1.89.0**, and a C compiler for Tree-sitter.
@@ -28,7 +43,7 @@ Native Windows is not supported.
 ~~~sh
 git clone https://github.com/ibotpafos/cgrx.git
 cd cgrx
-git checkout v0.1.0-alpha.2
+git checkout v0.1.0-alpha.3
 cargo install --locked --path crates/cgrx-cli
 ~~~
 
@@ -41,7 +56,7 @@ A macOS Apple Silicon binary with SHA-256 checksums is available on the release 
 OpenAI Codex CLI:
 
 ~~~sh
-codex mcp add cgrx -- "$HOME/.cargo/bin/cgrx" serve --multi-repo
+codex mcp add cgrx -- "$HOME/.local/bin/cgrx" serve --multi-repo
 ~~~
 
 Restart the MCP client after configuration changes. Every tool request must
@@ -71,7 +86,28 @@ updates, uninstalling and troubleshooting.
 ## Maturity and privacy
 
 **Alpha.** Rust Cargo-root resolution covers bounded same-package lib/bin/module
-cases. External dependencies, reexports, custom module paths, macros and dynamic
+cases. Development builds additionally resolve explicit file-level aliases of
+direct crate-root modules (`use crate::worker as api; api::target()`). Grouped forms
+`use crate::{worker as api, other as backup}` and
+`use {crate::worker as api}` also preserve exact module identity, including comments.
+Module-self imports `use crate::worker::{self as api}` and
+`use crate::{worker::{self as api}}` resolve the same direct module.
+Aliases with nested suffixes (`api::inner::target()`), function aliases
+and reexport chains are not covered by this Rust alias proof.
+
+Development builds resolve bounded TypeScript named imports through `baseUrl`
+and single-target `paths` mappings, including `@/*` and dotted basenames such as
+`time.utils`. Relative JSON `extends` and explicitly declared workspace-package
+config exports are supported. Config bytes, missing config paths and workspace
+membership are rechecked on refresh; ambiguity, local shadowing, reassignment,
+symlinks and competing installed config packages do not become guessed edges.
+This is not a full TypeScript compiler resolver: JSONC, overlapping mappings,
+fallback arrays, unsupported compiler options and committed-HEAD-only inherited
+aliases can remain unresolved. Installed workspace-package links currently also
+cause abstention. Extraction revision 20 requires rebuilding older indexes;
+managed startup recognizes revision-18 config records and requests reindexing.
+
+External dependencies, reexports, custom module paths, macros and dynamic
 dispatch can remain unresolved. No recorded gap does not prove completeness.
 Verify findings against source and compiler/tests. No overall superiority over
 other code-intelligence tools is claimed.

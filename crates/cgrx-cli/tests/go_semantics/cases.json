@@ -1,0 +1,186 @@
+[
+  {
+    "id": "embedded_value",
+    "source": "package lane\ntype Runner interface { Run() int }\ntype Concrete struct { Value int }\ntype Other struct {}\nfunc (Other) Run() int { return 2 }\ntype Service struct { Concrete }\nfunc (s *Service) Caller() int { return s.Concrete.Run() }\nfunc (c Concrete) Run() int { return 1 }\n\nvar _ Runner = (*Service)(nil)\nvar _ Runner = Other{}\n",
+    "positive": true,
+    "compiler_valid": true,
+    "target_declaration": "func (c Concrete) Run",
+    "call": "s.Concrete.Run()"
+  },
+  {
+    "id": "embedded_pointer",
+    "source": "package lane\ntype Runner interface { Run() int }\ntype Concrete struct { Value int }\ntype Other struct {}\nfunc (Other) Run() int { return 2 }\ntype Service struct { *Concrete }\nfunc (s *Service) Caller() int { return s.Concrete.Run() }\nfunc (c *Concrete) Run() int { return 1 }\n\nvar _ Runner = (*Service)(nil)\nvar _ Runner = Other{}\n",
+    "positive": true,
+    "compiler_valid": true,
+    "target_declaration": "func (c *Concrete) Run",
+    "call": "s.Concrete.Run()"
+  },
+  {
+    "id": "addressable_value_for_pointer_method",
+    "source": "package lane\ntype Runner interface { Run() int }\ntype Concrete struct { Value int }\ntype Other struct {}\nfunc (Other) Run() int { return 2 }\ntype Service struct { Concrete }\nfunc (s Service) Caller() int { return s.Concrete.Run() }\nfunc (c *Concrete) Run() int { return 1 }\n\nvar _ Runner = (*Service)(nil)\nvar _ Runner = Other{}\n",
+    "positive": true,
+    "compiler_valid": true,
+    "target_declaration": "func (c *Concrete) Run",
+    "call": "s.Concrete.Run()"
+  },
+  {
+    "id": "pointer_embedding_value_owner",
+    "source": "package lane\ntype Runner interface { Run() int }\ntype Concrete struct { Value int }\ntype Other struct {}\nfunc (Other) Run() int { return 2 }\ntype Service struct { *Concrete }\nfunc (s Service) Caller() int { return s.Concrete.Run() }\nfunc (c Concrete) Run() int { return 1 }\n\nvar _ Runner = (*Service)(nil)\nvar _ Runner = Other{}\n",
+    "positive": true,
+    "compiler_valid": true,
+    "target_declaration": "func (c Concrete) Run",
+    "call": "s.Concrete.Run()"
+  },
+  {
+    "id": "unnamed_method_receiver",
+    "source": "package lane\ntype Runner interface { Run() int }\ntype Concrete struct { Value int }\ntype Other struct {}\nfunc (Other) Run() int { return 2 }\ntype Service struct { Concrete }\nfunc (s *Service) Caller() int { return s.Concrete.Run() }\nfunc (Concrete) Run() int { return 1 }\n\nvar _ Runner = (*Service)(nil)\nvar _ Runner = Other{}\n",
+    "positive": true,
+    "compiler_valid": true,
+    "target_declaration": "func (Concrete) Run",
+    "call": "s.Concrete.Run()"
+  },
+  {
+    "id": "named_slice_embedding",
+    "source": "package lane\ntype Runner interface { Run() int }\ntype Concrete []int\ntype Other struct {}\nfunc (Other) Run() int { return 2 }\ntype Service struct { Concrete }\nfunc (s *Service) Caller() int { return s.Concrete.Run() }\nfunc (c Concrete) Run() int { return 1 }\n\nvar _ Runner = (*Service)(nil)\nvar _ Runner = Other{}\n",
+    "positive": true,
+    "compiler_valid": true,
+    "target_declaration": "func (c Concrete) Run",
+    "call": "s.Concrete.Run()"
+  },
+  {
+    "id": "interface_multiple_implementations",
+    "source": "package lane\ntype Runner interface { Run() int }\ntype Concrete struct { Value int }\ntype Other struct {}\nfunc (Other) Run() int { return 2 }\ntype Service struct { Runner }\nfunc (s *Service) Caller() int { return s.Runner.Run() }\nfunc (c Concrete) Run() int { return 1 }\n\nvar _ Runner = (*Service)(nil)\nvar _ Runner = Other{}\n",
+    "positive": false,
+    "compiler_valid": true,
+    "target_declaration": "",
+    "call": "s.Runner.Run()"
+  },
+  {
+    "id": "interface_single_visible_implementation",
+    "source": "package lane\ntype Runner interface { Run() int }\ntype Concrete struct { Value int }\ntype Other struct {}\n\ntype Service struct { Runner }\nfunc (s *Service) Caller() int { return s.Runner.Run() }\nfunc (c Concrete) Run() int { return 1 }\n\nvar _ Runner = (*Service)(nil)\n\n",
+    "positive": false,
+    "compiler_valid": true,
+    "target_declaration": "",
+    "call": "s.Runner.Run()"
+  },
+  {
+    "id": "interface_parameter",
+    "source": "package lane\ntype Runner interface { Run() int }\ntype Concrete struct { Value int }\ntype Other struct {}\nfunc (Other) Run() int { return 2 }\ntype Service struct { Concrete }\nfunc (s *Service) Caller() int { var r Runner = s; return r.Run() }\nfunc (c Concrete) Run() int { return 1 }\n\nvar _ Runner = (*Service)(nil)\nvar _ Runner = Other{}\n",
+    "positive": false,
+    "compiler_valid": true,
+    "target_declaration": "",
+    "call": "r.Run()"
+  },
+  {
+    "id": "receiver_shadow",
+    "source": "package lane\ntype Runner interface { Run() int }\ntype Concrete struct { Value int }\ntype Other struct { Concrete Fake }; type Fake struct{}; func (Fake) Run() int { return 5 }\nfunc (Other) Run() int { return 2 }\ntype Service struct { Concrete }\nfunc (s *Service) Caller() int { { s := Other{}; return s.Concrete.Run() } }\nfunc (c Concrete) Run() int { return 1 }\n\nvar _ Runner = (*Service)(nil)\nvar _ Runner = Other{}\n",
+    "positive": false,
+    "compiler_valid": true,
+    "target_declaration": "",
+    "call": "s.Concrete.Run()"
+  },
+  {
+    "id": "receiver_write",
+    "source": "package lane\ntype Runner interface { Run() int }\ntype Concrete struct { Value int }\ntype Other struct {}\nfunc (Other) Run() int { return 2 }\ntype Service struct { Concrete }\nfunc (s *Service) Caller() int { s = &Service{}; return s.Concrete.Run() }\nfunc (c Concrete) Run() int { return 1 }\n\nvar _ Runner = (*Service)(nil)\nvar _ Runner = Other{}\n",
+    "positive": false,
+    "compiler_valid": true,
+    "target_declaration": "",
+    "call": "s.Concrete.Run()"
+  },
+  {
+    "id": "closure_capture",
+    "source": "package lane\ntype Runner interface { Run() int }\ntype Concrete struct { Value int }\ntype Other struct {}\nfunc (Other) Run() int { return 2 }\ntype Service struct { Concrete }\nfunc (s *Service) Caller() int { f := func() int { return s.Concrete.Run() }; return f() }\nfunc (c Concrete) Run() int { return 1 }\n\nvar _ Runner = (*Service)(nil)\nvar _ Runner = Other{}\n",
+    "positive": false,
+    "compiler_valid": true,
+    "target_declaration": "",
+    "call": "s.Concrete.Run()"
+  },
+  {
+    "id": "two_concrete_embeddings",
+    "source": "package lane\ntype Runner interface { Run() int }\ntype Concrete struct { Value int }\ntype Other struct {}\nfunc (Other) Run() int { return 2 }\ntype Service struct { Concrete; Other }\nfunc (s *Service) Caller() int { return s.Run() }\nfunc (c Concrete) Run() int { return 1 }\n\nvar _ Runner = (*Service)(nil)\nvar _ Runner = Other{}\n",
+    "positive": false,
+    "compiler_valid": false,
+    "target_declaration": "",
+    "call": "s.Run()"
+  },
+  {
+    "id": "concrete_and_interface_embedding",
+    "source": "package lane\ntype Runner interface { Run() int }\ntype Concrete struct { Value int }\ntype Other struct {}\nfunc (Other) Run() int { return 2 }\ntype Service struct { Concrete; Runner }\nfunc (s *Service) Caller() int { return s.Run() }\nfunc (c Concrete) Run() int { return 1 }\n\nvar _ Runner = (*Service)(nil)\nvar _ Runner = Other{}\n",
+    "positive": false,
+    "compiler_valid": false,
+    "target_declaration": "",
+    "call": "s.Run()"
+  },
+  {
+    "id": "alias_embedding",
+    "source": "package lane\ntype Runner interface { Run() int }\ntype Concrete struct { Value int }\ntype Other struct {}\nfunc (Other) Run() int { return 2 }\ntype Service struct { Alias }\nfunc (s *Service) Caller() int { return s.Alias.Run() }\nfunc (c Concrete) Run() int { return 1 }\ntype Alias = Concrete\n\nvar _ Runner = (*Service)(nil)\nvar _ Runner = Other{}\n",
+    "positive": false,
+    "compiler_valid": true,
+    "target_declaration": "",
+    "call": "s.Alias.Run()"
+  },
+  {
+    "id": "nested_embedding",
+    "source": "package lane\ntype Runner interface { Run() int }\ntype Concrete struct { Value int }\ntype Other struct {}\nfunc (Other) Run() int { return 2 }\ntype Service struct { Middle }\nfunc (s *Service) Caller() int { return s.Middle.Run() }\nfunc (c Concrete) Run() int { return 1 }\ntype Middle struct { Concrete }\n\nvar _ Runner = (*Service)(nil)\nvar _ Runner = Other{}\n",
+    "positive": false,
+    "compiler_valid": true,
+    "target_declaration": "",
+    "call": "s.Middle.Run()"
+  },
+  {
+    "id": "function_field_blocks_promotion",
+    "source": "package lane\ntype Runner interface { Run() int }\ntype Concrete struct { Value int }\ntype Other struct {}\nfunc (Other) Run() int { return 2 }\ntype Service struct { Concrete; Run func() int }\nfunc (s *Service) Caller() int { return s.Run() }\nfunc (c Concrete) Run() int { return 1 }\n",
+    "positive": false,
+    "compiler_valid": true,
+    "target_declaration": "",
+    "call": "s.Run()"
+  },
+  {
+    "id": "missing_local_type",
+    "source": "package lane\ntype Runner interface { Run() int }\ntype Concrete struct { Value int }\ntype Other struct {}\nfunc (Other) Run() int { return 2 }\ntype Service struct { Absent }\nfunc (s *Service) Caller() int { return s.Absent.Run() }\nfunc (c Concrete) Run() int { return 1 }\n",
+    "positive": false,
+    "compiler_valid": false,
+    "target_declaration": "",
+    "call": "s.Absent.Run()"
+  },
+  {
+    "id": "duplicate_target_method",
+    "source": "package lane\ntype Runner interface { Run() int }\ntype Concrete struct { Value int }\ntype Other struct {}\nfunc (Other) Run() int { return 2 }\ntype Service struct { Concrete }\nfunc (s *Service) Caller() int { return s.Concrete.Run() }\nfunc (c Concrete) Run() int { return 1 }\nfunc (Concrete) Run() int { return 3 }\n\nvar _ Runner = (*Service)(nil)\nvar _ Runner = Other{}\n",
+    "positive": false,
+    "compiler_valid": false,
+    "target_declaration": "",
+    "call": "s.Concrete.Run()"
+  },
+  {
+    "id": "target_function_field_conflict",
+    "source": "package lane\ntype Runner interface { Run() int }\ntype Concrete struct { Run func() int }\ntype Other struct {}\nfunc (Other) Run() int { return 2 }\ntype Service struct { Concrete }\nfunc (s *Service) Caller() int { return s.Concrete.Run() }\nfunc (c Concrete) Run() int { return 1 }\n\nvar _ Runner = (*Service)(nil)\nvar _ Runner = Other{}\n",
+    "positive": false,
+    "compiler_valid": false,
+    "target_declaration": "",
+    "call": "s.Concrete.Run()"
+  },
+  {
+    "id": "receiver_generic",
+    "source": "package lane\ntype Runner interface { Run() int }\ntype Concrete struct { Value int }\ntype Other struct {}\nfunc (Other) Run() int { return 2 }\ntype Service[T any] struct { Concrete }\nfunc (s *Service[T]) Caller() int { return s.Concrete.Run() }\nfunc (c Concrete) Run() int { return 1 }\n\nvar _ Runner = (*Service[int])(nil)\nvar _ Runner = Other{}\n",
+    "positive": false,
+    "compiler_valid": true,
+    "target_declaration": "",
+    "call": "s.Concrete.Run()"
+  },
+  {
+    "id": "direct_own_method_wins",
+    "source": "package lane\ntype Runner interface { Run() int }\ntype Concrete struct { Value int }\ntype Other struct {}\nfunc (Other) Run() int { return 2 }\ntype Service struct { Concrete }\nfunc (s *Service) Caller() int { return s.Run() }\nfunc (c Concrete) Run() int { return 1 }\nfunc (s *Service) Run() int { return 4 }\n\nvar _ Runner = (*Service)(nil)\nvar _ Runner = Other{}\n",
+    "positive": true,
+    "compiler_valid": true,
+    "target_declaration": "func (s *Service) Run",
+    "call": "s.Run()"
+  },
+  {
+    "id": "explicit_choice_among_implementations",
+    "source": "package lane\ntype Runner interface { Run() int }\ntype Concrete struct { Value int }\ntype Other struct {}\nfunc (Other) Run() int { return 2 }\ntype Service struct { Concrete; Other }\nfunc (s *Service) Caller() int { return s.Concrete.Run() }\nfunc (c Concrete) Run() int { return 1 }\n\n\nvar _ Runner = Other{}\n",
+    "positive": true,
+    "compiler_valid": true,
+    "target_declaration": "func (c Concrete) Run",
+    "call": "s.Concrete.Run()"
+  }
+]

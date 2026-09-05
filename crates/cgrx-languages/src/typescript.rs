@@ -1,8 +1,11 @@
+#[path = "ts_imports.rs"]
+pub mod ts_imports;
+
 use crate::pack::{
     Edge, ExtractError, Extraction, LanguagePack, Provenance, RelationKind, Span, UnresolvedKind,
     evidence_span, has_ancestor, normalize_extraction, symbol, text, unresolved, walk_with,
 };
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use tree_sitter::{Language, Node, Parser};
 
 pub(crate) static TYPESCRIPT: TypeScript = TypeScript;
@@ -165,9 +168,11 @@ struct CallScope {
     unsupported: bool,
 }
 struct LexicalContext {
+    import_proof: bool,
     scopes: Vec<LexicalScope>,
     calls: BTreeMap<usize, CallScope>,
     writes: Vec<(usize, String)>,
+    import_aliases: BTreeSet<(usize, String)>,
     has_error: bool,
 }
 enum CallBinding {
@@ -234,14 +239,19 @@ fn binding_names(node: Node<'_>, source: &[u8], out: &mut Vec<String>) {
 }
 impl LexicalContext {
     fn new(root: Node<'_>, source: &[u8]) -> Self {
+        Self::with_import_proof(root, source, false)
+    }
+    fn with_import_proof(root: Node<'_>, source: &[u8], import_proof: bool) -> Self {
         let mut context = Self {
+            import_proof,
             scopes: vec![LexicalScope::default()],
             calls: BTreeMap::new(),
             writes: Vec::new(),
+            import_aliases: BTreeSet::new(),
             has_error: root.has_error(),
         };
         context.collect(root, source, 0, false);
-        for (scope, name) in std::mem::take(&mut context.writes) {
+        for (scope, name) in context.writes.clone() {
             if let Some(owner) = context.binding_scope(scope, &name)
                 && let Some(binding) = context.scopes[owner].bindings.get_mut(&name)
             {
@@ -278,6 +288,49 @@ impl LexicalContext {
         }
     }
     fn collect(&mut self, node: Node<'_>, source: &[u8], mut scope: usize, unsupported: bool) {
+        if node.kind() == "import_statement" {
+            if self.import_proof {
+                return;
+            }
+            let mut cursor = node.walk();
+            let module = node.child_by_field_name("source").or_else(|| {
+                node.named_children(&mut cursor)
+                    .find(|child| child.kind() == "import_require_clause")
+                    .and_then(|clause| clause.child_by_field_name("source"))
+            });
+            if module.is_some_and(|module| {
+                let specifier = text(module, source);
+                let specifier = specifier.trim_matches(['\'', '"']);
+                specifier.starts_with("./") || specifier.starts_with("../")
+            }) {
+                // Preserve legacy relative-import recall. This is not module/
+                // export identity proof; exact relative resolution is separate.
+                // Skip binding collection only; classify still emits the import.
+                return;
+            }
+        }
+        // Non-relative imports establish local identity, not a repository target.
+        // Until module/export identity is proven, block syntax fallback for the
+        // local binding only (never the exported name of an aliased specifier).
+        match node.kind() {
+            "import_specifier" => {
+                if let Some(local) = node
+                    .child_by_field_name("alias")
+                    .or_else(|| node.child_by_field_name("name"))
+                {
+                    self.block_pattern(scope, local, source);
+                }
+            }
+            "import_clause" | "namespace_import" | "import_require_clause" => {
+                let mut cursor = node.walk();
+                for local in node.named_children(&mut cursor) {
+                    if local.kind() == "identifier" {
+                        self.block_pattern(scope, local, source);
+                    }
+                }
+            }
+            _ => {}
+        }
         if matches!(
             node.kind(),
             "function_declaration"
@@ -364,6 +417,16 @@ impl LexicalContext {
                 self.block_pattern(scope, name, source);
             }
         }
+        if node.kind() == "import_alias" {
+            let mut cursor = node.walk();
+            if let Some(name) = node
+                .named_children(&mut cursor)
+                .find(|n| n.kind() == "identifier")
+            {
+                self.import_aliases.insert((scope, text(name, source)));
+                self.block_pattern(scope, name, source);
+            }
+        }
         if node.kind() == "catch_clause"
             && let Some(param) = node.child_by_field_name("parameter")
         {
@@ -372,14 +435,18 @@ impl LexicalContext {
         if node.kind() == "for_in_statement"
             && let Some(left) = node.child_by_field_name("left")
         {
-            // for-of/in grammar puts the binding directly under the loop.
-            // Var may escape its block: block it at function scope as well.
-            self.block_pattern(scope, left, source);
-            if node
-                .child_by_field_name("kind")
-                .is_some_and(|k| k.utf8_text(source).ok() == Some("var"))
-            {
-                self.block_pattern(self.scopes[scope].function, left, source);
+            // No declaration keyword means assignment to an existing binding,
+            // including destructuring; it must not create a loop-local shadow.
+            if let Some(kind) = node.child_by_field_name("kind") {
+                self.block_pattern(scope, left, source);
+                if kind.utf8_text(source).ok() == Some("var") {
+                    self.block_pattern(self.scopes[scope].function, left, source);
+                }
+            } else {
+                let mut names = Vec::new();
+                binding_names(left, source, &mut names);
+                self.writes
+                    .extend(names.into_iter().map(|name| (scope, name)));
             }
         }
         if node.kind() == "variable_declarator"

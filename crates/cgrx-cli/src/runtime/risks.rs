@@ -101,10 +101,16 @@ impl Runtime {
             }
         }
         let live_arcs = definitive_stored_arcs(&self.stored, &all_scope());
-        let live_pairs: BTreeSet<_> = live_arcs
+        // Keep one actual proof per live pair; do not reuse a baseline callsite
+        // whose byte span or source hash may no longer describe the working tree.
+        let live_pairs: BTreeMap<_, _> = live_arcs
             .iter()
             .take(EDGE_LIMIT)
-            .map(|e| (e.source, e.target))
+            .filter_map(|e| {
+                e.evidence
+                    .as_ref()
+                    .map(|proof| ((e.source, e.target), proof))
+            })
             .collect();
         let resolved: BTreeSet<_> = live_arcs
             .into_iter()
@@ -178,7 +184,8 @@ impl Runtime {
             if let Some(targets) = current.get(&(target.path.as_str(), target.symbol.as_str())) {
                 if let [now_target] = targets.as_slice()
                     && body_hash(now_target) != target.body_hash
-                    && live_pairs.contains(&(now_caller.node_id, now_target.node_id))
+                    && let Some(current_edge) =
+                        live_pairs.get(&(now_caller.node_id, now_target.node_id))
                     && dedup.insert((
                         "impact",
                         caller.path.clone(),
@@ -199,7 +206,7 @@ impl Runtime {
                         gaps.insert((".".to_owned(), "RESULT_LIMIT".to_owned()));
                         continue;
                     }
-                    impacts.push(json!({"rule":"CHANGED_CALLEE_IMPACT","severity":"info","confidence":"candidate","path":caller.path,"line":line,"caller":{"path":caller.path,"symbol":caller.symbol,"span":{"start":now_caller.span_start,"end":now_caller.span_end}},"current_source_hash":self.stored.path_hashes.get(&caller.path),"changed_target":{"path":target.path,"symbol":target.symbol},"base_edge":edge.evidence,"verification":"Review this caller and run its tests; a changed dependency is not itself a bug."}));
+                    impacts.push(json!({"rule":"CHANGED_CALLEE_IMPACT","severity":"info","confidence":"candidate","path":caller.path,"line":line,"caller":{"path":caller.path,"symbol":caller.symbol,"span":{"start":now_caller.span_start,"end":now_caller.span_end}},"current_source_hash":self.stored.path_hashes.get(&caller.path),"changed_target":{"path":target.path,"symbol":target.symbol},"base_edge":edge.evidence,"current_edge":current_edge,"verification":"Review this caller and run its tests; a changed dependency is not itself a bug."}));
                 }
                 continue;
             }

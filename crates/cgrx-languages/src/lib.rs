@@ -12,3 +12,6 @@ pub use pack::{
 };
 
 pub use rust::RustFileFacts;
+
+// Exact import facts and conservative site classification for runtime integration.
+pub use typescript::ts_imports;
