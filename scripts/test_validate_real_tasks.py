@@ -50,7 +50,7 @@ class ManifestTests(unittest.TestCase):
         self.assertEqual(validator.validate(self.doc), 1)
 
     def test_schema(self):
-        for key, value in [('schema_version', True), ('schema_version', 2), ('tasks', []), ('tasks', {})]:
+        for key, value in [('schema_version', True), ('schema_version', 3), ('tasks', []), ('tasks', {})]:
             with self.subTest(key=key, value=value):
                 doc = copy.deepcopy(self.doc); doc[key] = value; self.invalid(doc)
         for key in self.task:
@@ -147,6 +147,85 @@ class ManifestTests(unittest.TestCase):
         self.invalid(doc)
         doc=copy.deepcopy(self.doc); doc['tasks'][0]['source_copy']='unexpected'
         self.invalid(doc)
+
+    def test_v2_keeps_v1_tasks_compatible(self):
+        self.doc['schema_version']=2
+        self.assertEqual(validator.validate(self.doc), 1)
+
+    def test_v2_unresolved_has_no_target(self):
+        self.doc['schema_version']=2
+        self.task['category']='ambiguous'
+        self.task['expected'].update(relation='UNRESOLVED', target=None)
+        del self.task['evidence']['target']
+        self.assertEqual(validator.validate(self.doc), 1)
+        self.task['expected']['target']='target'
+        self.invalid()
+
+    def test_unresolved_rejects_fabricated_target_and_v1(self):
+        self.doc['schema_version']=2
+        self.task['category']='ambiguous'
+        self.task['expected'].update(relation='UNRESOLVED', target=None)
+        self.invalid()  # target evidence forbidden, not an oracle candidate
+        del self.task['evidence']['target']
+        self.doc['schema_version']=1
+        self.invalid()
+
+    def test_v2_imports_and_origin(self):
+        self.doc['schema_version']=2
+        self.task['category']='import'
+        self.task['expected']['relation']='IMPORTS'
+        self.git('remote','add','origin','https://github.com/example/fixture.git')
+        self.task['provenance']['repository_url']='https://github.com/example/fixture.git'
+        self.assertEqual(validator.validate(self.doc),1)
+        self.task['category']='impact'
+        self.invalid()
+
+    def test_category_does_not_relabel_same_assertion(self):
+        self.doc['schema_version']=2
+        self.task['category']='call'
+        other=copy.deepcopy(self.task)
+        other.update(id='relabel', category='impact')
+        self.doc['tasks'].append(other)
+        self.invalid()
+        other['category']='reference'
+        other['expected']['relation']='REFERENCE'
+        self.invalid()
+
+    def test_v2_rejects_category_mismatch_and_bad_origin(self):
+        self.doc['schema_version']=2
+        for category in ('ambiguous','import','unknown'):
+            doc=copy.deepcopy(self.doc)
+            doc['tasks'][0]['category']=category
+            self.invalid(doc)
+        self.task['provenance']['repository_url']='file:///private'
+        self.invalid()
+
+    def test_same_site_cannot_be_definitive_and_unresolved(self):
+        self.doc['schema_version']=2
+        other=copy.deepcopy(self.task)
+        other.update(id='contradiction', category='ambiguous')
+        other['expected'].update(relation='UNRESOLVED', target=None)
+        del other['evidence']['target']
+        self.doc['tasks'].append(other)
+        self.invalid()
+
+    def test_target_span_resizing_does_not_create_a_new_assertion(self):
+        other=copy.deepcopy(self.task)
+        other['id']='resized-target'
+        other['evidence']['target']['end_line']=3
+        other['evidence']['target']['span_sha256']=sha(self.source.splitlines(keepends=True)[2])
+        self.doc['tasks'].append(other)
+        self.invalid()
+
+    def test_public_origin_must_match_local_provenance(self):
+        self.doc['schema_version']=2
+        self.git('remote','add','origin','https://github.com/example/actual.git')
+        self.task['provenance']['repository_url']='https://github.com/example/claimed.git'
+        self.invalid()
+
+    def test_v1_rejects_v2_fields(self):
+        self.task['category']='call'
+        self.invalid()
 
     def test_cli_and_duplicate_json_keys(self):
         manifest=self.root/'tasks.json'; manifest.write_text(json.dumps(self.doc))

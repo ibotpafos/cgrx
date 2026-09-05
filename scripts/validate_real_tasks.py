@@ -5,6 +5,12 @@ One-based inclusive line spans hash raw bytes, including existing line endings.
 Every referenced file must equal its committed HEAD blob. Other dirty files are
 irrelevant. This checks provenance integrity, not the curator's semantic judgment.
 Only bounded identifier absence is machine-checked for optional distractors.
+
+Version 2 adds optional category and public repository_url provenance, IMPORTS,
+and UNRESOLVED. UNRESOLVED has target=null and no target evidence: it is an
+abstention, never a definitive edge. Impact tasks assert an existing dependency
+only, not an executed patch or a bug. Version 1 manifests remain supported.
+The historical manifest filename is retained; schema_version governs decoding.
 """
 import argparse
 import datetime
@@ -47,23 +53,29 @@ def identifier(symbol, data):
 
 def validate(doc):
     fields(doc, ('schema_version','tasks'), ('provenance',))
-    require(type(doc['schema_version']) is int and doc['schema_version'] == 1, 'unsupported schema')
+    require(type(doc['schema_version']) is int and doc['schema_version'] in (1, 2), 'unsupported schema')
     require(isinstance(doc['tasks'], list) and doc['tasks'], 'tasks must be nonempty list')
     if 'provenance' in doc:
         require(nonempty(doc['provenance']), 'invalid corpus provenance')
+    v2 = doc['schema_version'] == 2
     ids, fingerprints, revisions, cache, splits = set(), set(), {}, {}, {}
     for task in doc['tasks']:
-        fields(task, ('id','repo','revision','split','question','rationale','provenance','evidence','expected'), ('negative',))
+        fields(task, ('id','repo','revision','split','question','rationale','provenance','evidence','expected'), ('negative','category') if v2 else ('negative',))
         for key in ('id','repo','revision','question','rationale'):
             require(nonempty(task[key]), 'invalid '+key)
         require(task['id'] not in ids, 'duplicate task id'); ids.add(task['id'])
         require(task['split'] in ('train','heldout'), 'invalid split')
-        fields(task['provenance'], ('method','verified_on'))
+        fields(task['provenance'], ('method','verified_on'), ('repository_url',) if v2 else ())
+        if 'repository_url' in task['provenance']:
+            url = task['provenance']['repository_url']
+            require(isinstance(url,str) and re.fullmatch(r'https://[A-Za-z0-9.-]+/[A-Za-z0-9._/-]+',url), 'invalid public origin')
         require(task['provenance']['method'] == 'manual-source-read', 'source-read provenance required')
         date = task['provenance']['verified_on']
         require(isinstance(date,str) and re.fullmatch(r'\d{4}-\d{2}-\d{2}',date), 'invalid date')
         datetime.date.fromisoformat(date)
         repo, revision = task['repo'], task['revision']
+        if 'repository_url' in task['provenance']:
+            require(git(repo,'remote','get-url','origin').decode().strip() == task['provenance']['repository_url'], 'public origin mismatch')
         require(Path(repo).is_absolute() and str(Path(repo).resolve()) == repo, 'noncanonical repo')
         require(re.fullmatch(r'[0-9a-f]{40}',revision) is not None, 'invalid revision')
         require(repo not in revisions or revisions[repo] == revision, 'mixed revisions')
@@ -71,7 +83,19 @@ def validate(doc):
             require(git(repo,'rev-parse','--show-toplevel').decode().strip() == repo, 'not canonical Git root')
             require(git(repo,'rev-parse','HEAD').decode().strip() == revision, 'stale revision')
             revisions[repo] = revision
-        fields(task['evidence'], ('source','target','site'))
+        expected=task['expected']
+        fields(expected, ('relation','source','target','site'))
+        relation=expected['relation']
+        require(relation in (('CALLS','REFERENCE','IMPORTS','UNRESOLVED') if v2 else ('CALLS','REFERENCE')), 'invalid relation')
+        unresolved=relation == 'UNRESOLVED'
+        categories={'call':'CALLS','receiver':'CALLS','impact':'CALLS',
+                    'reference':'REFERENCE','import':'IMPORTS','ambiguous':'UNRESOLVED'}
+        if 'category' in task:
+            require(isinstance(task['category'],str) and categories.get(task['category']) == relation, 'category mismatch')
+        require(not unresolved or task.get('category') == 'ambiguous', 'unresolved category required')
+        require(expected['source'] == 'source' and expected['site'] == 'site'
+                and expected['target'] == (None if unresolved else 'target'), 'invalid evidence link')
+        fields(task['evidence'], ('source','site') if unresolved else ('source','target','site'))
         spans = {}
         for name, anchor in task['evidence'].items():
             fields(anchor, ('path','sha256','start_line','end_line','span_sha256','symbol'))
@@ -103,14 +127,15 @@ def validate(doc):
             require(digest(span) == anchor['span_sha256'], 'stale span contents')
             require(identifier(anchor['symbol'],span), 'symbol absent from span')
             spans[name]=span
-        expected=task['expected']
-        fields(expected, ('relation','source','target','site'))
-        require(expected['relation'] in ('CALLS','REFERENCE'), 'invalid relation')
-        require(all(expected[k] == k for k in ('source','target','site')), 'invalid evidence link')
-        source,target,site=(task['evidence'][k] for k in ('source','target','site'))
+        source,site=(task['evidence'][k] for k in ('source','site'))
         require(source['path'] == site['path'] and source['start_line'] <= site['start_line'] <= site['end_line'] <= source['end_line'], 'site outside source')
-        require(site['symbol'] == target['symbol'], 'site target mismatch')
-        fingerprint=(repo,revision,source['path'],source['start_line'],source['end_line'],target['path'],target['start_line'],target['end_line'],site['start_line'],site['end_line'],expected['relation'])
+        target=task['evidence'].get('target')
+        if target is not None:
+            require(site['symbol'] == target['symbol'], 'site target mismatch')
+        # Categories, questions, source-span widening and relation relabeling do
+        # not create a new assertion at the same source site. A site also
+        # cannot simultaneously assert a definitive and an unresolved target.
+        fingerprint=(repo,revision,site['path'],site['start_line'],site['end_line'],site['symbol'])
         require(fingerprint not in fingerprints, 'duplicate assertion'); fingerprints.add(fingerprint)
         if 'negative' in task:
             negative=task['negative']

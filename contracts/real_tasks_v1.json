@@ -1,6 +1,6 @@
 {
-  "schema_version": 1,
-  "provenance": "Initial bounded source-truth slice: 12 manually read tasks, five committed source files in three canonical repositories. Anchors contain identifiers, one-based inclusive line ranges, SHA-256 of full file and raw line-span bytes; no source bodies or configuration values are stored. All referenced working files were compared to their recorded HEAD blobs. GD and VPN CGRX indexing was unavailable; Pyramid engine coverage was partial. Graph output is not the oracle. Eight train tasks cover GD notifications and VPN envutil; four heldout tasks cover Pyramid Engine, with no shared evidence file across splits. Optional negatives assert only identifier absence within the recorded source span. This is not exhaustive and validation does not prove semantic correctness or runtime behavior.",
+  "schema_version": 2,
+  "provenance": "NEXT curated source truth. Original 12 v1 tasks retained unchanged. New selections are manually read direct call/import/type references or explicit unresolved dispatches, not graph-derived answers. Each exact assertion is counted once, not relabeled across categories. Public repositories were independently cloned from each task repository_url into separate read-only fixtures; HEAD plus full-file and inclusive raw-line SHA-256 anchors pin provenance. No source bodies, key values or secrets are copied into this manifest. All public evidence is heldout, and no evidence file crosses splits. Category impact means a source dependency worth reviewing if the target changes, not an executed patch or a bug. UNRESOLVED has no target evidence and never denotes a positive edge. Negative distractors are bounded identifier absence only. Python/Go/TypeScript slice, not exhaustive and not a 200-task completion claim.",
   "tasks": [
     {
       "id": "gd-notification-preferences",
@@ -601,6 +601,4508 @@
         "scope": "source",
         "rationale": "Manual read of the complete source span confirms this identifier is absent; this is only a bounded lexical distractor, not a whole-repository or runtime non-call claim."
       }
+    },
+    {
+      "id": "itsdangerous-encoding-import-BadData",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "split": "heldout",
+      "category": "import",
+      "question": "Which local declaration supplies the BadData import in encoding.py?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets/itsdangerous.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/itsdangerous/encoding.py",
+          "start_line": 8,
+          "end_line": 8,
+          "symbol": "BadData",
+          "sha256": "c304f3e6aff7ccb71a01dba793afef4a84adc06a9859edf4ed997f53ceda4453",
+          "span_sha256": "ca4e7cba28c57f708a2fc45f5ff6c5349444dc2118d4720b54db37dc9b2d4de5"
+        },
+        "site": {
+          "path": "src/itsdangerous/encoding.py",
+          "start_line": 8,
+          "end_line": 8,
+          "symbol": "BadData",
+          "sha256": "c304f3e6aff7ccb71a01dba793afef4a84adc06a9859edf4ed997f53ceda4453",
+          "span_sha256": "ca4e7cba28c57f708a2fc45f5ff6c5349444dc2118d4720b54db37dc9b2d4de5"
+        },
+        "target": {
+          "path": "src/itsdangerous/exc.py",
+          "start_line": 7,
+          "end_line": 7,
+          "symbol": "BadData",
+          "sha256": "46bddec68d0c44511c3d996dc1e7322b5e955756c4d8af7f175f9dfa58dc527e",
+          "span_sha256": "9e69b396a51e8b83b75053063f2d92730fb1fdad4989b163b6ba01d617e24298"
+        }
+      },
+      "expected": {
+        "relation": "IMPORTS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The explicit relative import names BadData; its module path and the target declaration were read directly. This is an import binding, not a runtime invocation."
+    },
+    {
+      "id": "itsdangerous-url_safe-import-_CompactJSON",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "split": "heldout",
+      "category": "import",
+      "question": "Which local declaration supplies the _CompactJSON import in url_safe.py?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets/itsdangerous.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/itsdangerous/url_safe.py",
+          "start_line": 6,
+          "end_line": 6,
+          "symbol": "_CompactJSON",
+          "sha256": "6b3e1ee5f5e2fefb3e61b5a3f186709f8c2254a7de0fef8610a453e547aee0fe",
+          "span_sha256": "b349c5b7b541d73092ac1531a1c9842536ca452ee9e81afd4ccd3fcef9288524"
+        },
+        "site": {
+          "path": "src/itsdangerous/url_safe.py",
+          "start_line": 6,
+          "end_line": 6,
+          "symbol": "_CompactJSON",
+          "sha256": "6b3e1ee5f5e2fefb3e61b5a3f186709f8c2254a7de0fef8610a453e547aee0fe",
+          "span_sha256": "b349c5b7b541d73092ac1531a1c9842536ca452ee9e81afd4ccd3fcef9288524"
+        },
+        "target": {
+          "path": "src/itsdangerous/_json.py",
+          "start_line": 7,
+          "end_line": 7,
+          "symbol": "_CompactJSON",
+          "sha256": "c0f4069a07b6c99f77dbc107285ea069d19ec866022502b1b54fa22ca13a5270",
+          "span_sha256": "e34a24e3465bee5ec894c9d371ce853fe86e72655adeecb2bbfe752933760c10"
+        }
+      },
+      "expected": {
+        "relation": "IMPORTS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The explicit relative import names _CompactJSON; its module path and the target declaration were read directly. This is an import binding, not a runtime invocation."
+    },
+    {
+      "id": "itsdangerous-url_safe-import-base64_decode",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "split": "heldout",
+      "category": "import",
+      "question": "Which local declaration supplies the base64_decode import in url_safe.py?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets/itsdangerous.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/itsdangerous/url_safe.py",
+          "start_line": 7,
+          "end_line": 7,
+          "symbol": "base64_decode",
+          "sha256": "6b3e1ee5f5e2fefb3e61b5a3f186709f8c2254a7de0fef8610a453e547aee0fe",
+          "span_sha256": "6acb1825ebab22a2ec599c5610ed8af8fc08a65604b93296dbd93f32c1f0b446"
+        },
+        "site": {
+          "path": "src/itsdangerous/url_safe.py",
+          "start_line": 7,
+          "end_line": 7,
+          "symbol": "base64_decode",
+          "sha256": "6b3e1ee5f5e2fefb3e61b5a3f186709f8c2254a7de0fef8610a453e547aee0fe",
+          "span_sha256": "6acb1825ebab22a2ec599c5610ed8af8fc08a65604b93296dbd93f32c1f0b446"
+        },
+        "target": {
+          "path": "src/itsdangerous/encoding.py",
+          "start_line": 28,
+          "end_line": 38,
+          "symbol": "base64_decode",
+          "sha256": "c304f3e6aff7ccb71a01dba793afef4a84adc06a9859edf4ed997f53ceda4453",
+          "span_sha256": "f008824f6b0e7c1782efd19567baab7cf6c50803641106e0ea1196a7a2ba8db2"
+        }
+      },
+      "expected": {
+        "relation": "IMPORTS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The explicit relative import names base64_decode; its module path and the target declaration were read directly. This is an import binding, not a runtime invocation."
+    },
+    {
+      "id": "itsdangerous-url_safe-import-base64_encode",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "split": "heldout",
+      "category": "import",
+      "question": "Which local declaration supplies the base64_encode import in url_safe.py?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets/itsdangerous.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/itsdangerous/url_safe.py",
+          "start_line": 8,
+          "end_line": 8,
+          "symbol": "base64_encode",
+          "sha256": "6b3e1ee5f5e2fefb3e61b5a3f186709f8c2254a7de0fef8610a453e547aee0fe",
+          "span_sha256": "16f3f2ea3da3ae9d4f0d609097517aab67c29fc2aa7d884489d260c9c47a13a9"
+        },
+        "site": {
+          "path": "src/itsdangerous/url_safe.py",
+          "start_line": 8,
+          "end_line": 8,
+          "symbol": "base64_encode",
+          "sha256": "6b3e1ee5f5e2fefb3e61b5a3f186709f8c2254a7de0fef8610a453e547aee0fe",
+          "span_sha256": "16f3f2ea3da3ae9d4f0d609097517aab67c29fc2aa7d884489d260c9c47a13a9"
+        },
+        "target": {
+          "path": "src/itsdangerous/encoding.py",
+          "start_line": 20,
+          "end_line": 25,
+          "symbol": "base64_encode",
+          "sha256": "c304f3e6aff7ccb71a01dba793afef4a84adc06a9859edf4ed997f53ceda4453",
+          "span_sha256": "4afd948fcbb5cbe256673452fd3586434513fc567dc92dc3364827b85688876f"
+        }
+      },
+      "expected": {
+        "relation": "IMPORTS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The explicit relative import names base64_encode; its module path and the target declaration were read directly. This is an import binding, not a runtime invocation."
+    },
+    {
+      "id": "itsdangerous-url_safe-import-BadPayload",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "split": "heldout",
+      "category": "import",
+      "question": "Which local declaration supplies the BadPayload import in url_safe.py?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets/itsdangerous.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/itsdangerous/url_safe.py",
+          "start_line": 9,
+          "end_line": 9,
+          "symbol": "BadPayload",
+          "sha256": "6b3e1ee5f5e2fefb3e61b5a3f186709f8c2254a7de0fef8610a453e547aee0fe",
+          "span_sha256": "2ab24a72567824df176b0490a902ab038ffa9c9fe93291e198ef32a9c8f5d2a0"
+        },
+        "site": {
+          "path": "src/itsdangerous/url_safe.py",
+          "start_line": 9,
+          "end_line": 9,
+          "symbol": "BadPayload",
+          "sha256": "6b3e1ee5f5e2fefb3e61b5a3f186709f8c2254a7de0fef8610a453e547aee0fe",
+          "span_sha256": "2ab24a72567824df176b0490a902ab038ffa9c9fe93291e198ef32a9c8f5d2a0"
+        },
+        "target": {
+          "path": "src/itsdangerous/exc.py",
+          "start_line": 92,
+          "end_line": 92,
+          "symbol": "BadPayload",
+          "sha256": "46bddec68d0c44511c3d996dc1e7322b5e955756c4d8af7f175f9dfa58dc527e",
+          "span_sha256": "fe36e00d7a0d0b7b06c66f79f7bef1ebebf77e071d76709c7f8325bcb88186b7"
+        }
+      },
+      "expected": {
+        "relation": "IMPORTS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The explicit relative import names BadPayload; its module path and the target declaration were read directly. This is an import binding, not a runtime invocation."
+    },
+    {
+      "id": "itsdangerous-url_safe-import-Serializer",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "split": "heldout",
+      "category": "import",
+      "question": "Which local declaration supplies the Serializer import in url_safe.py?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets/itsdangerous.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/itsdangerous/url_safe.py",
+          "start_line": 11,
+          "end_line": 11,
+          "symbol": "Serializer",
+          "sha256": "6b3e1ee5f5e2fefb3e61b5a3f186709f8c2254a7de0fef8610a453e547aee0fe",
+          "span_sha256": "391908a34ffa88fe54a0ebfa815da1142dd7e69c9c07a58f636627e31ea3abc9"
+        },
+        "site": {
+          "path": "src/itsdangerous/url_safe.py",
+          "start_line": 11,
+          "end_line": 11,
+          "symbol": "Serializer",
+          "sha256": "6b3e1ee5f5e2fefb3e61b5a3f186709f8c2254a7de0fef8610a453e547aee0fe",
+          "span_sha256": "391908a34ffa88fe54a0ebfa815da1142dd7e69c9c07a58f636627e31ea3abc9"
+        },
+        "target": {
+          "path": "src/itsdangerous/serializer.py",
+          "start_line": 40,
+          "end_line": 40,
+          "symbol": "Serializer",
+          "sha256": "6d6f1687897c7e3ac6eeff5bfd6794df90e299feedcc6aae3faa0e53ffe925e8",
+          "span_sha256": "09a98aa70aec815fe2ab736ef79415db1d80bf091be6d164e0d890169187d36d"
+        }
+      },
+      "expected": {
+        "relation": "IMPORTS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The explicit relative import names Serializer; its module path and the target declaration were read directly. This is an import binding, not a runtime invocation."
+    },
+    {
+      "id": "itsdangerous-url_safe-import-TimedSerializer",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "split": "heldout",
+      "category": "import",
+      "question": "Which local declaration supplies the TimedSerializer import in url_safe.py?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets/itsdangerous.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/itsdangerous/url_safe.py",
+          "start_line": 12,
+          "end_line": 12,
+          "symbol": "TimedSerializer",
+          "sha256": "6b3e1ee5f5e2fefb3e61b5a3f186709f8c2254a7de0fef8610a453e547aee0fe",
+          "span_sha256": "532acd6db623c4abff9a89a60594663b33bc1a459ae774612465222120dfefa3"
+        },
+        "site": {
+          "path": "src/itsdangerous/url_safe.py",
+          "start_line": 12,
+          "end_line": 12,
+          "symbol": "TimedSerializer",
+          "sha256": "6b3e1ee5f5e2fefb3e61b5a3f186709f8c2254a7de0fef8610a453e547aee0fe",
+          "span_sha256": "532acd6db623c4abff9a89a60594663b33bc1a459ae774612465222120dfefa3"
+        },
+        "target": {
+          "path": "src/itsdangerous/timed.py",
+          "start_line": 170,
+          "end_line": 170,
+          "symbol": "TimedSerializer",
+          "sha256": "3afbf6050e8b73605931d1e516f374835456979e4319c098bfe5f284f120c6c5",
+          "span_sha256": "b9dfcda0e619309adaa461cc4341e75b1de807c05bac80d764fd24c7be8058cd"
+        }
+      },
+      "expected": {
+        "relation": "IMPORTS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The explicit relative import names TimedSerializer; its module path and the target declaration were read directly. This is an import binding, not a runtime invocation."
+    },
+    {
+      "id": "itsdangerous-signer-import-base64_decode",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "split": "heldout",
+      "category": "import",
+      "question": "Which local declaration supplies the base64_decode import in signer.py?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets/itsdangerous.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/itsdangerous/signer.py",
+          "start_line": 9,
+          "end_line": 9,
+          "symbol": "base64_decode",
+          "sha256": "60ed0257b341bc703a8f9e3d4441c91548d4a23c36a47ab0714a509d4ef23584",
+          "span_sha256": "6acb1825ebab22a2ec599c5610ed8af8fc08a65604b93296dbd93f32c1f0b446"
+        },
+        "site": {
+          "path": "src/itsdangerous/signer.py",
+          "start_line": 9,
+          "end_line": 9,
+          "symbol": "base64_decode",
+          "sha256": "60ed0257b341bc703a8f9e3d4441c91548d4a23c36a47ab0714a509d4ef23584",
+          "span_sha256": "6acb1825ebab22a2ec599c5610ed8af8fc08a65604b93296dbd93f32c1f0b446"
+        },
+        "target": {
+          "path": "src/itsdangerous/encoding.py",
+          "start_line": 28,
+          "end_line": 38,
+          "symbol": "base64_decode",
+          "sha256": "c304f3e6aff7ccb71a01dba793afef4a84adc06a9859edf4ed997f53ceda4453",
+          "span_sha256": "f008824f6b0e7c1782efd19567baab7cf6c50803641106e0ea1196a7a2ba8db2"
+        }
+      },
+      "expected": {
+        "relation": "IMPORTS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The explicit relative import names base64_decode; its module path and the target declaration were read directly. This is an import binding, not a runtime invocation."
+    },
+    {
+      "id": "itsdangerous-signer-import-base64_encode",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "split": "heldout",
+      "category": "import",
+      "question": "Which local declaration supplies the base64_encode import in signer.py?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets/itsdangerous.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/itsdangerous/signer.py",
+          "start_line": 10,
+          "end_line": 10,
+          "symbol": "base64_encode",
+          "sha256": "60ed0257b341bc703a8f9e3d4441c91548d4a23c36a47ab0714a509d4ef23584",
+          "span_sha256": "16f3f2ea3da3ae9d4f0d609097517aab67c29fc2aa7d884489d260c9c47a13a9"
+        },
+        "site": {
+          "path": "src/itsdangerous/signer.py",
+          "start_line": 10,
+          "end_line": 10,
+          "symbol": "base64_encode",
+          "sha256": "60ed0257b341bc703a8f9e3d4441c91548d4a23c36a47ab0714a509d4ef23584",
+          "span_sha256": "16f3f2ea3da3ae9d4f0d609097517aab67c29fc2aa7d884489d260c9c47a13a9"
+        },
+        "target": {
+          "path": "src/itsdangerous/encoding.py",
+          "start_line": 20,
+          "end_line": 25,
+          "symbol": "base64_encode",
+          "sha256": "c304f3e6aff7ccb71a01dba793afef4a84adc06a9859edf4ed997f53ceda4453",
+          "span_sha256": "4afd948fcbb5cbe256673452fd3586434513fc567dc92dc3364827b85688876f"
+        }
+      },
+      "expected": {
+        "relation": "IMPORTS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The explicit relative import names base64_encode; its module path and the target declaration were read directly. This is an import binding, not a runtime invocation."
+    },
+    {
+      "id": "itsdangerous-signer-import-want_bytes",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "split": "heldout",
+      "category": "import",
+      "question": "Which local declaration supplies the want_bytes import in signer.py?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets/itsdangerous.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/itsdangerous/signer.py",
+          "start_line": 11,
+          "end_line": 11,
+          "symbol": "want_bytes",
+          "sha256": "60ed0257b341bc703a8f9e3d4441c91548d4a23c36a47ab0714a509d4ef23584",
+          "span_sha256": "9167d7ec15b053ed8de5142ff796888a397813ac4d4d14782443e73ec3c2910c"
+        },
+        "site": {
+          "path": "src/itsdangerous/signer.py",
+          "start_line": 11,
+          "end_line": 11,
+          "symbol": "want_bytes",
+          "sha256": "60ed0257b341bc703a8f9e3d4441c91548d4a23c36a47ab0714a509d4ef23584",
+          "span_sha256": "9167d7ec15b053ed8de5142ff796888a397813ac4d4d14782443e73ec3c2910c"
+        },
+        "target": {
+          "path": "src/itsdangerous/encoding.py",
+          "start_line": 11,
+          "end_line": 17,
+          "symbol": "want_bytes",
+          "sha256": "c304f3e6aff7ccb71a01dba793afef4a84adc06a9859edf4ed997f53ceda4453",
+          "span_sha256": "0bf2c222d78b3e9be1b583a4229ecd8459d6e1f89e49d2d65dd8504268cf1e62"
+        }
+      },
+      "expected": {
+        "relation": "IMPORTS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The explicit relative import names want_bytes; its module path and the target declaration were read directly. This is an import binding, not a runtime invocation."
+    },
+    {
+      "id": "itsdangerous-signer-import-BadSignature",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "split": "heldout",
+      "category": "import",
+      "question": "Which local declaration supplies the BadSignature import in signer.py?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets/itsdangerous.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/itsdangerous/signer.py",
+          "start_line": 12,
+          "end_line": 12,
+          "symbol": "BadSignature",
+          "sha256": "60ed0257b341bc703a8f9e3d4441c91548d4a23c36a47ab0714a509d4ef23584",
+          "span_sha256": "3d8a914e7e811b69d99b7dab1e15496bce43fc060f37d6603e47f9b906f0939c"
+        },
+        "site": {
+          "path": "src/itsdangerous/signer.py",
+          "start_line": 12,
+          "end_line": 12,
+          "symbol": "BadSignature",
+          "sha256": "60ed0257b341bc703a8f9e3d4441c91548d4a23c36a47ab0714a509d4ef23584",
+          "span_sha256": "3d8a914e7e811b69d99b7dab1e15496bce43fc060f37d6603e47f9b906f0939c"
+        },
+        "target": {
+          "path": "src/itsdangerous/exc.py",
+          "start_line": 22,
+          "end_line": 22,
+          "symbol": "BadSignature",
+          "sha256": "46bddec68d0c44511c3d996dc1e7322b5e955756c4d8af7f175f9dfa58dc527e",
+          "span_sha256": "1d97197d5e37537cc72213976e95e47f4f80ee1d463f44be19504b36661a26ee"
+        }
+      },
+      "expected": {
+        "relation": "IMPORTS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The explicit relative import names BadSignature; its module path and the target declaration were read directly. This is an import binding, not a runtime invocation."
+    },
+    {
+      "id": "itsdangerous-timed-import-bytes_to_int",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "split": "heldout",
+      "category": "import",
+      "question": "Which local declaration supplies the bytes_to_int import in timed.py?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets/itsdangerous.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/itsdangerous/timed.py",
+          "start_line": 11,
+          "end_line": 11,
+          "symbol": "bytes_to_int",
+          "sha256": "3afbf6050e8b73605931d1e516f374835456979e4319c098bfe5f284f120c6c5",
+          "span_sha256": "ddbee83a3dd11113ed1da342a74574ff036b57ed9244bc623cf9169074b065a7"
+        },
+        "site": {
+          "path": "src/itsdangerous/timed.py",
+          "start_line": 11,
+          "end_line": 11,
+          "symbol": "bytes_to_int",
+          "sha256": "3afbf6050e8b73605931d1e516f374835456979e4319c098bfe5f284f120c6c5",
+          "span_sha256": "ddbee83a3dd11113ed1da342a74574ff036b57ed9244bc623cf9169074b065a7"
+        },
+        "target": {
+          "path": "src/itsdangerous/encoding.py",
+          "start_line": 53,
+          "end_line": 54,
+          "symbol": "bytes_to_int",
+          "sha256": "c304f3e6aff7ccb71a01dba793afef4a84adc06a9859edf4ed997f53ceda4453",
+          "span_sha256": "fd0c230e3017b290115c1e71688111945fdf8aee62c8ce268e68dbb0c3c315e6"
+        }
+      },
+      "expected": {
+        "relation": "IMPORTS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The explicit relative import names bytes_to_int; its module path and the target declaration were read directly. This is an import binding, not a runtime invocation."
+    },
+    {
+      "id": "itsdangerous-timed-import-int_to_bytes",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "split": "heldout",
+      "category": "import",
+      "question": "Which local declaration supplies the int_to_bytes import in timed.py?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets/itsdangerous.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/itsdangerous/timed.py",
+          "start_line": 12,
+          "end_line": 12,
+          "symbol": "int_to_bytes",
+          "sha256": "3afbf6050e8b73605931d1e516f374835456979e4319c098bfe5f284f120c6c5",
+          "span_sha256": "2c7f7f5806f9e1da16d1ab1a17dbb5ebe46ae5301d933ecc77e8c53e4da28d3b"
+        },
+        "site": {
+          "path": "src/itsdangerous/timed.py",
+          "start_line": 12,
+          "end_line": 12,
+          "symbol": "int_to_bytes",
+          "sha256": "3afbf6050e8b73605931d1e516f374835456979e4319c098bfe5f284f120c6c5",
+          "span_sha256": "2c7f7f5806f9e1da16d1ab1a17dbb5ebe46ae5301d933ecc77e8c53e4da28d3b"
+        },
+        "target": {
+          "path": "src/itsdangerous/encoding.py",
+          "start_line": 49,
+          "end_line": 50,
+          "symbol": "int_to_bytes",
+          "sha256": "c304f3e6aff7ccb71a01dba793afef4a84adc06a9859edf4ed997f53ceda4453",
+          "span_sha256": "f2c5073f88071d5ec7bba93b594867856904769e1665f0e8e9f8e8dd8ca37500"
+        }
+      },
+      "expected": {
+        "relation": "IMPORTS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The explicit relative import names int_to_bytes; its module path and the target declaration were read directly. This is an import binding, not a runtime invocation."
+    },
+    {
+      "id": "itsdangerous-timed-import-BadTimeSignature",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "split": "heldout",
+      "category": "import",
+      "question": "Which local declaration supplies the BadTimeSignature import in timed.py?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets/itsdangerous.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/itsdangerous/timed.py",
+          "start_line": 15,
+          "end_line": 15,
+          "symbol": "BadTimeSignature",
+          "sha256": "3afbf6050e8b73605931d1e516f374835456979e4319c098bfe5f284f120c6c5",
+          "span_sha256": "b2805702e9aef3f35e84c279547525806e26a2196215e8c2a2d8ac9d5785a295"
+        },
+        "site": {
+          "path": "src/itsdangerous/timed.py",
+          "start_line": 15,
+          "end_line": 15,
+          "symbol": "BadTimeSignature",
+          "sha256": "3afbf6050e8b73605931d1e516f374835456979e4319c098bfe5f284f120c6c5",
+          "span_sha256": "b2805702e9aef3f35e84c279547525806e26a2196215e8c2a2d8ac9d5785a295"
+        },
+        "target": {
+          "path": "src/itsdangerous/exc.py",
+          "start_line": 36,
+          "end_line": 36,
+          "symbol": "BadTimeSignature",
+          "sha256": "46bddec68d0c44511c3d996dc1e7322b5e955756c4d8af7f175f9dfa58dc527e",
+          "span_sha256": "8d796184c290a35cdfafd5c34501f6ec681a7bf4fbf5297c43f8217c260a0920"
+        }
+      },
+      "expected": {
+        "relation": "IMPORTS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The explicit relative import names BadTimeSignature; its module path and the target declaration were read directly. This is an import binding, not a runtime invocation."
+    },
+    {
+      "id": "itsdangerous-timed-import-SignatureExpired",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "split": "heldout",
+      "category": "import",
+      "question": "Which local declaration supplies the SignatureExpired import in timed.py?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets/itsdangerous.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/itsdangerous/timed.py",
+          "start_line": 16,
+          "end_line": 16,
+          "symbol": "SignatureExpired",
+          "sha256": "3afbf6050e8b73605931d1e516f374835456979e4319c098bfe5f284f120c6c5",
+          "span_sha256": "70ac74d59e2a6942daa649bd6659080fbc8d4c368219e635f857a49091762609"
+        },
+        "site": {
+          "path": "src/itsdangerous/timed.py",
+          "start_line": 16,
+          "end_line": 16,
+          "symbol": "SignatureExpired",
+          "sha256": "3afbf6050e8b73605931d1e516f374835456979e4319c098bfe5f284f120c6c5",
+          "span_sha256": "70ac74d59e2a6942daa649bd6659080fbc8d4c368219e635f857a49091762609"
+        },
+        "target": {
+          "path": "src/itsdangerous/exc.py",
+          "start_line": 60,
+          "end_line": 60,
+          "symbol": "SignatureExpired",
+          "sha256": "46bddec68d0c44511c3d996dc1e7322b5e955756c4d8af7f175f9dfa58dc527e",
+          "span_sha256": "786018c5a808fa07b93bfbc7dd6e843ddf67631e761ea3452e4eb1157fd4176f"
+        }
+      },
+      "expected": {
+        "relation": "IMPORTS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The explicit relative import names SignatureExpired; its module path and the target declaration were read directly. This is an import binding, not a runtime invocation."
+    },
+    {
+      "id": "itsdangerous-timed-import-Signer",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "split": "heldout",
+      "category": "import",
+      "question": "Which local declaration supplies the Signer import in timed.py?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets/itsdangerous.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/itsdangerous/timed.py",
+          "start_line": 19,
+          "end_line": 19,
+          "symbol": "Signer",
+          "sha256": "3afbf6050e8b73605931d1e516f374835456979e4319c098bfe5f284f120c6c5",
+          "span_sha256": "8af96185a9fdc25af2651d9192c4fcaead8d4fc02bf411be4d6fc329873a226b"
+        },
+        "site": {
+          "path": "src/itsdangerous/timed.py",
+          "start_line": 19,
+          "end_line": 19,
+          "symbol": "Signer",
+          "sha256": "3afbf6050e8b73605931d1e516f374835456979e4319c098bfe5f284f120c6c5",
+          "span_sha256": "8af96185a9fdc25af2651d9192c4fcaead8d4fc02bf411be4d6fc329873a226b"
+        },
+        "target": {
+          "path": "src/itsdangerous/signer.py",
+          "start_line": 76,
+          "end_line": 76,
+          "symbol": "Signer",
+          "sha256": "60ed0257b341bc703a8f9e3d4441c91548d4a23c36a47ab0714a509d4ef23584",
+          "span_sha256": "8aaa12da39f046f3f50895daf4ff2b880546f977f59fb3a775da3ffb3160fd13"
+        }
+      },
+      "expected": {
+        "relation": "IMPORTS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The explicit relative import names Signer; its module path and the target declaration were read directly. This is an import binding, not a runtime invocation."
+    },
+    {
+      "id": "itsdangerous-serializer-import-_make_keys_list",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "split": "heldout",
+      "category": "import",
+      "question": "Which local declaration supplies the _make_keys_list import in serializer.py?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets/itsdangerous.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/itsdangerous/serializer.py",
+          "start_line": 10,
+          "end_line": 10,
+          "symbol": "_make_keys_list",
+          "sha256": "6d6f1687897c7e3ac6eeff5bfd6794df90e299feedcc6aae3faa0e53ffe925e8",
+          "span_sha256": "73502b0ad4636d6094879e16ce7e7948adfdcdf81bb39d6941010f68e3ef84ed"
+        },
+        "site": {
+          "path": "src/itsdangerous/serializer.py",
+          "start_line": 10,
+          "end_line": 10,
+          "symbol": "_make_keys_list",
+          "sha256": "6d6f1687897c7e3ac6eeff5bfd6794df90e299feedcc6aae3faa0e53ffe925e8",
+          "span_sha256": "73502b0ad4636d6094879e16ce7e7948adfdcdf81bb39d6941010f68e3ef84ed"
+        },
+        "target": {
+          "path": "src/itsdangerous/signer.py",
+          "start_line": 67,
+          "end_line": 73,
+          "symbol": "_make_keys_list",
+          "sha256": "60ed0257b341bc703a8f9e3d4441c91548d4a23c36a47ab0714a509d4ef23584",
+          "span_sha256": "e765e0e624e579f201900a54fdc18ba8678aa18c494edfa61e2d379caf9b8df6"
+        }
+      },
+      "expected": {
+        "relation": "IMPORTS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The explicit relative import names _make_keys_list; its module path and the target declaration were read directly. This is an import binding, not a runtime invocation."
+    },
+    {
+      "id": "itsdangerous-serializer-import-Signer",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "split": "heldout",
+      "category": "import",
+      "question": "Which local declaration supplies the Signer import in serializer.py?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets/itsdangerous.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/itsdangerous/serializer.py",
+          "start_line": 11,
+          "end_line": 11,
+          "symbol": "Signer",
+          "sha256": "6d6f1687897c7e3ac6eeff5bfd6794df90e299feedcc6aae3faa0e53ffe925e8",
+          "span_sha256": "8af96185a9fdc25af2651d9192c4fcaead8d4fc02bf411be4d6fc329873a226b"
+        },
+        "site": {
+          "path": "src/itsdangerous/serializer.py",
+          "start_line": 11,
+          "end_line": 11,
+          "symbol": "Signer",
+          "sha256": "6d6f1687897c7e3ac6eeff5bfd6794df90e299feedcc6aae3faa0e53ffe925e8",
+          "span_sha256": "8af96185a9fdc25af2651d9192c4fcaead8d4fc02bf411be4d6fc329873a226b"
+        },
+        "target": {
+          "path": "src/itsdangerous/signer.py",
+          "start_line": 76,
+          "end_line": 76,
+          "symbol": "Signer",
+          "sha256": "60ed0257b341bc703a8f9e3d4441c91548d4a23c36a47ab0714a509d4ef23584",
+          "span_sha256": "8aaa12da39f046f3f50895daf4ff2b880546f977f59fb3a775da3ffb3160fd13"
+        }
+      },
+      "expected": {
+        "relation": "IMPORTS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The explicit relative import names Signer; its module path and the target declaration were read directly. This is an import binding, not a runtime invocation."
+    },
+    {
+      "id": "itsdangerous-encoding-base64_encode-want_bytes",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "split": "heldout",
+      "category": "call",
+      "question": "Which local want_bytes declaration does encoding.base64_encode invoke at line 24?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets/itsdangerous.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/itsdangerous/encoding.py",
+          "start_line": 20,
+          "end_line": 25,
+          "symbol": "base64_encode",
+          "sha256": "c304f3e6aff7ccb71a01dba793afef4a84adc06a9859edf4ed997f53ceda4453",
+          "span_sha256": "4afd948fcbb5cbe256673452fd3586434513fc567dc92dc3364827b85688876f"
+        },
+        "site": {
+          "path": "src/itsdangerous/encoding.py",
+          "start_line": 24,
+          "end_line": 24,
+          "symbol": "want_bytes",
+          "sha256": "c304f3e6aff7ccb71a01dba793afef4a84adc06a9859edf4ed997f53ceda4453",
+          "span_sha256": "eaa7c5bc62dcf90dfc0efe217d992a18d08525fb4b7d8925c071ec9969f4e56c"
+        },
+        "target": {
+          "path": "src/itsdangerous/encoding.py",
+          "start_line": 11,
+          "end_line": 17,
+          "symbol": "want_bytes",
+          "sha256": "c304f3e6aff7ccb71a01dba793afef4a84adc06a9859edf4ed997f53ceda4453",
+          "span_sha256": "0bf2c222d78b3e9be1b583a4229ecd8459d6e1f89e49d2d65dd8504268cf1e62"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Normalizes encoder input before encoding. Direct source read confirms an unshadowed local or explicitly imported binding. This is static source truth, not a runtime test.",
+      "negative": {
+        "kind": "identifier_absent",
+        "symbol": "base64_decode",
+        "scope": "source",
+        "rationale": "Direct read of the complete source span confirms this alternative identifier is absent; this is bounded lexical evidence only."
+      }
+    },
+    {
+      "id": "itsdangerous-encoding-base64_decode-want_bytes",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "split": "heldout",
+      "category": "call",
+      "question": "Which local want_bytes declaration does encoding.base64_decode invoke at line 32?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets/itsdangerous.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/itsdangerous/encoding.py",
+          "start_line": 28,
+          "end_line": 38,
+          "symbol": "base64_decode",
+          "sha256": "c304f3e6aff7ccb71a01dba793afef4a84adc06a9859edf4ed997f53ceda4453",
+          "span_sha256": "f008824f6b0e7c1782efd19567baab7cf6c50803641106e0ea1196a7a2ba8db2"
+        },
+        "site": {
+          "path": "src/itsdangerous/encoding.py",
+          "start_line": 32,
+          "end_line": 32,
+          "symbol": "want_bytes",
+          "sha256": "c304f3e6aff7ccb71a01dba793afef4a84adc06a9859edf4ed997f53ceda4453",
+          "span_sha256": "dc52069355b138b6eaad8c01e296f5cc5ba620a57660176fb24fed71e6e4010f"
+        },
+        "target": {
+          "path": "src/itsdangerous/encoding.py",
+          "start_line": 11,
+          "end_line": 17,
+          "symbol": "want_bytes",
+          "sha256": "c304f3e6aff7ccb71a01dba793afef4a84adc06a9859edf4ed997f53ceda4453",
+          "span_sha256": "0bf2c222d78b3e9be1b583a4229ecd8459d6e1f89e49d2d65dd8504268cf1e62"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Normalizes decoder input with ASCII error handling. Direct source read confirms an unshadowed local or explicitly imported binding. This is static source truth, not a runtime test.",
+      "negative": {
+        "kind": "identifier_absent",
+        "symbol": "base64_encode",
+        "scope": "source",
+        "rationale": "Direct read of the complete source span confirms this alternative identifier is absent; this is bounded lexical evidence only."
+      }
+    },
+    {
+      "id": "itsdangerous-encoding-base64_decode-BadData",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "split": "heldout",
+      "category": "call",
+      "question": "Which local BadData declaration does encoding.base64_decode invoke at line 38?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets/itsdangerous.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/itsdangerous/encoding.py",
+          "start_line": 28,
+          "end_line": 38,
+          "symbol": "base64_decode",
+          "sha256": "c304f3e6aff7ccb71a01dba793afef4a84adc06a9859edf4ed997f53ceda4453",
+          "span_sha256": "f008824f6b0e7c1782efd19567baab7cf6c50803641106e0ea1196a7a2ba8db2"
+        },
+        "site": {
+          "path": "src/itsdangerous/encoding.py",
+          "start_line": 38,
+          "end_line": 38,
+          "symbol": "BadData",
+          "sha256": "c304f3e6aff7ccb71a01dba793afef4a84adc06a9859edf4ed997f53ceda4453",
+          "span_sha256": "fa48372730a404fed81ba9793be531b41b063e4c3f68a84a8fce5acc9f0b342a"
+        },
+        "target": {
+          "path": "src/itsdangerous/exc.py",
+          "start_line": 7,
+          "end_line": 7,
+          "symbol": "BadData",
+          "sha256": "46bddec68d0c44511c3d996dc1e7322b5e955756c4d8af7f175f9dfa58dc527e",
+          "span_sha256": "9e69b396a51e8b83b75053063f2d92730fb1fdad4989b163b6ba01d617e24298"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Constructs the local exception on base64 failure. Direct source read confirms an unshadowed local or explicitly imported binding. This is static source truth, not a runtime test."
+    },
+    {
+      "id": "itsdangerous-url_safe-load_payload-base64_decode",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "split": "heldout",
+      "category": "call",
+      "question": "Which local base64_decode declaration does url_safe.load_payload invoke at line 37?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets/itsdangerous.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/itsdangerous/url_safe.py",
+          "start_line": 23,
+          "end_line": 53,
+          "symbol": "load_payload",
+          "sha256": "6b3e1ee5f5e2fefb3e61b5a3f186709f8c2254a7de0fef8610a453e547aee0fe",
+          "span_sha256": "96eba97a2e8c57a57aab9466253ea5127ec769e3094c677420b32bc649736d9e"
+        },
+        "site": {
+          "path": "src/itsdangerous/url_safe.py",
+          "start_line": 37,
+          "end_line": 37,
+          "symbol": "base64_decode",
+          "sha256": "6b3e1ee5f5e2fefb3e61b5a3f186709f8c2254a7de0fef8610a453e547aee0fe",
+          "span_sha256": "c4b08490574cf1e91483130ef78bf41ab9471cf0b84509cf20dd1a4d32819a94"
+        },
+        "target": {
+          "path": "src/itsdangerous/encoding.py",
+          "start_line": 28,
+          "end_line": 38,
+          "symbol": "base64_decode",
+          "sha256": "c304f3e6aff7ccb71a01dba793afef4a84adc06a9859edf4ed997f53ceda4453",
+          "span_sha256": "f008824f6b0e7c1782efd19567baab7cf6c50803641106e0ea1196a7a2ba8db2"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Decodes the URL payload before optional decompression. Direct source read confirms an unshadowed local or explicitly imported binding. This is static source truth, not a runtime test."
+    },
+    {
+      "id": "itsdangerous-url_safe-load_payload-BadPayload",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "split": "heldout",
+      "category": "call",
+      "question": "Which local BadPayload declaration does url_safe.load_payload invoke at line 39?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets/itsdangerous.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/itsdangerous/url_safe.py",
+          "start_line": 23,
+          "end_line": 53,
+          "symbol": "load_payload",
+          "sha256": "6b3e1ee5f5e2fefb3e61b5a3f186709f8c2254a7de0fef8610a453e547aee0fe",
+          "span_sha256": "96eba97a2e8c57a57aab9466253ea5127ec769e3094c677420b32bc649736d9e"
+        },
+        "site": {
+          "path": "src/itsdangerous/url_safe.py",
+          "start_line": 39,
+          "end_line": 39,
+          "symbol": "BadPayload",
+          "sha256": "6b3e1ee5f5e2fefb3e61b5a3f186709f8c2254a7de0fef8610a453e547aee0fe",
+          "span_sha256": "88bb4579f7e198c156ef28093627e9613a6355ebe8af4799a690f54b3fe09ee6"
+        },
+        "target": {
+          "path": "src/itsdangerous/exc.py",
+          "start_line": 92,
+          "end_line": 92,
+          "symbol": "BadPayload",
+          "sha256": "46bddec68d0c44511c3d996dc1e7322b5e955756c4d8af7f175f9dfa58dc527e",
+          "span_sha256": "fe36e00d7a0d0b7b06c66f79f7bef1ebebf77e071d76709c7f8325bcb88186b7"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Constructs the local exception when payload decoding fails. Direct source read confirms an unshadowed local or explicitly imported binding. This is static source truth, not a runtime test."
+    },
+    {
+      "id": "itsdangerous-url_safe-dump_payload-base64_encode",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "split": "heldout",
+      "category": "impact",
+      "question": "If base64_encode changes, which dependency at line 64 makes url_safe.dump_payload a caller to review?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets/itsdangerous.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/itsdangerous/url_safe.py",
+          "start_line": 55,
+          "end_line": 69,
+          "symbol": "dump_payload",
+          "sha256": "6b3e1ee5f5e2fefb3e61b5a3f186709f8c2254a7de0fef8610a453e547aee0fe",
+          "span_sha256": "066539726657d1ae7404440eba5eb11dd025df362b070afea95146992eab0ff9"
+        },
+        "site": {
+          "path": "src/itsdangerous/url_safe.py",
+          "start_line": 64,
+          "end_line": 64,
+          "symbol": "base64_encode",
+          "sha256": "6b3e1ee5f5e2fefb3e61b5a3f186709f8c2254a7de0fef8610a453e547aee0fe",
+          "span_sha256": "7a2c57376caff98f88686348da4dbc1106a46dd7e0423eedd2b5155d3ade3df9"
+        },
+        "target": {
+          "path": "src/itsdangerous/encoding.py",
+          "start_line": 20,
+          "end_line": 25,
+          "symbol": "base64_encode",
+          "sha256": "c304f3e6aff7ccb71a01dba793afef4a84adc06a9859edf4ed997f53ceda4453",
+          "span_sha256": "4afd948fcbb5cbe256673452fd3586434513fc567dc92dc3364827b85688876f"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Encodes the selected compressed or original payload. Direct source read confirms an unshadowed local or explicitly imported binding. This is static source truth, not a runtime test. The impact is a dependency review candidate, not an applied patch or a defect."
+    },
+    {
+      "id": "itsdangerous-signer-_make_keys_list-want_bytes",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "split": "heldout",
+      "category": "call",
+      "question": "Which local want_bytes declaration does signer._make_keys_list invoke at line 71?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets/itsdangerous.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/itsdangerous/signer.py",
+          "start_line": 67,
+          "end_line": 73,
+          "symbol": "_make_keys_list",
+          "sha256": "60ed0257b341bc703a8f9e3d4441c91548d4a23c36a47ab0714a509d4ef23584",
+          "span_sha256": "e765e0e624e579f201900a54fdc18ba8678aa18c494edfa61e2d379caf9b8df6"
+        },
+        "site": {
+          "path": "src/itsdangerous/signer.py",
+          "start_line": 71,
+          "end_line": 71,
+          "symbol": "want_bytes",
+          "sha256": "60ed0257b341bc703a8f9e3d4441c91548d4a23c36a47ab0714a509d4ef23584",
+          "span_sha256": "8b159ac6f17e3bc22f858a40cd74a70e16f8fdec4b110cb64a7f1927c23444c9"
+        },
+        "target": {
+          "path": "src/itsdangerous/encoding.py",
+          "start_line": 11,
+          "end_line": 17,
+          "symbol": "want_bytes",
+          "sha256": "c304f3e6aff7ccb71a01dba793afef4a84adc06a9859edf4ed997f53ceda4453",
+          "span_sha256": "0bf2c222d78b3e9be1b583a4229ecd8459d6e1f89e49d2d65dd8504268cf1e62"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Normalizes the single-key branch; the iterable branch uses the same helper and is not another task. Direct source read confirms an unshadowed local or explicitly imported binding. This is static source truth, not a runtime test."
+    },
+    {
+      "id": "itsdangerous-signer-__init__-_make_keys_list",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "split": "heldout",
+      "category": "impact",
+      "question": "If _make_keys_list changes, which dependency at line 143 makes signer.__init__ a caller to review?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets/itsdangerous.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/itsdangerous/signer.py",
+          "start_line": 129,
+          "end_line": 173,
+          "symbol": "__init__",
+          "sha256": "60ed0257b341bc703a8f9e3d4441c91548d4a23c36a47ab0714a509d4ef23584",
+          "span_sha256": "818d2314660d2ff9923557e0b978d1dacf06b782a6dc4da79479083f31f5956f"
+        },
+        "site": {
+          "path": "src/itsdangerous/signer.py",
+          "start_line": 143,
+          "end_line": 143,
+          "symbol": "_make_keys_list",
+          "sha256": "60ed0257b341bc703a8f9e3d4441c91548d4a23c36a47ab0714a509d4ef23584",
+          "span_sha256": "a34eab008396c0b9449d8b208f36daeeaa145f188ae24d7f1921b376e5cc94e9"
+        },
+        "target": {
+          "path": "src/itsdangerous/signer.py",
+          "start_line": 67,
+          "end_line": 73,
+          "symbol": "_make_keys_list",
+          "sha256": "60ed0257b341bc703a8f9e3d4441c91548d4a23c36a47ab0714a509d4ef23584",
+          "span_sha256": "e765e0e624e579f201900a54fdc18ba8678aa18c494edfa61e2d379caf9b8df6"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Signer initializes its key list through the explicit helper. Direct source read confirms an unshadowed local or explicitly imported binding. This is static source truth, not a runtime test. The impact is a dependency review candidate, not an applied patch or a defect."
+    },
+    {
+      "id": "itsdangerous-signer-__init__-want_bytes",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "split": "heldout",
+      "category": "call",
+      "question": "Which local want_bytes declaration does signer.__init__ invoke at line 144?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets/itsdangerous.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/itsdangerous/signer.py",
+          "start_line": 129,
+          "end_line": 173,
+          "symbol": "__init__",
+          "sha256": "60ed0257b341bc703a8f9e3d4441c91548d4a23c36a47ab0714a509d4ef23584",
+          "span_sha256": "818d2314660d2ff9923557e0b978d1dacf06b782a6dc4da79479083f31f5956f"
+        },
+        "site": {
+          "path": "src/itsdangerous/signer.py",
+          "start_line": 144,
+          "end_line": 144,
+          "symbol": "want_bytes",
+          "sha256": "60ed0257b341bc703a8f9e3d4441c91548d4a23c36a47ab0714a509d4ef23584",
+          "span_sha256": "5828e073b9f31a42b9b5d850842c6f0e523312944ab5bf6b191c8045fc19f844"
+        },
+        "target": {
+          "path": "src/itsdangerous/encoding.py",
+          "start_line": 11,
+          "end_line": 17,
+          "symbol": "want_bytes",
+          "sha256": "c304f3e6aff7ccb71a01dba793afef4a84adc06a9859edf4ed997f53ceda4453",
+          "span_sha256": "0bf2c222d78b3e9be1b583a4229ecd8459d6e1f89e49d2d65dd8504268cf1e62"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Signer normalizes its separator through the imported helper. Direct source read confirms an unshadowed local or explicitly imported binding. This is static source truth, not a runtime test."
+    },
+    {
+      "id": "itsdangerous-signer-__init__-HMACAlgorithm",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "split": "heldout",
+      "category": "call",
+      "question": "Which local HMACAlgorithm declaration does signer.__init__ invoke at line 171?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets/itsdangerous.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/itsdangerous/signer.py",
+          "start_line": 129,
+          "end_line": 173,
+          "symbol": "__init__",
+          "sha256": "60ed0257b341bc703a8f9e3d4441c91548d4a23c36a47ab0714a509d4ef23584",
+          "span_sha256": "818d2314660d2ff9923557e0b978d1dacf06b782a6dc4da79479083f31f5956f"
+        },
+        "site": {
+          "path": "src/itsdangerous/signer.py",
+          "start_line": 171,
+          "end_line": 171,
+          "symbol": "HMACAlgorithm",
+          "sha256": "60ed0257b341bc703a8f9e3d4441c91548d4a23c36a47ab0714a509d4ef23584",
+          "span_sha256": "68313c3ca736412b2219b07e2d0e9d4e4a5f97cf1d0624049f39728571fddc45"
+        },
+        "target": {
+          "path": "src/itsdangerous/signer.py",
+          "start_line": 48,
+          "end_line": 48,
+          "symbol": "HMACAlgorithm",
+          "sha256": "60ed0257b341bc703a8f9e3d4441c91548d4a23c36a47ab0714a509d4ef23584",
+          "span_sha256": "1d3f67da83839770f3204eebb02793ff22a38331121968759801c9afc880a520"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The default-only algorithm branch directly constructs HMACAlgorithm; no assertion about injected algorithms. Direct source read confirms an unshadowed local or explicitly imported binding. This is static source truth, not a runtime test."
+    },
+    {
+      "id": "itsdangerous-signer-derive_key-want_bytes",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "split": "heldout",
+      "category": "call",
+      "question": "Which local want_bytes declaration does signer.derive_key invoke at line 198?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets/itsdangerous.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/itsdangerous/signer.py",
+          "start_line": 182,
+          "end_line": 213,
+          "symbol": "derive_key",
+          "sha256": "60ed0257b341bc703a8f9e3d4441c91548d4a23c36a47ab0714a509d4ef23584",
+          "span_sha256": "22982867c16046576b356621d8bbb36d3994526b38a8f72a8d6ee953091aa82e"
+        },
+        "site": {
+          "path": "src/itsdangerous/signer.py",
+          "start_line": 198,
+          "end_line": 198,
+          "symbol": "want_bytes",
+          "sha256": "60ed0257b341bc703a8f9e3d4441c91548d4a23c36a47ab0714a509d4ef23584",
+          "span_sha256": "516b061baf906a93cce436de5f7cd6b8e0057fe8b29b081e9660ed3c2a7becf3"
+        },
+        "target": {
+          "path": "src/itsdangerous/encoding.py",
+          "start_line": 11,
+          "end_line": 17,
+          "symbol": "want_bytes",
+          "sha256": "c304f3e6aff7ccb71a01dba793afef4a84adc06a9859edf4ed997f53ceda4453",
+          "span_sha256": "0bf2c222d78b3e9be1b583a4229ecd8459d6e1f89e49d2d65dd8504268cf1e62"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Converts an explicitly supplied key before derivation. Direct source read confirms an unshadowed local or explicitly imported binding. This is static source truth, not a runtime test."
+    },
+    {
+      "id": "itsdangerous-signer-get_signature-want_bytes",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "split": "heldout",
+      "category": "call",
+      "question": "Which local want_bytes declaration does signer.get_signature invoke at line 217?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets/itsdangerous.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/itsdangerous/signer.py",
+          "start_line": 215,
+          "end_line": 220,
+          "symbol": "get_signature",
+          "sha256": "60ed0257b341bc703a8f9e3d4441c91548d4a23c36a47ab0714a509d4ef23584",
+          "span_sha256": "4f2a0c8240dfb5217512c85111a8dd8776c7e110570c0f84cbed05375c0ee9a2"
+        },
+        "site": {
+          "path": "src/itsdangerous/signer.py",
+          "start_line": 217,
+          "end_line": 217,
+          "symbol": "want_bytes",
+          "sha256": "60ed0257b341bc703a8f9e3d4441c91548d4a23c36a47ab0714a509d4ef23584",
+          "span_sha256": "0b08191ee500eb3c6b4bee0b685b2813e775149d8b3ca00ea3d3821e824f1bab"
+        },
+        "target": {
+          "path": "src/itsdangerous/encoding.py",
+          "start_line": 11,
+          "end_line": 17,
+          "symbol": "want_bytes",
+          "sha256": "c304f3e6aff7ccb71a01dba793afef4a84adc06a9859edf4ed997f53ceda4453",
+          "span_sha256": "0bf2c222d78b3e9be1b583a4229ecd8459d6e1f89e49d2d65dd8504268cf1e62"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Normalizes the value before signature generation. Direct source read confirms an unshadowed local or explicitly imported binding. This is static source truth, not a runtime test."
+    },
+    {
+      "id": "itsdangerous-signer-get_signature-base64_encode",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "split": "heldout",
+      "category": "call",
+      "question": "Which local base64_encode declaration does signer.get_signature invoke at line 220?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets/itsdangerous.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/itsdangerous/signer.py",
+          "start_line": 215,
+          "end_line": 220,
+          "symbol": "get_signature",
+          "sha256": "60ed0257b341bc703a8f9e3d4441c91548d4a23c36a47ab0714a509d4ef23584",
+          "span_sha256": "4f2a0c8240dfb5217512c85111a8dd8776c7e110570c0f84cbed05375c0ee9a2"
+        },
+        "site": {
+          "path": "src/itsdangerous/signer.py",
+          "start_line": 220,
+          "end_line": 220,
+          "symbol": "base64_encode",
+          "sha256": "60ed0257b341bc703a8f9e3d4441c91548d4a23c36a47ab0714a509d4ef23584",
+          "span_sha256": "5d168d964e67129c7b11c5306ab4cf1be542f50d6167a052b0b0563290c2e828"
+        },
+        "target": {
+          "path": "src/itsdangerous/encoding.py",
+          "start_line": 20,
+          "end_line": 25,
+          "symbol": "base64_encode",
+          "sha256": "c304f3e6aff7ccb71a01dba793afef4a84adc06a9859edf4ed997f53ceda4453",
+          "span_sha256": "4afd948fcbb5cbe256673452fd3586434513fc567dc92dc3364827b85688876f"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Encodes the produced signature with the imported helper. Direct source read confirms an unshadowed local or explicitly imported binding. This is static source truth, not a runtime test."
+    },
+    {
+      "id": "itsdangerous-signer-sign-want_bytes",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "split": "heldout",
+      "category": "call",
+      "question": "Which local want_bytes declaration does signer.sign invoke at line 224?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets/itsdangerous.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/itsdangerous/signer.py",
+          "start_line": 222,
+          "end_line": 225,
+          "symbol": "sign",
+          "sha256": "60ed0257b341bc703a8f9e3d4441c91548d4a23c36a47ab0714a509d4ef23584",
+          "span_sha256": "ae7edf52b6536371232d083bcb814df2686b799833f60c99f773d192ce46f0a1"
+        },
+        "site": {
+          "path": "src/itsdangerous/signer.py",
+          "start_line": 224,
+          "end_line": 224,
+          "symbol": "want_bytes",
+          "sha256": "60ed0257b341bc703a8f9e3d4441c91548d4a23c36a47ab0714a509d4ef23584",
+          "span_sha256": "0b08191ee500eb3c6b4bee0b685b2813e775149d8b3ca00ea3d3821e824f1bab"
+        },
+        "target": {
+          "path": "src/itsdangerous/encoding.py",
+          "start_line": 11,
+          "end_line": 17,
+          "symbol": "want_bytes",
+          "sha256": "c304f3e6aff7ccb71a01dba793afef4a84adc06a9859edf4ed997f53ceda4453",
+          "span_sha256": "0bf2c222d78b3e9be1b583a4229ecd8459d6e1f89e49d2d65dd8504268cf1e62"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Normalizes the signed value; this task does not resolve self.get_signature. Direct source read confirms an unshadowed local or explicitly imported binding. This is static source truth, not a runtime test."
+    },
+    {
+      "id": "itsdangerous-signer-verify_signature-base64_decode",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "split": "heldout",
+      "category": "call",
+      "question": "Which local base64_decode declaration does signer.verify_signature invoke at line 230?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets/itsdangerous.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/itsdangerous/signer.py",
+          "start_line": 227,
+          "end_line": 242,
+          "symbol": "verify_signature",
+          "sha256": "60ed0257b341bc703a8f9e3d4441c91548d4a23c36a47ab0714a509d4ef23584",
+          "span_sha256": "f0646c9b879f6a88807c9c2cbf34541de1a609ccf0ba0694193554cf50211177"
+        },
+        "site": {
+          "path": "src/itsdangerous/signer.py",
+          "start_line": 230,
+          "end_line": 230,
+          "symbol": "base64_decode",
+          "sha256": "60ed0257b341bc703a8f9e3d4441c91548d4a23c36a47ab0714a509d4ef23584",
+          "span_sha256": "7936569062b34f90e47fdeb6e63dd8115d1e8581e42b5b1cdd6806922a758df4"
+        },
+        "target": {
+          "path": "src/itsdangerous/encoding.py",
+          "start_line": 28,
+          "end_line": 38,
+          "symbol": "base64_decode",
+          "sha256": "c304f3e6aff7ccb71a01dba793afef4a84adc06a9859edf4ed997f53ceda4453",
+          "span_sha256": "f008824f6b0e7c1782efd19567baab7cf6c50803641106e0ea1196a7a2ba8db2"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Decodes the candidate signature before verification. Direct source read confirms an unshadowed local or explicitly imported binding. This is static source truth, not a runtime test."
+    },
+    {
+      "id": "itsdangerous-signer-verify_signature-want_bytes",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "split": "heldout",
+      "category": "call",
+      "question": "Which local want_bytes declaration does signer.verify_signature invoke at line 234?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets/itsdangerous.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/itsdangerous/signer.py",
+          "start_line": 227,
+          "end_line": 242,
+          "symbol": "verify_signature",
+          "sha256": "60ed0257b341bc703a8f9e3d4441c91548d4a23c36a47ab0714a509d4ef23584",
+          "span_sha256": "f0646c9b879f6a88807c9c2cbf34541de1a609ccf0ba0694193554cf50211177"
+        },
+        "site": {
+          "path": "src/itsdangerous/signer.py",
+          "start_line": 234,
+          "end_line": 234,
+          "symbol": "want_bytes",
+          "sha256": "60ed0257b341bc703a8f9e3d4441c91548d4a23c36a47ab0714a509d4ef23584",
+          "span_sha256": "0b08191ee500eb3c6b4bee0b685b2813e775149d8b3ca00ea3d3821e824f1bab"
+        },
+        "target": {
+          "path": "src/itsdangerous/encoding.py",
+          "start_line": 11,
+          "end_line": 17,
+          "symbol": "want_bytes",
+          "sha256": "c304f3e6aff7ccb71a01dba793afef4a84adc06a9859edf4ed997f53ceda4453",
+          "span_sha256": "0bf2c222d78b3e9be1b583a4229ecd8459d6e1f89e49d2d65dd8504268cf1e62"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Normalizes the verification value with an explicit module binding. Direct source read confirms an unshadowed local or explicitly imported binding. This is static source truth, not a runtime test."
+    },
+    {
+      "id": "itsdangerous-signer-unsign-want_bytes",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "split": "heldout",
+      "category": "call",
+      "question": "Which local want_bytes declaration does signer.unsign invoke at line 246?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets/itsdangerous.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/itsdangerous/signer.py",
+          "start_line": 244,
+          "end_line": 256,
+          "symbol": "unsign",
+          "sha256": "60ed0257b341bc703a8f9e3d4441c91548d4a23c36a47ab0714a509d4ef23584",
+          "span_sha256": "d6c5cbf7926f59983206f58b0b31b736106bbe05ef690e9aea7bd6abd1ada517"
+        },
+        "site": {
+          "path": "src/itsdangerous/signer.py",
+          "start_line": 246,
+          "end_line": 246,
+          "symbol": "want_bytes",
+          "sha256": "60ed0257b341bc703a8f9e3d4441c91548d4a23c36a47ab0714a509d4ef23584",
+          "span_sha256": "a94934561534ac8830c421326569306a3ab82f01ea18ed00452505cf3891f590"
+        },
+        "target": {
+          "path": "src/itsdangerous/encoding.py",
+          "start_line": 11,
+          "end_line": 17,
+          "symbol": "want_bytes",
+          "sha256": "c304f3e6aff7ccb71a01dba793afef4a84adc06a9859edf4ed997f53ceda4453",
+          "span_sha256": "0bf2c222d78b3e9be1b583a4229ecd8459d6e1f89e49d2d65dd8504268cf1e62"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Normalizes the incoming signed payload. Direct source read confirms an unshadowed local or explicitly imported binding. This is static source truth, not a runtime test."
+    },
+    {
+      "id": "itsdangerous-signer-unsign-BadSignature",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "split": "heldout",
+      "category": "call",
+      "question": "Which local BadSignature declaration does signer.unsign invoke at line 249?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets/itsdangerous.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/itsdangerous/signer.py",
+          "start_line": 244,
+          "end_line": 256,
+          "symbol": "unsign",
+          "sha256": "60ed0257b341bc703a8f9e3d4441c91548d4a23c36a47ab0714a509d4ef23584",
+          "span_sha256": "d6c5cbf7926f59983206f58b0b31b736106bbe05ef690e9aea7bd6abd1ada517"
+        },
+        "site": {
+          "path": "src/itsdangerous/signer.py",
+          "start_line": 249,
+          "end_line": 249,
+          "symbol": "BadSignature",
+          "sha256": "60ed0257b341bc703a8f9e3d4441c91548d4a23c36a47ab0714a509d4ef23584",
+          "span_sha256": "6cb25ec7c444182d983af5d56b29f6772cc294e279a721330ebc05bf2c7c82df"
+        },
+        "target": {
+          "path": "src/itsdangerous/exc.py",
+          "start_line": 22,
+          "end_line": 22,
+          "symbol": "BadSignature",
+          "sha256": "46bddec68d0c44511c3d996dc1e7322b5e955756c4d8af7f175f9dfa58dc527e",
+          "span_sha256": "1d97197d5e37537cc72213976e95e47f4f80ee1d463f44be19504b36661a26ee"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Constructs the missing-separator exception. Direct source read confirms an unshadowed local or explicitly imported binding. This is static source truth, not a runtime test."
+    },
+    {
+      "id": "itsdangerous-timed-sign-want_bytes",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "split": "heldout",
+      "category": "call",
+      "question": "Which local want_bytes declaration does timed.sign invoke at line 47?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets/itsdangerous.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/itsdangerous/timed.py",
+          "start_line": 45,
+          "end_line": 51,
+          "symbol": "sign",
+          "sha256": "3afbf6050e8b73605931d1e516f374835456979e4319c098bfe5f284f120c6c5",
+          "span_sha256": "bce26f584e9a66f18324b643ab9999b37f445a66dc610fc6fb135eac1b7017b1"
+        },
+        "site": {
+          "path": "src/itsdangerous/timed.py",
+          "start_line": 47,
+          "end_line": 47,
+          "symbol": "want_bytes",
+          "sha256": "3afbf6050e8b73605931d1e516f374835456979e4319c098bfe5f284f120c6c5",
+          "span_sha256": "0b08191ee500eb3c6b4bee0b685b2813e775149d8b3ca00ea3d3821e824f1bab"
+        },
+        "target": {
+          "path": "src/itsdangerous/encoding.py",
+          "start_line": 11,
+          "end_line": 17,
+          "symbol": "want_bytes",
+          "sha256": "c304f3e6aff7ccb71a01dba793afef4a84adc06a9859edf4ed997f53ceda4453",
+          "span_sha256": "0bf2c222d78b3e9be1b583a4229ecd8459d6e1f89e49d2d65dd8504268cf1e62"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "TimestampSigner normalizes input before assembling its timestamped payload. Direct source read confirms an unshadowed local or explicitly imported binding. This is static source truth, not a runtime test."
+    },
+    {
+      "id": "itsdangerous-timed-sign-base64_encode",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "split": "heldout",
+      "category": "call",
+      "question": "Which local base64_encode declaration does timed.sign invoke at line 48?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets/itsdangerous.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/itsdangerous/timed.py",
+          "start_line": 45,
+          "end_line": 51,
+          "symbol": "sign",
+          "sha256": "3afbf6050e8b73605931d1e516f374835456979e4319c098bfe5f284f120c6c5",
+          "span_sha256": "bce26f584e9a66f18324b643ab9999b37f445a66dc610fc6fb135eac1b7017b1"
+        },
+        "site": {
+          "path": "src/itsdangerous/timed.py",
+          "start_line": 48,
+          "end_line": 48,
+          "symbol": "base64_encode",
+          "sha256": "3afbf6050e8b73605931d1e516f374835456979e4319c098bfe5f284f120c6c5",
+          "span_sha256": "acddba711d900aa6105e3f07d38ba026429e1247fa7ee3906f388dac0ea55917"
+        },
+        "target": {
+          "path": "src/itsdangerous/encoding.py",
+          "start_line": 20,
+          "end_line": 25,
+          "symbol": "base64_encode",
+          "sha256": "c304f3e6aff7ccb71a01dba793afef4a84adc06a9859edf4ed997f53ceda4453",
+          "span_sha256": "4afd948fcbb5cbe256673452fd3586434513fc567dc92dc3364827b85688876f"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Encodes the timestamp bytes with the imported helper. Direct source read confirms an unshadowed local or explicitly imported binding. This is static source truth, not a runtime test."
+    },
+    {
+      "id": "itsdangerous-timed-sign-int_to_bytes",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "split": "heldout",
+      "category": "call",
+      "question": "Which local int_to_bytes declaration does timed.sign invoke at line 48?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets/itsdangerous.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/itsdangerous/timed.py",
+          "start_line": 45,
+          "end_line": 51,
+          "symbol": "sign",
+          "sha256": "3afbf6050e8b73605931d1e516f374835456979e4319c098bfe5f284f120c6c5",
+          "span_sha256": "bce26f584e9a66f18324b643ab9999b37f445a66dc610fc6fb135eac1b7017b1"
+        },
+        "site": {
+          "path": "src/itsdangerous/timed.py",
+          "start_line": 48,
+          "end_line": 48,
+          "symbol": "int_to_bytes",
+          "sha256": "3afbf6050e8b73605931d1e516f374835456979e4319c098bfe5f284f120c6c5",
+          "span_sha256": "acddba711d900aa6105e3f07d38ba026429e1247fa7ee3906f388dac0ea55917"
+        },
+        "target": {
+          "path": "src/itsdangerous/encoding.py",
+          "start_line": 49,
+          "end_line": 50,
+          "symbol": "int_to_bytes",
+          "sha256": "c304f3e6aff7ccb71a01dba793afef4a84adc06a9859edf4ed997f53ceda4453",
+          "span_sha256": "f2c5073f88071d5ec7bba93b594867856904769e1665f0e8e9f8e8dd8ca37500"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Converts the timestamp integer with the imported helper. Direct source read confirms an unshadowed local or explicitly imported binding. This is static source truth, not a runtime test."
+    },
+    {
+      "id": "itsdangerous-timed-unsign-want_bytes",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "split": "heldout",
+      "category": "call",
+      "question": "Which local want_bytes declaration does timed.unsign invoke at line 95?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets/itsdangerous.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/itsdangerous/timed.py",
+          "start_line": 72,
+          "end_line": 158,
+          "symbol": "unsign",
+          "sha256": "3afbf6050e8b73605931d1e516f374835456979e4319c098bfe5f284f120c6c5",
+          "span_sha256": "ea497145d20f2f1d8e7288f282d0e353757860d937e5a70d43b4154e735e5e40"
+        },
+        "site": {
+          "path": "src/itsdangerous/timed.py",
+          "start_line": 95,
+          "end_line": 95,
+          "symbol": "want_bytes",
+          "sha256": "3afbf6050e8b73605931d1e516f374835456979e4319c098bfe5f284f120c6c5",
+          "span_sha256": "f1e9c6563b17d18f4037c68d282ec1795b01cf845a457e0db2cc79a91c8d6801"
+        },
+        "target": {
+          "path": "src/itsdangerous/encoding.py",
+          "start_line": 11,
+          "end_line": 17,
+          "symbol": "want_bytes",
+          "sha256": "c304f3e6aff7ccb71a01dba793afef4a84adc06a9859edf4ed997f53ceda4453",
+          "span_sha256": "0bf2c222d78b3e9be1b583a4229ecd8459d6e1f89e49d2d65dd8504268cf1e62"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Normalizes the separator used to split timestamped data. Direct source read confirms an unshadowed local or explicitly imported binding. This is static source truth, not a runtime test."
+    },
+    {
+      "id": "itsdangerous-timed-unsign-bytes_to_int",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "split": "heldout",
+      "category": "call",
+      "question": "Which local bytes_to_int declaration does timed.unsign invoke at line 113?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets/itsdangerous.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/itsdangerous/timed.py",
+          "start_line": 72,
+          "end_line": 158,
+          "symbol": "unsign",
+          "sha256": "3afbf6050e8b73605931d1e516f374835456979e4319c098bfe5f284f120c6c5",
+          "span_sha256": "ea497145d20f2f1d8e7288f282d0e353757860d937e5a70d43b4154e735e5e40"
+        },
+        "site": {
+          "path": "src/itsdangerous/timed.py",
+          "start_line": 113,
+          "end_line": 113,
+          "symbol": "bytes_to_int",
+          "sha256": "3afbf6050e8b73605931d1e516f374835456979e4319c098bfe5f284f120c6c5",
+          "span_sha256": "ee54f234447ba632a30149bef1979cd4e080b22e1961fedb0ff1eeb6e85e31a1"
+        },
+        "target": {
+          "path": "src/itsdangerous/encoding.py",
+          "start_line": 53,
+          "end_line": 54,
+          "symbol": "bytes_to_int",
+          "sha256": "c304f3e6aff7ccb71a01dba793afef4a84adc06a9859edf4ed997f53ceda4453",
+          "span_sha256": "fd0c230e3017b290115c1e71688111945fdf8aee62c8ce268e68dbb0c3c315e6"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Converts decoded timestamp bytes to an integer. Direct source read confirms an unshadowed local or explicitly imported binding. This is static source truth, not a runtime test."
+    },
+    {
+      "id": "itsdangerous-timed-unsign-base64_decode",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "split": "heldout",
+      "category": "call",
+      "question": "Which local base64_decode declaration does timed.unsign invoke at line 113?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets/itsdangerous.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/itsdangerous/timed.py",
+          "start_line": 72,
+          "end_line": 158,
+          "symbol": "unsign",
+          "sha256": "3afbf6050e8b73605931d1e516f374835456979e4319c098bfe5f284f120c6c5",
+          "span_sha256": "ea497145d20f2f1d8e7288f282d0e353757860d937e5a70d43b4154e735e5e40"
+        },
+        "site": {
+          "path": "src/itsdangerous/timed.py",
+          "start_line": 113,
+          "end_line": 113,
+          "symbol": "base64_decode",
+          "sha256": "3afbf6050e8b73605931d1e516f374835456979e4319c098bfe5f284f120c6c5",
+          "span_sha256": "ee54f234447ba632a30149bef1979cd4e080b22e1961fedb0ff1eeb6e85e31a1"
+        },
+        "target": {
+          "path": "src/itsdangerous/encoding.py",
+          "start_line": 28,
+          "end_line": 38,
+          "symbol": "base64_decode",
+          "sha256": "c304f3e6aff7ccb71a01dba793afef4a84adc06a9859edf4ed997f53ceda4453",
+          "span_sha256": "f008824f6b0e7c1782efd19567baab7cf6c50803641106e0ea1196a7a2ba8db2"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Decodes the timestamp component before integer conversion. Direct source read confirms an unshadowed local or explicitly imported binding. This is static source truth, not a runtime test."
+    },
+    {
+      "id": "itsdangerous-timed-unsign-BadTimeSignature",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "split": "heldout",
+      "category": "call",
+      "question": "Which local BadTimeSignature declaration does timed.unsign invoke at line 106?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets/itsdangerous.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/itsdangerous/timed.py",
+          "start_line": 72,
+          "end_line": 158,
+          "symbol": "unsign",
+          "sha256": "3afbf6050e8b73605931d1e516f374835456979e4319c098bfe5f284f120c6c5",
+          "span_sha256": "ea497145d20f2f1d8e7288f282d0e353757860d937e5a70d43b4154e735e5e40"
+        },
+        "site": {
+          "path": "src/itsdangerous/timed.py",
+          "start_line": 106,
+          "end_line": 106,
+          "symbol": "BadTimeSignature",
+          "sha256": "3afbf6050e8b73605931d1e516f374835456979e4319c098bfe5f284f120c6c5",
+          "span_sha256": "8b8a7ab8340ceb207268fa4060f5ca71ee9991f3709228104b0660afe6abbf05"
+        },
+        "target": {
+          "path": "src/itsdangerous/exc.py",
+          "start_line": 36,
+          "end_line": 36,
+          "symbol": "BadTimeSignature",
+          "sha256": "46bddec68d0c44511c3d996dc1e7322b5e955756c4d8af7f175f9dfa58dc527e",
+          "span_sha256": "8d796184c290a35cdfafd5c34501f6ec681a7bf4fbf5297c43f8217c260a0920"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Constructs the missing-timestamp exception. Direct source read confirms an unshadowed local or explicitly imported binding. This is static source truth, not a runtime test."
+    },
+    {
+      "id": "itsdangerous-timed-unsign-SignatureExpired",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "split": "heldout",
+      "category": "call",
+      "question": "Which local SignatureExpired declaration does timed.unsign invoke at line 142?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets/itsdangerous.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/itsdangerous/timed.py",
+          "start_line": 72,
+          "end_line": 158,
+          "symbol": "unsign",
+          "sha256": "3afbf6050e8b73605931d1e516f374835456979e4319c098bfe5f284f120c6c5",
+          "span_sha256": "ea497145d20f2f1d8e7288f282d0e353757860d937e5a70d43b4154e735e5e40"
+        },
+        "site": {
+          "path": "src/itsdangerous/timed.py",
+          "start_line": 142,
+          "end_line": 142,
+          "symbol": "SignatureExpired",
+          "sha256": "3afbf6050e8b73605931d1e516f374835456979e4319c098bfe5f284f120c6c5",
+          "span_sha256": "fe7355f815baacdc5fb80f436f35cc66eb8a723e032deabad98cebf2e5bba74f"
+        },
+        "target": {
+          "path": "src/itsdangerous/exc.py",
+          "start_line": 60,
+          "end_line": 60,
+          "symbol": "SignatureExpired",
+          "sha256": "46bddec68d0c44511c3d996dc1e7322b5e955756c4d8af7f175f9dfa58dc527e",
+          "span_sha256": "786018c5a808fa07b93bfbc7dd6e843ddf67631e761ea3452e4eb1157fd4176f"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Constructs the exception in the age-greater-than-max_age branch. Direct source read confirms an unshadowed local or explicitly imported binding. This is static source truth, not a runtime test."
+    },
+    {
+      "id": "itsdangerous-timed-loads-want_bytes",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "split": "heldout",
+      "category": "call",
+      "question": "Which local want_bytes declaration does timed.loads invoke at line 199?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets/itsdangerous.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/itsdangerous/timed.py",
+          "start_line": 185,
+          "end_line": 220,
+          "symbol": "loads",
+          "sha256": "3afbf6050e8b73605931d1e516f374835456979e4319c098bfe5f284f120c6c5",
+          "span_sha256": "484cac33cebfa086085a6412605b84f05c295e727d5f63400c892886b409356b"
+        },
+        "site": {
+          "path": "src/itsdangerous/timed.py",
+          "start_line": 199,
+          "end_line": 199,
+          "symbol": "want_bytes",
+          "sha256": "3afbf6050e8b73605931d1e516f374835456979e4319c098bfe5f284f120c6c5",
+          "span_sha256": "9649fc11f0e276ad0dde9a878a69f6936786f2488afe93d9cd5b137ee4e12ba9"
+        },
+        "target": {
+          "path": "src/itsdangerous/encoding.py",
+          "start_line": 11,
+          "end_line": 17,
+          "symbol": "want_bytes",
+          "sha256": "c304f3e6aff7ccb71a01dba793afef4a84adc06a9859edf4ed997f53ceda4453",
+          "span_sha256": "0bf2c222d78b3e9be1b583a4229ecd8459d6e1f89e49d2d65dd8504268cf1e62"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "TimedSerializer normalizes input before iterating signers. Direct source read confirms an unshadowed local or explicitly imported binding. This is static source truth, not a runtime test."
+    },
+    {
+      "id": "itsdangerous-serializer-__init__-_make_keys_list",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "split": "heldout",
+      "category": "call",
+      "question": "Which local _make_keys_list declaration does serializer.__init__ invoke at line 208?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets/itsdangerous.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/itsdangerous/serializer.py",
+          "start_line": 190,
+          "end_line": 234,
+          "symbol": "__init__",
+          "sha256": "6d6f1687897c7e3ac6eeff5bfd6794df90e299feedcc6aae3faa0e53ffe925e8",
+          "span_sha256": "c4263bb642135bcba25c51b0820e250d2d3b64a3a2036a7b1b51c63d0c538994"
+        },
+        "site": {
+          "path": "src/itsdangerous/serializer.py",
+          "start_line": 208,
+          "end_line": 208,
+          "symbol": "_make_keys_list",
+          "sha256": "6d6f1687897c7e3ac6eeff5bfd6794df90e299feedcc6aae3faa0e53ffe925e8",
+          "span_sha256": "a34eab008396c0b9449d8b208f36daeeaa145f188ae24d7f1921b376e5cc94e9"
+        },
+        "target": {
+          "path": "src/itsdangerous/signer.py",
+          "start_line": 67,
+          "end_line": 73,
+          "symbol": "_make_keys_list",
+          "sha256": "60ed0257b341bc703a8f9e3d4441c91548d4a23c36a47ab0714a509d4ef23584",
+          "span_sha256": "e765e0e624e579f201900a54fdc18ba8678aa18c494edfa61e2d379caf9b8df6"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Serializer initializes the rotating key list through its explicit import. Direct source read confirms an unshadowed local or explicitly imported binding. This is static source truth, not a runtime test."
+    },
+    {
+      "id": "itsdangerous-serializer-__init__-want_bytes",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "split": "heldout",
+      "category": "call",
+      "question": "Which local want_bytes declaration does serializer.__init__ invoke at line 211?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets/itsdangerous.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/itsdangerous/serializer.py",
+          "start_line": 190,
+          "end_line": 234,
+          "symbol": "__init__",
+          "sha256": "6d6f1687897c7e3ac6eeff5bfd6794df90e299feedcc6aae3faa0e53ffe925e8",
+          "span_sha256": "c4263bb642135bcba25c51b0820e250d2d3b64a3a2036a7b1b51c63d0c538994"
+        },
+        "site": {
+          "path": "src/itsdangerous/serializer.py",
+          "start_line": 211,
+          "end_line": 211,
+          "symbol": "want_bytes",
+          "sha256": "6d6f1687897c7e3ac6eeff5bfd6794df90e299feedcc6aae3faa0e53ffe925e8",
+          "span_sha256": "773e17edec578f536d9bb85b677532fdf2c830433840234cc6c9198a8de02b06"
+        },
+        "target": {
+          "path": "src/itsdangerous/encoding.py",
+          "start_line": 11,
+          "end_line": 17,
+          "symbol": "want_bytes",
+          "sha256": "c304f3e6aff7ccb71a01dba793afef4a84adc06a9859edf4ed997f53ceda4453",
+          "span_sha256": "0bf2c222d78b3e9be1b583a4229ecd8459d6e1f89e49d2d65dd8504268cf1e62"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Serializer normalizes a non-null salt. Direct source read confirms an unshadowed local or explicitly imported binding. This is static source truth, not a runtime test."
+    },
+    {
+      "id": "itsdangerous-serializer-__init__-is_text_serializer",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "split": "heldout",
+      "category": "call",
+      "question": "Which local is_text_serializer declaration does serializer.__init__ invoke at line 220?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets/itsdangerous.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/itsdangerous/serializer.py",
+          "start_line": 190,
+          "end_line": 234,
+          "symbol": "__init__",
+          "sha256": "6d6f1687897c7e3ac6eeff5bfd6794df90e299feedcc6aae3faa0e53ffe925e8",
+          "span_sha256": "c4263bb642135bcba25c51b0820e250d2d3b64a3a2036a7b1b51c63d0c538994"
+        },
+        "site": {
+          "path": "src/itsdangerous/serializer.py",
+          "start_line": 220,
+          "end_line": 220,
+          "symbol": "is_text_serializer",
+          "sha256": "6d6f1687897c7e3ac6eeff5bfd6794df90e299feedcc6aae3faa0e53ffe925e8",
+          "span_sha256": "b7f737128d026ee96a76694b96bc05961116624a2a06a2363f37bdecf064fb9e"
+        },
+        "target": {
+          "path": "src/itsdangerous/serializer.py",
+          "start_line": 33,
+          "end_line": 37,
+          "symbol": "is_text_serializer",
+          "sha256": "6d6f1687897c7e3ac6eeff5bfd6794df90e299feedcc6aae3faa0e53ffe925e8",
+          "span_sha256": "fe5b241b90cceb4efa8e9263121b431984a382d85cf1fe5e377e1284960ef4e0"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Serializer probes the configured serializer through the local helper. Direct source read confirms an unshadowed local or explicitly imported binding. This is static source truth, not a runtime test."
+    },
+    {
+      "id": "itsdangerous-serializer-load_payload-is_text_serializer",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "split": "heldout",
+      "category": "impact",
+      "question": "If is_text_serializer changes, which dependency at line 257 makes serializer.load_payload a caller to review?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets/itsdangerous.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/itsdangerous/serializer.py",
+          "start_line": 243,
+          "end_line": 269,
+          "symbol": "load_payload",
+          "sha256": "6d6f1687897c7e3ac6eeff5bfd6794df90e299feedcc6aae3faa0e53ffe925e8",
+          "span_sha256": "59ed8cf2a44b6fe8f283d02b31ded8692b3378412cd6045ab889ba01504c912f"
+        },
+        "site": {
+          "path": "src/itsdangerous/serializer.py",
+          "start_line": 257,
+          "end_line": 257,
+          "symbol": "is_text_serializer",
+          "sha256": "6d6f1687897c7e3ac6eeff5bfd6794df90e299feedcc6aae3faa0e53ffe925e8",
+          "span_sha256": "054665933e458bb770d8f7dd5c26bd7218f78595141339ff5bb1d6e35a27a72c"
+        },
+        "target": {
+          "path": "src/itsdangerous/serializer.py",
+          "start_line": 33,
+          "end_line": 37,
+          "symbol": "is_text_serializer",
+          "sha256": "6d6f1687897c7e3ac6eeff5bfd6794df90e299feedcc6aae3faa0e53ffe925e8",
+          "span_sha256": "fe5b241b90cceb4efa8e9263121b431984a382d85cf1fe5e377e1284960ef4e0"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "An override serializer is probed with the local helper. Direct source read confirms an unshadowed local or explicitly imported binding. This is static source truth, not a runtime test. The impact is a dependency review candidate, not an applied patch or a defect."
+    },
+    {
+      "id": "itsdangerous-serializer-load_payload-BadPayload",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "split": "heldout",
+      "category": "call",
+      "question": "Which local BadPayload declaration does serializer.load_payload invoke at line 265?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets/itsdangerous.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/itsdangerous/serializer.py",
+          "start_line": 243,
+          "end_line": 269,
+          "symbol": "load_payload",
+          "sha256": "6d6f1687897c7e3ac6eeff5bfd6794df90e299feedcc6aae3faa0e53ffe925e8",
+          "span_sha256": "59ed8cf2a44b6fe8f283d02b31ded8692b3378412cd6045ab889ba01504c912f"
+        },
+        "site": {
+          "path": "src/itsdangerous/serializer.py",
+          "start_line": 265,
+          "end_line": 265,
+          "symbol": "BadPayload",
+          "sha256": "6d6f1687897c7e3ac6eeff5bfd6794df90e299feedcc6aae3faa0e53ffe925e8",
+          "span_sha256": "88bb4579f7e198c156ef28093627e9613a6355ebe8af4799a690f54b3fe09ee6"
+        },
+        "target": {
+          "path": "src/itsdangerous/exc.py",
+          "start_line": 92,
+          "end_line": 92,
+          "symbol": "BadPayload",
+          "sha256": "46bddec68d0c44511c3d996dc1e7322b5e955756c4d8af7f175f9dfa58dc527e",
+          "span_sha256": "fe36e00d7a0d0b7b06c66f79f7bef1ebebf77e071d76709c7f8325bcb88186b7"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Constructs the payload exception around deserialization failures. Direct source read confirms an unshadowed local or explicitly imported binding. This is static source truth, not a runtime test."
+    },
+    {
+      "id": "itsdangerous-serializer-dump_payload-want_bytes",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "split": "heldout",
+      "category": "call",
+      "question": "Which local want_bytes declaration does serializer.dump_payload invoke at line 276?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets/itsdangerous.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/itsdangerous/serializer.py",
+          "start_line": 271,
+          "end_line": 276,
+          "symbol": "dump_payload",
+          "sha256": "6d6f1687897c7e3ac6eeff5bfd6794df90e299feedcc6aae3faa0e53ffe925e8",
+          "span_sha256": "8f1a670996fee55c0fac336fbb9707dfcbc29a8132b97c2ca8550500f8d6322f"
+        },
+        "site": {
+          "path": "src/itsdangerous/serializer.py",
+          "start_line": 276,
+          "end_line": 276,
+          "symbol": "want_bytes",
+          "sha256": "6d6f1687897c7e3ac6eeff5bfd6794df90e299feedcc6aae3faa0e53ffe925e8",
+          "span_sha256": "16d2dd1882aef8ab1396ae68749047165585537c4a617072d78b6cc8e45d0b45"
+        },
+        "target": {
+          "path": "src/itsdangerous/encoding.py",
+          "start_line": 11,
+          "end_line": 17,
+          "symbol": "want_bytes",
+          "sha256": "c304f3e6aff7ccb71a01dba793afef4a84adc06a9859edf4ed997f53ceda4453",
+          "span_sha256": "0bf2c222d78b3e9be1b583a4229ecd8459d6e1f89e49d2d65dd8504268cf1e62"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Normalizes the result of the externally supplied serializer. Direct source read confirms an unshadowed local or explicitly imported binding. This is static source truth, not a runtime test."
+    },
+    {
+      "id": "itsdangerous-serializer-dumps-want_bytes",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "split": "heldout",
+      "category": "call",
+      "question": "Which local want_bytes declaration does serializer.dumps invoke at line 314?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets/itsdangerous.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/itsdangerous/serializer.py",
+          "start_line": 309,
+          "end_line": 320,
+          "symbol": "dumps",
+          "sha256": "6d6f1687897c7e3ac6eeff5bfd6794df90e299feedcc6aae3faa0e53ffe925e8",
+          "span_sha256": "48dff8b56976732c4846f046bc3c6d14f0b74e3de52cf45b581e47e5a4addc5f"
+        },
+        "site": {
+          "path": "src/itsdangerous/serializer.py",
+          "start_line": 314,
+          "end_line": 314,
+          "symbol": "want_bytes",
+          "sha256": "6d6f1687897c7e3ac6eeff5bfd6794df90e299feedcc6aae3faa0e53ffe925e8",
+          "span_sha256": "c9d8fe55cc63cb7052ffb14d5f36c40e2986e826ea2d1a0b1755243beee27e4e"
+        },
+        "target": {
+          "path": "src/itsdangerous/encoding.py",
+          "start_line": 11,
+          "end_line": 17,
+          "symbol": "want_bytes",
+          "sha256": "c304f3e6aff7ccb71a01dba793afef4a84adc06a9859edf4ed997f53ceda4453",
+          "span_sha256": "0bf2c222d78b3e9be1b583a4229ecd8459d6e1f89e49d2d65dd8504268cf1e62"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Normalizes the dumped payload before signing. Direct source read confirms an unshadowed local or explicitly imported binding. This is static source truth, not a runtime test."
+    },
+    {
+      "id": "itsdangerous-url_safe-URLSafeSerializerMixin-reference",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "split": "heldout",
+      "category": "reference",
+      "question": "Which local declaration is referenced by url_safe.py:15 (URLSafeSerializerMixin)?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets/itsdangerous.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/itsdangerous/url_safe.py",
+          "start_line": 15,
+          "end_line": 15,
+          "symbol": "URLSafeSerializerMixin",
+          "sha256": "6b3e1ee5f5e2fefb3e61b5a3f186709f8c2254a7de0fef8610a453e547aee0fe",
+          "span_sha256": "90e6760c30e719b9b223eba1c5407d3d1f4e0fbedd4703eb33c2a5f5c6b18d35"
+        },
+        "site": {
+          "path": "src/itsdangerous/url_safe.py",
+          "start_line": 15,
+          "end_line": 15,
+          "symbol": "Serializer",
+          "sha256": "6b3e1ee5f5e2fefb3e61b5a3f186709f8c2254a7de0fef8610a453e547aee0fe",
+          "span_sha256": "90e6760c30e719b9b223eba1c5407d3d1f4e0fbedd4703eb33c2a5f5c6b18d35"
+        },
+        "target": {
+          "path": "src/itsdangerous/serializer.py",
+          "start_line": 40,
+          "end_line": 40,
+          "symbol": "Serializer",
+          "sha256": "6d6f1687897c7e3ac6eeff5bfd6794df90e299feedcc6aae3faa0e53ffe925e8",
+          "span_sha256": "09a98aa70aec815fe2ab736ef79415db1d80bf091be6d164e0d890169187d36d"
+        }
+      },
+      "expected": {
+        "relation": "REFERENCE",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The class base or default assignment explicitly references Serializer; source and declaration were inspected. No method-dispatch claim is made."
+    },
+    {
+      "id": "itsdangerous-url_safe-default_serializer-reference",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "split": "heldout",
+      "category": "reference",
+      "question": "Which local declaration is referenced by url_safe.py:21 (default_serializer)?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets/itsdangerous.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/itsdangerous/url_safe.py",
+          "start_line": 21,
+          "end_line": 21,
+          "symbol": "default_serializer",
+          "sha256": "6b3e1ee5f5e2fefb3e61b5a3f186709f8c2254a7de0fef8610a453e547aee0fe",
+          "span_sha256": "c4d34b7fceddc5e75685de29f99747176b839ef13e37f5a8d1c598b8cba44e3e"
+        },
+        "site": {
+          "path": "src/itsdangerous/url_safe.py",
+          "start_line": 21,
+          "end_line": 21,
+          "symbol": "_CompactJSON",
+          "sha256": "6b3e1ee5f5e2fefb3e61b5a3f186709f8c2254a7de0fef8610a453e547aee0fe",
+          "span_sha256": "c4d34b7fceddc5e75685de29f99747176b839ef13e37f5a8d1c598b8cba44e3e"
+        },
+        "target": {
+          "path": "src/itsdangerous/_json.py",
+          "start_line": 7,
+          "end_line": 7,
+          "symbol": "_CompactJSON",
+          "sha256": "c0f4069a07b6c99f77dbc107285ea069d19ec866022502b1b54fa22ca13a5270",
+          "span_sha256": "e34a24e3465bee5ec894c9d371ce853fe86e72655adeecb2bbfe752933760c10"
+        }
+      },
+      "expected": {
+        "relation": "REFERENCE",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The class base or default assignment explicitly references _CompactJSON; source and declaration were inspected. No method-dispatch claim is made."
+    },
+    {
+      "id": "itsdangerous-url_safe-URLSafeTimedSerializer-reference",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "split": "heldout",
+      "category": "reference",
+      "question": "Which local declaration is referenced by url_safe.py:79 (URLSafeTimedSerializer)?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets/itsdangerous.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/itsdangerous/url_safe.py",
+          "start_line": 79,
+          "end_line": 79,
+          "symbol": "URLSafeTimedSerializer",
+          "sha256": "6b3e1ee5f5e2fefb3e61b5a3f186709f8c2254a7de0fef8610a453e547aee0fe",
+          "span_sha256": "81be55f9896fcf23c91b8a34904c6dcf80b6a7b23f95721203622bd83df3d100"
+        },
+        "site": {
+          "path": "src/itsdangerous/url_safe.py",
+          "start_line": 79,
+          "end_line": 79,
+          "symbol": "TimedSerializer",
+          "sha256": "6b3e1ee5f5e2fefb3e61b5a3f186709f8c2254a7de0fef8610a453e547aee0fe",
+          "span_sha256": "81be55f9896fcf23c91b8a34904c6dcf80b6a7b23f95721203622bd83df3d100"
+        },
+        "target": {
+          "path": "src/itsdangerous/timed.py",
+          "start_line": 170,
+          "end_line": 170,
+          "symbol": "TimedSerializer",
+          "sha256": "3afbf6050e8b73605931d1e516f374835456979e4319c098bfe5f284f120c6c5",
+          "span_sha256": "b9dfcda0e619309adaa461cc4341e75b1de807c05bac80d764fd24c7be8058cd"
+        }
+      },
+      "expected": {
+        "relation": "REFERENCE",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The class base or default assignment explicitly references TimedSerializer; source and declaration were inspected. No method-dispatch claim is made."
+    },
+    {
+      "id": "itsdangerous-signer-NoneAlgorithm-reference",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "split": "heldout",
+      "category": "reference",
+      "question": "Which local declaration is referenced by signer.py:31 (NoneAlgorithm)?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets/itsdangerous.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/itsdangerous/signer.py",
+          "start_line": 31,
+          "end_line": 31,
+          "symbol": "NoneAlgorithm",
+          "sha256": "60ed0257b341bc703a8f9e3d4441c91548d4a23c36a47ab0714a509d4ef23584",
+          "span_sha256": "90f5568d1d365707332373affd275d0d80be1bdec3dfa30774fe5e149dc1caaa"
+        },
+        "site": {
+          "path": "src/itsdangerous/signer.py",
+          "start_line": 31,
+          "end_line": 31,
+          "symbol": "SigningAlgorithm",
+          "sha256": "60ed0257b341bc703a8f9e3d4441c91548d4a23c36a47ab0714a509d4ef23584",
+          "span_sha256": "90f5568d1d365707332373affd275d0d80be1bdec3dfa30774fe5e149dc1caaa"
+        },
+        "target": {
+          "path": "src/itsdangerous/signer.py",
+          "start_line": 15,
+          "end_line": 15,
+          "symbol": "SigningAlgorithm",
+          "sha256": "60ed0257b341bc703a8f9e3d4441c91548d4a23c36a47ab0714a509d4ef23584",
+          "span_sha256": "4644095549abf55b7fd22d1fd9679c2cafb6c483603fd7c68aebdde99a48eadb"
+        }
+      },
+      "expected": {
+        "relation": "REFERENCE",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The class base or default assignment explicitly references SigningAlgorithm; source and declaration were inspected. No method-dispatch claim is made."
+    },
+    {
+      "id": "itsdangerous-signer-HMACAlgorithm-reference",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "split": "heldout",
+      "category": "reference",
+      "question": "Which local declaration is referenced by signer.py:48 (HMACAlgorithm)?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets/itsdangerous.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/itsdangerous/signer.py",
+          "start_line": 48,
+          "end_line": 48,
+          "symbol": "HMACAlgorithm",
+          "sha256": "60ed0257b341bc703a8f9e3d4441c91548d4a23c36a47ab0714a509d4ef23584",
+          "span_sha256": "1d3f67da83839770f3204eebb02793ff22a38331121968759801c9afc880a520"
+        },
+        "site": {
+          "path": "src/itsdangerous/signer.py",
+          "start_line": 48,
+          "end_line": 48,
+          "symbol": "SigningAlgorithm",
+          "sha256": "60ed0257b341bc703a8f9e3d4441c91548d4a23c36a47ab0714a509d4ef23584",
+          "span_sha256": "1d3f67da83839770f3204eebb02793ff22a38331121968759801c9afc880a520"
+        },
+        "target": {
+          "path": "src/itsdangerous/signer.py",
+          "start_line": 15,
+          "end_line": 15,
+          "symbol": "SigningAlgorithm",
+          "sha256": "60ed0257b341bc703a8f9e3d4441c91548d4a23c36a47ab0714a509d4ef23584",
+          "span_sha256": "4644095549abf55b7fd22d1fd9679c2cafb6c483603fd7c68aebdde99a48eadb"
+        }
+      },
+      "expected": {
+        "relation": "REFERENCE",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The class base or default assignment explicitly references SigningAlgorithm; source and declaration were inspected. No method-dispatch claim is made."
+    },
+    {
+      "id": "itsdangerous-timed-TimestampSigner-reference",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "split": "heldout",
+      "category": "reference",
+      "question": "Which local declaration is referenced by timed.py:22 (TimestampSigner)?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets/itsdangerous.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/itsdangerous/timed.py",
+          "start_line": 22,
+          "end_line": 22,
+          "symbol": "TimestampSigner",
+          "sha256": "3afbf6050e8b73605931d1e516f374835456979e4319c098bfe5f284f120c6c5",
+          "span_sha256": "3e78dc5ce7a1ceb508e5d4d67285ef1ee59ceaf698e5b72b0859201dec42f25d"
+        },
+        "site": {
+          "path": "src/itsdangerous/timed.py",
+          "start_line": 22,
+          "end_line": 22,
+          "symbol": "Signer",
+          "sha256": "3afbf6050e8b73605931d1e516f374835456979e4319c098bfe5f284f120c6c5",
+          "span_sha256": "3e78dc5ce7a1ceb508e5d4d67285ef1ee59ceaf698e5b72b0859201dec42f25d"
+        },
+        "target": {
+          "path": "src/itsdangerous/signer.py",
+          "start_line": 76,
+          "end_line": 76,
+          "symbol": "Signer",
+          "sha256": "60ed0257b341bc703a8f9e3d4441c91548d4a23c36a47ab0714a509d4ef23584",
+          "span_sha256": "8aaa12da39f046f3f50895daf4ff2b880546f977f59fb3a775da3ffb3160fd13"
+        }
+      },
+      "expected": {
+        "relation": "REFERENCE",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The class base or default assignment explicitly references Signer; source and declaration were inspected. No method-dispatch claim is made."
+    },
+    {
+      "id": "itsdangerous-timed-default_signer-reference",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "split": "heldout",
+      "category": "reference",
+      "question": "Which local declaration is referenced by timed.py:175 (default_signer)?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets/itsdangerous.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/itsdangerous/timed.py",
+          "start_line": 175,
+          "end_line": 175,
+          "symbol": "default_signer",
+          "sha256": "3afbf6050e8b73605931d1e516f374835456979e4319c098bfe5f284f120c6c5",
+          "span_sha256": "d93a72d1b7c323552afbda82317487f4a0639319ce5bea1a08c31e37c0c00d10"
+        },
+        "site": {
+          "path": "src/itsdangerous/timed.py",
+          "start_line": 175,
+          "end_line": 175,
+          "symbol": "TimestampSigner",
+          "sha256": "3afbf6050e8b73605931d1e516f374835456979e4319c098bfe5f284f120c6c5",
+          "span_sha256": "d93a72d1b7c323552afbda82317487f4a0639319ce5bea1a08c31e37c0c00d10"
+        },
+        "target": {
+          "path": "src/itsdangerous/timed.py",
+          "start_line": 22,
+          "end_line": 22,
+          "symbol": "TimestampSigner",
+          "sha256": "3afbf6050e8b73605931d1e516f374835456979e4319c098bfe5f284f120c6c5",
+          "span_sha256": "3e78dc5ce7a1ceb508e5d4d67285ef1ee59ceaf698e5b72b0859201dec42f25d"
+        }
+      },
+      "expected": {
+        "relation": "REFERENCE",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The class base or default assignment explicitly references TimestampSigner; source and declaration were inspected. No method-dispatch claim is made."
+    },
+    {
+      "id": "itsdangerous-signer-verify_signature-unresolved-get_signature",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "split": "heldout",
+      "category": "ambiguous",
+      "question": "Can the get_signature dispatch in signer.verify_signature at line 28 be assigned one definitive target from this source?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets/itsdangerous.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/itsdangerous/signer.py",
+          "start_line": 24,
+          "end_line": 28,
+          "symbol": "verify_signature",
+          "sha256": "60ed0257b341bc703a8f9e3d4441c91548d4a23c36a47ab0714a509d4ef23584",
+          "span_sha256": "998351a268b304bd11991e767a420666373fe8b88653d1931883af1a027ae862"
+        },
+        "site": {
+          "path": "src/itsdangerous/signer.py",
+          "start_line": 28,
+          "end_line": 28,
+          "symbol": "get_signature",
+          "sha256": "60ed0257b341bc703a8f9e3d4441c91548d4a23c36a47ab0714a509d4ef23584",
+          "span_sha256": "20fb4b451ae8b16d2e15a82377ff7b2b8a4f62d633a5dded1c643a978e336708"
+        }
+      },
+      "expected": {
+        "relation": "UNRESOLVED",
+        "source": "source",
+        "target": null,
+        "site": "site"
+      },
+      "rationale": "SigningAlgorithm.get_signature is explicitly abstract and subclasses implement it; self has no exact concrete subclass at this site. Expected outcome is UNRESOLVED with target=null, not a positive edge."
+    },
+    {
+      "id": "itsdangerous-signer-derive_key-unresolved-digest_method",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "split": "heldout",
+      "category": "ambiguous",
+      "question": "Can the digest_method dispatch in signer.derive_key at line 201 be assigned one definitive target from this source?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets/itsdangerous.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/itsdangerous/signer.py",
+          "start_line": 182,
+          "end_line": 213,
+          "symbol": "derive_key",
+          "sha256": "60ed0257b341bc703a8f9e3d4441c91548d4a23c36a47ab0714a509d4ef23584",
+          "span_sha256": "22982867c16046576b356621d8bbb36d3994526b38a8f72a8d6ee953091aa82e"
+        },
+        "site": {
+          "path": "src/itsdangerous/signer.py",
+          "start_line": 201,
+          "end_line": 201,
+          "symbol": "digest_method",
+          "sha256": "60ed0257b341bc703a8f9e3d4441c91548d4a23c36a47ab0714a509d4ef23584",
+          "span_sha256": "910279c350133c3db6c636983f2a88227ff2ea4ddb45aede3efc0881cdae7de5"
+        }
+      },
+      "expected": {
+        "relation": "UNRESOLVED",
+        "source": "source",
+        "target": null,
+        "site": "site"
+      },
+      "rationale": "The constructor accepts a caller-supplied digest_method; its runtime callable is not fixed by this body. Expected outcome is UNRESOLVED with target=null, not a positive edge."
+    },
+    {
+      "id": "itsdangerous-signer-get_signature-unresolved-get_signature",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "split": "heldout",
+      "category": "ambiguous",
+      "question": "Can the get_signature dispatch in signer.get_signature at line 219 be assigned one definitive target from this source?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets/itsdangerous.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/itsdangerous/signer.py",
+          "start_line": 215,
+          "end_line": 220,
+          "symbol": "get_signature",
+          "sha256": "60ed0257b341bc703a8f9e3d4441c91548d4a23c36a47ab0714a509d4ef23584",
+          "span_sha256": "4f2a0c8240dfb5217512c85111a8dd8776c7e110570c0f84cbed05375c0ee9a2"
+        },
+        "site": {
+          "path": "src/itsdangerous/signer.py",
+          "start_line": 219,
+          "end_line": 219,
+          "symbol": "get_signature",
+          "sha256": "60ed0257b341bc703a8f9e3d4441c91548d4a23c36a47ab0714a509d4ef23584",
+          "span_sha256": "ab4b3bb3bd7df433b7195eaeccecbdb7eb903e4db5c6b46bf89664d1636969b6"
+        }
+      },
+      "expected": {
+        "relation": "UNRESOLVED",
+        "source": "source",
+        "target": null,
+        "site": "site"
+      },
+      "rationale": "self.algorithm can be supplied to Signer.__init__; choosing HMACAlgorithm.get_signature would invent an exact receiver type. Expected outcome is UNRESOLVED with target=null, not a positive edge."
+    },
+    {
+      "id": "itsdangerous-signer-verify_signature-unresolved-verify_signature",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "split": "heldout",
+      "category": "ambiguous",
+      "question": "Can the verify_signature dispatch in signer.verify_signature at line 239 be assigned one definitive target from this source?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets/itsdangerous.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/itsdangerous/signer.py",
+          "start_line": 227,
+          "end_line": 242,
+          "symbol": "verify_signature",
+          "sha256": "60ed0257b341bc703a8f9e3d4441c91548d4a23c36a47ab0714a509d4ef23584",
+          "span_sha256": "f0646c9b879f6a88807c9c2cbf34541de1a609ccf0ba0694193554cf50211177"
+        },
+        "site": {
+          "path": "src/itsdangerous/signer.py",
+          "start_line": 239,
+          "end_line": 239,
+          "symbol": "verify_signature",
+          "sha256": "60ed0257b341bc703a8f9e3d4441c91548d4a23c36a47ab0714a509d4ef23584",
+          "span_sha256": "0f241e7c68061bb72e00ab7bf05d746f4e352900e8051e0702cf07cd5eef49f8"
+        }
+      },
+      "expected": {
+        "relation": "UNRESOLVED",
+        "source": "source",
+        "target": null,
+        "site": "site"
+      },
+      "rationale": "self.algorithm is injected and may implement another verification routine. Expected outcome is UNRESOLVED with target=null, not a positive edge."
+    },
+    {
+      "id": "itsdangerous-serializer-is_text_serializer-unresolved-dumps",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "split": "heldout",
+      "category": "ambiguous",
+      "question": "Can the dumps dispatch in serializer.is_text_serializer at line 37 be assigned one definitive target from this source?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets/itsdangerous.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/itsdangerous/serializer.py",
+          "start_line": 33,
+          "end_line": 37,
+          "symbol": "is_text_serializer",
+          "sha256": "6d6f1687897c7e3ac6eeff5bfd6794df90e299feedcc6aae3faa0e53ffe925e8",
+          "span_sha256": "fe5b241b90cceb4efa8e9263121b431984a382d85cf1fe5e377e1284960ef4e0"
+        },
+        "site": {
+          "path": "src/itsdangerous/serializer.py",
+          "start_line": 37,
+          "end_line": 37,
+          "symbol": "dumps",
+          "sha256": "6d6f1687897c7e3ac6eeff5bfd6794df90e299feedcc6aae3faa0e53ffe925e8",
+          "span_sha256": "3e381886097d6ced35924793a5acf4776475ab31a7a6e0feaf4b9acec67db528"
+        }
+      },
+      "expected": {
+        "relation": "UNRESOLVED",
+        "source": "source",
+        "target": null,
+        "site": "site"
+      },
+      "rationale": "The serializer is a protocol-typed parameter supplied by the caller, not a concrete JSON object. Expected outcome is UNRESOLVED with target=null, not a positive edge."
+    },
+    {
+      "id": "itsdangerous-serializer-load_payload-unresolved-loads",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "split": "heldout",
+      "category": "ambiguous",
+      "question": "Can the loads dispatch in serializer.load_payload at line 261 be assigned one definitive target from this source?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets/itsdangerous.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/itsdangerous/serializer.py",
+          "start_line": 243,
+          "end_line": 269,
+          "symbol": "load_payload",
+          "sha256": "6d6f1687897c7e3ac6eeff5bfd6794df90e299feedcc6aae3faa0e53ffe925e8",
+          "span_sha256": "59ed8cf2a44b6fe8f283d02b31ded8692b3378412cd6045ab889ba01504c912f"
+        },
+        "site": {
+          "path": "src/itsdangerous/serializer.py",
+          "start_line": 261,
+          "end_line": 261,
+          "symbol": "loads",
+          "sha256": "6d6f1687897c7e3ac6eeff5bfd6794df90e299feedcc6aae3faa0e53ffe925e8",
+          "span_sha256": "318e8a04499578a08ac35c9dbbd646fd1fbd4e3828f42a548f602571e1d70709"
+        }
+      },
+      "expected": {
+        "relation": "UNRESOLVED",
+        "source": "source",
+        "target": null,
+        "site": "site"
+      },
+      "rationale": "use_serializer is either an override parameter or the configured instance; neither fixes a unique concrete implementation. Expected outcome is UNRESOLVED with target=null, not a positive edge."
+    },
+    {
+      "id": "itsdangerous-serializer-dump_payload-unresolved-dumps",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "split": "heldout",
+      "category": "ambiguous",
+      "question": "Can the dumps dispatch in serializer.dump_payload at line 276 be assigned one definitive target from this source?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets/itsdangerous.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/itsdangerous/serializer.py",
+          "start_line": 271,
+          "end_line": 276,
+          "symbol": "dump_payload",
+          "sha256": "6d6f1687897c7e3ac6eeff5bfd6794df90e299feedcc6aae3faa0e53ffe925e8",
+          "span_sha256": "8f1a670996fee55c0fac336fbb9707dfcbc29a8132b97c2ca8550500f8d6322f"
+        },
+        "site": {
+          "path": "src/itsdangerous/serializer.py",
+          "start_line": 276,
+          "end_line": 276,
+          "symbol": "dumps",
+          "sha256": "6d6f1687897c7e3ac6eeff5bfd6794df90e299feedcc6aae3faa0e53ffe925e8",
+          "span_sha256": "16d2dd1882aef8ab1396ae68749047165585537c4a617072d78b6cc8e45d0b45"
+        }
+      },
+      "expected": {
+        "relation": "UNRESOLVED",
+        "source": "source",
+        "target": null,
+        "site": "site"
+      },
+      "rationale": "self.serializer is configurable; the method-like name does not identify a concrete target. Expected outcome is UNRESOLVED with target=null, not a positive edge."
+    },
+    {
+      "id": "itsdangerous-serializer-make_signer-unresolved-signer",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "split": "heldout",
+      "category": "ambiguous",
+      "question": "Can the signer dispatch in serializer.make_signer at line 285 be assigned one definitive target from this source?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets/itsdangerous.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/itsdangerous/serializer.py",
+          "start_line": 278,
+          "end_line": 285,
+          "symbol": "make_signer",
+          "sha256": "6d6f1687897c7e3ac6eeff5bfd6794df90e299feedcc6aae3faa0e53ffe925e8",
+          "span_sha256": "d22b44fa68920002a59d66b57e01667d80761348ca3c190e8b023622aaa5d9e6"
+        },
+        "site": {
+          "path": "src/itsdangerous/serializer.py",
+          "start_line": 285,
+          "end_line": 285,
+          "symbol": "signer",
+          "sha256": "6d6f1687897c7e3ac6eeff5bfd6794df90e299feedcc6aae3faa0e53ffe925e8",
+          "span_sha256": "f39416470b0d91420ebea51e742565aaca5a5d7c786562c25c7475c5e4632c45"
+        }
+      },
+      "expected": {
+        "relation": "UNRESOLVED",
+        "source": "source",
+        "target": null,
+        "site": "site"
+      },
+      "rationale": "self.signer is a constructor-supplied class or overridable default; it is not necessarily the base Signer. Expected outcome is UNRESOLVED with target=null, not a positive edge."
+    },
+    {
+      "id": "itsdangerous-serializer-iter_unsigners-unresolved-fallback",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "split": "heldout",
+      "category": "ambiguous",
+      "question": "Can the fallback dispatch in serializer.iter_unsigners at line 307 be assigned one definitive target from this source?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets/itsdangerous.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/itsdangerous/serializer.py",
+          "start_line": 287,
+          "end_line": 307,
+          "symbol": "iter_unsigners",
+          "sha256": "6d6f1687897c7e3ac6eeff5bfd6794df90e299feedcc6aae3faa0e53ffe925e8",
+          "span_sha256": "0bfa7d37cffafa79583c4a781de8741199d01b4b195cc645c9c382bd396a1ab4"
+        },
+        "site": {
+          "path": "src/itsdangerous/serializer.py",
+          "start_line": 307,
+          "end_line": 307,
+          "symbol": "fallback",
+          "sha256": "6d6f1687897c7e3ac6eeff5bfd6794df90e299feedcc6aae3faa0e53ffe925e8",
+          "span_sha256": "aa3e05fec47ba317ffaa575b7b786f839007ddbfdcc5ebfb61cc067374836aaa"
+        }
+      },
+      "expected": {
+        "relation": "UNRESOLVED",
+        "source": "source",
+        "target": null,
+        "site": "site"
+      },
+      "rationale": "fallback is selected from user-configured fallback_signers entries, not a unique declaration. Expected outcome is UNRESOLVED with target=null, not a positive edge."
+    },
+    {
+      "id": "itsdangerous-timed-loads-unresolved-unsign",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/itsdangerous",
+      "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
+      "split": "heldout",
+      "category": "ambiguous",
+      "question": "Can the unsign dispatch in timed.loads at line 204 be assigned one definitive target from this source?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets/itsdangerous.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/itsdangerous/timed.py",
+          "start_line": 185,
+          "end_line": 220,
+          "symbol": "loads",
+          "sha256": "3afbf6050e8b73605931d1e516f374835456979e4319c098bfe5f284f120c6c5",
+          "span_sha256": "484cac33cebfa086085a6412605b84f05c295e727d5f63400c892886b409356b"
+        },
+        "site": {
+          "path": "src/itsdangerous/timed.py",
+          "start_line": 204,
+          "end_line": 204,
+          "symbol": "unsign",
+          "sha256": "3afbf6050e8b73605931d1e516f374835456979e4319c098bfe5f284f120c6c5",
+          "span_sha256": "f6f4a7a660c2e6f5bdc20eed7f4e7880ad49a9f4e4568d6a132f2ba24697db30"
+        }
+      },
+      "expected": {
+        "relation": "UNRESOLVED",
+        "source": "source",
+        "target": null,
+        "site": "site"
+      },
+      "rationale": "signer comes from an overridable iterator and may be a configured fallback; the target implementation is not uniquely established. Expected outcome is UNRESOLVED with target=null, not a positive edge."
+    },
+    {
+      "id": "blinker-base-import-make_id",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/blinker",
+      "revision": "c3364059663df1ddce32799d6b1922af89a345f6",
+      "split": "heldout",
+      "category": "import",
+      "question": "Where is make_id, imported by base.py:12, declared?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets-eco/blinker.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/blinker/base.py",
+          "start_line": 12,
+          "end_line": 12,
+          "symbol": "make_id",
+          "sha256": "4290eebd75dcc09178f65501707e418924f8e91cfdc121bb556fe9ecdff4dbb3",
+          "span_sha256": "cb5fa348a66169100fc89a83d179522d1adfa671c20add7d142ed18954e0c514"
+        },
+        "site": {
+          "path": "src/blinker/base.py",
+          "start_line": 12,
+          "end_line": 12,
+          "symbol": "make_id",
+          "sha256": "4290eebd75dcc09178f65501707e418924f8e91cfdc121bb556fe9ecdff4dbb3",
+          "span_sha256": "cb5fa348a66169100fc89a83d179522d1adfa671c20add7d142ed18954e0c514"
+        },
+        "target": {
+          "path": "src/blinker/_utilities.py",
+          "start_line": 42,
+          "end_line": 57,
+          "symbol": "make_id",
+          "sha256": "d09ede7975d3531d08bdff1ab1fa71d32715929d04a9faa78f5d7bc769985fd1",
+          "span_sha256": "d85e104d9daeacaaa7d3394a7a44952a9b2d18e263ebd9f57afcb35ba870e062"
+        }
+      },
+      "expected": {
+        "relation": "IMPORTS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The relative import and local make_id declaration were read; this asserts the import binding only."
+    },
+    {
+      "id": "blinker-base-import-make_ref",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/blinker",
+      "revision": "c3364059663df1ddce32799d6b1922af89a345f6",
+      "split": "heldout",
+      "category": "import",
+      "question": "Where is make_ref, imported by base.py:13, declared?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets-eco/blinker.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/blinker/base.py",
+          "start_line": 13,
+          "end_line": 13,
+          "symbol": "make_ref",
+          "sha256": "4290eebd75dcc09178f65501707e418924f8e91cfdc121bb556fe9ecdff4dbb3",
+          "span_sha256": "b653b0c0b37cc09946e444831650175f166761bc77c7483ad969e4a22a0afc05"
+        },
+        "site": {
+          "path": "src/blinker/base.py",
+          "start_line": 13,
+          "end_line": 13,
+          "symbol": "make_ref",
+          "sha256": "4290eebd75dcc09178f65501707e418924f8e91cfdc121bb556fe9ecdff4dbb3",
+          "span_sha256": "b653b0c0b37cc09946e444831650175f166761bc77c7483ad969e4a22a0afc05"
+        },
+        "target": {
+          "path": "src/blinker/_utilities.py",
+          "start_line": 60,
+          "end_line": 64,
+          "symbol": "make_ref",
+          "sha256": "d09ede7975d3531d08bdff1ab1fa71d32715929d04a9faa78f5d7bc769985fd1",
+          "span_sha256": "ee758065aca1f7c5636f3cba2ea602f8c63428405ddcd31b3575a345e0298210"
+        }
+      },
+      "expected": {
+        "relation": "IMPORTS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The relative import and local make_ref declaration were read; this asserts the import binding only."
+    },
+    {
+      "id": "blinker-base-import-Symbol",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/blinker",
+      "revision": "c3364059663df1ddce32799d6b1922af89a345f6",
+      "split": "heldout",
+      "category": "import",
+      "question": "Where is Symbol, imported by base.py:14, declared?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets-eco/blinker.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/blinker/base.py",
+          "start_line": 14,
+          "end_line": 14,
+          "symbol": "Symbol",
+          "sha256": "4290eebd75dcc09178f65501707e418924f8e91cfdc121bb556fe9ecdff4dbb3",
+          "span_sha256": "5bd4eaa07a3a973a923ff9b2109053e4c638da8626466b2cf880df7c39c4565f"
+        },
+        "site": {
+          "path": "src/blinker/base.py",
+          "start_line": 14,
+          "end_line": 14,
+          "symbol": "Symbol",
+          "sha256": "4290eebd75dcc09178f65501707e418924f8e91cfdc121bb556fe9ecdff4dbb3",
+          "span_sha256": "5bd4eaa07a3a973a923ff9b2109053e4c638da8626466b2cf880df7c39c4565f"
+        },
+        "target": {
+          "path": "src/blinker/_utilities.py",
+          "start_line": 12,
+          "end_line": 12,
+          "symbol": "Symbol",
+          "sha256": "d09ede7975d3531d08bdff1ab1fa71d32715929d04a9faa78f5d7bc769985fd1",
+          "span_sha256": "105cca491c3291498147a17ac1617a2bfba587fd887376c474dbe62780ae3348"
+        }
+      },
+      "expected": {
+        "relation": "IMPORTS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The relative import and local Symbol declaration were read; this asserts the import binding only."
+    },
+    {
+      "id": "blinker-__init__-import-NamedSignal",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/blinker",
+      "revision": "c3364059663df1ddce32799d6b1922af89a345f6",
+      "split": "heldout",
+      "category": "import",
+      "question": "Where is NamedSignal, imported by __init__.py:5, declared?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets-eco/blinker.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/blinker/__init__.py",
+          "start_line": 5,
+          "end_line": 5,
+          "symbol": "NamedSignal",
+          "sha256": "23611d66aa72e0bca35f5ec79f5cb32465828de2da55a3f3b0c80790b7e3fdc4",
+          "span_sha256": "2288d89ef65d1fe832f18253ae3058e69ebcc5156f3f8b996b5e15e19b76bc20"
+        },
+        "site": {
+          "path": "src/blinker/__init__.py",
+          "start_line": 5,
+          "end_line": 5,
+          "symbol": "NamedSignal",
+          "sha256": "23611d66aa72e0bca35f5ec79f5cb32465828de2da55a3f3b0c80790b7e3fdc4",
+          "span_sha256": "2288d89ef65d1fe832f18253ae3058e69ebcc5156f3f8b996b5e15e19b76bc20"
+        },
+        "target": {
+          "path": "src/blinker/base.py",
+          "start_line": 464,
+          "end_line": 464,
+          "symbol": "NamedSignal",
+          "sha256": "4290eebd75dcc09178f65501707e418924f8e91cfdc121bb556fe9ecdff4dbb3",
+          "span_sha256": "55865d4ac5e4c2794d19bd0ae14c563e8afdc501c69ae56923d71782bf06e59e"
+        }
+      },
+      "expected": {
+        "relation": "IMPORTS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The relative import and local NamedSignal declaration were read; this asserts the import binding only."
+    },
+    {
+      "id": "blinker-__init__-import-Namespace",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/blinker",
+      "revision": "c3364059663df1ddce32799d6b1922af89a345f6",
+      "split": "heldout",
+      "category": "import",
+      "question": "Where is Namespace, imported by __init__.py:6, declared?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets-eco/blinker.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/blinker/__init__.py",
+          "start_line": 6,
+          "end_line": 6,
+          "symbol": "Namespace",
+          "sha256": "23611d66aa72e0bca35f5ec79f5cb32465828de2da55a3f3b0c80790b7e3fdc4",
+          "span_sha256": "8897b95fed615d24aefe5a22a7c1ab3cf7d75ce76923c9660dc1718d43b4c519"
+        },
+        "site": {
+          "path": "src/blinker/__init__.py",
+          "start_line": 6,
+          "end_line": 6,
+          "symbol": "Namespace",
+          "sha256": "23611d66aa72e0bca35f5ec79f5cb32465828de2da55a3f3b0c80790b7e3fdc4",
+          "span_sha256": "8897b95fed615d24aefe5a22a7c1ab3cf7d75ce76923c9660dc1718d43b4c519"
+        },
+        "target": {
+          "path": "src/blinker/base.py",
+          "start_line": 483,
+          "end_line": 483,
+          "symbol": "Namespace",
+          "sha256": "4290eebd75dcc09178f65501707e418924f8e91cfdc121bb556fe9ecdff4dbb3",
+          "span_sha256": "b87257418bff3ba8403cbc7432d70d155f732067baad7a5f786ff51d1576a40e"
+        }
+      },
+      "expected": {
+        "relation": "IMPORTS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The relative import and local Namespace declaration were read; this asserts the import binding only."
+    },
+    {
+      "id": "blinker-__init__-import-Signal",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/blinker",
+      "revision": "c3364059663df1ddce32799d6b1922af89a345f6",
+      "split": "heldout",
+      "category": "import",
+      "question": "Where is Signal, imported by __init__.py:7, declared?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets-eco/blinker.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/blinker/__init__.py",
+          "start_line": 7,
+          "end_line": 7,
+          "symbol": "Signal",
+          "sha256": "23611d66aa72e0bca35f5ec79f5cb32465828de2da55a3f3b0c80790b7e3fdc4",
+          "span_sha256": "f943a142056b87d47399615278877df83e9552774a7018a9a75ec84588e661ec"
+        },
+        "site": {
+          "path": "src/blinker/__init__.py",
+          "start_line": 7,
+          "end_line": 7,
+          "symbol": "Signal",
+          "sha256": "23611d66aa72e0bca35f5ec79f5cb32465828de2da55a3f3b0c80790b7e3fdc4",
+          "span_sha256": "f943a142056b87d47399615278877df83e9552774a7018a9a75ec84588e661ec"
+        },
+        "target": {
+          "path": "src/blinker/base.py",
+          "start_line": 24,
+          "end_line": 24,
+          "symbol": "Signal",
+          "sha256": "4290eebd75dcc09178f65501707e418924f8e91cfdc121bb556fe9ecdff4dbb3",
+          "span_sha256": "38fe8304f1cb36f884216f97a33c1cd74ec80558881b8a0916f1933eae604b7b"
+        }
+      },
+      "expected": {
+        "relation": "IMPORTS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The relative import and local Signal declaration were read; this asserts the import binding only."
+    },
+    {
+      "id": "blinker-receiver_connected-Signal",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/blinker",
+      "revision": "c3364059663df1ddce32799d6b1922af89a345f6",
+      "split": "heldout",
+      "category": "call",
+      "question": "Which local Signal declaration does receiver_connected invoke at line 50?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets-eco/blinker.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/blinker/base.py",
+          "start_line": 42,
+          "end_line": 50,
+          "symbol": "receiver_connected",
+          "sha256": "4290eebd75dcc09178f65501707e418924f8e91cfdc121bb556fe9ecdff4dbb3",
+          "span_sha256": "86521ca9fb8d18b734cd38f041d5f0de37a5aec0c5196fa2d79278ec8bc8443f"
+        },
+        "site": {
+          "path": "src/blinker/base.py",
+          "start_line": 50,
+          "end_line": 50,
+          "symbol": "Signal",
+          "sha256": "4290eebd75dcc09178f65501707e418924f8e91cfdc121bb556fe9ecdff4dbb3",
+          "span_sha256": "e431cb45b288013d1e38e439ced8ad2e14cef59aad0f0f1ea8f75b3422a47c07"
+        },
+        "target": {
+          "path": "src/blinker/base.py",
+          "start_line": 24,
+          "end_line": 24,
+          "symbol": "Signal",
+          "sha256": "4290eebd75dcc09178f65501707e418924f8e91cfdc121bb556fe9ecdff4dbb3",
+          "span_sha256": "38fe8304f1cb36f884216f97a33c1cd74ec80558881b8a0916f1933eae604b7b"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The cached property explicitly constructs a Signal. The binding is explicit; no dynamic self-method is promoted to a definitive call."
+    },
+    {
+      "id": "blinker-receiver_disconnected-Signal",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/blinker",
+      "revision": "c3364059663df1ddce32799d6b1922af89a345f6",
+      "split": "heldout",
+      "category": "call",
+      "question": "Which local Signal declaration does receiver_disconnected invoke at line 71?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets-eco/blinker.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/blinker/base.py",
+          "start_line": 53,
+          "end_line": 71,
+          "symbol": "receiver_disconnected",
+          "sha256": "4290eebd75dcc09178f65501707e418924f8e91cfdc121bb556fe9ecdff4dbb3",
+          "span_sha256": "c8c7f62b5ecb50d1e87da25c47cf54e6c59631f147765e9930ad0dd318455350"
+        },
+        "site": {
+          "path": "src/blinker/base.py",
+          "start_line": 71,
+          "end_line": 71,
+          "symbol": "Signal",
+          "sha256": "4290eebd75dcc09178f65501707e418924f8e91cfdc121bb556fe9ecdff4dbb3",
+          "span_sha256": "21aa74e458a15a7d0268433d5bf6c7f35de3c9c159738cbf94b193a7e5eb9b9a"
+        },
+        "target": {
+          "path": "src/blinker/base.py",
+          "start_line": 24,
+          "end_line": 24,
+          "symbol": "Signal",
+          "sha256": "4290eebd75dcc09178f65501707e418924f8e91cfdc121bb556fe9ecdff4dbb3",
+          "span_sha256": "38fe8304f1cb36f884216f97a33c1cd74ec80558881b8a0916f1933eae604b7b"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The disconnect-notification property explicitly constructs a Signal. The binding is explicit; no dynamic self-method is promoted to a definitive call."
+    },
+    {
+      "id": "blinker-connect-make_id",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/blinker",
+      "revision": "c3364059663df1ddce32799d6b1922af89a345f6",
+      "split": "heldout",
+      "category": "call",
+      "question": "Which local make_id declaration does connect invoke at line 107?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets-eco/blinker.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/blinker/base.py",
+          "start_line": 91,
+          "end_line": 139,
+          "symbol": "connect",
+          "sha256": "4290eebd75dcc09178f65501707e418924f8e91cfdc121bb556fe9ecdff4dbb3",
+          "span_sha256": "483737d5e0e4d182c4dc71de12a138449dbd7a1a8ed1882c51c59e5fd0ae1b67"
+        },
+        "site": {
+          "path": "src/blinker/base.py",
+          "start_line": 107,
+          "end_line": 107,
+          "symbol": "make_id",
+          "sha256": "4290eebd75dcc09178f65501707e418924f8e91cfdc121bb556fe9ecdff4dbb3",
+          "span_sha256": "a6c2aca667433696cc5e272b32efbdd4bfb31c5353e58dd7828a8aa1450fc4f9"
+        },
+        "target": {
+          "path": "src/blinker/_utilities.py",
+          "start_line": 42,
+          "end_line": 57,
+          "symbol": "make_id",
+          "sha256": "d09ede7975d3531d08bdff1ab1fa71d32715929d04a9faa78f5d7bc769985fd1",
+          "span_sha256": "d85e104d9daeacaaa7d3394a7a44952a9b2d18e263ebd9f57afcb35ba870e062"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Computes the stable receiver identifier through an imported function. The binding is explicit; no dynamic self-method is promoted to a definitive call."
+    },
+    {
+      "id": "blinker-connect-make_ref",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/blinker",
+      "revision": "c3364059663df1ddce32799d6b1922af89a345f6",
+      "split": "heldout",
+      "category": "call",
+      "question": "Which local make_ref declaration does connect invoke at line 111?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets-eco/blinker.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/blinker/base.py",
+          "start_line": 91,
+          "end_line": 139,
+          "symbol": "connect",
+          "sha256": "4290eebd75dcc09178f65501707e418924f8e91cfdc121bb556fe9ecdff4dbb3",
+          "span_sha256": "483737d5e0e4d182c4dc71de12a138449dbd7a1a8ed1882c51c59e5fd0ae1b67"
+        },
+        "site": {
+          "path": "src/blinker/base.py",
+          "start_line": 111,
+          "end_line": 111,
+          "symbol": "make_ref",
+          "sha256": "4290eebd75dcc09178f65501707e418924f8e91cfdc121bb556fe9ecdff4dbb3",
+          "span_sha256": "4b716dfccb0599318327482137eaf269834ff37db31bdcdff0b4a3739680d197"
+        },
+        "target": {
+          "path": "src/blinker/_utilities.py",
+          "start_line": 60,
+          "end_line": 64,
+          "symbol": "make_ref",
+          "sha256": "d09ede7975d3531d08bdff1ab1fa71d32715929d04a9faa78f5d7bc769985fd1",
+          "span_sha256": "ee758065aca1f7c5636f3cba2ea602f8c63428405ddcd31b3575a345e0298210"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Weak connections call the imported reference factory. The binding is explicit; no dynamic self-method is promoted to a definitive call."
+    },
+    {
+      "id": "blinker-has_receivers_for-make_id",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/blinker",
+      "revision": "c3364059663df1ddce32799d6b1922af89a345f6",
+      "split": "heldout",
+      "category": "call",
+      "question": "Which local make_id declaration does has_receivers_for invoke at line 324?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets-eco/blinker.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/blinker/base.py",
+          "start_line": 305,
+          "end_line": 324,
+          "symbol": "has_receivers_for",
+          "sha256": "4290eebd75dcc09178f65501707e418924f8e91cfdc121bb556fe9ecdff4dbb3",
+          "span_sha256": "eb6b15b91100afac41bac8d2cd8c76d36e49e4db3b5a90732abc6cfd1f72357e"
+        },
+        "site": {
+          "path": "src/blinker/base.py",
+          "start_line": 324,
+          "end_line": 324,
+          "symbol": "make_id",
+          "sha256": "4290eebd75dcc09178f65501707e418924f8e91cfdc121bb556fe9ecdff4dbb3",
+          "span_sha256": "7271c533cbe25135a9327f0e9f4d5f8876cbea7736b38dda1ba9e8d8f9607cbb"
+        },
+        "target": {
+          "path": "src/blinker/_utilities.py",
+          "start_line": 42,
+          "end_line": 57,
+          "symbol": "make_id",
+          "sha256": "d09ede7975d3531d08bdff1ab1fa71d32715929d04a9faa78f5d7bc769985fd1",
+          "span_sha256": "d85e104d9daeacaaa7d3394a7a44952a9b2d18e263ebd9f57afcb35ba870e062"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The sender lookup calls the stable identifier helper. The binding is explicit; no dynamic self-method is promoted to a definitive call.",
+      "negative": {
+        "kind": "identifier_absent",
+        "symbol": "make_ref",
+        "scope": "source",
+        "rationale": "Direct read of the complete source span confirms this alternative identifier is absent; this is bounded lexical evidence only."
+      }
+    },
+    {
+      "id": "blinker-receivers_for-make_id",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/blinker",
+      "revision": "c3364059663df1ddce32799d6b1922af89a345f6",
+      "split": "heldout",
+      "category": "call",
+      "question": "Which local make_id declaration does receivers_for invoke at line 340?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets-eco/blinker.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/blinker/base.py",
+          "start_line": 326,
+          "end_line": 362,
+          "symbol": "receivers_for",
+          "sha256": "4290eebd75dcc09178f65501707e418924f8e91cfdc121bb556fe9ecdff4dbb3",
+          "span_sha256": "8e8dc8810c01283e3cd58910188bee037f801dffa18cc3b9ed24788ee23d4e19"
+        },
+        "site": {
+          "path": "src/blinker/base.py",
+          "start_line": 340,
+          "end_line": 340,
+          "symbol": "make_id",
+          "sha256": "4290eebd75dcc09178f65501707e418924f8e91cfdc121bb556fe9ecdff4dbb3",
+          "span_sha256": "8d575a7190d13be2c9198254ce920467ef7a553e026b533f35d54732c2d1c638"
+        },
+        "target": {
+          "path": "src/blinker/_utilities.py",
+          "start_line": 42,
+          "end_line": 57,
+          "symbol": "make_id",
+          "sha256": "d09ede7975d3531d08bdff1ab1fa71d32715929d04a9faa78f5d7bc769985fd1",
+          "span_sha256": "d85e104d9daeacaaa7d3394a7a44952a9b2d18e263ebd9f57afcb35ba870e062"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Receiver iteration identifies the sender with the imported helper. The binding is explicit; no dynamic self-method is promoted to a definitive call.",
+      "negative": {
+        "kind": "identifier_absent",
+        "symbol": "make_ref",
+        "scope": "source",
+        "rationale": "Direct read of the complete source span confirms this alternative identifier is absent; this is bounded lexical evidence only."
+      }
+    },
+    {
+      "id": "blinker-disconnect-make_id",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/blinker",
+      "revision": "c3364059663df1ddce32799d6b1922af89a345f6",
+      "split": "heldout",
+      "category": "call",
+      "question": "Which local make_id declaration does disconnect invoke at line 377?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets-eco/blinker.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/blinker/base.py",
+          "start_line": 364,
+          "end_line": 386,
+          "symbol": "disconnect",
+          "sha256": "4290eebd75dcc09178f65501707e418924f8e91cfdc121bb556fe9ecdff4dbb3",
+          "span_sha256": "4a01cc83b35db30e0481b54a1172c3473ef7b89ffc819d8fe96838854e53108f"
+        },
+        "site": {
+          "path": "src/blinker/base.py",
+          "start_line": 377,
+          "end_line": 377,
+          "symbol": "make_id",
+          "sha256": "4290eebd75dcc09178f65501707e418924f8e91cfdc121bb556fe9ecdff4dbb3",
+          "span_sha256": "e95e386115261ee1ccb32d4c17da0c118dea8e36e609bd8d7eff3a442ee63008"
+        },
+        "target": {
+          "path": "src/blinker/_utilities.py",
+          "start_line": 42,
+          "end_line": 57,
+          "symbol": "make_id",
+          "sha256": "d09ede7975d3531d08bdff1ab1fa71d32715929d04a9faa78f5d7bc769985fd1",
+          "span_sha256": "d85e104d9daeacaaa7d3394a7a44952a9b2d18e263ebd9f57afcb35ba870e062"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The concrete sender branch calls the imported identifier helper. The binding is explicit; no dynamic self-method is promoted to a definitive call."
+    },
+    {
+      "id": "blinker-signal-NamedSignal",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/blinker",
+      "revision": "c3364059663df1ddce32799d6b1922af89a345f6",
+      "split": "heldout",
+      "category": "call",
+      "question": "Which local NamedSignal declaration does signal invoke at line 494?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets-eco/blinker.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/blinker/base.py",
+          "start_line": 486,
+          "end_line": 496,
+          "symbol": "signal",
+          "sha256": "4290eebd75dcc09178f65501707e418924f8e91cfdc121bb556fe9ecdff4dbb3",
+          "span_sha256": "7c7574ab911ea078a3baecb07b65c7beb33b8ac412ab6f17e1f639ddd1d25ea5"
+        },
+        "site": {
+          "path": "src/blinker/base.py",
+          "start_line": 494,
+          "end_line": 494,
+          "symbol": "NamedSignal",
+          "sha256": "4290eebd75dcc09178f65501707e418924f8e91cfdc121bb556fe9ecdff4dbb3",
+          "span_sha256": "d548b518ae2de31afcce7770f192101a4761bed94501d7fe461abb1390175487"
+        },
+        "target": {
+          "path": "src/blinker/base.py",
+          "start_line": 464,
+          "end_line": 464,
+          "symbol": "NamedSignal",
+          "sha256": "4290eebd75dcc09178f65501707e418924f8e91cfdc121bb556fe9ecdff4dbb3",
+          "span_sha256": "55865d4ac5e4c2794d19bd0ae14c563e8afdc501c69ae56923d71782bf06e59e"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The namespace creates a NamedSignal only when its name is absent. The binding is explicit; no dynamic self-method is promoted to a definitive call."
+    },
+    {
+      "id": "blinker-send-unresolved-receiver",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/blinker",
+      "revision": "c3364059663df1ddce32799d6b1922af89a345f6",
+      "split": "heldout",
+      "category": "ambiguous",
+      "question": "Is there a unique source-proven target for receiver in send at line 249?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets-eco/blinker.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/blinker/base.py",
+          "start_line": 204,
+          "end_line": 253,
+          "symbol": "send",
+          "sha256": "4290eebd75dcc09178f65501707e418924f8e91cfdc121bb556fe9ecdff4dbb3",
+          "span_sha256": "bdb20e622a851e12c277749cdfbc75c074924f3c7c981202b41f52c7721d9238"
+        },
+        "site": {
+          "path": "src/blinker/base.py",
+          "start_line": 249,
+          "end_line": 249,
+          "symbol": "receiver",
+          "sha256": "4290eebd75dcc09178f65501707e418924f8e91cfdc121bb556fe9ecdff4dbb3",
+          "span_sha256": "c50faef6dea042c1579668a8eee07ffaefd8be06fa874c648c13a7640fb6a665"
+        }
+      },
+      "expected": {
+        "relation": "UNRESOLVED",
+        "source": "source",
+        "target": null,
+        "site": "site"
+      },
+      "rationale": "receiver is supplied through the connection registry and can be any connected callable. Keep UNRESOLVED and target=null; do not guess from a callable annotation."
+    },
+    {
+      "id": "blinker-send-unresolved-_async_wrapper",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/blinker",
+      "revision": "c3364059663df1ddce32799d6b1922af89a345f6",
+      "split": "heldout",
+      "category": "ambiguous",
+      "question": "Is there a unique source-proven target for _async_wrapper in send at line 247?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets-eco/blinker.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/blinker/base.py",
+          "start_line": 204,
+          "end_line": 253,
+          "symbol": "send",
+          "sha256": "4290eebd75dcc09178f65501707e418924f8e91cfdc121bb556fe9ecdff4dbb3",
+          "span_sha256": "bdb20e622a851e12c277749cdfbc75c074924f3c7c981202b41f52c7721d9238"
+        },
+        "site": {
+          "path": "src/blinker/base.py",
+          "start_line": 247,
+          "end_line": 247,
+          "symbol": "_async_wrapper",
+          "sha256": "4290eebd75dcc09178f65501707e418924f8e91cfdc121bb556fe9ecdff4dbb3",
+          "span_sha256": "cd61d7f0f834d1d2f2e2fcab5806dcf5db408ddc38d3484ba7d11a92d683b2ea"
+        }
+      },
+      "expected": {
+        "relation": "UNRESOLVED",
+        "source": "source",
+        "target": null,
+        "site": "site"
+      },
+      "rationale": "The wrapper is a caller-supplied callable; neither the wrapper nor its returned callable has an exact declaration here. Keep UNRESOLVED and target=null; do not guess from a callable annotation."
+    },
+    {
+      "id": "blinker-send_async-unresolved-receiver",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/blinker",
+      "revision": "c3364059663df1ddce32799d6b1922af89a345f6",
+      "split": "heldout",
+      "category": "ambiguous",
+      "question": "Is there a unique source-proven target for receiver in send_async at line 299?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets-eco/blinker.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/blinker/base.py",
+          "start_line": 255,
+          "end_line": 303,
+          "symbol": "send_async",
+          "sha256": "4290eebd75dcc09178f65501707e418924f8e91cfdc121bb556fe9ecdff4dbb3",
+          "span_sha256": "2c696fffad5a2d1163e13178d91235136b299611778dbf1671402844a1de252f"
+        },
+        "site": {
+          "path": "src/blinker/base.py",
+          "start_line": 299,
+          "end_line": 299,
+          "symbol": "receiver",
+          "sha256": "4290eebd75dcc09178f65501707e418924f8e91cfdc121bb556fe9ecdff4dbb3",
+          "span_sha256": "d2d43b3a6bfa36cedf2c9994cbafed91e6f3f8c1a3a44a040b875b820f14a326"
+        }
+      },
+      "expected": {
+        "relation": "UNRESOLVED",
+        "source": "source",
+        "target": null,
+        "site": "site"
+      },
+      "rationale": "The awaited receiver is selected from the connection registry, not a fixed coroutine declaration. Keep UNRESOLVED and target=null; do not guess from a callable annotation."
+    },
+    {
+      "id": "blinker-send_async-unresolved-_sync_wrapper",
+      "repo": "/Volumes/D/Projects/cgrx-move-evidence/NEXT/corpus/fixtures/blinker",
+      "revision": "c3364059663df1ddce32799d6b1922af89a345f6",
+      "split": "heldout",
+      "category": "ambiguous",
+      "question": "Is there a unique source-proven target for _sync_wrapper in send_async at line 297?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05",
+        "repository_url": "https://github.com/pallets-eco/blinker.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "src/blinker/base.py",
+          "start_line": 255,
+          "end_line": 303,
+          "symbol": "send_async",
+          "sha256": "4290eebd75dcc09178f65501707e418924f8e91cfdc121bb556fe9ecdff4dbb3",
+          "span_sha256": "2c696fffad5a2d1163e13178d91235136b299611778dbf1671402844a1de252f"
+        },
+        "site": {
+          "path": "src/blinker/base.py",
+          "start_line": 297,
+          "end_line": 297,
+          "symbol": "_sync_wrapper",
+          "sha256": "4290eebd75dcc09178f65501707e418924f8e91cfdc121bb556fe9ecdff4dbb3",
+          "span_sha256": "76e9a970d66705d0a5aad5e556e9a25812caaf9609773afbe2248b4ee5a86952"
+        }
+      },
+      "expected": {
+        "relation": "UNRESOLVED",
+        "source": "source",
+        "target": null,
+        "site": "site"
+      },
+      "rationale": "The synchronous-to-async adapter is a parameter with arbitrary implementation. Keep UNRESOLVED and target=null; do not guess from a callable annotation."
+    },
+    {
+      "id": "gd-main-NotificationOutboxStatus-schema",
+      "repo": "/Volumes/D/Projects/gd-main",
+      "revision": "9d77eb9b8feea3c9063240eeefdacdd1b4b83bc0",
+      "split": "train",
+      "category": "reference",
+      "question": "Which local schema is referenced by the NotificationOutboxStatus type alias?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05"
+      },
+      "evidence": {
+        "source": {
+          "path": "packages/notifications-core/src/contracts.ts",
+          "start_line": 21,
+          "end_line": 23,
+          "symbol": "NotificationOutboxStatus",
+          "sha256": "9cbac6eb1f0c67e37192e3fdfb5f3cbb4c7a0995e7b9cabcff0486c449864a06",
+          "span_sha256": "b234961783499fab181958824758668f720f79cb9e4017b5cdc30a2a5b0b7bac"
+        },
+        "site": {
+          "path": "packages/notifications-core/src/contracts.ts",
+          "start_line": 22,
+          "end_line": 22,
+          "symbol": "notificationOutboxStatusSchema",
+          "sha256": "9cbac6eb1f0c67e37192e3fdfb5f3cbb4c7a0995e7b9cabcff0486c449864a06",
+          "span_sha256": "2004353204a93c9755f7634c403a750f0508195a9b6156616f6062f1258eb915"
+        },
+        "target": {
+          "path": "packages/notifications-core/src/contracts.ts",
+          "start_line": 13,
+          "end_line": 19,
+          "symbol": "notificationOutboxStatusSchema",
+          "sha256": "9cbac6eb1f0c67e37192e3fdfb5f3cbb4c7a0995e7b9cabcff0486c449864a06",
+          "span_sha256": "2099e215bc0a981cca629ec08c4788260d5c579a2b22b78b95cb6df99b00d096"
+        }
+      },
+      "expected": {
+        "relation": "REFERENCE",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The alias uses typeof notificationOutboxStatusSchema in z.infer; the named constant is declared in the same file. This is a type reference, not a Zod method call.",
+      "negative": {
+        "kind": "identifier_absent",
+        "symbol": "notificationChannelSchema",
+        "scope": "source",
+        "rationale": "This distractor identifier is absent from the exact source span, including comments; no repository-wide or runtime non-call claim."
+      }
+    },
+    {
+      "id": "gd-main-CoreNotificationType-schema",
+      "repo": "/Volumes/D/Projects/gd-main",
+      "revision": "9d77eb9b8feea3c9063240eeefdacdd1b4b83bc0",
+      "split": "train",
+      "category": "reference",
+      "question": "Which local schema is referenced by the CoreNotificationType type alias?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05"
+      },
+      "evidence": {
+        "source": {
+          "path": "packages/notifications-core/src/contracts.ts",
+          "start_line": 32,
+          "end_line": 32,
+          "symbol": "CoreNotificationType",
+          "sha256": "9cbac6eb1f0c67e37192e3fdfb5f3cbb4c7a0995e7b9cabcff0486c449864a06",
+          "span_sha256": "49af1748307101ebf07d78fab3252feabf10d8acebda8cdf85b045eceab57ad7"
+        },
+        "site": {
+          "path": "packages/notifications-core/src/contracts.ts",
+          "start_line": 32,
+          "end_line": 32,
+          "symbol": "notificationTypeSchema",
+          "sha256": "9cbac6eb1f0c67e37192e3fdfb5f3cbb4c7a0995e7b9cabcff0486c449864a06",
+          "span_sha256": "49af1748307101ebf07d78fab3252feabf10d8acebda8cdf85b045eceab57ad7"
+        },
+        "target": {
+          "path": "packages/notifications-core/src/contracts.ts",
+          "start_line": 25,
+          "end_line": 30,
+          "symbol": "notificationTypeSchema",
+          "sha256": "9cbac6eb1f0c67e37192e3fdfb5f3cbb4c7a0995e7b9cabcff0486c449864a06",
+          "span_sha256": "1c0ee049792a913e4068d1aea89e4ac14f17a54767c8119f67c1417f2e900579"
+        }
+      },
+      "expected": {
+        "relation": "REFERENCE",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The alias uses typeof notificationTypeSchema in z.infer; the named constant is declared in the same file. This is a type reference, not a Zod method call.",
+      "negative": {
+        "kind": "identifier_absent",
+        "symbol": "notificationCategorySchema",
+        "scope": "source",
+        "rationale": "This distractor identifier is absent from the exact source span, including comments; no repository-wide or runtime non-call claim."
+      }
+    },
+    {
+      "id": "gd-main-CoreNotificationCategory-schema",
+      "repo": "/Volumes/D/Projects/gd-main",
+      "revision": "9d77eb9b8feea3c9063240eeefdacdd1b4b83bc0",
+      "split": "train",
+      "category": "reference",
+      "question": "Which local schema is referenced by the CoreNotificationCategory type alias?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05"
+      },
+      "evidence": {
+        "source": {
+          "path": "packages/notifications-core/src/contracts.ts",
+          "start_line": 41,
+          "end_line": 43,
+          "symbol": "CoreNotificationCategory",
+          "sha256": "9cbac6eb1f0c67e37192e3fdfb5f3cbb4c7a0995e7b9cabcff0486c449864a06",
+          "span_sha256": "d5000353241f6cf1f27d4872f78237c749885c617512fd4febd967aa6f903770"
+        },
+        "site": {
+          "path": "packages/notifications-core/src/contracts.ts",
+          "start_line": 42,
+          "end_line": 42,
+          "symbol": "notificationCategorySchema",
+          "sha256": "9cbac6eb1f0c67e37192e3fdfb5f3cbb4c7a0995e7b9cabcff0486c449864a06",
+          "span_sha256": "9fc7fefc1c79b3bca30c118e4c432b593cc743cc83329230f059e3be4616af5c"
+        },
+        "target": {
+          "path": "packages/notifications-core/src/contracts.ts",
+          "start_line": 34,
+          "end_line": 39,
+          "symbol": "notificationCategorySchema",
+          "sha256": "9cbac6eb1f0c67e37192e3fdfb5f3cbb4c7a0995e7b9cabcff0486c449864a06",
+          "span_sha256": "fe918c905853e31d232198ddf5510c0182eda847401d56d291eba369f9d94b80"
+        }
+      },
+      "expected": {
+        "relation": "REFERENCE",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The alias uses typeof notificationCategorySchema in z.infer; the named constant is declared in the same file. This is a type reference, not a Zod method call.",
+      "negative": {
+        "kind": "identifier_absent",
+        "symbol": "notificationTypeSchema",
+        "scope": "source",
+        "rationale": "This distractor identifier is absent from the exact source span, including comments; no repository-wide or runtime non-call claim."
+      }
+    },
+    {
+      "id": "gd-main-NotificationDeliveryResult-schema",
+      "repo": "/Volumes/D/Projects/gd-main",
+      "revision": "9d77eb9b8feea3c9063240eeefdacdd1b4b83bc0",
+      "split": "train",
+      "category": "reference",
+      "question": "Which local schema is referenced by the NotificationDeliveryResult type alias?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05"
+      },
+      "evidence": {
+        "source": {
+          "path": "packages/notifications-core/src/contracts.ts",
+          "start_line": 84,
+          "end_line": 86,
+          "symbol": "NotificationDeliveryResult",
+          "sha256": "9cbac6eb1f0c67e37192e3fdfb5f3cbb4c7a0995e7b9cabcff0486c449864a06",
+          "span_sha256": "5616abbf41e9b35e871c70a3b12aa37325dc69b2d8444f8749cc266c2f500580"
+        },
+        "site": {
+          "path": "packages/notifications-core/src/contracts.ts",
+          "start_line": 85,
+          "end_line": 85,
+          "symbol": "notificationDeliveryResultSchema",
+          "sha256": "9cbac6eb1f0c67e37192e3fdfb5f3cbb4c7a0995e7b9cabcff0486c449864a06",
+          "span_sha256": "ce878b56a883ea33485c90468e68dc40d1f6880496865861beb0b5baba564c2d"
+        },
+        "target": {
+          "path": "packages/notifications-core/src/contracts.ts",
+          "start_line": 77,
+          "end_line": 82,
+          "symbol": "notificationDeliveryResultSchema",
+          "sha256": "9cbac6eb1f0c67e37192e3fdfb5f3cbb4c7a0995e7b9cabcff0486c449864a06",
+          "span_sha256": "a8cb8dde48b4760bc07005fe7a40faf7c7e14d4e5fbc83805ca6fb080be04c78"
+        }
+      },
+      "expected": {
+        "relation": "REFERENCE",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The alias uses typeof notificationDeliveryResultSchema in z.infer; the named constant is declared in the same file. This is a type reference, not a Zod method call.",
+      "negative": {
+        "kind": "identifier_absent",
+        "symbol": "notificationEnvelopeSchema",
+        "scope": "source",
+        "rationale": "This distractor identifier is absent from the exact source span, including comments; no repository-wide or runtime non-call claim."
+      }
+    },
+    {
+      "id": "vpn-main-TestListTrimsEmptyValues-helper",
+      "repo": "/Volumes/D/Projects/vpn-main",
+      "revision": "da5cd1a21f8f4650798cc19c92ff8790b324e6d3",
+      "split": "train",
+      "category": "call",
+      "question": "Which package helper does TestListTrimsEmptyValues invoke at line 11?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05"
+      },
+      "evidence": {
+        "source": {
+          "path": "internal/envutil/envutil_test.go",
+          "start_line": 8,
+          "end_line": 15,
+          "symbol": "TestListTrimsEmptyValues",
+          "sha256": "85fb694a4cf5758ca807ace04c45d33dd8c377fb3ce36b95e7d6337966cd11ff",
+          "span_sha256": "05959db3b9bf7921ca7d527104fe6f1eda5cf915e7608bb4de68a9575140c711"
+        },
+        "site": {
+          "path": "internal/envutil/envutil_test.go",
+          "start_line": 11,
+          "end_line": 11,
+          "symbol": "List",
+          "sha256": "85fb694a4cf5758ca807ace04c45d33dd8c377fb3ce36b95e7d6337966cd11ff",
+          "span_sha256": "37c7bb17c20c7acc1d172507b5dcc8714e97ef602f574068b7e425905c5c8cf8"
+        },
+        "target": {
+          "path": "internal/envutil/envutil.go",
+          "start_line": 46,
+          "end_line": 60,
+          "symbol": "List",
+          "sha256": "ca46cd9169634c45cccf6904c07897498125e0f39b269ac978cadf68773afe02",
+          "span_sha256": "090dc7e1df2b81302d6a08b813dbea778613bdbe2552aad7eeb47ba4b82698bb"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Both files declare package envutil. The test invokes List directly without a local shadow; repeated invocations in the same test are not additional tasks.",
+      "negative": {
+        "kind": "identifier_absent",
+        "symbol": "SplitList",
+        "scope": "source",
+        "rationale": "This distractor identifier is absent from the exact source span, including comments; no repository-wide or runtime non-call claim."
+      }
+    },
+    {
+      "id": "vpn-main-TestFirstNonEmpty-helper",
+      "repo": "/Volumes/D/Projects/vpn-main",
+      "revision": "da5cd1a21f8f4650798cc19c92ff8790b324e6d3",
+      "split": "train",
+      "category": "call",
+      "question": "Which package helper does TestFirstNonEmpty invoke at line 62?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05"
+      },
+      "evidence": {
+        "source": {
+          "path": "internal/envutil/envutil_test.go",
+          "start_line": 61,
+          "end_line": 65,
+          "symbol": "TestFirstNonEmpty",
+          "sha256": "85fb694a4cf5758ca807ace04c45d33dd8c377fb3ce36b95e7d6337966cd11ff",
+          "span_sha256": "a1da675c9693e83d74febae3043604447b1758ee6a1b2d9a03d2947283385d30"
+        },
+        "site": {
+          "path": "internal/envutil/envutil_test.go",
+          "start_line": 62,
+          "end_line": 62,
+          "symbol": "FirstNonEmpty",
+          "sha256": "85fb694a4cf5758ca807ace04c45d33dd8c377fb3ce36b95e7d6337966cd11ff",
+          "span_sha256": "0b2e83e040d3671112025bd6194e596f07344b851cc1803e1e2c7df461876279"
+        },
+        "target": {
+          "path": "internal/envutil/envutil.go",
+          "start_line": 86,
+          "end_line": 94,
+          "symbol": "FirstNonEmpty",
+          "sha256": "ca46cd9169634c45cccf6904c07897498125e0f39b269ac978cadf68773afe02",
+          "span_sha256": "3175a1abb79c4c1bbae334c30a5cb9812922b359f04fbf085c401d9526163eeb"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Both files declare package envutil. The test invokes FirstNonEmpty directly without a local shadow; repeated invocations in the same test are not additional tasks.",
+      "negative": {
+        "kind": "identifier_absent",
+        "symbol": "UniqueNonEmpty",
+        "scope": "source",
+        "rationale": "This distractor identifier is absent from the exact source span, including comments; no repository-wide or runtime non-call claim."
+      }
+    },
+    {
+      "id": "vpn-main-TestSplitListTrimsAndDropsEmpty-helper",
+      "repo": "/Volumes/D/Projects/vpn-main",
+      "revision": "da5cd1a21f8f4650798cc19c92ff8790b324e6d3",
+      "split": "train",
+      "category": "call",
+      "question": "Which package helper does TestSplitListTrimsAndDropsEmpty invoke at line 68?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05"
+      },
+      "evidence": {
+        "source": {
+          "path": "internal/envutil/envutil_test.go",
+          "start_line": 67,
+          "end_line": 76,
+          "symbol": "TestSplitListTrimsAndDropsEmpty",
+          "sha256": "85fb694a4cf5758ca807ace04c45d33dd8c377fb3ce36b95e7d6337966cd11ff",
+          "span_sha256": "9263a5f840301cff7a04a92e273aa1c864d3d132f30a9b976189a9950f52a165"
+        },
+        "site": {
+          "path": "internal/envutil/envutil_test.go",
+          "start_line": 68,
+          "end_line": 68,
+          "symbol": "SplitList",
+          "sha256": "85fb694a4cf5758ca807ace04c45d33dd8c377fb3ce36b95e7d6337966cd11ff",
+          "span_sha256": "67f4deaa07cd26bd894f710e5daf125e32a64d757dc3cc6c7f7fb72ca8828fae"
+        },
+        "target": {
+          "path": "internal/envutil/envutil.go",
+          "start_line": 62,
+          "end_line": 72,
+          "symbol": "SplitList",
+          "sha256": "ca46cd9169634c45cccf6904c07897498125e0f39b269ac978cadf68773afe02",
+          "span_sha256": "ec849c79b622bf7c1c85b215d58adb14cb792a709745f2edc42efc0cbbaa548a"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Both files declare package envutil. The test invokes SplitList directly without a local shadow; repeated invocations in the same test are not additional tasks.",
+      "negative": {
+        "kind": "identifier_absent",
+        "symbol": "List",
+        "scope": "source",
+        "rationale": "This distractor identifier is absent from the exact source span, including comments; no repository-wide or runtime non-call claim."
+      }
+    },
+    {
+      "id": "vpn-main-TestUniqueNonEmpty-helper",
+      "repo": "/Volumes/D/Projects/vpn-main",
+      "revision": "da5cd1a21f8f4650798cc19c92ff8790b324e6d3",
+      "split": "train",
+      "category": "call",
+      "question": "Which package helper does TestUniqueNonEmpty invoke at line 79?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05"
+      },
+      "evidence": {
+        "source": {
+          "path": "internal/envutil/envutil_test.go",
+          "start_line": 78,
+          "end_line": 87,
+          "symbol": "TestUniqueNonEmpty",
+          "sha256": "85fb694a4cf5758ca807ace04c45d33dd8c377fb3ce36b95e7d6337966cd11ff",
+          "span_sha256": "90b3ccbf2c430a9188f25b4c3f8a0c50294646f951d8d151cf26bc0dfcdb262c"
+        },
+        "site": {
+          "path": "internal/envutil/envutil_test.go",
+          "start_line": 79,
+          "end_line": 79,
+          "symbol": "UniqueNonEmpty",
+          "sha256": "85fb694a4cf5758ca807ace04c45d33dd8c377fb3ce36b95e7d6337966cd11ff",
+          "span_sha256": "927664b0961f5b6c0eaa807fbe5e80049e61b1795eda2d178ea03a838426ef3e"
+        },
+        "target": {
+          "path": "internal/envutil/envutil.go",
+          "start_line": 96,
+          "end_line": 111,
+          "symbol": "UniqueNonEmpty",
+          "sha256": "ca46cd9169634c45cccf6904c07897498125e0f39b269ac978cadf68773afe02",
+          "span_sha256": "707edc334fe7d2066c9d69da29961069424813744c51e92dcb5ecbafda4f7aa4"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Both files declare package envutil. The test invokes UniqueNonEmpty directly without a local shadow; repeated invocations in the same test are not additional tasks.",
+      "negative": {
+        "kind": "identifier_absent",
+        "symbol": "FirstNonEmpty",
+        "scope": "source",
+        "rationale": "This distractor identifier is absent from the exact source span, including comments; no repository-wide or runtime non-call claim."
+      }
+    },
+    {
+      "id": "pyramid-agent-TestAddNode-receiver",
+      "repo": "/Volumes/D/Projects/pyramid-agent",
+      "revision": "dbca43c53d7f49bbf988813cd97720098be3ac3f",
+      "split": "heldout",
+      "category": "receiver",
+      "question": "Which concrete receiver method does TestAddNode invoke at line 19?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05"
+      },
+      "evidence": {
+        "source": {
+          "path": "backend/internal/graph/engine_test.go",
+          "start_line": 9,
+          "end_line": 25,
+          "symbol": "TestAddNode",
+          "sha256": "4fc89285b7b761cdc8b1a7f2627187f83a7e17c08a9f28b7ea8c4d73b6d55ee1",
+          "span_sha256": "e64ba1281a89f1c033a01a0781df3e4dcbf903af24b9bccc7512c83b8b244d7e"
+        },
+        "site": {
+          "path": "backend/internal/graph/engine_test.go",
+          "start_line": 19,
+          "end_line": 19,
+          "symbol": "AddNode",
+          "sha256": "4fc89285b7b761cdc8b1a7f2627187f83a7e17c08a9f28b7ea8c4d73b6d55ee1",
+          "span_sha256": "25f6db66a8ddc11fc6dd617c297e9992e6056a7ec97250d5474d696ac362b9fc"
+        },
+        "target": {
+          "path": "backend/internal/graph/engine.go",
+          "start_line": 66,
+          "end_line": 70,
+          "symbol": "AddNode",
+          "sha256": "c153a068556279c956ffce82616d6991a2f9a7941dfcd4aadc45ffd9b87bda5c",
+          "span_sha256": "7a60a3c4ab123334d86d9427741f5acd2a657f2b94b513537e9bc049f3363651"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The local engine variable is assigned NewEngine(), whose source declaration returns *Engine (engine.go lines 56-63). The call is engine.AddNode and the target has receiver *Engine. No interface or method-name-only inference is used."
+    },
+    {
+      "id": "pyramid-agent-TestAddEdge-receiver",
+      "repo": "/Volumes/D/Projects/pyramid-agent",
+      "revision": "dbca43c53d7f49bbf988813cd97720098be3ac3f",
+      "split": "heldout",
+      "category": "receiver",
+      "question": "Which concrete receiver method does TestAddEdge invoke at line 43?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05"
+      },
+      "evidence": {
+        "source": {
+          "path": "backend/internal/graph/engine_test.go",
+          "start_line": 27,
+          "end_line": 49,
+          "symbol": "TestAddEdge",
+          "sha256": "4fc89285b7b761cdc8b1a7f2627187f83a7e17c08a9f28b7ea8c4d73b6d55ee1",
+          "span_sha256": "bd10b7cf51731ee5fe88070099c3a63d73191c92f71bbff0678a0c67d3b2bd5a"
+        },
+        "site": {
+          "path": "backend/internal/graph/engine_test.go",
+          "start_line": 43,
+          "end_line": 43,
+          "symbol": "AddEdge",
+          "sha256": "4fc89285b7b761cdc8b1a7f2627187f83a7e17c08a9f28b7ea8c4d73b6d55ee1",
+          "span_sha256": "1dd4ae02e64d5bb4752ec198d08111a49a0916efe223b72be11c49c4d8991c66"
+        },
+        "target": {
+          "path": "backend/internal/graph/engine.go",
+          "start_line": 91,
+          "end_line": 106,
+          "symbol": "AddEdge",
+          "sha256": "c153a068556279c956ffce82616d6991a2f9a7941dfcd4aadc45ffd9b87bda5c",
+          "span_sha256": "13d92a3aa10fed8aca2ad747e0266bc28efd4679d023273c659b82e0b83d7426"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The local engine variable is assigned NewEngine(), whose source declaration returns *Engine (engine.go lines 56-63). The call is engine.AddEdge and the target has receiver *Engine. No interface or method-name-only inference is used."
+    },
+    {
+      "id": "pyramid-agent-TestCanExecute-receiver",
+      "repo": "/Volumes/D/Projects/pyramid-agent",
+      "revision": "dbca43c53d7f49bbf988813cd97720098be3ac3f",
+      "split": "heldout",
+      "category": "receiver",
+      "question": "Which concrete receiver method does TestCanExecute invoke at line 70?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05"
+      },
+      "evidence": {
+        "source": {
+          "path": "backend/internal/graph/engine_test.go",
+          "start_line": 51,
+          "end_line": 86,
+          "symbol": "TestCanExecute",
+          "sha256": "4fc89285b7b761cdc8b1a7f2627187f83a7e17c08a9f28b7ea8c4d73b6d55ee1",
+          "span_sha256": "8f46bc1ab0d89f5299f4fd650df91ef5a76130db107d8cf28699edc7f318b39a"
+        },
+        "site": {
+          "path": "backend/internal/graph/engine_test.go",
+          "start_line": 70,
+          "end_line": 70,
+          "symbol": "CanExecute",
+          "sha256": "4fc89285b7b761cdc8b1a7f2627187f83a7e17c08a9f28b7ea8c4d73b6d55ee1",
+          "span_sha256": "5cb52ed33ea717f3fe4927a21d1ce5ddb417b42481f0bf1794a2fc18ff07ad7b"
+        },
+        "target": {
+          "path": "backend/internal/graph/engine.go",
+          "start_line": 181,
+          "end_line": 189,
+          "symbol": "CanExecute",
+          "sha256": "c153a068556279c956ffce82616d6991a2f9a7941dfcd4aadc45ffd9b87bda5c",
+          "span_sha256": "7583fcdaf007b997d26eba0b514fad8f3ae9db2c2b7ff6cd6bbe669116ce48b9"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The local engine variable is assigned NewEngine(), whose source declaration returns *Engine (engine.go lines 56-63). The call is engine.CanExecute and the target has receiver *Engine. No interface or method-name-only inference is used."
+    },
+    {
+      "id": "pyramid-agent-TestGetDependents-receiver",
+      "repo": "/Volumes/D/Projects/pyramid-agent",
+      "revision": "dbca43c53d7f49bbf988813cd97720098be3ac3f",
+      "split": "heldout",
+      "category": "receiver",
+      "question": "Which concrete receiver method does TestGetDependents invoke at line 103?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05"
+      },
+      "evidence": {
+        "source": {
+          "path": "backend/internal/graph/engine_test.go",
+          "start_line": 88,
+          "end_line": 107,
+          "symbol": "TestGetDependents",
+          "sha256": "4fc89285b7b761cdc8b1a7f2627187f83a7e17c08a9f28b7ea8c4d73b6d55ee1",
+          "span_sha256": "d478a840444f71f92a2554e700820749bb9239095f1cb8c61698bd75eab35b1e"
+        },
+        "site": {
+          "path": "backend/internal/graph/engine_test.go",
+          "start_line": 103,
+          "end_line": 103,
+          "symbol": "GetDependents",
+          "sha256": "4fc89285b7b761cdc8b1a7f2627187f83a7e17c08a9f28b7ea8c4d73b6d55ee1",
+          "span_sha256": "7e290da789e77cf5b2138c98760345417442e1368c2dc9ac46563c646ccaf151"
+        },
+        "target": {
+          "path": "backend/internal/graph/engine.go",
+          "start_line": 147,
+          "end_line": 161,
+          "symbol": "GetDependents",
+          "sha256": "c153a068556279c956ffce82616d6991a2f9a7941dfcd4aadc45ffd9b87bda5c",
+          "span_sha256": "8265089541de69c33046ac9205b18e8ca00ef1b3eb1838e671b837ec6c6ee2f7"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The local engine variable is assigned NewEngine(), whose source declaration returns *Engine (engine.go lines 56-63). The call is engine.GetDependents and the target has receiver *Engine. No interface or method-name-only inference is used."
     }
   ]
 }
