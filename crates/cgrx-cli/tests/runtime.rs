@@ -3284,3 +3284,79 @@ fn rust_nested_alias_rejects_unproven_paths() {
         );
     }
 }
+
+#[test]
+fn refresh_does_not_rewrite_git_index_for_metadata_only_changes() {
+    assert_refresh_preserves_git_index(false);
+}
+
+#[test]
+fn refresh_does_not_rewrite_linked_worktree_git_index() {
+    assert_refresh_preserves_git_index(true);
+}
+
+fn assert_refresh_preserves_git_index(linked: bool) {
+    let primary = fixture_repository();
+    let worktree = TestDirectory::new("readonly-refresh-linked");
+    let repository = if linked {
+        git(
+            primary.path(),
+            &[
+                "worktree",
+                "add",
+                "--quiet",
+                "--detach",
+                worktree.path().to_str().unwrap(),
+                "HEAD",
+            ],
+        );
+        &worktree
+    } else {
+        &primary
+    };
+    let state = TestDirectory::new("readonly-refresh-state");
+    Runtime::index(repository.path(), state.path()).unwrap();
+    let mut runtime = Runtime::open(state.path()).unwrap();
+    let snapshot = runtime.snapshot().clone();
+    let located = Command::new("git")
+        .args(["rev-parse", "--git-path", "index"])
+        .current_dir(repository.path())
+        .output()
+        .unwrap();
+    assert!(located.status.success());
+    let index = repository
+        .path()
+        .join(String::from_utf8(located.stdout).unwrap().trim());
+    let before = fs::read(&index).unwrap();
+    let source_path = repository.path().join("main.py");
+    let source = fs::read(&source_path).unwrap();
+    // Advance mtime deterministically without changing bytes. Git's ordinary
+    // status refresh writes this stat-cache change into its optional index.
+    let file = fs::OpenOptions::new()
+        .write(true)
+        .open(&source_path)
+        .unwrap();
+    file.set_times(fs::FileTimes::new().set_modified(SystemTime::now() + Duration::from_secs(2)))
+        .unwrap();
+    assert!(!runtime.refresh(repository.path()).unwrap());
+    assert_eq!(runtime.snapshot(), &snapshot);
+    assert_eq!(
+        fs::read(&index).unwrap(),
+        before,
+        "read-only refresh rewrote Git index"
+    );
+    assert_eq!(fs::read(&source_path).unwrap(), source);
+
+    // Disabling optional writes must not suppress actual content discovery.
+    fs::write(&source_path, b"def changed():\n    return 7\n").unwrap();
+    let lock = index.with_extension("lock");
+    fs::write(&lock, b"another Git operation owns this lock").unwrap();
+    assert!(runtime.refresh(repository.path()).unwrap());
+    assert_eq!(runtime.changed_paths(), ["main.py"]);
+    assert_eq!(fs::read(&index).unwrap(), before);
+    assert_eq!(
+        fs::read(&lock).unwrap(),
+        b"another Git operation owns this lock"
+    );
+    fs::remove_file(lock).unwrap();
+}

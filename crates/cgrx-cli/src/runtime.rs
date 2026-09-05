@@ -4034,6 +4034,10 @@ fn generation_id(revision: &str) -> u64 {
 
 fn git_bytes(root: &Path, args: &[&str]) -> Result<Vec<u8>, RuntimeError> {
     let output = Command::new(crate::git_executable())
+        // These are read-only queries. In particular, status must not persist
+        // its stat-cache refresh into the user's Git index or acquire optional
+        // index locks. Git still reports working-tree, staged and HEAD changes.
+        .env("GIT_OPTIONAL_LOCKS", "0")
         .args(args)
         .current_dir(root)
         .output()
