@@ -246,8 +246,27 @@ impl TsFileFacts {
                         if let Some(name) = variable.child_by_field_name("name") {
                             let mut names = Vec::new();
                             super::binding_names(name, source, &mut names);
+                            let target = if super::const_arrow(variable, source).is_some() {
+                                span(name)
+                            } else {
+                                [0, 0]
+                            };
                             for name in names {
-                                facts.declarations.entry(name).or_default().push([0, 0]);
+                                facts
+                                    .declarations
+                                    .entry(name.clone())
+                                    .or_default()
+                                    .push(target);
+                                if item.kind() == "export_statement"
+                                    && !token(item, "default")
+                                    && !token(item, "type")
+                                {
+                                    facts
+                                        .exports
+                                        .entry(name.clone())
+                                        .or_default()
+                                        .push(Export::Local(name));
+                                }
                             }
                         }
                     }
@@ -316,13 +335,16 @@ impl TsFileFacts {
         }
         let context = super::LexicalContext::with_import_proof(root, source, true);
         // Hoisted var declarations may collide from inside nested blocks.
-        // Reuse the lexical collector's unique function-binding verdict.
+        // Reuse the lexical collector's unique function/const-arrow verdict.
+        // An arrow must have the same exact declaration span; collisions clear
+        // that proof, and the write ledger below still invalidates reassignment.
         for (name, declarations) in &mut facts.declarations {
-            if !context.scopes[0]
-                .bindings
-                .get(name)
-                .is_some_and(|b| b.syntax_function)
-            {
+            if !context.scopes[0].bindings.get(name).is_some_and(|b| {
+                b.syntax_function
+                    || b.target.is_some_and(|target| {
+                        declarations.as_slice() == [[target.start, target.end]]
+                    })
+            }) {
                 declarations.push([0, 0]);
             }
         }

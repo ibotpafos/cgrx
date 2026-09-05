@@ -95,6 +95,11 @@ Module-self imports `use crate::worker::{self as api}` and
 Aliases with nested suffixes (`api::inner::target()`), function aliases
 and reexport chains are not covered by this Rust alias proof.
 
+Development builds resolve named imports and bounded named reexports to direct
+module-level `const` arrow functions as well as free-function declarations.
+Mutable bindings, duplicate declarations and binding writes remain unresolved;
+this proves target identity, not runtime initialization order.
+
 Development builds resolve bounded TypeScript named imports through `baseUrl`
 and single-target `paths` mappings, including `@/*` and dotted basenames such as
 `time.utils`. Relative JSON `extends` and explicitly declared workspace-package
@@ -104,7 +109,7 @@ symlinks and competing installed config packages do not become guessed edges.
 This is not a full TypeScript compiler resolver: JSONC, overlapping mappings,
 fallback arrays, unsupported compiler options and committed-HEAD-only inherited
 aliases can remain unresolved. Installed workspace-package links currently also
-cause abstention. Extraction revision 20 requires rebuilding older indexes;
+cause abstention. Extraction revision 21 requires rebuilding older indexes;
 managed startup recognizes revision-18 config records and requests reindexing.
 
 External dependencies, reexports, custom module paths, macros and dynamic

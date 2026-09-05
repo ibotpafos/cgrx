@@ -368,7 +368,7 @@ fn ts_lexical_metadata_is_compact_and_proofs_are_present_only_on_exact_calls() {
         "ts",
     );
     let stored = fixture.stored();
-    assert_eq!(stored["extraction_revision"], 20);
+    assert_eq!(stored["extraction_revision"], 21);
     let docs = stored["documents"].as_array().unwrap();
     let proofs: Vec<_> = docs
         .iter()
@@ -444,4 +444,9 @@ fn ts_lexical_class_method_local_arrow_still_has_exact_proof() {
 #[test]
 fn managed_revision_nine_reindexes_to_distinct_generation() {
     assert_managed_revision_reindexes(9);
+}
+
+#[test]
+fn managed_revision_twenty_reindexes_to_distinct_generation() {
+    assert_managed_revision_reindexes(20);
 }

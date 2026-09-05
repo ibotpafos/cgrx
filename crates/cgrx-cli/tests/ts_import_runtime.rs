@@ -884,3 +884,78 @@ fn gd_config_alias_real_v18_binary_state_requests_reindex() {
     assert_eq!(gd_targets(&f), ["apps/CRM/utils/time.utils.ts"]);
     eprintln!("REAL_V18_BOOL_STATE_REINDEXED_TO_V20_EXACT_ALIAS");
 }
+
+#[test]
+fn exported_const_arrow_exact_identity_matrix() {
+    for worker in [
+        "export const target = () => 42;",
+        "const target = () => 42; export { target };",
+        "const actual = () => 42; export { actual as target };",
+        "export const target = async () => 42;",
+        "export const other = 1, target = () => 42;",
+        "export const target = () => 42; function shadow(){ let target; target = 0; }",
+    ] {
+        let mut f = Fixture::new(&[
+            (
+                "main.ts",
+                "import { target as invoke } from './api'; function caller(){ invoke(); }",
+            ),
+            ("api.ts", "export { target } from './worker';"),
+            ("worker.ts", worker),
+            (
+                "decoy.ts",
+                "export function invoke() {} export function target() {}",
+            ),
+        ]);
+        assert_eq!(f.targets(), ["worker.ts"], "{worker}");
+        let name = if worker.contains("actual") {
+            "actual"
+        } else {
+            "target"
+        };
+        let trace = f.trace();
+        assert_eq!(trace["nodes"][0]["symbol"], name);
+        assert_eq!(
+            trace["nodes"][0]["span"]["start"],
+            worker.find(name).unwrap()
+        );
+        f.runtime = Runtime::open(&f.state).unwrap();
+        assert_eq!(f.targets(), ["worker.ts"]);
+        fs::write(f.root.join("worker.ts"), "export let target = () => 42;").unwrap();
+        f.refresh();
+        assert!(f.targets().is_empty());
+        fs::write(f.root.join("worker.ts"), worker).unwrap();
+        f.refresh();
+        assert_eq!(f.targets(), ["worker.ts"]);
+    }
+}
+
+#[test]
+fn exported_const_arrow_unsafe_bindings_abstain() {
+    for worker in [
+        "export let target = () => 42;",
+        "export var target = () => 42;",
+        "export const target = function() { return 42; };",
+        "const target = () => 42;",
+        "export const target = () => 42; target = () => 0;",
+        "export const target = () => 42; function mutate(){ target = () => 0; }",
+        "export const target = () => 42; var target;",
+        "export const target = () => 42; if (true) { var target; }",
+        "export const { target } = { target: () => 42 };",
+        "export const target = (() => 42);",
+        "export const target = () => 42; export { target };",
+        "export const target = () => 42; function target() {}",
+        "export const target = () => 42; for (target of []) {}",
+        "export const target = () => 42; ({ target } = {});",
+    ] {
+        let f = Fixture::new(&[
+            (
+                "main.ts",
+                "import { target } from './worker'; function caller(){ target(); }",
+            ),
+            ("worker.ts", worker),
+            ("decoy.ts", "export function target() {}"),
+        ]);
+        assert!(f.targets().is_empty(), "{worker}");
+    }
+}
