@@ -124,6 +124,66 @@ fn reactivation_validates_content_and_preserves_immutable_bytes() {
 }
 
 #[test]
+fn repeated_same_generation_begin_reports_typed_collision_then_reactivates() {
+    let root = fixture();
+    publish(&root, 41);
+    let generation = root.join(".cgrx/generations/0000000000000041");
+    let manifest_before = fs::read(generation.join("manifest.json")).unwrap();
+
+    for _ in 0..3 {
+        let error = GenerationWriter::begin(&root, snapshot(41)).err().unwrap();
+        assert_eq!(error.kind(), std::io::ErrorKind::AlreadyExists);
+        assert_eq!(
+            error.to_string(),
+            "generation is immutable and already exists"
+        );
+        GenerationWriter::reactivate(&root, &snapshot(41), &original_segments()).unwrap();
+        let reader = GenerationReader::open_current(&root).unwrap();
+        assert_eq!(reader.id(), 41);
+        assert_eq!(reader.read_segment("nodes.seg").unwrap(), b"nodes-41");
+    }
+
+    assert_eq!(
+        fs::read(generation.join("manifest.json")).unwrap(),
+        manifest_before,
+        "idempotent reactivation must not rewrite immutable generation bytes"
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn same_generation_collision_never_accepts_different_snapshot_or_bytes() {
+    let root = fixture();
+    publish(&root, 41);
+    let before = fs::read(root.join(".cgrx/generations/0000000000000041/manifest.json")).unwrap();
+    assert_eq!(
+        GenerationWriter::begin(&root, snapshot(41))
+            .err()
+            .unwrap()
+            .kind(),
+        std::io::ErrorKind::AlreadyExists
+    );
+
+    let mut different_snapshot = snapshot(41);
+    different_snapshot.repo_revision = "different-revision".to_owned();
+    let snapshot_error =
+        GenerationWriter::reactivate(&root, &different_snapshot, &original_segments()).unwrap_err();
+    assert_eq!(snapshot_error.kind(), std::io::ErrorKind::InvalidData);
+
+    let mut different_segments = original_segments();
+    different_segments[0].1 = b"different-nodes";
+    let content_error =
+        GenerationWriter::reactivate(&root, &snapshot(41), &different_segments).unwrap_err();
+    assert_eq!(content_error.kind(), std::io::ErrorKind::InvalidData);
+    assert_eq!(GenerationReader::open_current(&root).unwrap().id(), 41);
+    assert_eq!(
+        fs::read(root.join(".cgrx/generations/0000000000000041/manifest.json")).unwrap(),
+        before
+    );
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn reactivation_rejects_collision_corruption_and_bad_segment_sets() {
     for kind in ["snapshot", "bytes", "corrupt", "duplicate", "missing"] {
         let root = fixture();
