@@ -358,7 +358,7 @@ fn go_field_proof_metadata_binds_caller_field_types_and_target_and_is_optional()
     let source = good("return q.items.Len()");
     let fixture = Fixture::new(&source);
     let stored = fixture.stored();
-    assert_eq!(stored["extraction_revision"], 16);
+    assert_eq!(stored["extraction_revision"], 17);
     let proofs: Vec<_> = stored["documents"]
         .as_array()
         .unwrap()
