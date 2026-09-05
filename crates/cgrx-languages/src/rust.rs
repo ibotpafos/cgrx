@@ -503,6 +503,9 @@ fn unique_module_member<'a>(module: Node<'a>, name: &str, source: &[u8]) -> Opti
 #[derive(Clone, Debug, Default, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct RustFileFacts {
     pub modules: Vec<String>,
+    /// Plain-public out-of-line modules; restricted visibility stays unproven.
+    #[serde(default)]
+    pub public_modules: Vec<String>,
     /// Explicit, unambiguous aliases of direct crate-root modules.
     #[serde(default)]
     pub module_aliases: Vec<(String, String)>,
@@ -539,6 +542,13 @@ fn file_facts(root: Node<'_>, source: &[u8]) -> RustFileFacts {
             if !attributed(item) {
                 if item.kind() == "mod_item" && item.child_by_field_name("body").is_none() {
                     facts.modules.push(name.clone());
+                    let mut cursor = item.walk();
+                    if item
+                        .named_children(&mut cursor)
+                        .any(|n| n.kind() == "visibility_modifier" && text(n, source) == "pub")
+                    {
+                        facts.public_modules.push(name.clone());
+                    }
                 }
                 if item.kind() == "function_item" {
                     let span = item.child_by_field_name("name").unwrap();
@@ -570,6 +580,9 @@ fn file_facts(root: Node<'_>, source: &[u8]) -> RustFileFacts {
         .functions
         .retain(|(name, ..)| counts.get(name) == Some(&1));
     facts.modules.retain(|name| counts.get(name) == Some(&1));
+    facts
+        .public_modules
+        .retain(|name| counts.get(name) == Some(&1));
     facts
         .module_aliases
         .retain(|(alias, _)| counts.get(alias) == Some(&1));

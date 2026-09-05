@@ -33,3 +33,8 @@ use crate::rust_target::{self as self_api};
 pub fn rust_self_import_caller() -> i32 {
     self_api::rust_target()
 }
+
+mod nested_primary;
+mod nested_other;
+use crate::nested_primary as nested_api;
+pub fn rust_nested_alias_caller() { nested_api::child::nested_target(); }

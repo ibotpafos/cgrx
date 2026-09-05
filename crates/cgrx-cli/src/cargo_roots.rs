@@ -321,11 +321,18 @@ impl<'a> CargoRoots<'a> {
         }
         // Expand only source-file aliases with a unique explicit import. The
         // existing call-span, Cargo ownership and visibility guards still apply.
+        let (head, suffix) = qualifier.split_once("::").unwrap_or((qualifier, ""));
         let expanded = facts
             .module_aliases
             .iter()
-            .find(|(alias, _)| alias == qualifier)
-            .map(|(_, module)| format!("crate::{module}"));
+            .find(|(alias, _)| alias == head)
+            .map(|(_, module)| {
+                if suffix.is_empty() {
+                    format!("crate::{module}")
+                } else {
+                    format!("crate::{module}::{suffix}")
+                }
+            });
         let qualifier = expanded.as_deref().unwrap_or(qualifier);
         let (target, requires_public) = if qualifier == "crate" {
             (owner.1.as_str(), false)
@@ -341,6 +348,23 @@ impl<'a> CargoRoots<'a> {
         } else if let Some(module) = qualifier.strip_prefix("crate::").or_else(|| {
             (path == owner.1 && !matches!(qualifier, "self" | "super")).then_some(qualifier)
         }) {
+            // A private child is visible only in its defining module subtree.
+            // Until lexical ancestry/restricted visibility is proved, require
+            // plain pub for every segment below the root-level module.
+            let mut segments = module.split("::");
+            let mut prefix = segments.next()?.to_owned();
+            for segment in segments {
+                let parents = package.modules.get(&(owner.1.clone(), prefix.clone()))?;
+                if parents.len() != 1 {
+                    return None;
+                }
+                let parent = self.files.get(parents.first()?)?;
+                if !parent.public_modules.iter().any(|name| name == segment) {
+                    return None;
+                }
+                prefix.push_str("::");
+                prefix.push_str(segment);
+            }
             let paths = package.modules.get(&(owner.1.clone(), module.to_owned()))?;
             let mut targets = paths.iter();
             let target = targets.next()?;

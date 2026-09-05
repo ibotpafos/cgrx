@@ -3183,3 +3183,104 @@ fn rust_self_alias_keeps_namespace_and_visibility_guards() {
         );
     }
 }
+
+fn nested_alias_fixture(import: &str, body: &str, child_decl: &str) -> TestDirectory {
+    let repo = rust_alias_fixture(
+        &format!("mod worker; mod other; {import} pub fn caller() {{ {body} }}"),
+        child_decl,
+    );
+    for parent in ["worker", "other"] {
+        fs::create_dir_all(repo.path().join(format!("src/{parent}"))).unwrap();
+        fs::write(
+            repo.path().join(format!("src/{parent}/child.rs")),
+            "pub fn target() {}",
+        )
+        .unwrap();
+    }
+    fs::write(repo.path().join("src/other.rs"), "pub mod child;").unwrap();
+    git(repo.path(), &["add", "."]);
+    git(repo.path(), &["commit", "-qm", "nested alias"]);
+    repo
+}
+
+#[test]
+fn rust_nested_alias_resolves_reopens_and_retargets() {
+    for import in [
+        "use crate::worker as api;",
+        "use crate::{worker as api};",
+        "use crate::worker::{self as api};",
+    ] {
+        let repo = nested_alias_fixture(import, "api::child::target();", "pub mod child;");
+        let state = TestDirectory::new("nested-alias");
+        Runtime::index(repo.path(), state.path()).unwrap();
+        let mut runtime = Runtime::open(state.path()).unwrap();
+        assert_eq!(
+            rust_alias_targets(&runtime),
+            ["src/worker/child.rs"],
+            "{import}"
+        );
+        assert_eq!(
+            rust_alias_targets(&Runtime::open(state.path()).unwrap()),
+            ["src/worker/child.rs"]
+        );
+        let path = repo.path().join("src/lib.rs");
+        let original = fs::read_to_string(&path).unwrap();
+        fs::write(
+            &path,
+            original
+                .replace("worker as api", "other as api")
+                .replace("worker::{", "other::{"),
+        )
+        .unwrap();
+        runtime.refresh(repo.path()).unwrap();
+        assert_eq!(rust_alias_targets(&runtime), ["src/other/child.rs"]);
+        fs::write(&path, original).unwrap();
+        runtime.refresh(repo.path()).unwrap();
+        assert_eq!(rust_alias_targets(&runtime), ["src/worker/child.rs"]);
+    }
+}
+
+#[test]
+fn rust_nested_alias_rejects_unproven_paths() {
+    for (import, body, child) in [
+        (
+            "use crate::worker as api;",
+            "api::child::target();",
+            "mod child;",
+        ),
+        (
+            "use crate::worker as api;",
+            "api::child::target();",
+            "#[cfg(any())] pub mod child;",
+        ),
+        (
+            "#[cfg(any())] use crate::worker as api;",
+            "api::child::target();",
+            "pub mod child;",
+        ),
+        (
+            "use foreign::worker as api;",
+            "api::child::target();",
+            "pub mod child;",
+        ),
+        (
+            "use crate::worker as api; use crate::other as api;",
+            "api::child::target();",
+            "pub mod child;",
+        ),
+        (
+            "use crate::worker as api;",
+            "type api = Other; api::child::target();",
+            "pub mod child;",
+        ),
+        ("", "crate::worker::child::target();", "mod child;"),
+    ] {
+        let repo = nested_alias_fixture(import, body, child);
+        let state = TestDirectory::new("nested-alias-negative");
+        Runtime::index(repo.path(), state.path()).unwrap();
+        assert!(
+            rust_alias_targets(&Runtime::open(state.path()).unwrap()).is_empty(),
+            "{import} {body} {child}"
+        );
+    }
+}

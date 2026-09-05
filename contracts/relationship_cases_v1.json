@@ -5,44 +5,120 @@
     {
       "id": "python_direct_cross_file",
       "language": "python",
-      "target": {"symbol": "py_target", "path": "py_target.py"},
-      "expected_callers": [{"symbol": "py_caller", "path": "py_caller.py"}]
+      "target": {
+        "symbol": "py_target",
+        "path": "py_target.py"
+      },
+      "expected_callers": [
+        {
+          "symbol": "py_caller",
+          "path": "py_caller.py"
+        }
+      ]
     },
     {
       "id": "go_direct_same_package",
       "language": "go",
-      "target": {"symbol": "goTarget", "path": "go_target.go"},
-      "expected_callers": [{"symbol": "goCaller", "path": "go_caller.go"}]
+      "target": {
+        "symbol": "goTarget",
+        "path": "go_target.go"
+      },
+      "expected_callers": [
+        {
+          "symbol": "goCaller",
+          "path": "go_caller.go"
+        }
+      ]
     },
     {
       "id": "go_same_name_other_package_negative",
       "language": "go",
-      "target": {"symbol": "goTarget", "path": "other/go_target.go"},
+      "target": {
+        "symbol": "goTarget",
+        "path": "other/go_target.go"
+      },
       "expected_callers": []
     },
     {
       "id": "rust_direct_child_module",
       "language": "rust",
-      "target": {"symbol": "rust_target", "path": "src/rust_target.rs"},
-      "expected_callers": [{"symbol": "rust_caller", "path": "src/lib.rs"}, {"symbol": "rust_alias_caller", "path": "src/lib.rs"}, {"symbol": "rust_grouped_caller", "path": "src/lib.rs"}, {"symbol": "rust_self_import_caller", "path": "src/lib.rs"}]
+      "target": {
+        "symbol": "rust_target",
+        "path": "src/rust_target.rs"
+      },
+      "expected_callers": [
+        {
+          "symbol": "rust_caller",
+          "path": "src/lib.rs"
+        },
+        {
+          "symbol": "rust_alias_caller",
+          "path": "src/lib.rs"
+        },
+        {
+          "symbol": "rust_grouped_caller",
+          "path": "src/lib.rs"
+        },
+        {
+          "symbol": "rust_self_import_caller",
+          "path": "src/lib.rs"
+        }
+      ]
     },
     {
       "id": "rust_same_name_sibling_module_negative",
       "language": "rust",
-      "target": {"symbol": "rust_target", "path": "src/rust_other.rs"},
+      "target": {
+        "symbol": "rust_target",
+        "path": "src/rust_other.rs"
+      },
       "expected_callers": []
     },
     {
       "id": "rust_private_child_negative",
       "language": "rust",
-      "target": {"symbol": "private_target", "path": "src/private_child.rs"},
+      "target": {
+        "symbol": "private_target",
+        "path": "src/private_child.rs"
+      },
       "expected_callers": []
     },
     {
       "id": "typescript_direct_cross_file",
       "language": "typescript",
-      "target": {"symbol": "tsTarget", "path": "ts_target.ts"},
-      "expected_callers": [{"symbol": "tsCaller", "path": "ts_caller.ts"}]
+      "target": {
+        "symbol": "tsTarget",
+        "path": "ts_target.ts"
+      },
+      "expected_callers": [
+        {
+          "symbol": "tsCaller",
+          "path": "ts_caller.ts"
+        }
+      ]
+    },
+    {
+      "id": "rust_nested_alias",
+      "language": "rust",
+      "target": {
+        "symbol": "nested_target",
+        "path": "src/nested_primary/child.rs"
+      },
+      "expected_callers": [
+        {
+          "symbol": "rust_nested_alias_caller",
+          "path": "src/lib.rs"
+        }
+      ]
+    },
+    {
+      "id": "rust_nested_same_name_negative",
+      "language": "rust",
+      "target": {
+        "symbol": "nested_target",
+        "path": "src/nested_other/child.rs"
+      },
+      "expected_callers": []
     }
   ]
 }
