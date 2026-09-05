@@ -81,10 +81,20 @@ line within that same source-verified target anchor. Other outgoing relationship
 are not scored as false positives. Optional lexical distractors in the corpus
 are not automatically converted into semantic negative CALLS truth.
 
-CGRX uses depth-1 `trace_path`, an exact source path/name and verified root span;
+CGRX uses depth-1 `trace_path`, an exact source path/name and verified root span.
+The response must attest depth 1 and direction `callees`; every returned node
+must have integer hop 1 and direction `callees`. Missing or contradictory
+metadata fails the arm instead of counting a caller or transitive node as a hit.
 CBM uses a separately checked unique source anchor and a bounded `query_graph`
-CALLS query. CBM's installed table contract (including empty-result hints) is
-parsed strictly; unknown fields/row shapes/counts fail closed. Full returned
+CALLS query. The lookup must return the requested normalized path, symbol and
+line within the curated source anchor, not merely one arbitrary row.
+CBM's installed table contract (including empty-result hints) accepts only
+`name path line` or `name path line strategy confidence` columns, including
+zero-row tables. Unknown table columns, invalid row shapes/counts and malformed
+optional continuation flags fail closed. Present `truncated`/`has_more` flags
+must be booleans; `next` must be null or a string (nonempty means incomplete).
+Tool `isError` must be boolean when present; malformed text blocks, nodes and
+spans become failed arms, not uncaught attribute errors. Full returned
 responses and matching target evidence are retained. CBM resolver/confidence
 values are preserved, **not upgraded** to exact proof; graph assertions remain
 engine assertions. Source truth never comes from either graph. REFERENCE tasks
@@ -112,6 +122,11 @@ semantic coverage. Status coverage and raw responses remain available for audit.
   warmups) is recorded separately and excluded from timed query samples.
   CBM explicitly indexes with `persistence=false` into the supplied project;
   CGRX status opens/refreshes its managed index. Neither writes source files.
+* Each request shares one monotonic deadline across nonblocking stdin writes
+  and response reads. Notifications also have bounded writes. A failed write
+  invalidates that transport so retries cannot append to a partial JSON frame.
+  Closing stdin does not flush pending Python-buffered bytes. Process teardown
+  has its separate existing bounded waits; it is not part of query latency.
 * Timings use `perf_counter_ns` around each measured request/retry sequence.
   Failed attempts retain timing/error metadata. Only RPC/transport failures
   retry, within the fixed budget; tool errors fail immediately. Lost response

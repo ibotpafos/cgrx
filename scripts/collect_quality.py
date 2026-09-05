@@ -37,13 +37,16 @@ def response(raw, request_id):
 
 
 def payload(result):
+    require(isinstance(result, dict), 'tool result must be an object')
+    require('isError' not in result or type(result['isError']) is bool, 'invalid isError flag')
     require(result.get('isError') is not True, 'tool error: ' + str(result))
     if 'structuredContent' in result:
         value = result['structuredContent']
     else:
         blocks = result.get('content')
         require(isinstance(blocks, list) and len(blocks) == 1 and
-                blocks[0].get('type') == 'text', 'unsupported tool content')
+                isinstance(blocks[0], dict) and blocks[0].get('type') == 'text'
+                and isinstance(blocks[0].get('text'), str), 'unsupported tool content')
         text = blocks[0]['text']
         value = cbm_table(text) if text.startswith('rows:') else read_json(text)
     require(isinstance(value, dict), 'tool payload must be an object')
@@ -63,6 +66,8 @@ def cbm_table(text):
     require(header is not None and footer is not None, 'unknown CBM table schema')
     columns = header[2].split()
     require(len(set(columns)) == len(columns), 'duplicate CBM columns')
+    require(columns in (['name','path','line'], ['name','path','line','strategy','confidence']),
+            'unsupported CBM columns')
     rows = []
     for line in lines[1:-1]:
         values = shlex.split(line)
@@ -99,6 +104,8 @@ class Stdio:
         self.proc = subprocess.Popen(spec['argv'], stdin=subprocess.PIPE,
                                      stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                                      cwd=spec['cwd'], env=env, start_new_session=True)
+        os.set_blocking(self.proc.stdin.fileno(), False)
+        self.write_failed = False
         self.selector = selectors.DefaultSelector()
         self.selector.register(self.proc.stdout, selectors.EVENT_READ)
         self.stop = threading.Event()
@@ -111,15 +118,37 @@ class Stdio:
             if rss is not None: self.rss.append(rss)
             self.stop.wait(.02)
 
+    def _write(self, wire, end):
+        # Never buffer partial JSON in Python: close must not flush a stalled pipe.
+        require(not self.write_failed, 'endpoint stream invalid after failed write')
+        remaining = memoryview(wire)
+        try:
+            with selectors.DefaultSelector() as writable:
+                writable.register(self.proc.stdin, selectors.EVENT_WRITE)
+                while remaining:
+                    left = end - time.monotonic()
+                    require(left > 0, 'request timeout during stdin write')
+                    if not writable.select(left):
+                        raise ValueError('request timeout during stdin write')
+                    try:
+                        written = os.write(self.proc.stdin.fileno(), remaining)
+                    except BlockingIOError:
+                        continue
+                    require(written > 0, 'endpoint stdin closed')
+                    remaining = remaining[written:]
+        except (ValueError, OSError):
+            self.write_failed = True
+            raise
+
     def notify(self, method):
-        self.proc.stdin.write((json.dumps({'jsonrpc':'2.0','method':method})+'\n').encode())
-        self.proc.stdin.flush()
+        end = time.monotonic() + self.timeout
+        self._write((json.dumps({'jsonrpc':'2.0','method':method})+'\n').encode(), end)
 
     def request(self, method, params):
+        end = time.monotonic() + self.timeout
         self.seq += 1
         wire = json.dumps({'jsonrpc':'2.0','id':self.seq,'method':method,'params':params})+'\n'
-        self.proc.stdin.write(wire.encode()); self.proc.stdin.flush()
-        end = time.monotonic() + self.timeout
+        self._write(wire.encode(), end)
         received = 0
         while time.monotonic() < end:
             if b'\n' not in self.buffer:
@@ -206,22 +235,33 @@ def safe_path(path, repo):
     return p.as_posix()
 
 
+def cgrx_node(node, repo):
+    require(isinstance(node, dict), 'invalid CGRX node')
+    path = safe_path(node.get('path'), repo)
+    span = node.get('span')
+    require(isinstance(span, dict) and type(span.get('start')) is int
+            and type(span.get('end')) is int and 0 <= span['start'] < span['end'],
+            'invalid CGRX span')
+    data = (Path(repo)/path).read_bytes()
+    require(span['end'] <= len(data), 'span outside source')
+    require(isinstance(node.get('symbol'), str) and node['symbol'], 'missing symbol')
+    return {'path':path,'symbol':node['symbol'],
+            'line':data[:span['start']].count(b'\n')+1,'raw':node}
+
+
 def cgrx_nodes(value, repo):
     require(value.get('truncated') is False, 'CGRX truncated/unknown completeness')
+    require(type(value.get('depth')) is int and value['depth'] == 1
+            and value.get('direction') == 'callees', 'CGRX trace direction/depth mismatch')
     nodes = value.get('nodes')
     require(isinstance(nodes, list) and type(value.get('total')) is int
             and value['total'] == len(nodes), 'CGRX node count/schema mismatch')
     result = []
     for node in nodes:
-        path = safe_path(node.get('path'), repo)
-        span = node.get('span', {})
-        require(type(span.get('start')) is int and type(span.get('end')) is int
-                and 0 <= span['start'] < span['end'], 'invalid CGRX span')
-        data = (Path(repo)/path).read_bytes()
-        require(span['end'] <= len(data), 'span outside source')
-        require(isinstance(node.get('symbol'), str) and node['symbol'], 'missing symbol')
-        line = data[:span['start']].count(b'\n')+1
-        result.append({'path':path,'symbol':node['symbol'],'line':line,'raw':node})
+        require(isinstance(node, dict) and type(node.get('hop')) is int
+                and node['hop'] == 1 and node.get('direction') == 'callees',
+                'CGRX node is not a direct callee')
+        result.append(cgrx_node(node, repo))
     return result
 
 
@@ -230,6 +270,9 @@ def cbm_nodes(value, repo, limit):
     rows = value.get('results')
     require(isinstance(rows, list) and type(value.get('total')) is int
             and value['total'] == len(rows), 'CBM row count/schema mismatch')
+    for flag in ('truncated', 'has_more'):
+        require(flag not in value or type(value[flag]) is bool, 'invalid CBM '+flag)
+    require(value.get('next') is None or isinstance(value['next'], str), 'invalid CBM next')
     require(len(rows) < limit and not value.get('truncated') and not value.get('has_more')
             and not value.get('next'), 'CBM truncated or capped')
     result = []
@@ -305,7 +348,7 @@ def status_request(engine, task, spec):
 
 def attest(engine, value, task):
     if engine == 'cgrx':
-        require(value.get('repo') == task['repo'] and value.get('snapshot',{}).get('repo_revision') == task['revision'],
+        require(isinstance(value.get('snapshot'), dict) and value.get('repo') == task['repo'] and value['snapshot'].get('repo_revision') == task['revision'],
                 'CGRX snapshot mismatch')
         require(value.get('freshness') == 'WATCHED' and value.get('changed_paths') == [], 'CGRX freshness mismatch')
     else:
@@ -388,6 +431,11 @@ def collect(corpus, config, factory=Stdio, counter=None):
                                 'project':specs[engine]['projects'][task['repo']],'query':query,'max_rows':2}})
                             found_nodes = cbm_nodes(payload(found), task['repo'], 2)
                             require(len(found_nodes) == 1, 'CBM source missing or ambiguous')
+                            found_node = found_nodes[0]
+                            require(found_node['path'] == source['path']
+                                    and found_node['symbol'] == source['symbol']
+                                    and source['start_line'] <= found_node['line'] <= source['end_line'],
+                                    'CBM source anchor mismatch')
                             result['setup'][-1]['source_response'] = found_raw
                         state, _ = transport.request('tools/call', status_request(engine,task,specs[engine]))
                         state = payload(state); attest(engine,state,task)
@@ -406,10 +454,10 @@ def collect(corpus, config, factory=Stdio, counter=None):
                     token_total += sum(count(a['raw']) for a in attempts)
                     value = payload(answer)
                     if engine == 'cgrx':
-                        require(value.get('repo') == task['repo'] and value.get('snapshot',{}).get('repo_revision') == task['revision'], 'trace snapshot mismatch')
+                        require(isinstance(value.get('snapshot'), dict) and value.get('repo') == task['repo'] and value['snapshot'].get('repo_revision') == task['revision'], 'trace snapshot mismatch')
                         root = value.get('root', {})
-                        require(root.get('path') == task['evidence']['source']['path'] and root.get('symbol') == task['evidence']['source']['symbol'], 'trace root mismatch')
-                        root_node = cgrx_nodes({'truncated':False,'total':1,'nodes':[root]},task['repo'])[0]
+                        require(isinstance(root, dict) and root.get('path') == task['evidence']['source']['path'] and root.get('symbol') == task['evidence']['source']['symbol'], 'trace root mismatch')
+                        root_node = cgrx_node(root,task['repo'])
                         require(task['evidence']['source']['start_line'] <= root_node['line'] <= task['evidence']['source']['end_line'], 'trace root outside source anchor')
                         nodes = cgrx_nodes(value,task['repo'])
                     else: nodes = cbm_nodes(value,task['repo'],protocol['limit'])
