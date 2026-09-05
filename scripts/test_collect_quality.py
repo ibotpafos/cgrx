@@ -97,17 +97,39 @@ class PairedMockTests(unittest.TestCase):
                     elif name == 'trace_path':
                         self.queries+=1
                         if outer.mode == 'tool-error': return {'isError':True,'content':[]}, '{}'
-                        nodes=[{'path':'sample.py','symbol':'callee','span':{'start':41,'end':47}}]
-                        data={'repo':repo,'snapshot':{'repo_revision':rev},'root':{'path':'sample.py','symbol':'caller','span':{'start':4,'end':10}},'nodes':nodes,'total':1,'truncated':False}
+                        nodes=[{'path':'sample.py','symbol':'callee','span':{'start':41,'end':47},'hop':1,'direction':'callees'}]
+                        data={'repo':repo,'snapshot':{'repo_revision':rev},'root':{'path':'sample.py','symbol':'caller','span':{'start':4,'end':10}},'nodes':nodes,'total':1,'truncated':False,'depth':1,'direction':'callees'}
+                        if outer.mode == 'bad-content': return {'content':[None]}, '{}'
+                        if outer.mode == 'bad-text': return {'content':[{'type':'text','text':None}]}, '{}'
+                        if outer.mode == 'bad-error-flag': return {'isError':'true','structuredContent':data}, '{}'
+                        if outer.mode == 'bad-node': data['nodes']=[None]
+                        if outer.mode == 'bad-span': nodes[0]['span']=None
+                        if outer.mode == 'bad-root': data['root']=None
+                        if outer.mode == 'bad-snapshot': data['snapshot']=None
+                        if outer.mode == 'wrong-hop': nodes[0]['hop']=2
+                        if outer.mode == 'bool-hop': nodes[0]['hop']=True
+                        if outer.mode == 'wrong-direction': nodes[0]['direction']='callers'
+                        if outer.mode == 'wrong-depth': data['depth']=2
+                        if outer.mode == 'wrong-trace-direction': data['direction']='callers'
+                        if outer.mode == 'missing-hop': del nodes[0]['hop']
                         if outer.mode == 'truncated': data['truncated']=True
                         if outer.mode == 'wrong-root': data['root']['span']={'start':41,'end':47}
                     else:
                         if 'RETURN s.name' in params['arguments']['query']:
                             data={'results':[{'path':'sample.py','name':'caller','line':1}],'total':1}
+                            if outer.mode == 'wrong-source-name': data['results'][0]['name']='callee'
+                            if outer.mode == 'wrong-source-line': data['results'][0]['line']=3
+                            if outer.mode == 'absolute-source': data['results'][0]['path']=str(Path(repo)/'sample.py')
                         else:
                             self.queries+=1
                             data={'results':[{'path':'sample.py','name':'callee','line':3,'strategy':'synthetic','confidence':'1'}],'total':1}
                             if outer.mode == 'unknown-schema': data={}
+                            if outer.mode == 'empty-unknown-columns':
+                                return {'content':[{'type':'text','text':'rows: 0  (cols: unexpected)\ntotal: 0'}]}, '{}'
+                            if outer.mode == 'null-truncated': data['truncated']=None
+                            if outer.mode == 'numeric-more': data['has_more']=0
+                            if outer.mode == 'list-next': data['next']=[]
+                            if outer.mode == 'valid-empty': data={'results':[],'total':0,'truncated':False,'has_more':False,'next':None}
                     value={'structuredContent':data}
                 return value,json.dumps(value)
         return c.collect(self.doc,self.config,factory=Mock,counter=('synthetic-counter-v1',lambda raw:len(raw)))
@@ -132,6 +154,32 @@ class PairedMockTests(unittest.TestCase):
                 result=self.run_mock()
                 self.assertFalse(all(result['cases'][0][e]['success'] for e in ('cgrx','cbm')))
                 self.assertTrue(all(t.closed for t in self.transports))
+
+    def test_review_blockers_fail_closed_per_arm(self):
+        modes = {
+            'cgrx': ('bad-content','bad-text','bad-error-flag','bad-node','bad-span',
+                     'bad-root','bad-snapshot','wrong-hop','bool-hop','missing-hop',
+                     'wrong-direction','wrong-depth','wrong-trace-direction'),
+            'cbm': ('wrong-source-name','wrong-source-line','empty-unknown-columns',
+                    'null-truncated','numeric-more','list-next'),
+        }
+        for engine, values in modes.items():
+            for mode in values:
+                with self.subTest(mode=mode):
+                    self.mode=mode
+                    row=self.run_mock()['cases'][0][engine]
+                    self.assertFalse(row['success'])
+                    self.assertFalse(row['complete'])
+                    self.assertTrue(row['errors'])
+                    self.assertTrue(all(t.closed for t in self.transports))
+
+    def test_valid_empty_and_absolute_anchor(self):
+        for mode in ('valid-empty','absolute-source'):
+            with self.subTest(mode=mode):
+                self.mode=mode
+                row=self.run_mock()['cases'][0]['cbm']
+                self.assertTrue(row['success'],row['errors'])
+                self.assertEqual(row['actual'], [] if mode == 'valid-empty' else ['sample.py:callee:3'])
 
     def test_proxy_rss_stays_unknown(self):
         self.config['engines']['cbm']['rss_scope']='endpoint-only'
@@ -181,6 +229,12 @@ class TableTests(unittest.TestCase):
     def test_empty_cbm_result_with_installed_hint(self):
         text='rows: 0  (cols: name path line strategy confidence)\ntotal: 0\nhint: "Query returned no results."'
         self.assertEqual(c.cbm_table(text)['results'], [])
+    def test_zero_rows_require_supported_columns(self):
+        for columns in ('unexpected','name path','name path line extra'):
+            with self.subTest(columns=columns), self.assertRaises(ValueError):
+                c.cbm_table('rows: 0  (cols: '+columns+')\ntotal: 0')
+        self.assertEqual(c.cbm_table('rows: 0  (cols: name path line)\ntotal: 0')['results'],[])
+
     def test_capped_schema_and_duplicate_columns(self):
         for text in ('rows: 0  (cols: name name)\ntotal: 0',
                      'rows: 2  (cols: name)\n x\ntotal: 2',
@@ -198,6 +252,29 @@ class StdioMockTests(unittest.TestCase):
         t=self.transport('import sys,json; q=json.loads(sys.stdin.readline()); print(json.dumps(dict(jsonrpc="2.0",id=q["id"],result={"synthetic":True})))')
         value,raw=t.request('mock',{})
         self.assertTrue(value['synthetic'])
+    def test_stdin_write_deadline(self):
+        import time
+        t=self.transport('import time; time.sleep(.8)',timeout=.05)
+        start=time.monotonic()
+        try:
+            t.request('mock',{'large':'x'*1000000})
+        except (ValueError,OSError) as exc:
+            error=exc
+        else:
+            self.fail('nonreading endpoint succeeded')
+        self.assertLess(time.monotonic()-start,.4,'stdin exceeded request deadline')
+        self.assertIsInstance(error,ValueError)
+        self.assertIn('timeout',str(error))
+        with self.assertRaisesRegex(ValueError,'stream invalid'):
+            t.request('mock',{})
+        with self.assertRaisesRegex(ValueError,'stream invalid'):
+            t.notify('notifications/initialized')
+
+    def test_large_write_preserves_frame(self):
+        t=self.transport('import sys,json; q=json.loads(sys.stdin.readline()); print(json.dumps(dict(jsonrpc="2.0",id=q["id"],result={"length":len(q["params"]["large"])})))',timeout=2)
+        value,_=t.request('mock',{'large':'x'*1000000})
+        self.assertEqual(value['length'],1000000)
+
     def test_mock_process_bad_id(self):
         t=self.transport('import sys,json; sys.stdin.readline(); print(json.dumps(dict(jsonrpc="2.0",id=9,result={})))')
         with self.assertRaisesRegex(ValueError,'id mismatch'): t.request('mock',{})
