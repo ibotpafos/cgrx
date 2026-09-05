@@ -434,11 +434,15 @@ fn own_receiver_target(
         if declaration.kind() == "type_alias"
             || underlying.kind() != "struct_type"
             || any_node(underlying, &|n| {
-                n.kind() == "field_declaration" && {
-                    let mut c = n.walk();
-                    n.children_by_field_name("name", &mut c)
-                        .any(|n| text(n, source) == target_name)
-                }
+                // A named nested struct's fields belong to that field's type,
+                // not to this receiver. Only direct fields can conflict.
+                n.kind() == "field_declaration"
+                    && n.parent().and_then(|n| n.parent()) == Some(underlying)
+                    && {
+                        let mut c = n.walk();
+                        n.children_by_field_name("name", &mut c)
+                            .any(|n| text(n, source) == target_name)
+                    }
             })
         {
             return None;
