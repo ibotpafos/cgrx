@@ -30,3 +30,5 @@ jobs:
       - run: python3 scripts/eval_relationships.py target/release/cgrx
       - name: Relationship evaluator integrity and real MCP fanout
         run: CGRX_EVAL_BINARY=target/release/cgrx python3 -m unittest discover -s scripts -p test_eval_relationships.py
+      - name: Refactor evaluator integrity
+        run: python3 -m unittest discover -s scripts -p test_eval_refactors.py
