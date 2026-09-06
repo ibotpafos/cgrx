@@ -630,13 +630,15 @@ impl ToolBackend for RuntimeMcpBackend {
         query: &str,
         scope: Value,
         limit: u32,
+        language: Option<&str>,
+        include_body: bool,
     ) -> Result<Value, BackendError> {
         self.refresh()?;
         let scope = graph_scope(&scope)?;
         let limit = usize::try_from(limit)
             .map_err(|_| BackendError::new("cgrx.invalid_arguments", "limit is out of range"))?;
         self.runtime
-            .search_graph(query, &scope, limit)
+            .search_graph_filtered(query, &scope, limit, language, include_body)
             .map_err(|error| BackendError::new(error.code(), error.to_string()))
     }
 

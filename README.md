@@ -75,13 +75,21 @@ updates, uninstalling and troubleshooting.
 | Tool | Purpose |
 | --- | --- |
 | status | Snapshot, graph counts, freshness, coverage |
-| search_graph | Bounded symbol discovery |
+| search_graph | Bounded symbol/body discovery with optional language filter |
 | trace_path | Caller/callee traversal |
 | get_code_snippet | Exact source definition |
 | check_index_coverage | Recorded gaps for paths/scopes |
 | orient | Budgeted task context |
 | expand | Follow-up context using a returned handle |
 | scan_risks | Candidate relationship risks, not confirmed defects |
+
+`search_graph` searches symbol names by default. Set `include_body: true` to
+also locate a term inside symbol bodies, and use `language` (`typescript`, `go`,
+`python`, or `rust`) to keep mixed-repository results focused. TypeScript covers
+both `.ts` and `.tsx`. Every match reports `matched_by` as `symbol` or `body`.
+
+See [the Trace MCP reference comparison](docs/reference-trace-mcp.md) for the
+evidence behind this search slice and the capabilities that remain separate.
 
 ## Maturity and privacy
 

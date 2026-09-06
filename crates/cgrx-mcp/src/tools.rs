@@ -39,6 +39,8 @@ pub trait ToolBackend: Send + Sync {
         query: &str,
         scope: Value,
         limit: u32,
+        language: Option<&str>,
+        include_body: bool,
     ) -> Result<Value, BackendError>;
     fn trace_path(
         &mut self,
@@ -350,7 +352,13 @@ impl Server {
             ));
         };
         backend
-            .search_graph(&arguments.query, arguments.scope, arguments.limit)
+            .search_graph(
+                &arguments.query,
+                arguments.scope,
+                arguments.limit,
+                arguments.language.as_deref(),
+                arguments.include_body,
+            )
             .map_err(backend_error)
     }
 
@@ -724,6 +732,10 @@ struct SearchGraphArguments {
     scope: Value,
     #[serde(default = "default_graph_limit")]
     limit: u32,
+    #[serde(default)]
+    language: Option<String>,
+    #[serde(default)]
+    include_body: bool,
 }
 
 #[derive(Deserialize)]
@@ -846,7 +858,7 @@ fn model_visible_schema() -> Value {
     let mut tools = json!([
         {"name":"scan_risks","description":"Change risks; candidates only.","inputSchema":{"type":"object","properties":{"mode":{"enum":["changes"]},"limit":{"type":"integer","minimum":1,"maximum":50}}}},
         {"name":"orient","description":"Context","inputSchema":{"type":"object","required":["task","budget","mode","scope"],"properties":{"task":{"type":"string"},"budget":{"type":"integer","minimum":1},"mode":{"enum":["FAST","PRECISE","BOUNDED"]},"scope":bounded_scope.clone()}}},
-        {"name":"search_graph","description":"Symbols","inputSchema":{"type":"object","required":["query"],"properties":{"query":{"type":"string"},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":50}}}},
+        {"name":"search_graph","description":"Symbols or bodies","inputSchema":{"type":"object","required":["query"],"properties":{"query":{"type":"string"},"language":{"enum":["typescript","go","python","rust"]},"include_body":{"type":"boolean"},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":50}}}},
         {"name":"trace_path","description":"Calls","inputSchema":{"type":"object","required":["symbol"],"properties":{"symbol":{"type":"string"},"path":{"type":"string"},"direction":{"enum":["callers","callees","both"]},"depth":{"type":"integer","minimum":1,"maximum":4},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":50}}}},
         {"name":"get_code_snippet","description":"Source","inputSchema":{"type":"object","required":["symbol"],"properties":{"symbol":{"type":"string"},"path":{"type":"string"}}}},
         {"name":"check_index_coverage","description":"Coverage","inputSchema":{"type":"object","properties":{"paths":{"type":"array","items":{"type":"string"}},"scopes":{"type":"array","items":{"type":"string"}},"offset":{"type":"integer","minimum":0},"limit":{"type":"integer","minimum":1,"maximum":500}}}},
@@ -864,7 +876,7 @@ fn model_visible_schema() -> Value {
         ),
         (
             "Search symbols",
-            "Find code symbols by query before tracing calls or reading definitions.",
+            "Find code symbols by name, or opt into body search and language filtering, before tracing calls or reading definitions.",
         ),
         (
             "Trace calls",
@@ -939,6 +951,20 @@ mod openai_metadata_tests {
         for name in scope["required"].as_array().unwrap() {
             assert!(scope["properties"][name.as_str().unwrap()]["type"].is_string());
         }
+        let search = tools
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|tool| tool["name"] == "search_graph")
+            .unwrap();
+        assert_eq!(
+            search["inputSchema"]["properties"]["include_body"]["type"],
+            "boolean"
+        );
+        assert_eq!(
+            search["inputSchema"]["properties"]["language"]["enum"],
+            json!(["typescript", "go", "python", "rust"])
+        );
         assert_eq!(
             path_or_scope_schema(&scope)["anyOf"]
                 .as_array()

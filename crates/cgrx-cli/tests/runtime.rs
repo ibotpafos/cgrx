@@ -1397,6 +1397,84 @@ fn caller() { target(); }
     assert_eq!(first["matches"][0]["callees"], 0);
     assert_eq!(first["total"], 2);
     assert_eq!(first["truncated"], true);
+    assert_eq!(first["matches"][0]["matched_by"], "symbol");
+}
+
+#[test]
+fn search_graph_can_search_bodies_and_filter_every_supported_language() {
+    let repository = TestDirectory::new("filtered-body-search");
+    git(repository.path(), &["init", "-q"]);
+    git(
+        repository.path(),
+        &["config", "user.email", "test@example.invalid"],
+    );
+    git(repository.path(), &["config", "user.name", "CGRX Test"]);
+    let fixtures = [
+        (
+            "feature.ts",
+            "function tsFeature() { return 'body_token_ts'; }\n",
+        ),
+        (
+            "feature.tsx",
+            "function tsxFeature() { return <div>body_token_tsx</div>; }\n",
+        ),
+        (
+            "feature.go",
+            "package sample\nfunc goFeature() string { return \"body_token_go\" }\n",
+        ),
+        (
+            "feature.py",
+            "def py_feature():\n    return 'body_token_py'\n",
+        ),
+        (
+            "feature.rs",
+            "fn rust_feature() -> &'static str { \"body_token_rs\" }\n",
+        ),
+    ];
+    for (path, source) in fixtures {
+        fs::write(repository.path().join(path), source).expect("write language fixture");
+    }
+    git(repository.path(), &["add", "."]);
+    git(repository.path(), &["commit", "-qm", "fixture"]);
+    let state = TestDirectory::new("filtered-body-search-state");
+    Runtime::index(repository.path(), state.path()).expect("index repository");
+    let runtime = Runtime::open(state.path()).expect("open runtime");
+    let scope = Scope {
+        include: vec!["**".to_owned()],
+        exclude: Vec::new(),
+        relation_kinds: vec![RelationKind::Calls],
+        max_depth: 4,
+    };
+
+    let cases = [
+        ("typescript", "body_token_ts", 2),
+        ("go", "body_token_go", 1),
+        ("python", "body_token_py", 1),
+        ("rust", "body_token_rs", 1),
+    ];
+    for (language, query, expected) in cases {
+        let result = runtime
+            .search_graph_filtered(query, &scope, 10, Some(language), true)
+            .expect("search filtered body");
+        assert_eq!(result["total"], expected, "{language}: {result}");
+        assert!(
+            result["matches"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|item| item["matched_by"] == "body"),
+            "{language}: {result}"
+        );
+    }
+
+    let names_only = runtime
+        .search_graph_filtered("body_token_rs", &scope, 10, Some("rust"), false)
+        .expect("search names only");
+    assert_eq!(names_only["total"], 0);
+    let error = runtime
+        .search_graph_filtered("anything", &scope, 10, Some("java"), true)
+        .expect_err("unsupported language fails closed");
+    assert_eq!(error.code(), "cgrx.invalid_arguments");
 }
 
 #[test]

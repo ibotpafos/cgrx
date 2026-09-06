@@ -280,7 +280,27 @@ impl Runtime {
         scope: &Scope,
         limit: usize,
     ) -> Result<Value, RuntimeError> {
-        self.search_graph_with_matcher(query, scope, limit, path_in_scope)
+        self.search_graph_filtered(query, scope, limit, None, false)
+    }
+
+    pub fn search_graph_filtered(
+        &self,
+        query: &str,
+        scope: &Scope,
+        limit: usize,
+        language: Option<&str>,
+        include_body: bool,
+    ) -> Result<Value, RuntimeError> {
+        let language = language.map(str::trim);
+        if language
+            .is_some_and(|language| !matches!(language, "typescript" | "go" | "python" | "rust"))
+        {
+            return Err(RuntimeError::new(
+                "cgrx.invalid_arguments",
+                "language must be one of typescript, go, python, or rust",
+            ));
+        }
+        self.search_graph_with_matcher(query, scope, limit, language, include_body, path_in_scope)
     }
 
     fn search_graph_with_matcher(
@@ -288,6 +308,8 @@ impl Runtime {
         query: &str,
         scope: &Scope,
         limit: usize,
+        language: Option<&str>,
+        include_body: bool,
         matches_scope: impl FnMut(&str, &Scope) -> bool,
     ) -> Result<Value, RuntimeError> {
         let query = query.trim();
@@ -316,37 +338,45 @@ impl Runtime {
             .documents
             .iter()
             .filter(|document| {
-                document.provenance == "SYNTAX" && scoped.contains_path(&document.path)
+                document.provenance == "SYNTAX"
+                    && scoped.contains_path(&document.path)
+                    && language.is_none_or(|language| {
+                        pack_for_path(Path::new(&document.path))
+                            .is_some_and(|pack| pack.id() == language)
+                    })
             })
             .filter_map(|document| {
                 let name = document.qualified_name.to_lowercase();
-                let rank = if name == folded {
-                    0
+                let (rank, matched_by) = if name == folded {
+                    (0, "symbol")
                 } else if name.starts_with(&folded) {
-                    1
+                    (1, "symbol")
                 } else if name.contains(&folded) {
-                    2
+                    (2, "symbol")
+                } else if include_body && document.search_text.to_lowercase().contains(&folded) {
+                    (3, "body")
                 } else {
                     return None;
                 };
                 let callers = caller_counts.get(&document.node_id).copied().unwrap_or(0);
                 let callees = callee_counts.get(&document.node_id).copied().unwrap_or(0);
-                Some((rank, document, callers, callees))
+                Some((rank, document, callers, callees, matched_by))
             })
             .collect();
-        matches.sort_by_key(|(rank, document, _, _)| {
+        matches.sort_by_key(|(rank, document, _, _, _)| {
             (*rank, &document.path, document.span_start, document.node_id)
         });
         let total = matches.len();
         let rows: Vec<_> = matches
             .into_iter()
             .take(limit)
-            .map(|(_, document, callers, callees)| {
+            .map(|(_, document, callers, callees, matched_by)| {
                 json!({
                     "node_id":document.node_id,
                     "symbol":document.qualified_name,
                     "path":document.path,
                     "span":{"start":document.span_start,"end":document.span_end},
+                    "matched_by":matched_by,
                     "callers":callers,
                     "callees":callees
                 })
@@ -355,6 +385,8 @@ impl Runtime {
         Ok(json!({
             "snapshot":self.stored.snapshot,
             "query":query,
+            "language":language,
+            "include_body":include_body,
             "matches":rows,
             "total":total,
             "truncated":total > limit,
@@ -4758,7 +4790,7 @@ mod proof_edge_tests {
         };
         let mut evaluations = BTreeMap::<String, usize>::new();
         let result = runtime
-            .search_graph_with_matcher("repeated", &scope, 50, |path, scope| {
+            .search_graph_with_matcher("repeated", &scope, 50, None, false, |path, scope| {
                 *evaluations.entry(path.to_owned()).or_default() += 1;
                 path_in_scope(path, scope)
             })
