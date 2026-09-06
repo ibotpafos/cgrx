@@ -54,4 +54,6 @@ with tempfile.TemporaryDirectory(prefix="cgrx-smoke-") as directory:
     usages = responses[5]["result"]["structuredContent"]["usages"]
     assert len(usages) == 1 and usages[0]["source"]["symbol"] == "caller", responses[5]
     assert usages[0]["confidence"] == "PROVEN", responses[5]
+    assert usages[0]["hop"] == 1 and usages[0]["via"]["symbol"] == "target", responses[5]
+    assert responses[5]["result"]["structuredContent"]["depth"] == 1, responses[5]
 print("MCP_SMOKE=PASS; TOOLS=10; CALLER=caller; BODY_SEARCH=target; OUTLINE=2; USAGES=1")

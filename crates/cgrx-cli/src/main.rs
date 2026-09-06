@@ -674,6 +674,7 @@ impl ToolBackend for RuntimeMcpBackend {
         symbol: &str,
         path: Option<&str>,
         scope: Value,
+        depth: u8,
         limit: u32,
     ) -> Result<Value, BackendError> {
         self.refresh()?;
@@ -681,7 +682,7 @@ impl ToolBackend for RuntimeMcpBackend {
         let limit = usize::try_from(limit)
             .map_err(|_| BackendError::new("cgrx.invalid_arguments", "limit is out of range"))?;
         self.runtime
-            .find_usages(symbol, path, &scope, limit)
+            .find_usages(symbol, path, &scope, depth, limit)
             .map_err(|error| BackendError::new(error.code(), error.to_string()))
     }
 

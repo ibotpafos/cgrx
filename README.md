@@ -78,7 +78,7 @@ updates, uninstalling and troubleshooting.
 | search_graph | Bounded symbol/body discovery with optional language filter |
 | get_outline | File symbols and definition spans without bodies |
 | trace_path | Caller/callee traversal |
-| find_usages | Proven incoming call/implementation sites with evidence |
+| find_usages | Proven direct or transitive incoming call/implementation sites |
 | get_code_snippet | Exact source definition |
 | check_index_coverage | Recorded gaps for paths/scopes |
 | orient | Budgeted task context |
@@ -94,7 +94,9 @@ in source order without paying for function bodies; `limit` defaults to 200 and
 is capped at 500.
 `find_usages` resolves an exact target symbol, then returns only proven incoming
 `CALLS`/`IMPLEMENTS` edges allowed by `scope`, including callsite path/span and
-resolver class. It fails on ambiguous symbols unless `path` disambiguates them.
+resolver class. `depth` defaults to 1 and is capped at 4; transitive rows include
+`hop` and the immediate `via` target so every step remains inspectable. It fails
+on ambiguous symbols unless `path` disambiguates them.
 
 See [the Trace MCP reference comparison](docs/reference-trace-mcp.md) for the
 evidence behind this search slice and the capabilities that remain separate.

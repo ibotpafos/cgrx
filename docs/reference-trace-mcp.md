@@ -20,13 +20,44 @@ contract instead of adding another always-visible MCP tool:
   requesting exact source.
 - `find_usages` returns proven incoming `CALLS` and `IMPLEMENTS` sites with exact
   evidence spans and resolver classes. Ambiguous targets fail until the caller
-  supplies a path, and uncertain edges stay out of the result.
+  supplies a path, and uncertain edges stay out of the result. Its optional
+  `depth` performs a bounded reverse traversal from 1 to 4 hops; every row reports
+  `hop` and the immediate `via` target, keeping a transitive impact chain auditable.
 
 The coverage tests exercise body discovery and file outlines across `.ts`,
 `.tsx`, `.go`, `.py`, and `.rs`, including language rejection, deterministic
 source order, truncation, and missing-path errors.
-Usage-site tests cover direct calls in all five extensions plus relation-aware
-deduplication between `CALLS` and `IMPLEMENTS` evidence.
+Usage-site tests cover direct calls in all five extensions, a two-hop reverse
+impact chain, and relation-aware deduplication between `CALLS` and `IMPLEMENTS`
+evidence.
+
+## Transfer matrix
+
+The comparison below separates useful product patterns from headline feature
+counts. Trace's public tool index currently describes a much larger surface,
+while its own measurements show that tool schemas and oversized default results
+can cost more tokens than the reads they replace. CGRX therefore extends compact
+existing contracts before adding another always-visible tool.
+
+| Trace strength | CGRX state | Decision |
+| --- | --- | --- |
+| Outline → exact symbol → impact workflow | `get_outline`, `get_code_snippet`, `find_usages` | Adopted; reverse impact now supports 1–4 proven hops. |
+| PR context benchmark with pinned SHAs and exact tokenizer counts | Frozen seven-project corpus exists, but current outline metric is bytes and does not measure review quality | Next measurement priority: reproduce both context arms with tokenizer counts and report truncation separately. |
+| Per-tool response-cost table and build-stamped results | MCP schema has a strict budget and compact rows; response cost is not yet measured per tool | Add a real stdio response-token benchmark before changing encodings or defaults. |
+| Per-shape output encoding | Compact tabular model-visible rows already coexist with full structured JSON | Keep tool-specific shaping; do not adopt TOON globally because Trace measured regressions for nested rows. |
+| Minimal/standard/full tool presets | CGRX exposes 10 focused tools with a model-visible schema budget below 2,000 tokens | Keep the small default surface; add a preset only when optional tools justify its fixed cost. |
+| Budgeted context bundles and project maps | `orient` + revision-bound `expand` already return bounded task context | Evaluate recall and round trips against Trace's benchmark shape before adding aliases. |
+| Framework-aware routes, ORM links, DI, and tests | CGRX currently proves compiler-checked `CALLS`/`IMPLEMENTS` for TypeScript/TSX, Go, Python, and Rust | Build framework packs only with frozen positive/negative relation fixtures; do not count symbol-only extraction as relationship support. |
+| Calibrated quality gates | `scan_risks` returns candidates, evidence, candidate tests, and explicit gaps | Defer merge-blocking scores until thresholds are calibrated on labeled changes and false positives. |
+| Decision memory with confidence, provenance, temporal validity, and privacy tags | Outside the current code-index contract | Reuse those data-quality rules if memory is added; keep reconstructible code out of durable memory. |
+| Local session analytics and opt-in tracing | No exported source/query telemetry in the current core | Add local latency/error/response-size metrics first; any exporter must remain opt-in and metadata-only. Trace documents its anonymous daily usage ping as a separate subsystem, so that policy must not be inferred from the tracing switch. |
+| Multi-project daemon LRU/TTL and measured RSS attribution | Current work targets explicit repo-scoped runtimes | Measure resident cost per loaded project before introducing a daemon cache or eviction policy. |
+| Automated client hooks and prompt rewrites | Repository instructions already route discovery through CGRX | Do not patch client prompts from the core binary; keep setup changes explicit and reversible. |
+
+The immediate order is: response-token benchmark, PR context benchmark, then
+framework-aware edges chosen from the real seven-project corpus. Decision memory,
+quality gates, and daemon lifecycle follow only after their accuracy and resource
+budgets can be tested independently.
 
 ## Seven-project outline measurement
 
@@ -67,6 +98,20 @@ packs.
 Sources:
 
 - <https://trace-mcp.com/tools-reference.html>
+- <https://trace-mcp.com/tools-index.html>
+- <https://trace-mcp.com/pr-context-benchmark.html>
+- <https://trace-mcp.com/reduce-claude-code-token-usage.html>
+- <https://trace-mcp.com/perf/response-tokens/>
+- <https://trace-mcp.com/toon-savings.html>
 - <https://trace-mcp.com/architecture.html>
 - <https://trace-mcp.com/language-matrix.html>
+- <https://trace-mcp.com/supported-frameworks.html>
+- <https://trace-mcp.com/configuration.html>
+- <https://trace-mcp.com/quality-gates.html>
+- <https://trace-mcp.com/decision-memory.html>
+- <https://trace-mcp.com/analytics.html>
+- <https://trace-mcp.com/telemetry.html>
+- <https://trace-mcp.com/daemon-memory.html>
+- <https://trace-mcp.com/tweakcc.html>
+- <https://trace-mcp.com/development.html>
 - <https://github.com/nikolai-vysotskyi/trace-mcp>

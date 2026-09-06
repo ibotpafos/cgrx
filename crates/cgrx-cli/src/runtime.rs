@@ -616,16 +616,18 @@ impl Runtime {
         symbol: &str,
         path: Option<&str>,
         scope: &Scope,
+        depth: u8,
         limit: usize,
     ) -> Result<Value, RuntimeError> {
         let symbol = symbol.trim();
         if symbol.is_empty()
             || path.is_some_and(|path| path.trim().is_empty())
+            || !(1..=4).contains(&depth)
             || !(1..=500).contains(&limit)
         {
             return Err(RuntimeError::new(
                 "cgrx.invalid_arguments",
-                "symbol must be non-empty; path must be non-empty when supplied; limit must be 1..500",
+                "symbol and depth 1..4 are required; path must be non-empty when supplied; limit must be 1..500",
             ));
         }
         let mut scoped = ScopedQuery::new(&self.stored, scope, path_in_scope);
@@ -684,33 +686,64 @@ impl Runtime {
             })
             .map(|document| (document.node_id, document))
             .collect();
-        let mut usages: Vec<_> = scoped
-            .definitive_arcs(&self.stored)
-            .into_iter()
-            .filter(|arc| arc.target == root.node_id)
-            .filter_map(|arc| {
-                Some((
-                    arc,
-                    by_id.get(&arc.source).copied()?,
-                    arc.evidence.as_ref()?,
-                ))
-            })
-            .collect();
-        usages.sort_by_key(|(arc, source, evidence)| {
+        let mut incoming = BTreeMap::<u64, Vec<&StoredArc>>::new();
+        for arc in scoped.definitive_arcs(&self.stored) {
+            incoming.entry(arc.target).or_default().push(arc);
+        }
+        for arcs in incoming.values_mut() {
+            arcs.sort_by_key(|arc| {
+                let evidence = arc.evidence.as_ref().expect("definitive edge evidence");
+                (&evidence.path, evidence.span.start, arc.kind, arc.source)
+            });
+        }
+        let mut visited = BTreeSet::from([root.node_id]);
+        let mut frontier = vec![root.node_id];
+        let mut usages = Vec::new();
+        for hop in 1..=depth {
+            let mut next = BTreeSet::new();
+            for target_id in &frontier {
+                let Some(target) = by_id.get(target_id).copied() else {
+                    continue;
+                };
+                for arc in incoming.get(target_id).into_iter().flatten() {
+                    if visited.contains(&arc.source) {
+                        continue;
+                    }
+                    let Some(source) = by_id.get(&arc.source).copied() else {
+                        continue;
+                    };
+                    let Some(evidence) = arc.evidence.as_ref() else {
+                        continue;
+                    };
+                    usages.push((arc, source, target, evidence, hop));
+                    next.insert(arc.source);
+                }
+            }
+            if next.is_empty() {
+                break;
+            }
+            visited.extend(&next);
+            frontier = next.into_iter().collect();
+        }
+        usages.sort_by_key(|(arc, source, target, evidence, hop)| {
             (
+                *hop,
                 &evidence.path,
                 evidence.span.start,
                 &source.path,
                 source.span_start,
+                target.node_id,
                 arc.kind,
                 source.node_id,
             )
         });
-        usages.dedup_by_key(|(arc, source, evidence)| {
+        usages.dedup_by_key(|(arc, source, target, evidence, hop)| {
             (
+                *hop,
                 evidence.path.clone(),
                 evidence.span,
                 source.node_id,
+                target.node_id,
                 arc.kind,
             )
         });
@@ -718,19 +751,22 @@ impl Runtime {
         let rows: Vec<_> = usages
             .into_iter()
             .take(limit)
-            .map(|(arc, source, evidence)| {
+            .map(|(arc, source, target, evidence, hop)| {
                 json!({
                     "source":{"node_id":source.node_id,"symbol":source.qualified_name,"path":source.path,"span":{"start":source.span_start,"end":source.span_end}},
+                    "via":{"node_id":target.node_id,"symbol":target.qualified_name,"path":target.path},
                     "relation":arc.kind,
                     "site":{"path":evidence.path,"span":evidence.span},
                     "resolver":evidence.resolver,
-                    "confidence":evidence.confidence
+                    "confidence":evidence.confidence,
+                    "hop":hop
                 })
             })
             .collect();
         Ok(json!({
             "snapshot":self.stored.snapshot,
             "target":{"node_id":root.node_id,"symbol":root.qualified_name,"path":root.path,"span":{"start":root.span_start,"end":root.span_end}},
+            "depth":depth,
             "usages":rows,
             "total":total,
             "truncated":total > limit,
@@ -4918,7 +4954,7 @@ mod proof_edge_tests {
             2
         );
         let usages = runtime
-            .find_usages("contract", None, &scope, 10)
+            .find_usages("contract", None, &scope, 1, 10)
             .expect("find proven usages across relations");
         assert_eq!(usages["total"], 2);
         assert_eq!(usages["usages"][0]["relation"], "CALLS");

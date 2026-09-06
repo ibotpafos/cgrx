@@ -57,6 +57,7 @@ pub trait ToolBackend: Send + Sync {
         symbol: &str,
         path: Option<&str>,
         scope: Value,
+        depth: u8,
         limit: u32,
     ) -> Result<Value, BackendError>;
     fn get_code_snippet(&mut self, symbol: &str, path: Option<&str>)
@@ -418,6 +419,7 @@ impl Server {
                 &arguments.symbol,
                 arguments.path.as_deref(),
                 arguments.scope,
+                arguments.depth,
                 arguments.limit,
             )
             .map_err(backend_error)
@@ -701,6 +703,8 @@ fn compact_usages(value: &Value) -> Value {
             json!([
                 item.pointer("/source/symbol"),
                 path_id,
+                item.get("hop"),
+                item.pointer("/via/symbol"),
                 item.get("relation"),
                 item.pointer("/site/span/start"),
                 item.pointer("/site/span/end"),
@@ -712,7 +716,7 @@ fn compact_usages(value: &Value) -> Value {
         "at":snapshot_tag(value.get("snapshot")),
         "target":value.get("target").map(compact_trace_root),
         "paths":paths,
-        "cols":["source","path_id","relation","site_start","site_end","resolver"],
+        "cols":["source","path_id","hop","via","relation","site_start","site_end","resolver"],
         "rows":rows,
         "n":value.get("total"),
         "gaps":value.get("coverage_gap_count")
@@ -878,6 +882,8 @@ struct FindUsagesArguments {
     path: Option<String>,
     #[serde(default)]
     scope: Value,
+    #[serde(default = "default_usage_depth")]
+    depth: u8,
     #[serde(default = "default_outline_limit")]
     limit: u32,
 }
@@ -911,6 +917,10 @@ const fn default_graph_limit() -> u32 {
 
 const fn default_outline_limit() -> u32 {
     200
+}
+
+const fn default_usage_depth() -> u8 {
+    1
 }
 
 fn default_trace_direction() -> String {
@@ -994,7 +1004,7 @@ fn model_visible_schema() -> Value {
         {"name":"search_graph","description":"Symbols or bodies","inputSchema":{"type":"object","required":["query"],"properties":{"query":{"type":"string"},"language":{"enum":["typescript","go","python","rust"]},"include_body":{"type":"boolean"},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":50}}}},
         {"name":"get_outline","description":"File symbols","inputSchema":{"type":"object","required":["path"],"properties":{"path":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":500}}}},
         {"name":"trace_path","description":"Calls","inputSchema":{"type":"object","required":["symbol"],"properties":{"symbol":{"type":"string"},"path":{"type":"string"},"direction":{"enum":["callers","callees","both"]},"depth":{"type":"integer","minimum":1,"maximum":4},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":50}}}},
-        {"name":"find_usages","description":"Proven usages","inputSchema":{"type":"object","required":["symbol"],"properties":{"symbol":{"type":"string"},"path":{"type":"string"},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":500}}}},
+        {"name":"find_usages","description":"Proven usages","inputSchema":{"type":"object","required":["symbol"],"properties":{"symbol":{"type":"string"},"path":{"type":"string"},"depth":{"type":"integer","minimum":1,"maximum":4},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":500}}}},
         {"name":"get_code_snippet","description":"Source","inputSchema":{"type":"object","required":["symbol"],"properties":{"symbol":{"type":"string"},"path":{"type":"string"}}}},
         {"name":"check_index_coverage","description":"Coverage","inputSchema":{"type":"object","properties":{"paths":{"type":"array","items":{"type":"string"}},"scopes":{"type":"array","items":{"type":"string"}},"offset":{"type":"integer","minimum":0},"limit":{"type":"integer","minimum":1,"maximum":500}}}},
         {"name":"expand","description":"Expand","inputSchema":{"type":"object","required":["handle","budget"],"properties":{"handle":{"type":"string"},"budget":{"type":"integer","minimum":1}}}},
@@ -1023,7 +1033,7 @@ fn model_visible_schema() -> Value {
         ),
         (
             "Find usages",
-            "List proven incoming call or implementation sites with resolver evidence and coverage gaps.",
+            "List proven direct or transitive incoming call or implementation sites with hop, resolver evidence and coverage gaps.",
         ),
         (
             "Read source",

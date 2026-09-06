@@ -1629,7 +1629,7 @@ fn find_usages_returns_proven_sites_for_every_supported_extension() {
 
     for (path, _, target, caller) in fixtures {
         let result = runtime
-            .find_usages(target, Some(path), &scope, 20)
+            .find_usages(target, Some(path), &scope, 1, 20)
             .expect("find usages");
         assert_eq!(result["total"], 1, "{path}: {result}");
         assert_eq!(result["usages"][0]["source"]["symbol"], caller);
@@ -1642,6 +1642,58 @@ fn find_usages_returns_proven_sites_for_every_supported_extension() {
                     .as_u64()
                     .unwrap()
         );
+    }
+}
+
+#[test]
+fn find_usages_walks_proven_reverse_edges_to_the_requested_depth() {
+    let repository = TestDirectory::new("transitive-find-usages");
+    git(repository.path(), &["init", "-q"]);
+    git(
+        repository.path(),
+        &["config", "user.email", "test@example.invalid"],
+    );
+    git(repository.path(), &["config", "user.name", "CGRX Test"]);
+    fs::write(
+        repository.path().join("usage.rs"),
+        b"fn target() {}\nfn middle() { target(); }\nfn top() { middle(); }\n",
+    )
+    .expect("write transitive usage fixture");
+    git(repository.path(), &["add", "."]);
+    git(repository.path(), &["commit", "-qm", "fixture"]);
+    let state = TestDirectory::new("transitive-find-usages-state");
+    Runtime::index(repository.path(), state.path()).expect("index repository");
+    let runtime = Runtime::open(state.path()).expect("open runtime");
+    let scope = Scope {
+        include: vec!["**".to_owned()],
+        exclude: Vec::new(),
+        relation_kinds: vec![RelationKind::Calls],
+        max_depth: 4,
+    };
+
+    let direct = runtime
+        .find_usages("target", Some("usage.rs"), &scope, 1, 20)
+        .expect("find direct usages");
+    assert_eq!(direct["depth"], 1);
+    assert_eq!(direct["total"], 1);
+    assert_eq!(direct["usages"][0]["source"]["symbol"], "middle");
+    assert_eq!(direct["usages"][0]["via"]["symbol"], "target");
+    assert_eq!(direct["usages"][0]["hop"], 1);
+
+    let transitive = runtime
+        .find_usages("target", Some("usage.rs"), &scope, 2, 20)
+        .expect("find transitive usages");
+    assert_eq!(transitive["depth"], 2);
+    assert_eq!(transitive["total"], 2);
+    assert_eq!(transitive["usages"][1]["source"]["symbol"], "top");
+    assert_eq!(transitive["usages"][1]["via"]["symbol"], "middle");
+    assert_eq!(transitive["usages"][1]["hop"], 2);
+
+    for invalid_depth in [0, 5] {
+        let error = runtime
+            .find_usages("target", Some("usage.rs"), &scope, invalid_depth, 20)
+            .expect_err("unbounded usage depth fails closed");
+        assert_eq!(error.code(), "cgrx.invalid_arguments");
     }
 }
 
@@ -1677,11 +1729,11 @@ fn trace_path_requires_a_path_for_ambiguous_short_symbols() {
         .expect("path disambiguates symbol");
     assert_eq!(resolved["root"]["path"], "a.rs");
     let usage_error = runtime
-        .find_usages("duplicate", None, &scope, 10)
+        .find_usages("duplicate", None, &scope, 1, 10)
         .expect_err("usage lookup also fails on ambiguous symbols");
     assert_eq!(usage_error.code(), "cgrx.ambiguous_symbol");
     let usages = runtime
-        .find_usages("duplicate", Some("a.rs"), &scope, 10)
+        .find_usages("duplicate", Some("a.rs"), &scope, 1, 10)
         .expect("path disambiguates usage lookup");
     assert_eq!(usages["target"]["path"], "a.rs");
 }
