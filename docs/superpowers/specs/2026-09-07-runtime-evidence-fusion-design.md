@@ -41,6 +41,8 @@ refactor graphs, and a local graph explorer.
 6. Existing tools gain an evidence selector; the default static behavior and
    tool count remain stable.
 7. Every limit and unresolved record is returned explicitly.
+8. Intelligent recommendations are computed locally from graph and observation
+   evidence; CGRX does not bundle, call, or require a separate LLM.
 
 ## Input formats
 
@@ -236,6 +238,26 @@ diagnostic panel, not as guessed graph edges.
 
 No analysis treats trace coverage as exhaustive.
 
+## Explainable intelligence without an LLM
+
+Runtime Evidence Fusion provides deterministic AI-assist signals derived from
+the evidence graph:
+
+- `dynamic_hot_path`: an observed-only edge with high log-scaled call count;
+- `static_runtime_divergence`: a frequently observed path absent from the
+  definitive static graph;
+- `high_runtime_blast_radius`: a changed symbol with multiple recent observed
+  callers or environments;
+- `refactor_priority`: a duplicate-code candidate weighted by observed entry
+  points, frequency, and preserved static evidence;
+- `next_action`: a bounded, reproducible search/trace/test instruction generated
+  from the finding's exact symbols, paths, revision, evidence selector, and gaps.
+
+Every signal includes its formula inputs and a stable reason code. Scores use
+integer arithmetic, deterministic ordering, documented caps, and frozen
+fixtures. No model weights, embeddings, prompts, network calls, or generated
+natural-language explanations are involved.
+
 ## Privacy and security
 
 Only function names, normalized repository-relative paths, line numbers, counts,
@@ -284,6 +306,8 @@ Acceptance requires:
 9. release smoke over all four languages and both input formats;
 10. a reproducible side-by-side capability result against the installed CBM
     `ingest_traces`, without claiming superiority outside the measured tasks.
+11. identical explainable-insight scores across repeated runs and input-order
+    permutations, with every score reconstructible from returned inputs.
 
 The existing repository quality gate remains authoritative for static graph
 precision, latency, memory, and token regressions.

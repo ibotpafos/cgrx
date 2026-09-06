@@ -21,6 +21,8 @@
 - Preserve the existing twelve-tool behavior and response shape for static-only calls; adding one ingestion tool must pass the schema-token gate.
 - Use Node.js 26 for TypeScript checks and web tests.
 - Treat benchmark fixtures and successful imports as bounded evidence, not universal trace coverage.
+- Do not bundle, call, or require an LLM, embedding model, model weights, prompts,
+  or external AI API; all intelligent signals must be deterministic and explainable.
 
 ## File map
 
@@ -144,7 +146,7 @@ git commit -m "feat: define runtime evidence contract"
 - Produces: `ObservationStore::open(root)`, `publish(resolved_batch)`, `status(revision)`, `load(revision)`, and `prune_before(unix_seconds, dry_run)`.
 - Produces: `ResolvedObservation`, `ResolvedBatch`, `ObservationSnapshot`, `ObservationStatus`, and `PruneReport`.
 
-- [ ] **Step 1: Write failing idempotency and old-or-new publication tests**
+- [x] **Step 1: Write failing idempotency and old-or-new publication tests**
 
 ```rust
 #[test]
@@ -165,13 +167,13 @@ fn invalid_snapshot_never_hides_static_generation() {
 }
 ```
 
-- [ ] **Step 2: Verify the store tests fail before implementation**
+- [x] **Step 2: Verify the store tests fail before implementation**
 
 Run: `cargo test -p cgrx-store --test observations`
 
 Expected: compilation fails because `ObservationStore` is missing.
 
-- [ ] **Step 3: Implement append-only batches and atomic revision snapshots**
+- [x] **Step 3: Implement append-only batches and atomic revision snapshots**
 
 Use `.cgrx/observations/{batches,by-revision,quarantine}`. Reuse the same
 repository writer-lock implementation through a crate-private shared helper.
@@ -179,7 +181,7 @@ Write with `create_new`, `sync_all`, directory sync, and same-filesystem rename.
 Validate schema version, revision, snapshot identity, canonical batch ID, and
 content hash on every read.
 
-- [ ] **Step 4: Add crash injection at batch fsync, snapshot fsync, and rename**
+- [x] **Step 4: Add crash injection at batch fsync, snapshot fsync, and rename**
 
 ```rust
 pub enum ObservationCrashSite {
@@ -193,13 +195,13 @@ Each subprocess trial must observe the old complete snapshot or the new complete
 snapshot. A partial batch may remain unreferenced and is cleaned during the next
 writer entry.
 
-- [ ] **Step 5: Run store and crash tests**
+- [x] **Step 5: Run store and crash tests**
 
 Run: `cargo test -p cgrx-store --test observations && cargo test -p cgrx-store --test crash_injection`
 
 Expected: all tests pass.
 
-- [ ] **Step 6: Commit the store**
+- [x] **Step 6: Commit the store**
 
 ```bash
 git add crates/cgrx-store/src/lib.rs crates/cgrx-store/src/observations.rs crates/cgrx-store/tests/observations.rs tests/crash_injection.rs
@@ -425,6 +427,12 @@ and proven static impacts.
 For every strategy, attach observed incoming edges to `preserve`; add the
 selected evidence mode, revision, and environments to `agent_handoff`. Never put
 an observed-only edge into a static `remove` set.
+
+Compute deterministic `dynamic_hot_path`, `static_runtime_divergence`,
+`high_runtime_blast_radius`, `refactor_priority`, and `next_action` signals from
+integer-capped count, recency, caller, environment, and static-evidence inputs.
+Return the formula inputs and stable reason code with each signal. Add repeated
+run and input-permutation tests; no model or embedding dependency is allowed.
 
 - [ ] **Step 5: Enrich orient under the existing budget**
 

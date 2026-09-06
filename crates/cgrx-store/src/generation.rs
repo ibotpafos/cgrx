@@ -301,7 +301,7 @@ impl GenerationWriter {
 // Persistent inode: never unlink this file, including after crashes. flock is
 // tied to the open file description: close alone can leave it held by a
 // concurrently forked child's descriptor until that child execs/exits.
-struct WriterLock {
+pub(crate) struct WriterLock {
     file: File,
     owner_pid: u32,
 }
@@ -319,7 +319,7 @@ impl Drop for WriterLock {
     }
 }
 
-fn acquire_writer_lock(root: &Path) -> io::Result<WriterLock> {
+pub(crate) fn acquire_writer_lock(root: &Path) -> io::Result<WriterLock> {
     let directory = root.join(".cgrx");
     fs::create_dir_all(&directory)?;
     let file = OpenOptions::new()
