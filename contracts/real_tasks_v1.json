@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "provenance": "NEXT curated source truth. Original 12 v1 tasks retained unchanged. New selections are manually read direct call/import/type references or explicit unresolved dispatches, not graph-derived answers. Each exact assertion is counted once, not relabeled across categories. Public repositories were independently cloned from each task repository_url into separate read-only fixtures; HEAD plus full-file and inclusive raw-line SHA-256 anchors pin provenance. No source bodies, key values or secrets are copied into this manifest. All public evidence is heldout, and no evidence file crosses splits. Category impact means a source dependency worth reviewing if the target changes, not an executed patch or a bug. UNRESOLVED has no target evidence and never denotes a positive edge. Negative distractors are bounded identifier absence only. Python/Go/TypeScript slice, not exhaustive and not a 200-task completion claim.",
+  "provenance": "NEXT curated source truth. Original 12 v1 tasks retained unchanged. New selections are manually read direct call/import/type references or explicit unresolved dispatches, not graph-derived answers. Each exact assertion is counted once, not relabeled across categories. Public repositories were independently cloned from each task repository_url into separate read-only fixtures; HEAD plus full-file and inclusive raw-line SHA-256 anchors pin provenance. No source bodies, key values or secrets are copied into this manifest. All public evidence is heldout, and no evidence file crosses splits. Category impact means a source dependency worth reviewing if the target changes, not an executed patch or a bug. UNRESOLVED has no target evidence and never denotes a positive edge. Negative distractors are bounded identifier absence only. This is a 195-assertion Python, Go, TypeScript and Rust slice, not an exhaustive benchmark claim.",
   "tasks": [
     {
       "id": "gd-notification-preferences",
@@ -5111,13 +5111,42 @@
       "split": "train",
       "category": "receiver",
       "question": "Which ChatService method does ChatController.rooms invoke?",
-      "provenance": {"method": "manual-source-read", "verified_on": "2026-09-05"},
-      "evidence": {
-        "source": {"path": "apps/api/src/chat/chat.controller.ts", "start_line": 13, "end_line": 15, "symbol": "rooms", "sha256": "58a698e43518febbae2fa538241d14c76bfb9c94c587368296f89e3834c9e7d6", "span_sha256": "26334a4550bb6d7cd87d18837cd3983b4c2708b05e4a6841efece7d7ea68b379"},
-        "site": {"path": "apps/api/src/chat/chat.controller.ts", "start_line": 14, "end_line": 14, "symbol": "getRooms", "sha256": "58a698e43518febbae2fa538241d14c76bfb9c94c587368296f89e3834c9e7d6", "span_sha256": "71701d25af1fa81b95e0b491bf7135873d309546b2e8c64ebb2bf1a23144a4a3"},
-        "target": {"path": "apps/api/src/chat/chat.service.ts", "start_line": 18, "end_line": 23, "symbol": "getRooms", "sha256": "8697e90392fd7e7ab0d0cdd9417f3ef75afcbde23febfb58c4770d135b8f75ce", "span_sha256": "074a4b465955cabf5cefb9376b4398cef268ea8416a700cec829c632611572a8"}
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05"
       },
-      "expected": {"relation": "CALLS", "source": "source", "target": "target", "site": "site"},
+      "evidence": {
+        "source": {
+          "path": "apps/api/src/chat/chat.controller.ts",
+          "start_line": 13,
+          "end_line": 15,
+          "symbol": "rooms",
+          "sha256": "58a698e43518febbae2fa538241d14c76bfb9c94c587368296f89e3834c9e7d6",
+          "span_sha256": "26334a4550bb6d7cd87d18837cd3983b4c2708b05e4a6841efece7d7ea68b379"
+        },
+        "site": {
+          "path": "apps/api/src/chat/chat.controller.ts",
+          "start_line": 14,
+          "end_line": 14,
+          "symbol": "getRooms",
+          "sha256": "58a698e43518febbae2fa538241d14c76bfb9c94c587368296f89e3834c9e7d6",
+          "span_sha256": "71701d25af1fa81b95e0b491bf7135873d309546b2e8c64ebb2bf1a23144a4a3"
+        },
+        "target": {
+          "path": "apps/api/src/chat/chat.service.ts",
+          "start_line": 18,
+          "end_line": 23,
+          "symbol": "getRooms",
+          "sha256": "8697e90392fd7e7ab0d0cdd9417f3ef75afcbde23febfb58c4770d135b8f75ce",
+          "span_sha256": "074a4b465955cabf5cefb9376b4398cef268ea8416a700cec829c632611572a8"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
       "rationale": "The constructor types chat as ChatService, imported from ./chat.service; rooms directly invokes this.chat.getRooms."
     },
     {
@@ -5127,13 +5156,42 @@
       "split": "train",
       "category": "receiver",
       "question": "Which ChatService method does ChatController.messages invoke?",
-      "provenance": {"method": "manual-source-read", "verified_on": "2026-09-05"},
-      "evidence": {
-        "source": {"path": "apps/api/src/chat/chat.controller.ts", "start_line": 19, "end_line": 24, "symbol": "messages", "sha256": "58a698e43518febbae2fa538241d14c76bfb9c94c587368296f89e3834c9e7d6", "span_sha256": "814a5a86f178fe35f107d27bc3b97e16743047449d8dd97107914b9a9f857ea4"},
-        "site": {"path": "apps/api/src/chat/chat.controller.ts", "start_line": 23, "end_line": 23, "symbol": "getMessages", "sha256": "58a698e43518febbae2fa538241d14c76bfb9c94c587368296f89e3834c9e7d6", "span_sha256": "2b920db8f55d1c6168c341082a0a2008d221030c262fbb7f78476d3c5a1d19fe"},
-        "target": {"path": "apps/api/src/chat/chat.service.ts", "start_line": 25, "end_line": 32, "symbol": "getMessages", "sha256": "8697e90392fd7e7ab0d0cdd9417f3ef75afcbde23febfb58c4770d135b8f75ce", "span_sha256": "c62dc8c5d35d2bec1926a5b53f0ca8405316109c99f73efea0fc062b73815b0d"}
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05"
       },
-      "expected": {"relation": "CALLS", "source": "source", "target": "target", "site": "site"},
+      "evidence": {
+        "source": {
+          "path": "apps/api/src/chat/chat.controller.ts",
+          "start_line": 19,
+          "end_line": 24,
+          "symbol": "messages",
+          "sha256": "58a698e43518febbae2fa538241d14c76bfb9c94c587368296f89e3834c9e7d6",
+          "span_sha256": "814a5a86f178fe35f107d27bc3b97e16743047449d8dd97107914b9a9f857ea4"
+        },
+        "site": {
+          "path": "apps/api/src/chat/chat.controller.ts",
+          "start_line": 23,
+          "end_line": 23,
+          "symbol": "getMessages",
+          "sha256": "58a698e43518febbae2fa538241d14c76bfb9c94c587368296f89e3834c9e7d6",
+          "span_sha256": "2b920db8f55d1c6168c341082a0a2008d221030c262fbb7f78476d3c5a1d19fe"
+        },
+        "target": {
+          "path": "apps/api/src/chat/chat.service.ts",
+          "start_line": 25,
+          "end_line": 32,
+          "symbol": "getMessages",
+          "sha256": "8697e90392fd7e7ab0d0cdd9417f3ef75afcbde23febfb58c4770d135b8f75ce",
+          "span_sha256": "c62dc8c5d35d2bec1926a5b53f0ca8405316109c99f73efea0fc062b73815b0d"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
       "rationale": "The constructor types chat as ChatService, imported from ./chat.service; messages directly invokes this.chat.getMessages."
     },
     {
@@ -5143,13 +5201,42 @@
       "split": "train",
       "category": "receiver",
       "question": "Which ChatService method does ChatController.createRoom invoke?",
-      "provenance": {"method": "manual-source-read", "verified_on": "2026-09-05"},
-      "evidence": {
-        "source": {"path": "apps/api/src/chat/chat.controller.ts", "start_line": 28, "end_line": 33, "symbol": "createRoom", "sha256": "58a698e43518febbae2fa538241d14c76bfb9c94c587368296f89e3834c9e7d6", "span_sha256": "cb589942445735f3c7541f556accd7c809bb5026b3aa98ee2b7a8205a93ec601"},
-        "site": {"path": "apps/api/src/chat/chat.controller.ts", "start_line": 32, "end_line": 32, "symbol": "createRoom", "sha256": "58a698e43518febbae2fa538241d14c76bfb9c94c587368296f89e3834c9e7d6", "span_sha256": "313656f4f6e7ea7110d0f30899d2380efd4543435a68157fc3dfaaefc4163bff"},
-        "target": {"path": "apps/api/src/chat/chat.service.ts", "start_line": 8, "end_line": 16, "symbol": "createRoom", "sha256": "8697e90392fd7e7ab0d0cdd9417f3ef75afcbde23febfb58c4770d135b8f75ce", "span_sha256": "c305a7159402df66a59197a4e4ce0bb78995ed7b6ddd2c016a096e5e84d05ad0"}
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05"
       },
-      "expected": {"relation": "CALLS", "source": "source", "target": "target", "site": "site"},
+      "evidence": {
+        "source": {
+          "path": "apps/api/src/chat/chat.controller.ts",
+          "start_line": 28,
+          "end_line": 33,
+          "symbol": "createRoom",
+          "sha256": "58a698e43518febbae2fa538241d14c76bfb9c94c587368296f89e3834c9e7d6",
+          "span_sha256": "cb589942445735f3c7541f556accd7c809bb5026b3aa98ee2b7a8205a93ec601"
+        },
+        "site": {
+          "path": "apps/api/src/chat/chat.controller.ts",
+          "start_line": 32,
+          "end_line": 32,
+          "symbol": "createRoom",
+          "sha256": "58a698e43518febbae2fa538241d14c76bfb9c94c587368296f89e3834c9e7d6",
+          "span_sha256": "313656f4f6e7ea7110d0f30899d2380efd4543435a68157fc3dfaaefc4163bff"
+        },
+        "target": {
+          "path": "apps/api/src/chat/chat.service.ts",
+          "start_line": 8,
+          "end_line": 16,
+          "symbol": "createRoom",
+          "sha256": "8697e90392fd7e7ab0d0cdd9417f3ef75afcbde23febfb58c4770d135b8f75ce",
+          "span_sha256": "c305a7159402df66a59197a4e4ce0bb78995ed7b6ddd2c016a096e5e84d05ad0"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
       "rationale": "The constructor types chat as ChatService, imported from ./chat.service; createRoom directly invokes the same-named service method."
     },
     {
@@ -5159,13 +5246,42 @@
       "split": "train",
       "category": "call",
       "question": "Which imported query does getAnalyticsPageData call for dashboard data?",
-      "provenance": {"method": "manual-source-read", "verified_on": "2026-09-05"},
-      "evidence": {
-        "source": {"path": "apps/CRM/app/actions/analytics/page-data.ts", "start_line": 13, "end_line": 26, "symbol": "getAnalyticsPageData", "sha256": "1428f736b14f76d931cac9b6aac42eaea7a2d584d80b9169acfe83cc5842b7ef", "span_sha256": "9c61e02b15e6d6eddcdfdbe82440f162a944375d450fbd8e952700f5f3eb7478"},
-        "site": {"path": "apps/CRM/app/actions/analytics/page-data.ts", "start_line": 17, "end_line": 17, "symbol": "getAnalyticsDashboard", "sha256": "1428f736b14f76d931cac9b6aac42eaea7a2d584d80b9169acfe83cc5842b7ef", "span_sha256": "a61c9b12bdc38f67e4b27776e9dbd4fedb4f980966ae3f2ce5cc2dadb019354f"},
-        "target": {"path": "apps/CRM/app/actions/analytics/queries.ts", "start_line": 167, "end_line": 169, "symbol": "getAnalyticsDashboard", "sha256": "62b80393057adb8649ed6e4969c2769b0cfca602901a71b32488950c60859deb", "span_sha256": "4525b596aa33bfd7e8a6ac09e53d61292e57d484d713d72fcf0dea6c2f55aa93"}
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05"
       },
-      "expected": {"relation": "CALLS", "source": "source", "target": "target", "site": "site"},
+      "evidence": {
+        "source": {
+          "path": "apps/CRM/app/actions/analytics/page-data.ts",
+          "start_line": 13,
+          "end_line": 26,
+          "symbol": "getAnalyticsPageData",
+          "sha256": "1428f736b14f76d931cac9b6aac42eaea7a2d584d80b9169acfe83cc5842b7ef",
+          "span_sha256": "9c61e02b15e6d6eddcdfdbe82440f162a944375d450fbd8e952700f5f3eb7478"
+        },
+        "site": {
+          "path": "apps/CRM/app/actions/analytics/page-data.ts",
+          "start_line": 17,
+          "end_line": 17,
+          "symbol": "getAnalyticsDashboard",
+          "sha256": "1428f736b14f76d931cac9b6aac42eaea7a2d584d80b9169acfe83cc5842b7ef",
+          "span_sha256": "a61c9b12bdc38f67e4b27776e9dbd4fedb4f980966ae3f2ce5cc2dadb019354f"
+        },
+        "target": {
+          "path": "apps/CRM/app/actions/analytics/queries.ts",
+          "start_line": 167,
+          "end_line": 169,
+          "symbol": "getAnalyticsDashboard",
+          "sha256": "62b80393057adb8649ed6e4969c2769b0cfca602901a71b32488950c60859deb",
+          "span_sha256": "4525b596aa33bfd7e8a6ac09e53d61292e57d484d713d72fcf0dea6c2f55aa93"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
       "rationale": "The source imports getAnalyticsDashboard through the root @ alias and directly calls it inside Promise.all."
     },
     {
@@ -5175,13 +5291,42 @@
       "split": "train",
       "category": "call",
       "question": "Which imported query does getAnalyticsPageData call for engineers?",
-      "provenance": {"method": "manual-source-read", "verified_on": "2026-09-05"},
-      "evidence": {
-        "source": {"path": "apps/CRM/app/actions/analytics/page-data.ts", "start_line": 13, "end_line": 26, "symbol": "getAnalyticsPageData", "sha256": "1428f736b14f76d931cac9b6aac42eaea7a2d584d80b9169acfe83cc5842b7ef", "span_sha256": "9c61e02b15e6d6eddcdfdbe82440f162a944375d450fbd8e952700f5f3eb7478"},
-        "site": {"path": "apps/CRM/app/actions/analytics/page-data.ts", "start_line": 18, "end_line": 18, "symbol": "getEngineers", "sha256": "1428f736b14f76d931cac9b6aac42eaea7a2d584d80b9169acfe83cc5842b7ef", "span_sha256": "4774058a42ebacee8c8a5cf15c0f216cb95811ba7c614f9789cb019c5448bb73"},
-        "target": {"path": "apps/CRM/app/actions/sessions/queries.ts", "start_line": 119, "end_line": 127, "symbol": "getEngineers", "sha256": "349539afc0b5ca35f3673863745ad6672f06816168f091fb08495639ff45a9da", "span_sha256": "ff1c35217884f62c3fdb3ec28852e75a54005ab2ef2c52c0e74bf9aeac953fb7"}
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05"
       },
-      "expected": {"relation": "CALLS", "source": "source", "target": "target", "site": "site"},
+      "evidence": {
+        "source": {
+          "path": "apps/CRM/app/actions/analytics/page-data.ts",
+          "start_line": 13,
+          "end_line": 26,
+          "symbol": "getAnalyticsPageData",
+          "sha256": "1428f736b14f76d931cac9b6aac42eaea7a2d584d80b9169acfe83cc5842b7ef",
+          "span_sha256": "9c61e02b15e6d6eddcdfdbe82440f162a944375d450fbd8e952700f5f3eb7478"
+        },
+        "site": {
+          "path": "apps/CRM/app/actions/analytics/page-data.ts",
+          "start_line": 18,
+          "end_line": 18,
+          "symbol": "getEngineers",
+          "sha256": "1428f736b14f76d931cac9b6aac42eaea7a2d584d80b9169acfe83cc5842b7ef",
+          "span_sha256": "4774058a42ebacee8c8a5cf15c0f216cb95811ba7c614f9789cb019c5448bb73"
+        },
+        "target": {
+          "path": "apps/CRM/app/actions/sessions/queries.ts",
+          "start_line": 119,
+          "end_line": 127,
+          "symbol": "getEngineers",
+          "sha256": "349539afc0b5ca35f3673863745ad6672f06816168f091fb08495639ff45a9da",
+          "span_sha256": "ff1c35217884f62c3fdb3ec28852e75a54005ab2ef2c52c0e74bf9aeac953fb7"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
       "rationale": "The source imports getEngineers through the root @ alias and directly calls it inside Promise.all."
     },
     {
@@ -5191,14 +5336,3553 @@
       "split": "train",
       "category": "call",
       "question": "Which helper does git_text call to execute Git and obtain bytes?",
-      "provenance": {"method": "manual-source-read", "verified_on": "2026-09-05"},
-      "evidence": {
-        "source": {"path": "crates/cgrx-cli/src/runtime.rs", "start_line": 4067, "end_line": 4071, "symbol": "git_text", "sha256": "8ddaaf4d0b6cf752715c86e9b9e2cead8a89ca186d9221e6698d12f05e7ec6dc", "span_sha256": "639395c0dff844e473e2ce3cdc137818eafec5457e9ee398adf51c0dcc3e2dc7"},
-        "site": {"path": "crates/cgrx-cli/src/runtime.rs", "start_line": 4068, "end_line": 4068, "symbol": "git_bytes", "sha256": "8ddaaf4d0b6cf752715c86e9b9e2cead8a89ca186d9221e6698d12f05e7ec6dc", "span_sha256": "584af571f53328cbfd7bc1bf0e2ef039cc428079cc074ce774996ac9cbabf553"},
-        "target": {"path": "crates/cgrx-cli/src/runtime.rs", "start_line": 4044, "end_line": 4054, "symbol": "git_bytes", "sha256": "8ddaaf4d0b6cf752715c86e9b9e2cead8a89ca186d9221e6698d12f05e7ec6dc", "span_sha256": "0c317511bcad802784fdd6ab3bd077fa8d69623b38bd19e810af2d6634a84b38"}
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-05"
       },
-      "expected": {"relation": "CALLS", "source": "source", "target": "target", "site": "site"},
+      "evidence": {
+        "source": {
+          "path": "crates/cgrx-cli/src/runtime.rs",
+          "start_line": 4067,
+          "end_line": 4071,
+          "symbol": "git_text",
+          "sha256": "8ddaaf4d0b6cf752715c86e9b9e2cead8a89ca186d9221e6698d12f05e7ec6dc",
+          "span_sha256": "639395c0dff844e473e2ce3cdc137818eafec5457e9ee398adf51c0dcc3e2dc7"
+        },
+        "site": {
+          "path": "crates/cgrx-cli/src/runtime.rs",
+          "start_line": 4068,
+          "end_line": 4068,
+          "symbol": "git_bytes",
+          "sha256": "8ddaaf4d0b6cf752715c86e9b9e2cead8a89ca186d9221e6698d12f05e7ec6dc",
+          "span_sha256": "584af571f53328cbfd7bc1bf0e2ef039cc428079cc074ce774996ac9cbabf553"
+        },
+        "target": {
+          "path": "crates/cgrx-cli/src/runtime.rs",
+          "start_line": 4044,
+          "end_line": 4054,
+          "symbol": "git_bytes",
+          "sha256": "8ddaaf4d0b6cf752715c86e9b9e2cead8a89ca186d9221e6698d12f05e7ec6dc",
+          "span_sha256": "0c317511bcad802784fdd6ab3bd077fa8d69623b38bd19e810af2d6634a84b38"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
       "rationale": "git_text directly passes root and args to the same-module git_bytes helper before UTF-8 decoding."
+    },
+    {
+      "id": "vocal-achievement-list-mine",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/IBO-271-MULTIPROJECT-20260905/vocal-snapshot",
+      "revision": "8613b9fc15a0989ccc5bd1d5fb41dcc0d350d578",
+      "split": "heldout",
+      "question": "Which local symbol does listMine call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "apps/api/src/achievement/achievement.controller.ts",
+          "sha256": "e8d7a14095066c702d0889129e0117519ab581bcfa7c5d824bdf23faa64bce47",
+          "start_line": 15,
+          "end_line": 17,
+          "span_sha256": "7a15b8e47b7de68f21945990aef19bc91cfed7a2da8ee0e962e02bc864ca78d3",
+          "symbol": "listMine"
+        },
+        "target": {
+          "path": "apps/api/src/achievement/achievement.service.ts",
+          "sha256": "250feedeac478004b474a2a61f0c7accf211b4ae0f12622046a8ed8cb612cbf6",
+          "start_line": 25,
+          "end_line": 25,
+          "span_sha256": "9d08e5bc6d026ba57b83f7ca6445ff6b99891d9657657276a5f4c813c682d3bc",
+          "symbol": "listMine"
+        },
+        "site": {
+          "path": "apps/api/src/achievement/achievement.controller.ts",
+          "sha256": "e8d7a14095066c702d0889129e0117519ab581bcfa7c5d824bdf23faa64bce47",
+          "start_line": 16,
+          "end_line": 16,
+          "span_sha256": "e954112b65f7c220509034451fa93e79c423800e6271cf2b4c59e830e18eda7a",
+          "symbol": "listMine"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The controller receiver is a readonly constructor parameter typed by the imported service; its unique listMine method is declared at the target anchor.",
+      "category": "receiver"
+    },
+    {
+      "id": "vocal-achievement-list-all",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/IBO-271-MULTIPROJECT-20260905/vocal-snapshot",
+      "revision": "8613b9fc15a0989ccc5bd1d5fb41dcc0d350d578",
+      "split": "heldout",
+      "question": "Which local symbol does listAll call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "apps/api/src/achievement/achievement.controller.ts",
+          "sha256": "e8d7a14095066c702d0889129e0117519ab581bcfa7c5d824bdf23faa64bce47",
+          "start_line": 20,
+          "end_line": 22,
+          "span_sha256": "6593de717d9d9c994a1ef5e152a21c33a97f2786dbad9514fe69d136bcdb5194",
+          "symbol": "listAll"
+        },
+        "target": {
+          "path": "apps/api/src/achievement/achievement.service.ts",
+          "sha256": "250feedeac478004b474a2a61f0c7accf211b4ae0f12622046a8ed8cb612cbf6",
+          "start_line": 37,
+          "end_line": 37,
+          "span_sha256": "116b8b9ecfcf7bd33c5151dd18b2bc3a93e60022e9c89ffc39d4a9f8fbb575ce",
+          "symbol": "listAll"
+        },
+        "site": {
+          "path": "apps/api/src/achievement/achievement.controller.ts",
+          "sha256": "e8d7a14095066c702d0889129e0117519ab581bcfa7c5d824bdf23faa64bce47",
+          "start_line": 21,
+          "end_line": 21,
+          "span_sha256": "8fccde952caa163fa8f2e6803514db7ab812cc46e32e362a514a8860161589d9",
+          "symbol": "listAll"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The controller receiver is a readonly constructor parameter typed by the imported service; its unique listAll method is declared at the target anchor.",
+      "category": "receiver"
+    },
+    {
+      "id": "vocal-auth-register",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/IBO-271-MULTIPROJECT-20260905/vocal-snapshot",
+      "revision": "8613b9fc15a0989ccc5bd1d5fb41dcc0d350d578",
+      "split": "heldout",
+      "question": "Which local symbol does register call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "apps/api/src/auth/auth.controller.ts",
+          "sha256": "6bf53780ce7e78cb55d25dc5c244739319c2eb66ad7795b9a1666ddf963071a6",
+          "start_line": 26,
+          "end_line": 30,
+          "span_sha256": "7fbb6f88cef5b335d1fc8744e779e4ca2e790baba99839e0aec14996dd2f6573",
+          "symbol": "register"
+        },
+        "target": {
+          "path": "apps/api/src/auth/auth.service.ts",
+          "sha256": "412400a9871936651e98e841b087e9abaf101cd6eee29ef14229f2ec4c699604",
+          "start_line": 23,
+          "end_line": 23,
+          "span_sha256": "d1bf3ff47a181771f41298976669680c705613062cf0de7174574913daab7b39",
+          "symbol": "register"
+        },
+        "site": {
+          "path": "apps/api/src/auth/auth.controller.ts",
+          "sha256": "6bf53780ce7e78cb55d25dc5c244739319c2eb66ad7795b9a1666ddf963071a6",
+          "start_line": 27,
+          "end_line": 27,
+          "span_sha256": "8f8c844d4c1c5af2dedfc3cb6269775d816b76cd7207f9160a2069899c45d614",
+          "symbol": "register"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The controller receiver is a readonly constructor parameter typed by the imported service; its unique register method is declared at the target anchor.",
+      "category": "receiver"
+    },
+    {
+      "id": "vocal-auth-login",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/IBO-271-MULTIPROJECT-20260905/vocal-snapshot",
+      "revision": "8613b9fc15a0989ccc5bd1d5fb41dcc0d350d578",
+      "split": "heldout",
+      "question": "Which local symbol does login call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "apps/api/src/auth/auth.controller.ts",
+          "sha256": "6bf53780ce7e78cb55d25dc5c244739319c2eb66ad7795b9a1666ddf963071a6",
+          "start_line": 35,
+          "end_line": 39,
+          "span_sha256": "057390e1814dc7820457ae881f2b47d3c757fbfad974bcc401caf389d1f443e8",
+          "symbol": "login"
+        },
+        "target": {
+          "path": "apps/api/src/auth/auth.service.ts",
+          "sha256": "412400a9871936651e98e841b087e9abaf101cd6eee29ef14229f2ec4c699604",
+          "start_line": 47,
+          "end_line": 47,
+          "span_sha256": "82e2ca77e8906d9378f5c78f17f6a7c5d1c62cb6417a72f19d6bda47d897eeab",
+          "symbol": "login"
+        },
+        "site": {
+          "path": "apps/api/src/auth/auth.controller.ts",
+          "sha256": "6bf53780ce7e78cb55d25dc5c244739319c2eb66ad7795b9a1666ddf963071a6",
+          "start_line": 36,
+          "end_line": 36,
+          "span_sha256": "058d13ad742ef92ff79f5785a5fd75ac36cc4c478d68e89377d674b32dde60df",
+          "symbol": "login"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The controller receiver is a readonly constructor parameter typed by the imported service; its unique login method is declared at the target anchor.",
+      "category": "receiver"
+    },
+    {
+      "id": "vocal-auth-forgot-password",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/IBO-271-MULTIPROJECT-20260905/vocal-snapshot",
+      "revision": "8613b9fc15a0989ccc5bd1d5fb41dcc0d350d578",
+      "split": "heldout",
+      "question": "Which local symbol does forgotPassword call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "apps/api/src/auth/auth.controller.ts",
+          "sha256": "6bf53780ce7e78cb55d25dc5c244739319c2eb66ad7795b9a1666ddf963071a6",
+          "start_line": 56,
+          "end_line": 58,
+          "span_sha256": "3538e5162ba5413ea35951c63f441fbbebc1d6311cf6e86418b7bb1a78329cab",
+          "symbol": "forgotPassword"
+        },
+        "target": {
+          "path": "apps/api/src/auth/auth.service.ts",
+          "sha256": "412400a9871936651e98e841b087e9abaf101cd6eee29ef14229f2ec4c699604",
+          "start_line": 80,
+          "end_line": 80,
+          "span_sha256": "6420edba452fbf52628f920d2f67aa7f147a20dac6b062883b3296a3afd8696d",
+          "symbol": "requestPasswordReset"
+        },
+        "site": {
+          "path": "apps/api/src/auth/auth.controller.ts",
+          "sha256": "6bf53780ce7e78cb55d25dc5c244739319c2eb66ad7795b9a1666ddf963071a6",
+          "start_line": 57,
+          "end_line": 57,
+          "span_sha256": "79285b7b6334b5cbb9d6f9f736f2493b193718094ae4fc97e0fdf91ff820737d",
+          "symbol": "requestPasswordReset"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The controller receiver is a readonly constructor parameter typed by the imported service; its unique requestPasswordReset method is declared at the target anchor.",
+      "category": "receiver"
+    },
+    {
+      "id": "vocal-auth-reset-password",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/IBO-271-MULTIPROJECT-20260905/vocal-snapshot",
+      "revision": "8613b9fc15a0989ccc5bd1d5fb41dcc0d350d578",
+      "split": "heldout",
+      "question": "Which local symbol does resetPassword call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "apps/api/src/auth/auth.controller.ts",
+          "sha256": "6bf53780ce7e78cb55d25dc5c244739319c2eb66ad7795b9a1666ddf963071a6",
+          "start_line": 63,
+          "end_line": 65,
+          "span_sha256": "1d9506eb3b2de32d1d8ecee706a40e4cc74275a8eb1c72af68f830ac5a398f74",
+          "symbol": "resetPassword"
+        },
+        "target": {
+          "path": "apps/api/src/auth/auth.service.ts",
+          "sha256": "412400a9871936651e98e841b087e9abaf101cd6eee29ef14229f2ec4c699604",
+          "start_line": 102,
+          "end_line": 102,
+          "span_sha256": "9c8b622df908a116eb0051a9ff90a10c9e0015771d5e710f99ce77fd27ea8614",
+          "symbol": "resetPassword"
+        },
+        "site": {
+          "path": "apps/api/src/auth/auth.controller.ts",
+          "sha256": "6bf53780ce7e78cb55d25dc5c244739319c2eb66ad7795b9a1666ddf963071a6",
+          "start_line": 64,
+          "end_line": 64,
+          "span_sha256": "80208d6e710bf18693ac58a120a325a1075dea7598735498c1a1536c28c748a5",
+          "symbol": "resetPassword"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The controller receiver is a readonly constructor parameter typed by the imported service; its unique resetPassword method is declared at the target anchor.",
+      "category": "receiver"
+    },
+    {
+      "id": "vocal-billing-plans",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/IBO-271-MULTIPROJECT-20260905/vocal-snapshot",
+      "revision": "8613b9fc15a0989ccc5bd1d5fb41dcc0d350d578",
+      "split": "heldout",
+      "question": "Which local symbol does plans call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "apps/api/src/billing/billing.controller.ts",
+          "sha256": "24380fe90279d4f74f75a7aa17c40406e49f83e16a487ae30cfaf05d5f0fe43c",
+          "start_line": 19,
+          "end_line": 21,
+          "span_sha256": "8944c7d728dcc0d82183789e9e6f04396a2f79749a061aafbcf97e43bf8d21c9",
+          "symbol": "plans"
+        },
+        "target": {
+          "path": "apps/api/src/billing/billing.service.ts",
+          "sha256": "aa847e0f4d46dc4b9c6560a681a0b80ac951654fb298c9380d85fa4f28e86caf",
+          "start_line": 41,
+          "end_line": 41,
+          "span_sha256": "4c6e0b2bc40e5185694eef16343510058526f681118c6f697199e966a9126ecf",
+          "symbol": "listPlans"
+        },
+        "site": {
+          "path": "apps/api/src/billing/billing.controller.ts",
+          "sha256": "24380fe90279d4f74f75a7aa17c40406e49f83e16a487ae30cfaf05d5f0fe43c",
+          "start_line": 20,
+          "end_line": 20,
+          "span_sha256": "2c127be4b29d5debe8c20e866867bf9b36c641cd288b7ec2d0c8acd8b9b16c98",
+          "symbol": "listPlans"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The controller receiver is a readonly constructor parameter typed by the imported service; its unique listPlans method is declared at the target anchor.",
+      "category": "receiver"
+    },
+    {
+      "id": "vocal-billing-mine",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/IBO-271-MULTIPROJECT-20260905/vocal-snapshot",
+      "revision": "8613b9fc15a0989ccc5bd1d5fb41dcc0d350d578",
+      "split": "heldout",
+      "question": "Which local symbol does mine call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "apps/api/src/billing/billing.controller.ts",
+          "sha256": "24380fe90279d4f74f75a7aa17c40406e49f83e16a487ae30cfaf05d5f0fe43c",
+          "start_line": 25,
+          "end_line": 27,
+          "span_sha256": "ad8f86f43c2b9914e7172bb273c3548102fa2133e83eb35726d474562e5bf9ae",
+          "symbol": "mine"
+        },
+        "target": {
+          "path": "apps/api/src/billing/billing.service.ts",
+          "sha256": "aa847e0f4d46dc4b9c6560a681a0b80ac951654fb298c9380d85fa4f28e86caf",
+          "start_line": 65,
+          "end_line": 65,
+          "span_sha256": "ae4300326a9b56d77eab69ff494a8d9b7d79074104a263ad42b0d8565339614a",
+          "symbol": "mine"
+        },
+        "site": {
+          "path": "apps/api/src/billing/billing.controller.ts",
+          "sha256": "24380fe90279d4f74f75a7aa17c40406e49f83e16a487ae30cfaf05d5f0fe43c",
+          "start_line": 26,
+          "end_line": 26,
+          "span_sha256": "a6b4b138647375349795aea0a5ff0c8075f8a7cb468eceb7bd4531b65c39ef4d",
+          "symbol": "mine"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The controller receiver is a readonly constructor parameter typed by the imported service; its unique mine method is declared at the target anchor.",
+      "category": "receiver"
+    },
+    {
+      "id": "vocal-billing-subscribe",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/IBO-271-MULTIPROJECT-20260905/vocal-snapshot",
+      "revision": "8613b9fc15a0989ccc5bd1d5fb41dcc0d350d578",
+      "split": "heldout",
+      "question": "Which local symbol does subscribe call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "apps/api/src/billing/billing.controller.ts",
+          "sha256": "24380fe90279d4f74f75a7aa17c40406e49f83e16a487ae30cfaf05d5f0fe43c",
+          "start_line": 31,
+          "end_line": 34,
+          "span_sha256": "a2f06181655b0d1da001ac948da259e5e904f0e1101df3f27f6e57951b957a66",
+          "symbol": "subscribe"
+        },
+        "target": {
+          "path": "apps/api/src/billing/billing.service.ts",
+          "sha256": "aa847e0f4d46dc4b9c6560a681a0b80ac951654fb298c9380d85fa4f28e86caf",
+          "start_line": 116,
+          "end_line": 116,
+          "span_sha256": "8d5c2885c87769406f4ed685527ce945974df76a0e03279928d85b7c17d2a5f3",
+          "symbol": "subscribe"
+        },
+        "site": {
+          "path": "apps/api/src/billing/billing.controller.ts",
+          "sha256": "24380fe90279d4f74f75a7aa17c40406e49f83e16a487ae30cfaf05d5f0fe43c",
+          "start_line": 33,
+          "end_line": 33,
+          "span_sha256": "b33aa35782f2b30ad737ee2d526d552a9a408f900da71050dd495261015615da",
+          "symbol": "subscribe"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The controller receiver is a readonly constructor parameter typed by the imported service; its unique subscribe method is declared at the target anchor.",
+      "category": "receiver"
+    },
+    {
+      "id": "vocal-billing-purchase-course",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/IBO-271-MULTIPROJECT-20260905/vocal-snapshot",
+      "revision": "8613b9fc15a0989ccc5bd1d5fb41dcc0d350d578",
+      "split": "heldout",
+      "question": "Which local symbol does purchaseCourse call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "apps/api/src/billing/billing.controller.ts",
+          "sha256": "24380fe90279d4f74f75a7aa17c40406e49f83e16a487ae30cfaf05d5f0fe43c",
+          "start_line": 38,
+          "end_line": 43,
+          "span_sha256": "121d1dca786d4e5853246b8e4963d5bbabf1e11af02837524f6e023bf83bf41a",
+          "symbol": "purchaseCourse"
+        },
+        "target": {
+          "path": "apps/api/src/billing/billing.service.ts",
+          "sha256": "aa847e0f4d46dc4b9c6560a681a0b80ac951654fb298c9380d85fa4f28e86caf",
+          "start_line": 145,
+          "end_line": 145,
+          "span_sha256": "43052b733dfd35d4b8c8c7901c35b70e2c5005f21fc703c5d8ec2d789e9033f1",
+          "symbol": "purchaseCourse"
+        },
+        "site": {
+          "path": "apps/api/src/billing/billing.controller.ts",
+          "sha256": "24380fe90279d4f74f75a7aa17c40406e49f83e16a487ae30cfaf05d5f0fe43c",
+          "start_line": 42,
+          "end_line": 42,
+          "span_sha256": "790d5bdc58c67daad8a6abb66763c7d537b9ecdff21af6ac26f7615289b38756",
+          "symbol": "purchaseCourse"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The controller receiver is a readonly constructor parameter typed by the imported service; its unique purchaseCourse method is declared at the target anchor.",
+      "category": "receiver"
+    },
+    {
+      "id": "vocal-billing-refund",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/IBO-271-MULTIPROJECT-20260905/vocal-snapshot",
+      "revision": "8613b9fc15a0989ccc5bd1d5fb41dcc0d350d578",
+      "split": "heldout",
+      "question": "Which local symbol does refund call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "apps/api/src/billing/billing.controller.ts",
+          "sha256": "24380fe90279d4f74f75a7aa17c40406e49f83e16a487ae30cfaf05d5f0fe43c",
+          "start_line": 48,
+          "end_line": 53,
+          "span_sha256": "d29593ead4a2eb0351e2762b678513b9d51d0d0a1962fa188447796a95100e06",
+          "symbol": "refund"
+        },
+        "target": {
+          "path": "apps/api/src/billing/billing.service.ts",
+          "sha256": "aa847e0f4d46dc4b9c6560a681a0b80ac951654fb298c9380d85fa4f28e86caf",
+          "start_line": 209,
+          "end_line": 209,
+          "span_sha256": "8800140dda9e6a988f82875f053dc354290fb79ab1807d8185141584b150155c",
+          "symbol": "refund"
+        },
+        "site": {
+          "path": "apps/api/src/billing/billing.controller.ts",
+          "sha256": "24380fe90279d4f74f75a7aa17c40406e49f83e16a487ae30cfaf05d5f0fe43c",
+          "start_line": 52,
+          "end_line": 52,
+          "span_sha256": "9c51ce43ed69524663782e8b08503a7fa5b1a68628d0ade6f61005b0db11e05b",
+          "symbol": "refund"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The controller receiver is a readonly constructor parameter typed by the imported service; its unique refund method is declared at the target anchor.",
+      "category": "receiver"
+    },
+    {
+      "id": "vocal-billing-cancel",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/IBO-271-MULTIPROJECT-20260905/vocal-snapshot",
+      "revision": "8613b9fc15a0989ccc5bd1d5fb41dcc0d350d578",
+      "split": "heldout",
+      "question": "Which local symbol does cancel call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "apps/api/src/billing/billing.controller.ts",
+          "sha256": "24380fe90279d4f74f75a7aa17c40406e49f83e16a487ae30cfaf05d5f0fe43c",
+          "start_line": 57,
+          "end_line": 59,
+          "span_sha256": "d283e9b7b4909a2adeaa14af1bf0d610023674ac7d8f73477259fcb737495b0a",
+          "symbol": "cancel"
+        },
+        "target": {
+          "path": "apps/api/src/billing/billing.service.ts",
+          "sha256": "aa847e0f4d46dc4b9c6560a681a0b80ac951654fb298c9380d85fa4f28e86caf",
+          "start_line": 243,
+          "end_line": 243,
+          "span_sha256": "1bd7c2f51a15bf66f6936137bc318c675359b2f8c284895a90eb161da45ea019",
+          "symbol": "cancel"
+        },
+        "site": {
+          "path": "apps/api/src/billing/billing.controller.ts",
+          "sha256": "24380fe90279d4f74f75a7aa17c40406e49f83e16a487ae30cfaf05d5f0fe43c",
+          "start_line": 58,
+          "end_line": 58,
+          "span_sha256": "7f4b44e8c260f504496ea49f86ae52fdd6bb0991b3f924bc2ad0688b90181525",
+          "symbol": "cancel"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The controller receiver is a readonly constructor parameter typed by the imported service; its unique cancel method is declared at the target anchor.",
+      "category": "receiver"
+    },
+    {
+      "id": "vocal-billing-confirm-mock",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/IBO-271-MULTIPROJECT-20260905/vocal-snapshot",
+      "revision": "8613b9fc15a0989ccc5bd1d5fb41dcc0d350d578",
+      "split": "heldout",
+      "question": "Which local symbol does mockConfirm call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "apps/api/src/billing/billing.controller.ts",
+          "sha256": "24380fe90279d4f74f75a7aa17c40406e49f83e16a487ae30cfaf05d5f0fe43c",
+          "start_line": 64,
+          "end_line": 67,
+          "span_sha256": "a888c520a95cbb097d58265c621b06602a3fab9d8ee583e76327f3d96e96beff",
+          "symbol": "mockConfirm"
+        },
+        "target": {
+          "path": "apps/api/src/billing/billing.service.ts",
+          "sha256": "aa847e0f4d46dc4b9c6560a681a0b80ac951654fb298c9380d85fa4f28e86caf",
+          "start_line": 194,
+          "end_line": 194,
+          "span_sha256": "215c68b27292db662daa036d7371e7d2d25eecd3144ae16446f0bdb111945940",
+          "symbol": "confirmMockPayment"
+        },
+        "site": {
+          "path": "apps/api/src/billing/billing.controller.ts",
+          "sha256": "24380fe90279d4f74f75a7aa17c40406e49f83e16a487ae30cfaf05d5f0fe43c",
+          "start_line": 66,
+          "end_line": 66,
+          "span_sha256": "9940ce34c118e9b0e596ff3bdf6aed4a45b3579067d30c4383c628845ad6670a",
+          "symbol": "confirmMockPayment"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The controller receiver is a readonly constructor parameter typed by the imported service; its unique confirmMockPayment method is declared at the target anchor.",
+      "category": "receiver"
+    },
+    {
+      "id": "vocal-billing-admin-stats",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/IBO-271-MULTIPROJECT-20260905/vocal-snapshot",
+      "revision": "8613b9fc15a0989ccc5bd1d5fb41dcc0d350d578",
+      "split": "heldout",
+      "question": "Which local symbol does adminStats call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "apps/api/src/billing/billing.controller.ts",
+          "sha256": "24380fe90279d4f74f75a7aa17c40406e49f83e16a487ae30cfaf05d5f0fe43c",
+          "start_line": 72,
+          "end_line": 74,
+          "span_sha256": "b6a859eb69f6cec63d216ca28ce81b9a290dc5983b47c97f149c49daa321beaf",
+          "symbol": "adminStats"
+        },
+        "target": {
+          "path": "apps/api/src/billing/billing.service.ts",
+          "sha256": "aa847e0f4d46dc4b9c6560a681a0b80ac951654fb298c9380d85fa4f28e86caf",
+          "start_line": 323,
+          "end_line": 323,
+          "span_sha256": "88e4fb9bdd8d8d6c22e5d2464aa703ba1500e357f66174f714e2fd9c3ea362b1",
+          "symbol": "adminStats"
+        },
+        "site": {
+          "path": "apps/api/src/billing/billing.controller.ts",
+          "sha256": "24380fe90279d4f74f75a7aa17c40406e49f83e16a487ae30cfaf05d5f0fe43c",
+          "start_line": 73,
+          "end_line": 73,
+          "span_sha256": "9d7eefd2a4923424dff61aea71e8260fecd7f861dc6affbef95be3e33b9275fb",
+          "symbol": "adminStats"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The controller receiver is a readonly constructor parameter typed by the imported service; its unique adminStats method is declared at the target anchor.",
+      "category": "receiver"
+    },
+    {
+      "id": "vocal-billing-webhook",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/IBO-271-MULTIPROJECT-20260905/vocal-snapshot",
+      "revision": "8613b9fc15a0989ccc5bd1d5fb41dcc0d350d578",
+      "split": "heldout",
+      "question": "Which local symbol does webhook call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "apps/api/src/billing/billing.controller.ts",
+          "sha256": "24380fe90279d4f74f75a7aa17c40406e49f83e16a487ae30cfaf05d5f0fe43c",
+          "start_line": 84,
+          "end_line": 95,
+          "span_sha256": "2e905928bef83e208b2c32568f0fc7ca04f64ca75dc3ffe16cb48e99ae756735",
+          "symbol": "webhook"
+        },
+        "target": {
+          "path": "apps/api/src/billing/billing.service.ts",
+          "sha256": "aa847e0f4d46dc4b9c6560a681a0b80ac951654fb298c9380d85fa4f28e86caf",
+          "start_line": 257,
+          "end_line": 257,
+          "span_sha256": "a266da91dd3023b3ff783d71fb81df5dcf0b4b7eaa8a7aa7e5dfd0d5b9231558",
+          "symbol": "handleWebhook"
+        },
+        "site": {
+          "path": "apps/api/src/billing/billing.controller.ts",
+          "sha256": "24380fe90279d4f74f75a7aa17c40406e49f83e16a487ae30cfaf05d5f0fe43c",
+          "start_line": 94,
+          "end_line": 94,
+          "span_sha256": "f4ff29d911d72a5f7d4e018b2b23a3fdff326ed33a8f6fffd48761917a27b677",
+          "symbol": "handleWebhook"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The controller receiver is a readonly constructor parameter typed by the imported service; its unique handleWebhook method is declared at the target anchor.",
+      "category": "receiver"
+    },
+    {
+      "id": "vocal-bookmark-list",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/IBO-271-MULTIPROJECT-20260905/vocal-snapshot",
+      "revision": "8613b9fc15a0989ccc5bd1d5fb41dcc0d350d578",
+      "split": "heldout",
+      "question": "Which local symbol does list call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "apps/api/src/bookmark/bookmark.controller.ts",
+          "sha256": "4519ecd6d4729727e77ef55c70bde88007a395012e5d51c7d5f368897fa94cd8",
+          "start_line": 15,
+          "end_line": 17,
+          "span_sha256": "6b7ba750480edd9f092f51e0b21664995ac90586dbb24f4d68c6410178678904",
+          "symbol": "list"
+        },
+        "target": {
+          "path": "apps/api/src/bookmark/bookmark.service.ts",
+          "sha256": "0639c1752d8d30400aba4dd60a7d7c6be1f1aaa4aa6f2b8b6cd34693ca521139",
+          "start_line": 12,
+          "end_line": 12,
+          "span_sha256": "9c7615a4e09a89dbf667e35fb393972f121615105afb0d97a60cc8275bbe9b68",
+          "symbol": "list"
+        },
+        "site": {
+          "path": "apps/api/src/bookmark/bookmark.controller.ts",
+          "sha256": "4519ecd6d4729727e77ef55c70bde88007a395012e5d51c7d5f368897fa94cd8",
+          "start_line": 16,
+          "end_line": 16,
+          "span_sha256": "a9671112292d294c1727c72000c5352a442540683e710ae5b12f5631e25bd9d9",
+          "symbol": "list"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The controller receiver is a readonly constructor parameter typed by the imported service; its unique list method is declared at the target anchor.",
+      "category": "receiver"
+    },
+    {
+      "id": "vocal-bookmark-toggle",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/IBO-271-MULTIPROJECT-20260905/vocal-snapshot",
+      "revision": "8613b9fc15a0989ccc5bd1d5fb41dcc0d350d578",
+      "split": "heldout",
+      "question": "Which local symbol does toggle call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "apps/api/src/bookmark/bookmark.controller.ts",
+          "sha256": "4519ecd6d4729727e77ef55c70bde88007a395012e5d51c7d5f368897fa94cd8",
+          "start_line": 20,
+          "end_line": 22,
+          "span_sha256": "c101ef3e45d25936d1cada24632e013bfcbd93b34fde0fb1c689f0a910ce05e8",
+          "symbol": "toggle"
+        },
+        "target": {
+          "path": "apps/api/src/bookmark/bookmark.service.ts",
+          "sha256": "0639c1752d8d30400aba4dd60a7d7c6be1f1aaa4aa6f2b8b6cd34693ca521139",
+          "start_line": 26,
+          "end_line": 26,
+          "span_sha256": "74e6c6be593acb0b69ab6d4ef0d76aa950ec3027736f2b99a135b43b34c1d352",
+          "symbol": "toggle"
+        },
+        "site": {
+          "path": "apps/api/src/bookmark/bookmark.controller.ts",
+          "sha256": "4519ecd6d4729727e77ef55c70bde88007a395012e5d51c7d5f368897fa94cd8",
+          "start_line": 21,
+          "end_line": 21,
+          "span_sha256": "a616caf5f5ebc858adc319809f45eb7af3b564c1f88422da1b74703355ea35b7",
+          "symbol": "toggle"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The controller receiver is a readonly constructor parameter typed by the imported service; its unique toggle method is declared at the target anchor.",
+      "category": "receiver"
+    },
+    {
+      "id": "vocal-certificate-list-mine",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/IBO-271-MULTIPROJECT-20260905/vocal-snapshot",
+      "revision": "8613b9fc15a0989ccc5bd1d5fb41dcc0d350d578",
+      "split": "heldout",
+      "question": "Which local symbol does listMine call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "apps/api/src/certificate/certificate.controller.ts",
+          "sha256": "ddf0fe018f2ff51086bd087b29ea1b363b012a099d743ecfe7bbf84b10892eac",
+          "start_line": 15,
+          "end_line": 17,
+          "span_sha256": "69a3a5ca060c9d1168364c0df6ec35bf80f54d15ca4f065bcef4b4061acdfcf4",
+          "symbol": "listMine"
+        },
+        "target": {
+          "path": "apps/api/src/certificate/certificate.service.ts",
+          "sha256": "97c4bb8b341f435d002b6b7cb389455844a6d2e41ed8b1bb5fa7a0d1de597c58",
+          "start_line": 21,
+          "end_line": 21,
+          "span_sha256": "9d08e5bc6d026ba57b83f7ca6445ff6b99891d9657657276a5f4c813c682d3bc",
+          "symbol": "listMine"
+        },
+        "site": {
+          "path": "apps/api/src/certificate/certificate.controller.ts",
+          "sha256": "ddf0fe018f2ff51086bd087b29ea1b363b012a099d743ecfe7bbf84b10892eac",
+          "start_line": 16,
+          "end_line": 16,
+          "span_sha256": "931993e4e9dd6a105cb1df61815d725dfc44488faf81b85dbb89f74024224d2c",
+          "symbol": "listMine"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The controller receiver is a readonly constructor parameter typed by the imported service; its unique listMine method is declared at the target anchor.",
+      "category": "receiver"
+    },
+    {
+      "id": "vocal-certificate-find",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/IBO-271-MULTIPROJECT-20260905/vocal-snapshot",
+      "revision": "8613b9fc15a0989ccc5bd1d5fb41dcc0d350d578",
+      "split": "heldout",
+      "question": "Which local symbol does findOne call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "apps/api/src/certificate/certificate.controller.ts",
+          "sha256": "ddf0fe018f2ff51086bd087b29ea1b363b012a099d743ecfe7bbf84b10892eac",
+          "start_line": 20,
+          "end_line": 25,
+          "span_sha256": "afb7b2b432b846c89b70aed758df6d4fca2ccd95973c7755ba639840362c0d61",
+          "symbol": "findOne"
+        },
+        "target": {
+          "path": "apps/api/src/certificate/certificate.service.ts",
+          "sha256": "97c4bb8b341f435d002b6b7cb389455844a6d2e41ed8b1bb5fa7a0d1de597c58",
+          "start_line": 31,
+          "end_line": 31,
+          "span_sha256": "a32df841325a4f6e5ac36ad1127c96493e927cd0699524a6b03e341aec80c2e5",
+          "symbol": "findForUser"
+        },
+        "site": {
+          "path": "apps/api/src/certificate/certificate.controller.ts",
+          "sha256": "ddf0fe018f2ff51086bd087b29ea1b363b012a099d743ecfe7bbf84b10892eac",
+          "start_line": 24,
+          "end_line": 24,
+          "span_sha256": "4074a3b938e8077d14fc1f53777b4bb02574559046d9f2890e6932450bfa8b8d",
+          "symbol": "findForUser"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The controller receiver is a readonly constructor parameter typed by the imported service; its unique findForUser method is declared at the target anchor.",
+      "category": "receiver"
+    },
+    {
+      "id": "vocal-certificate-issue",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/IBO-271-MULTIPROJECT-20260905/vocal-snapshot",
+      "revision": "8613b9fc15a0989ccc5bd1d5fb41dcc0d350d578",
+      "split": "heldout",
+      "question": "Which local symbol does issue call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "apps/api/src/certificate/certificate.controller.ts",
+          "sha256": "ddf0fe018f2ff51086bd087b29ea1b363b012a099d743ecfe7bbf84b10892eac",
+          "start_line": 28,
+          "end_line": 33,
+          "span_sha256": "f11b8335545232da787fcc844e18f3b23f67c55d3b78a5bc750fbfc58b9d621b",
+          "symbol": "issue"
+        },
+        "target": {
+          "path": "apps/api/src/certificate/certificate.service.ts",
+          "sha256": "97c4bb8b341f435d002b6b7cb389455844a6d2e41ed8b1bb5fa7a0d1de597c58",
+          "start_line": 81,
+          "end_line": 81,
+          "span_sha256": "43c62894c42e1c43b823cb3b67a40240db1dd570f7733d82dafe449a68a622c8",
+          "symbol": "issueForCourse"
+        },
+        "site": {
+          "path": "apps/api/src/certificate/certificate.controller.ts",
+          "sha256": "ddf0fe018f2ff51086bd087b29ea1b363b012a099d743ecfe7bbf84b10892eac",
+          "start_line": 32,
+          "end_line": 32,
+          "span_sha256": "5e5994f6ffea8922eeee300e885c54413813f456f898aae4278e30b317f47f99",
+          "symbol": "issueForCourse"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The controller receiver is a readonly constructor parameter typed by the imported service; its unique issueForCourse method is declared at the target anchor.",
+      "category": "receiver"
+    },
+    {
+      "id": "vocal-admin-list-users",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/IBO-271-MULTIPROJECT-20260905/vocal-snapshot",
+      "revision": "8613b9fc15a0989ccc5bd1d5fb41dcc0d350d578",
+      "split": "heldout",
+      "question": "Which local symbol does listUsers call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "apps/api/src/admin/admin.controller.ts",
+          "sha256": "aab101d5c981816031a7de525c38acd9e6cfd0111a9aa6f6cc9b66ca5ebed9fc",
+          "start_line": 66,
+          "end_line": 72,
+          "span_sha256": "1c6e06e05507c044fd5714d9ef7219dc96051123817bb05d6b6ce9be10a4d169",
+          "symbol": "listUsers"
+        },
+        "target": {
+          "path": "apps/api/src/admin/admin.service.ts",
+          "sha256": "c7e97319702d253f1d0ea0fbf7ff7e9e75c5c469c58f329c2ed798b21db3c9e5",
+          "start_line": 27,
+          "end_line": 27,
+          "span_sha256": "8c462eee60bdf832d25aaa622f2031e9bfdc4ba5c00df4c4a2a3042755ccd634",
+          "symbol": "list"
+        },
+        "site": {
+          "path": "apps/api/src/admin/admin.controller.ts",
+          "sha256": "aab101d5c981816031a7de525c38acd9e6cfd0111a9aa6f6cc9b66ca5ebed9fc",
+          "start_line": 71,
+          "end_line": 71,
+          "span_sha256": "3d97ad61532fbaf8aa91e26ced41146d9dcbc8d121b6945705e022b59ff95a17",
+          "symbol": "list"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The controller receiver is a readonly constructor parameter typed by the imported service; its unique list method is declared at the target anchor.",
+      "category": "receiver"
+    },
+    {
+      "id": "vocal-admin-update-roles",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/IBO-271-MULTIPROJECT-20260905/vocal-snapshot",
+      "revision": "8613b9fc15a0989ccc5bd1d5fb41dcc0d350d578",
+      "split": "heldout",
+      "question": "Which local symbol does updateUserRoles call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "apps/api/src/admin/admin.controller.ts",
+          "sha256": "aab101d5c981816031a7de525c38acd9e6cfd0111a9aa6f6cc9b66ca5ebed9fc",
+          "start_line": 75,
+          "end_line": 81,
+          "span_sha256": "ef03947f38fbfa4515848a3cf1775132b412dbe8144df80b7bfd983c8f435d77",
+          "symbol": "updateUserRoles"
+        },
+        "target": {
+          "path": "apps/api/src/admin/admin.service.ts",
+          "sha256": "c7e97319702d253f1d0ea0fbf7ff7e9e75c5c469c58f329c2ed798b21db3c9e5",
+          "start_line": 78,
+          "end_line": 78,
+          "span_sha256": "0c9776d5295ba2e5afab2a0c9bc7c9c30947a3973ed8fb5a5dc2751a5e50cdb6",
+          "symbol": "updateRoles"
+        },
+        "site": {
+          "path": "apps/api/src/admin/admin.controller.ts",
+          "sha256": "aab101d5c981816031a7de525c38acd9e6cfd0111a9aa6f6cc9b66ca5ebed9fc",
+          "start_line": 80,
+          "end_line": 80,
+          "span_sha256": "b5acac89a92cccd4edf4e97a55919dd8acc0b0387b482a213cf9e6512f96e45d",
+          "symbol": "updateRoles"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The controller receiver is a readonly constructor parameter typed by the imported service; its unique updateRoles method is declared at the target anchor.",
+      "category": "receiver"
+    },
+    {
+      "id": "vocal-content-list-published",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/IBO-271-MULTIPROJECT-20260905/vocal-snapshot",
+      "revision": "8613b9fc15a0989ccc5bd1d5fb41dcc0d350d578",
+      "split": "heldout",
+      "question": "Which local symbol does listPublished call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "apps/api/src/content/content.controller.ts",
+          "sha256": "16930a5b8faac3553256f980c2c2d3bbe096d3fdee9a23534b17fe4874e26d4f",
+          "start_line": 12,
+          "end_line": 12,
+          "span_sha256": "bbeae32ea22bc2291cf9e9e05cd119a1a548335c8a1e4302a45fa37352696349",
+          "symbol": "listPublished"
+        },
+        "target": {
+          "path": "apps/api/src/content/content.service.ts",
+          "sha256": "19d492e0d53d5f7454cee6ac046a3dfe33d1d574b02b4bc5f6b17c972a299af2",
+          "start_line": 21,
+          "end_line": 21,
+          "span_sha256": "5b1a845791863b63111be7b3456c3165136077d9cc7c2ed4532494616c2b5963",
+          "symbol": "listPublished"
+        },
+        "site": {
+          "path": "apps/api/src/content/content.controller.ts",
+          "sha256": "16930a5b8faac3553256f980c2c2d3bbe096d3fdee9a23534b17fe4874e26d4f",
+          "start_line": 12,
+          "end_line": 12,
+          "span_sha256": "bbeae32ea22bc2291cf9e9e05cd119a1a548335c8a1e4302a45fa37352696349",
+          "symbol": "listPublished"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The controller receiver is a readonly constructor parameter typed by the imported service; its unique listPublished method is declared at the target anchor.",
+      "category": "receiver"
+    },
+    {
+      "id": "vocal-content-list-all",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/IBO-271-MULTIPROJECT-20260905/vocal-snapshot",
+      "revision": "8613b9fc15a0989ccc5bd1d5fb41dcc0d350d578",
+      "split": "heldout",
+      "question": "Which local symbol does listAll call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "apps/api/src/content/content.controller.ts",
+          "sha256": "16930a5b8faac3553256f980c2c2d3bbe096d3fdee9a23534b17fe4874e26d4f",
+          "start_line": 13,
+          "end_line": 13,
+          "span_sha256": "beb941f3a1fa995735f3240e1aaa7f5fb09d25ad3690d625855927ec01fee5ed",
+          "symbol": "listAll"
+        },
+        "target": {
+          "path": "apps/api/src/content/content.service.ts",
+          "sha256": "19d492e0d53d5f7454cee6ac046a3dfe33d1d574b02b4bc5f6b17c972a299af2",
+          "start_line": 22,
+          "end_line": 22,
+          "span_sha256": "64aa6c4819106c203c39b928540b00e51bc4c45baa2de885c0c9690fe716234c",
+          "symbol": "listAll"
+        },
+        "site": {
+          "path": "apps/api/src/content/content.controller.ts",
+          "sha256": "16930a5b8faac3553256f980c2c2d3bbe096d3fdee9a23534b17fe4874e26d4f",
+          "start_line": 13,
+          "end_line": 13,
+          "span_sha256": "beb941f3a1fa995735f3240e1aaa7f5fb09d25ad3690d625855927ec01fee5ed",
+          "symbol": "listAll"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The controller receiver is a readonly constructor parameter typed by the imported service; its unique listAll method is declared at the target anchor.",
+      "category": "receiver"
+    },
+    {
+      "id": "vocal-content-create-course",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/IBO-271-MULTIPROJECT-20260905/vocal-snapshot",
+      "revision": "8613b9fc15a0989ccc5bd1d5fb41dcc0d350d578",
+      "split": "heldout",
+      "question": "Which local symbol does createCourse call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "apps/api/src/content/content.controller.ts",
+          "sha256": "16930a5b8faac3553256f980c2c2d3bbe096d3fdee9a23534b17fe4874e26d4f",
+          "start_line": 14,
+          "end_line": 14,
+          "span_sha256": "1364742c5d14eb3a2075638bc0239c54fa2888f639a2b258ac55f7b57f60b250",
+          "symbol": "createCourse"
+        },
+        "target": {
+          "path": "apps/api/src/content/content.service.ts",
+          "sha256": "19d492e0d53d5f7454cee6ac046a3dfe33d1d574b02b4bc5f6b17c972a299af2",
+          "start_line": 23,
+          "end_line": 23,
+          "span_sha256": "05c7b0de51279d522b89ebe4af4ded2f9394b251aac3646bd2d529ed939c6330",
+          "symbol": "createCourse"
+        },
+        "site": {
+          "path": "apps/api/src/content/content.controller.ts",
+          "sha256": "16930a5b8faac3553256f980c2c2d3bbe096d3fdee9a23534b17fe4874e26d4f",
+          "start_line": 14,
+          "end_line": 14,
+          "span_sha256": "1364742c5d14eb3a2075638bc0239c54fa2888f639a2b258ac55f7b57f60b250",
+          "symbol": "createCourse"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The controller receiver is a readonly constructor parameter typed by the imported service; its unique createCourse method is declared at the target anchor.",
+      "category": "receiver"
+    },
+    {
+      "id": "vocal-content-add-module",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/IBO-271-MULTIPROJECT-20260905/vocal-snapshot",
+      "revision": "8613b9fc15a0989ccc5bd1d5fb41dcc0d350d578",
+      "split": "heldout",
+      "question": "Which local symbol does addModule call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "apps/api/src/content/content.controller.ts",
+          "sha256": "16930a5b8faac3553256f980c2c2d3bbe096d3fdee9a23534b17fe4874e26d4f",
+          "start_line": 15,
+          "end_line": 15,
+          "span_sha256": "e4101bf411ca3cd369f96a8f9469e1806a0ff024f1e69fb31108757e23e86130",
+          "symbol": "addModule"
+        },
+        "target": {
+          "path": "apps/api/src/content/content.service.ts",
+          "sha256": "19d492e0d53d5f7454cee6ac046a3dfe33d1d574b02b4bc5f6b17c972a299af2",
+          "start_line": 30,
+          "end_line": 30,
+          "span_sha256": "cc3ab16e2acfe84c2c47f38250ffa1b068127e4ee26b6348648a3d69d73eba53",
+          "symbol": "addModule"
+        },
+        "site": {
+          "path": "apps/api/src/content/content.controller.ts",
+          "sha256": "16930a5b8faac3553256f980c2c2d3bbe096d3fdee9a23534b17fe4874e26d4f",
+          "start_line": 15,
+          "end_line": 15,
+          "span_sha256": "e4101bf411ca3cd369f96a8f9469e1806a0ff024f1e69fb31108757e23e86130",
+          "symbol": "addModule"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The controller receiver is a readonly constructor parameter typed by the imported service; its unique addModule method is declared at the target anchor.",
+      "category": "receiver"
+    },
+    {
+      "id": "vocal-content-add-lesson",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/IBO-271-MULTIPROJECT-20260905/vocal-snapshot",
+      "revision": "8613b9fc15a0989ccc5bd1d5fb41dcc0d350d578",
+      "split": "heldout",
+      "question": "Which local symbol does addLesson call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "apps/api/src/content/content.controller.ts",
+          "sha256": "16930a5b8faac3553256f980c2c2d3bbe096d3fdee9a23534b17fe4874e26d4f",
+          "start_line": 16,
+          "end_line": 16,
+          "span_sha256": "d314da5bed62466aa0f3a0898f4315a6c523ee79c41d746b2f58c689f868b07c",
+          "symbol": "addLesson"
+        },
+        "target": {
+          "path": "apps/api/src/content/content.service.ts",
+          "sha256": "19d492e0d53d5f7454cee6ac046a3dfe33d1d574b02b4bc5f6b17c972a299af2",
+          "start_line": 39,
+          "end_line": 39,
+          "span_sha256": "71541e4934ab6c8c8966857db5a6eae1227af64623f0df500ef78ade191abbb7",
+          "symbol": "addLesson"
+        },
+        "site": {
+          "path": "apps/api/src/content/content.controller.ts",
+          "sha256": "16930a5b8faac3553256f980c2c2d3bbe096d3fdee9a23534b17fe4874e26d4f",
+          "start_line": 16,
+          "end_line": 16,
+          "span_sha256": "d314da5bed62466aa0f3a0898f4315a6c523ee79c41d746b2f58c689f868b07c",
+          "symbol": "addLesson"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The controller receiver is a readonly constructor parameter typed by the imported service; its unique addLesson method is declared at the target anchor.",
+      "category": "receiver"
+    },
+    {
+      "id": "vocal-content-reorder-batch",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/IBO-271-MULTIPROJECT-20260905/vocal-snapshot",
+      "revision": "8613b9fc15a0989ccc5bd1d5fb41dcc0d350d578",
+      "split": "heldout",
+      "question": "Which local symbol does reorderBatch call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "apps/api/src/content/content.controller.ts",
+          "sha256": "16930a5b8faac3553256f980c2c2d3bbe096d3fdee9a23534b17fe4874e26d4f",
+          "start_line": 17,
+          "end_line": 17,
+          "span_sha256": "09cb6b93db6cefd8636677bbcbcbc5d402995648ba3b9f982201b6be77637939",
+          "symbol": "reorderBatch"
+        },
+        "target": {
+          "path": "apps/api/src/content/content.service.ts",
+          "sha256": "19d492e0d53d5f7454cee6ac046a3dfe33d1d574b02b4bc5f6b17c972a299af2",
+          "start_line": 155,
+          "end_line": 155,
+          "span_sha256": "e0acb591d66c3b2a770be50c008df09e55c8c3cf858fda19741db06ea2c24db5",
+          "symbol": "reorderBatch"
+        },
+        "site": {
+          "path": "apps/api/src/content/content.controller.ts",
+          "sha256": "16930a5b8faac3553256f980c2c2d3bbe096d3fdee9a23534b17fe4874e26d4f",
+          "start_line": 17,
+          "end_line": 17,
+          "span_sha256": "09cb6b93db6cefd8636677bbcbcbc5d402995648ba3b9f982201b6be77637939",
+          "symbol": "reorderBatch"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The controller receiver is a readonly constructor parameter typed by the imported service; its unique reorderBatch method is declared at the target anchor.",
+      "category": "receiver"
+    },
+    {
+      "id": "vocal-content-reorder-module",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/IBO-271-MULTIPROJECT-20260905/vocal-snapshot",
+      "revision": "8613b9fc15a0989ccc5bd1d5fb41dcc0d350d578",
+      "split": "heldout",
+      "question": "Which local symbol does reorderModule call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "apps/api/src/content/content.controller.ts",
+          "sha256": "16930a5b8faac3553256f980c2c2d3bbe096d3fdee9a23534b17fe4874e26d4f",
+          "start_line": 18,
+          "end_line": 18,
+          "span_sha256": "00f1131ff2226398f7ea90634d639c0da83750a8fc94bb4c749cb405c62c0d4e",
+          "symbol": "reorderModule"
+        },
+        "target": {
+          "path": "apps/api/src/content/content.service.ts",
+          "sha256": "19d492e0d53d5f7454cee6ac046a3dfe33d1d574b02b4bc5f6b17c972a299af2",
+          "start_line": 111,
+          "end_line": 111,
+          "span_sha256": "896001dc86162ed4135178437b36673457856a8eaf98f9aab9ef5efe999c843d",
+          "symbol": "reorderModule"
+        },
+        "site": {
+          "path": "apps/api/src/content/content.controller.ts",
+          "sha256": "16930a5b8faac3553256f980c2c2d3bbe096d3fdee9a23534b17fe4874e26d4f",
+          "start_line": 18,
+          "end_line": 18,
+          "span_sha256": "00f1131ff2226398f7ea90634d639c0da83750a8fc94bb4c749cb405c62c0d4e",
+          "symbol": "reorderModule"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The controller receiver is a readonly constructor parameter typed by the imported service; its unique reorderModule method is declared at the target anchor.",
+      "category": "receiver"
+    },
+    {
+      "id": "vocal-content-reorder-lesson",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/IBO-271-MULTIPROJECT-20260905/vocal-snapshot",
+      "revision": "8613b9fc15a0989ccc5bd1d5fb41dcc0d350d578",
+      "split": "heldout",
+      "question": "Which local symbol does reorderLesson call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "apps/api/src/content/content.controller.ts",
+          "sha256": "16930a5b8faac3553256f980c2c2d3bbe096d3fdee9a23534b17fe4874e26d4f",
+          "start_line": 19,
+          "end_line": 19,
+          "span_sha256": "c8ba24a1d4a1e5e79bee773807c03f9939a5040a8dcb8b07d26e1a19802a8227",
+          "symbol": "reorderLesson"
+        },
+        "target": {
+          "path": "apps/api/src/content/content.service.ts",
+          "sha256": "19d492e0d53d5f7454cee6ac046a3dfe33d1d574b02b4bc5f6b17c972a299af2",
+          "start_line": 133,
+          "end_line": 133,
+          "span_sha256": "0215a2406c8d03aaab7d2a422afaee6ad68cccd05f5c6a157a435019ee23a4b1",
+          "symbol": "reorderLesson"
+        },
+        "site": {
+          "path": "apps/api/src/content/content.controller.ts",
+          "sha256": "16930a5b8faac3553256f980c2c2d3bbe096d3fdee9a23534b17fe4874e26d4f",
+          "start_line": 19,
+          "end_line": 19,
+          "span_sha256": "c8ba24a1d4a1e5e79bee773807c03f9939a5040a8dcb8b07d26e1a19802a8227",
+          "symbol": "reorderLesson"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The controller receiver is a readonly constructor parameter typed by the imported service; its unique reorderLesson method is declared at the target anchor.",
+      "category": "receiver"
+    },
+    {
+      "id": "vocal-content-update-course",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/IBO-271-MULTIPROJECT-20260905/vocal-snapshot",
+      "revision": "8613b9fc15a0989ccc5bd1d5fb41dcc0d350d578",
+      "split": "heldout",
+      "question": "Which local symbol does updateCourse call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "apps/api/src/content/content.controller.ts",
+          "sha256": "16930a5b8faac3553256f980c2c2d3bbe096d3fdee9a23534b17fe4874e26d4f",
+          "start_line": 20,
+          "end_line": 20,
+          "span_sha256": "4e621a1cdc6f67b8121da7f830983b4d1e665eb5257fcc772ea6dee961770923",
+          "symbol": "updateCourse"
+        },
+        "target": {
+          "path": "apps/api/src/content/content.service.ts",
+          "sha256": "19d492e0d53d5f7454cee6ac046a3dfe33d1d574b02b4bc5f6b17c972a299af2",
+          "start_line": 58,
+          "end_line": 58,
+          "span_sha256": "c0c6b255239714ae5118dc78b27408f346892d2d082ee85586f022e99fb7fa07",
+          "symbol": "updateCourse"
+        },
+        "site": {
+          "path": "apps/api/src/content/content.controller.ts",
+          "sha256": "16930a5b8faac3553256f980c2c2d3bbe096d3fdee9a23534b17fe4874e26d4f",
+          "start_line": 20,
+          "end_line": 20,
+          "span_sha256": "4e621a1cdc6f67b8121da7f830983b4d1e665eb5257fcc772ea6dee961770923",
+          "symbol": "updateCourse"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The controller receiver is a readonly constructor parameter typed by the imported service; its unique updateCourse method is declared at the target anchor.",
+      "category": "receiver"
+    },
+    {
+      "id": "vocal-content-update-module",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/IBO-271-MULTIPROJECT-20260905/vocal-snapshot",
+      "revision": "8613b9fc15a0989ccc5bd1d5fb41dcc0d350d578",
+      "split": "heldout",
+      "question": "Which local symbol does updateModule call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "apps/api/src/content/content.controller.ts",
+          "sha256": "16930a5b8faac3553256f980c2c2d3bbe096d3fdee9a23534b17fe4874e26d4f",
+          "start_line": 21,
+          "end_line": 21,
+          "span_sha256": "1301ed5c2492eea7564fcf0a2068e8fac213e8f7b39de17da1271d3057042b4f",
+          "symbol": "updateModule"
+        },
+        "target": {
+          "path": "apps/api/src/content/content.service.ts",
+          "sha256": "19d492e0d53d5f7454cee6ac046a3dfe33d1d574b02b4bc5f6b17c972a299af2",
+          "start_line": 77,
+          "end_line": 77,
+          "span_sha256": "50a403320471f357cf286785dda8f7d0d65466019408b19ee8ef5c7f14b6aa05",
+          "symbol": "updateModule"
+        },
+        "site": {
+          "path": "apps/api/src/content/content.controller.ts",
+          "sha256": "16930a5b8faac3553256f980c2c2d3bbe096d3fdee9a23534b17fe4874e26d4f",
+          "start_line": 21,
+          "end_line": 21,
+          "span_sha256": "1301ed5c2492eea7564fcf0a2068e8fac213e8f7b39de17da1271d3057042b4f",
+          "symbol": "updateModule"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The controller receiver is a readonly constructor parameter typed by the imported service; its unique updateModule method is declared at the target anchor.",
+      "category": "receiver"
+    },
+    {
+      "id": "vocal-content-update-lesson",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/IBO-271-MULTIPROJECT-20260905/vocal-snapshot",
+      "revision": "8613b9fc15a0989ccc5bd1d5fb41dcc0d350d578",
+      "split": "heldout",
+      "question": "Which local symbol does updateLesson call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "apps/api/src/content/content.controller.ts",
+          "sha256": "16930a5b8faac3553256f980c2c2d3bbe096d3fdee9a23534b17fe4874e26d4f",
+          "start_line": 22,
+          "end_line": 22,
+          "span_sha256": "fc4f77dc2b48b38d3b724dfb63db9a5d618a7c9c9a40243cd2eecd2abc8dc7d0",
+          "symbol": "updateLesson"
+        },
+        "target": {
+          "path": "apps/api/src/content/content.service.ts",
+          "sha256": "19d492e0d53d5f7454cee6ac046a3dfe33d1d574b02b4bc5f6b17c972a299af2",
+          "start_line": 49,
+          "end_line": 49,
+          "span_sha256": "ca673964eb5074db8ea1ac6913eb326133eca90791ceef40d9ebbd43c2772315",
+          "symbol": "updateLesson"
+        },
+        "site": {
+          "path": "apps/api/src/content/content.controller.ts",
+          "sha256": "16930a5b8faac3553256f980c2c2d3bbe096d3fdee9a23534b17fe4874e26d4f",
+          "start_line": 22,
+          "end_line": 22,
+          "span_sha256": "fc4f77dc2b48b38d3b724dfb63db9a5d618a7c9c9a40243cd2eecd2abc8dc7d0",
+          "symbol": "updateLesson"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The controller receiver is a readonly constructor parameter typed by the imported service; its unique updateLesson method is declared at the target anchor.",
+      "category": "receiver"
+    },
+    {
+      "id": "vocal-content-publish",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/IBO-271-MULTIPROJECT-20260905/vocal-snapshot",
+      "revision": "8613b9fc15a0989ccc5bd1d5fb41dcc0d350d578",
+      "split": "heldout",
+      "question": "Which local symbol does publish call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "apps/api/src/content/content.controller.ts",
+          "sha256": "16930a5b8faac3553256f980c2c2d3bbe096d3fdee9a23534b17fe4874e26d4f",
+          "start_line": 23,
+          "end_line": 23,
+          "span_sha256": "d9cf5619ce2fc0b8d62b976e93b7ef16cfd08f194e0b02678942d748ecfb58c6",
+          "symbol": "publish"
+        },
+        "target": {
+          "path": "apps/api/src/content/content.service.ts",
+          "sha256": "19d492e0d53d5f7454cee6ac046a3dfe33d1d574b02b4bc5f6b17c972a299af2",
+          "start_line": 87,
+          "end_line": 87,
+          "span_sha256": "db68fb583854a8ff8fc27061e5b12b8b85d2e2468ee91056524cb6028eec3d32",
+          "symbol": "publish"
+        },
+        "site": {
+          "path": "apps/api/src/content/content.controller.ts",
+          "sha256": "16930a5b8faac3553256f980c2c2d3bbe096d3fdee9a23534b17fe4874e26d4f",
+          "start_line": 23,
+          "end_line": 23,
+          "span_sha256": "d9cf5619ce2fc0b8d62b976e93b7ef16cfd08f194e0b02678942d748ecfb58c6",
+          "symbol": "publish"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The controller receiver is a readonly constructor parameter typed by the imported service; its unique publish method is declared at the target anchor.",
+      "category": "receiver"
+    },
+    {
+      "id": "vocal-content-unpublish",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/IBO-271-MULTIPROJECT-20260905/vocal-snapshot",
+      "revision": "8613b9fc15a0989ccc5bd1d5fb41dcc0d350d578",
+      "split": "heldout",
+      "question": "Which local symbol does unpublish call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "apps/api/src/content/content.controller.ts",
+          "sha256": "16930a5b8faac3553256f980c2c2d3bbe096d3fdee9a23534b17fe4874e26d4f",
+          "start_line": 24,
+          "end_line": 24,
+          "span_sha256": "d52175f6a7dba3ecc1102cba1d6dd8ddc54e60d92d7764b0c79dcf7ee688d917",
+          "symbol": "unpublish"
+        },
+        "target": {
+          "path": "apps/api/src/content/content.service.ts",
+          "sha256": "19d492e0d53d5f7454cee6ac046a3dfe33d1d574b02b4bc5f6b17c972a299af2",
+          "start_line": 95,
+          "end_line": 95,
+          "span_sha256": "1429292110311a89bbc43e15ae43b27792aafbaa80e2ad702ef40816667d1593",
+          "symbol": "unpublish"
+        },
+        "site": {
+          "path": "apps/api/src/content/content.controller.ts",
+          "sha256": "16930a5b8faac3553256f980c2c2d3bbe096d3fdee9a23534b17fe4874e26d4f",
+          "start_line": 24,
+          "end_line": 24,
+          "span_sha256": "d52175f6a7dba3ecc1102cba1d6dd8ddc54e60d92d7764b0c79dcf7ee688d917",
+          "symbol": "unpublish"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The controller receiver is a readonly constructor parameter typed by the imported service; its unique unpublish method is declared at the target anchor.",
+      "category": "receiver"
+    },
+    {
+      "id": "vocal-content-delete-course",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/IBO-271-MULTIPROJECT-20260905/vocal-snapshot",
+      "revision": "8613b9fc15a0989ccc5bd1d5fb41dcc0d350d578",
+      "split": "heldout",
+      "question": "Which local symbol does deleteCourse call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "apps/api/src/content/content.controller.ts",
+          "sha256": "16930a5b8faac3553256f980c2c2d3bbe096d3fdee9a23534b17fe4874e26d4f",
+          "start_line": 25,
+          "end_line": 25,
+          "span_sha256": "18187ece40debaff3765aabeaa7c9198a91656ce83cfcb7bdfe563968f21cae0",
+          "symbol": "deleteCourse"
+        },
+        "target": {
+          "path": "apps/api/src/content/content.service.ts",
+          "sha256": "19d492e0d53d5f7454cee6ac046a3dfe33d1d574b02b4bc5f6b17c972a299af2",
+          "start_line": 103,
+          "end_line": 103,
+          "span_sha256": "bcd6dce17a7ed3431f9daf5f27e70ddb3badec499d48dd470b115194dff0d3f0",
+          "symbol": "deleteCourse"
+        },
+        "site": {
+          "path": "apps/api/src/content/content.controller.ts",
+          "sha256": "16930a5b8faac3553256f980c2c2d3bbe096d3fdee9a23534b17fe4874e26d4f",
+          "start_line": 25,
+          "end_line": 25,
+          "span_sha256": "18187ece40debaff3765aabeaa7c9198a91656ce83cfcb7bdfe563968f21cae0",
+          "symbol": "deleteCourse"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The controller receiver is a readonly constructor parameter typed by the imported service; its unique deleteCourse method is declared at the target anchor.",
+      "category": "receiver"
+    },
+    {
+      "id": "vocal-content-delete-module",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/IBO-271-MULTIPROJECT-20260905/vocal-snapshot",
+      "revision": "8613b9fc15a0989ccc5bd1d5fb41dcc0d350d578",
+      "split": "heldout",
+      "question": "Which local symbol does deleteModule call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "apps/api/src/content/content.controller.ts",
+          "sha256": "16930a5b8faac3553256f980c2c2d3bbe096d3fdee9a23534b17fe4874e26d4f",
+          "start_line": 26,
+          "end_line": 26,
+          "span_sha256": "4d64b0414344e451644ae572add6981c9c483f6ba1cffe7768064dbad355821e",
+          "symbol": "deleteModule"
+        },
+        "target": {
+          "path": "apps/api/src/content/content.service.ts",
+          "sha256": "19d492e0d53d5f7454cee6ac046a3dfe33d1d574b02b4bc5f6b17c972a299af2",
+          "start_line": 206,
+          "end_line": 206,
+          "span_sha256": "6bfb95989c3ea553691397dad6dbb89fea8ceaf9c60f02b50b9c5f96d0668dbf",
+          "symbol": "deleteModule"
+        },
+        "site": {
+          "path": "apps/api/src/content/content.controller.ts",
+          "sha256": "16930a5b8faac3553256f980c2c2d3bbe096d3fdee9a23534b17fe4874e26d4f",
+          "start_line": 26,
+          "end_line": 26,
+          "span_sha256": "4d64b0414344e451644ae572add6981c9c483f6ba1cffe7768064dbad355821e",
+          "symbol": "deleteModule"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The controller receiver is a readonly constructor parameter typed by the imported service; its unique deleteModule method is declared at the target anchor.",
+      "category": "receiver"
+    },
+    {
+      "id": "vocal-content-delete-lesson",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/IBO-271-MULTIPROJECT-20260905/vocal-snapshot",
+      "revision": "8613b9fc15a0989ccc5bd1d5fb41dcc0d350d578",
+      "split": "heldout",
+      "question": "Which local symbol does deleteLesson call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "apps/api/src/content/content.controller.ts",
+          "sha256": "16930a5b8faac3553256f980c2c2d3bbe096d3fdee9a23534b17fe4874e26d4f",
+          "start_line": 27,
+          "end_line": 27,
+          "span_sha256": "32cbeea999cc5ea28d050f401f14cec9ed589a1dfb3c0d8d4e512884c14ddeb4",
+          "symbol": "deleteLesson"
+        },
+        "target": {
+          "path": "apps/api/src/content/content.service.ts",
+          "sha256": "19d492e0d53d5f7454cee6ac046a3dfe33d1d574b02b4bc5f6b17c972a299af2",
+          "start_line": 217,
+          "end_line": 217,
+          "span_sha256": "bad1bd0cf28b84ae956851408dc72dcea1758cf1ac275467766e0081f97d4706",
+          "symbol": "deleteLesson"
+        },
+        "site": {
+          "path": "apps/api/src/content/content.controller.ts",
+          "sha256": "16930a5b8faac3553256f980c2c2d3bbe096d3fdee9a23534b17fe4874e26d4f",
+          "start_line": 27,
+          "end_line": 27,
+          "span_sha256": "32cbeea999cc5ea28d050f401f14cec9ed589a1dfb3c0d8d4e512884c14ddeb4",
+          "symbol": "deleteLesson"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The controller receiver is a readonly constructor parameter typed by the imported service; its unique deleteLesson method is declared at the target anchor.",
+      "category": "receiver"
+    },
+    {
+      "id": "rust-tsconfig-read-parse",
+      "repo": "/Volumes/D/Projects/cgrx-opensource",
+      "revision": "b8d828524b903abeb053db9faef5abba40fea509",
+      "split": "train",
+      "question": "Which local symbol does read call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "crates/cgrx-cli/src/runtime/ts_config.rs",
+          "sha256": "5461b4db7e66e1ae2f080df1c94ec61a27b50fd95d05e183f52944f0c0607acf",
+          "start_line": 183,
+          "end_line": 201,
+          "span_sha256": "ae7d628a187e0e9fd1eb5b4c9774cda5427df617d09f2cbdc4947cc45f78ab00",
+          "symbol": "read"
+        },
+        "target": {
+          "path": "crates/cgrx-cli/src/runtime/ts_config.rs",
+          "sha256": "5461b4db7e66e1ae2f080df1c94ec61a27b50fd95d05e183f52944f0c0607acf",
+          "start_line": 157,
+          "end_line": 157,
+          "span_sha256": "d156140f79bee816946fb478fabb23e16b6801ebbf73cb7ec6290f279789927b",
+          "symbol": "parse"
+        },
+        "site": {
+          "path": "crates/cgrx-cli/src/runtime/ts_config.rs",
+          "sha256": "5461b4db7e66e1ae2f080df1c94ec61a27b50fd95d05e183f52944f0c0607acf",
+          "start_line": 200,
+          "end_line": 200,
+          "span_sha256": "9ecd179344fd7f5a0bc8290b4ca5c1942dcdec7c28c3a9207cf39ebf7b2e418d",
+          "symbol": "parse"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Manual read of the complete Rust function shows a direct call to the repository-local parse definition anchored in the same module.",
+      "category": "call"
+    },
+    {
+      "id": "rust-tsconfig-options-read",
+      "repo": "/Volumes/D/Projects/cgrx-opensource",
+      "revision": "b8d828524b903abeb053db9faef5abba40fea509",
+      "split": "train",
+      "question": "Which local symbol does options call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "crates/cgrx-cli/src/runtime/ts_config.rs",
+          "sha256": "5461b4db7e66e1ae2f080df1c94ec61a27b50fd95d05e183f52944f0c0607acf",
+          "start_line": 312,
+          "end_line": 405,
+          "span_sha256": "52a8795e464c89262ff09f1f23ed6a96108cb415c80978be37d046f29f545b78",
+          "symbol": "options"
+        },
+        "target": {
+          "path": "crates/cgrx-cli/src/runtime/ts_config.rs",
+          "sha256": "5461b4db7e66e1ae2f080df1c94ec61a27b50fd95d05e183f52944f0c0607acf",
+          "start_line": 183,
+          "end_line": 183,
+          "span_sha256": "f4973e0230570b381746b7dda5fc4b7834bdc466371b8cefbd84e296fc0adc87",
+          "symbol": "read"
+        },
+        "site": {
+          "path": "crates/cgrx-cli/src/runtime/ts_config.rs",
+          "sha256": "5461b4db7e66e1ae2f080df1c94ec61a27b50fd95d05e183f52944f0c0607acf",
+          "start_line": 316,
+          "end_line": 316,
+          "span_sha256": "d92517ea3e5af66a5e89d70ab9c73e51f088cf80f1c4af471bf11149301bb3ea",
+          "symbol": "read"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Manual read of the complete Rust function shows a direct call to the repository-local read definition anchored in the same module.",
+      "category": "call"
+    },
+    {
+      "id": "rust-tsconfig-options-workspace-extend",
+      "repo": "/Volumes/D/Projects/cgrx-opensource",
+      "revision": "b8d828524b903abeb053db9faef5abba40fea509",
+      "split": "train",
+      "question": "Which local symbol does options call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "crates/cgrx-cli/src/runtime/ts_config.rs",
+          "sha256": "5461b4db7e66e1ae2f080df1c94ec61a27b50fd95d05e183f52944f0c0607acf",
+          "start_line": 312,
+          "end_line": 405,
+          "span_sha256": "52a8795e464c89262ff09f1f23ed6a96108cb415c80978be37d046f29f545b78",
+          "symbol": "options"
+        },
+        "target": {
+          "path": "crates/cgrx-cli/src/runtime/ts_config.rs",
+          "sha256": "5461b4db7e66e1ae2f080df1c94ec61a27b50fd95d05e183f52944f0c0607acf",
+          "start_line": 202,
+          "end_line": 202,
+          "span_sha256": "870134da2e9ae47661df51aa16ebdcc35a68e8ccd2ace3fd878965980955c5f7",
+          "symbol": "workspace_extend"
+        },
+        "site": {
+          "path": "crates/cgrx-cli/src/runtime/ts_config.rs",
+          "sha256": "5461b4db7e66e1ae2f080df1c94ec61a27b50fd95d05e183f52944f0c0607acf",
+          "start_line": 329,
+          "end_line": 329,
+          "span_sha256": "7bea5673268224af7f0397476e8eff4e26ebcda44f4245c8b295b60939270193",
+          "symbol": "workspace_extend"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Manual read of the complete Rust function shows a direct call to the repository-local workspace_extend definition anchored in the same module.",
+      "category": "call"
+    },
+    {
+      "id": "rust-tsconfig-options-recursive",
+      "repo": "/Volumes/D/Projects/cgrx-opensource",
+      "revision": "b8d828524b903abeb053db9faef5abba40fea509",
+      "split": "train",
+      "question": "Which local symbol does options call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "crates/cgrx-cli/src/runtime/ts_config.rs",
+          "sha256": "5461b4db7e66e1ae2f080df1c94ec61a27b50fd95d05e183f52944f0c0607acf",
+          "start_line": 312,
+          "end_line": 405,
+          "span_sha256": "52a8795e464c89262ff09f1f23ed6a96108cb415c80978be37d046f29f545b78",
+          "symbol": "options"
+        },
+        "target": {
+          "path": "crates/cgrx-cli/src/runtime/ts_config.rs",
+          "sha256": "5461b4db7e66e1ae2f080df1c94ec61a27b50fd95d05e183f52944f0c0607acf",
+          "start_line": 312,
+          "end_line": 312,
+          "span_sha256": "9baca7ce7fce44f5cb0fa09a80c61403ab07fece6b360752743318b45cee4304",
+          "symbol": "options"
+        },
+        "site": {
+          "path": "crates/cgrx-cli/src/runtime/ts_config.rs",
+          "sha256": "5461b4db7e66e1ae2f080df1c94ec61a27b50fd95d05e183f52944f0c0607acf",
+          "start_line": 331,
+          "end_line": 331,
+          "span_sha256": "314a5a40b8ffee03bfea50c6d7d87afbf5a7d1027471f396a0cad821403dc7c3",
+          "symbol": "options"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Manual read of the complete Rust function shows a direct call to the repository-local options definition anchored in the same module.",
+      "category": "call"
+    },
+    {
+      "id": "rust-tsconfig-collect-options",
+      "repo": "/Volumes/D/Projects/cgrx-opensource",
+      "revision": "b8d828524b903abeb053db9faef5abba40fea509",
+      "split": "train",
+      "question": "Which local symbol does collect call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "crates/cgrx-cli/src/runtime/ts_config.rs",
+          "sha256": "5461b4db7e66e1ae2f080df1c94ec61a27b50fd95d05e183f52944f0c0607acf",
+          "start_line": 408,
+          "end_line": 470,
+          "span_sha256": "fd36083edf06743dcecb994afea63289af6d8382fba02914fa90604e3c3abc4d",
+          "symbol": "collect"
+        },
+        "target": {
+          "path": "crates/cgrx-cli/src/runtime/ts_config.rs",
+          "sha256": "5461b4db7e66e1ae2f080df1c94ec61a27b50fd95d05e183f52944f0c0607acf",
+          "start_line": 312,
+          "end_line": 312,
+          "span_sha256": "9baca7ce7fce44f5cb0fa09a80c61403ab07fece6b360752743318b45cee4304",
+          "symbol": "options"
+        },
+        "site": {
+          "path": "crates/cgrx-cli/src/runtime/ts_config.rs",
+          "sha256": "5461b4db7e66e1ae2f080df1c94ec61a27b50fd95d05e183f52944f0c0607acf",
+          "start_line": 437,
+          "end_line": 437,
+          "span_sha256": "ea5f88c66a872fae77a4d19e5171dc13edaa1c4f3b7ac64dee6ba35a5bd2c336",
+          "symbol": "options"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Manual read of the complete Rust function shows a direct call to the repository-local options definition anchored in the same module.",
+      "category": "call"
+    },
+    {
+      "id": "rust-tsconfig-mapped-nearest",
+      "repo": "/Volumes/D/Projects/cgrx-opensource",
+      "revision": "b8d828524b903abeb053db9faef5abba40fea509",
+      "split": "train",
+      "question": "Which local symbol does mapped call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "crates/cgrx-cli/src/runtime/ts_config.rs",
+          "sha256": "5461b4db7e66e1ae2f080df1c94ec61a27b50fd95d05e183f52944f0c0607acf",
+          "start_line": 495,
+          "end_line": 539,
+          "span_sha256": "d8b271572d9be3b6798b7ad2c3544f95c86154da07eb25c3f63e673ebb3623e3",
+          "symbol": "mapped"
+        },
+        "target": {
+          "path": "crates/cgrx-cli/src/runtime/ts_config.rs",
+          "sha256": "5461b4db7e66e1ae2f080df1c94ec61a27b50fd95d05e183f52944f0c0607acf",
+          "start_line": 473,
+          "end_line": 473,
+          "span_sha256": "bba0d3cf39250d92f6a0739c9d232df0a6360ffa9d9f9a8105d9a940313f3e03",
+          "symbol": "nearest"
+        },
+        "site": {
+          "path": "crates/cgrx-cli/src/runtime/ts_config.rs",
+          "sha256": "5461b4db7e66e1ae2f080df1c94ec61a27b50fd95d05e183f52944f0c0607acf",
+          "start_line": 504,
+          "end_line": 504,
+          "span_sha256": "27c50c7c962375c27c5cfe452ee8c5412b648ccafd8bd1dd21363d5559e6e277",
+          "symbol": "nearest"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Manual read of the complete Rust function shows a direct call to the repository-local nearest definition anchored in the same module.",
+      "category": "call"
+    },
+    {
+      "id": "rust-tsconfig-validate-witness",
+      "repo": "/Volumes/D/Projects/cgrx-opensource",
+      "revision": "b8d828524b903abeb053db9faef5abba40fea509",
+      "split": "train",
+      "question": "Which local symbol does validate_final call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "crates/cgrx-cli/src/runtime/ts_config.rs",
+          "sha256": "5461b4db7e66e1ae2f080df1c94ec61a27b50fd95d05e183f52944f0c0607acf",
+          "start_line": 542,
+          "end_line": 583,
+          "span_sha256": "767030cf036b5f3bcfaaedd799bc480ddbc6f98c2477f587fbf423cbf839eca8",
+          "symbol": "validate_final"
+        },
+        "target": {
+          "path": "crates/cgrx-cli/src/runtime/ts_config.rs",
+          "sha256": "5461b4db7e66e1ae2f080df1c94ec61a27b50fd95d05e183f52944f0c0607acf",
+          "start_line": 76,
+          "end_line": 76,
+          "span_sha256": "b4da6040678f9e757abf4b1fba9dcd0af4e0cef8a90ed22eab4948299aed6db0",
+          "symbol": "valid"
+        },
+        "site": {
+          "path": "crates/cgrx-cli/src/runtime/ts_config.rs",
+          "sha256": "5461b4db7e66e1ae2f080df1c94ec61a27b50fd95d05e183f52944f0c0607acf",
+          "start_line": 566,
+          "end_line": 566,
+          "span_sha256": "a25a05f86ebc711e99ed278bc61630c98446c5d6c8e4c73fb8d9d9a537fe827d",
+          "symbol": "valid"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Manual read of the complete Rust function shows a direct call to the repository-local valid definition anchored in the same module.",
+      "category": "call"
+    },
+    {
+      "id": "rust-tsimports-module-candidates",
+      "repo": "/Volumes/D/Projects/cgrx-opensource",
+      "revision": "b8d828524b903abeb053db9faef5abba40fea509",
+      "split": "train",
+      "question": "Which local symbol does module_path call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "crates/cgrx-languages/src/ts_imports.rs",
+          "sha256": "6475fbab811e3bf3ff19097d668f5d16bc8522dd1ee000561c54513b7028a0a3",
+          "start_line": 467,
+          "end_line": 485,
+          "span_sha256": "b4ca66af549281079b0e13b941439409fb2df426b8b5e5b3539288ba982a7137",
+          "symbol": "module_path"
+        },
+        "target": {
+          "path": "crates/cgrx-languages/src/ts_imports.rs",
+          "sha256": "6475fbab811e3bf3ff19097d668f5d16bc8522dd1ee000561c54513b7028a0a3",
+          "start_line": 406,
+          "end_line": 406,
+          "span_sha256": "c4297406e11fee5ecd4f913d8ab1fcaf91bd66ce688ec913e40bed0606d3f87e",
+          "symbol": "module_candidates"
+        },
+        "site": {
+          "path": "crates/cgrx-languages/src/ts_imports.rs",
+          "sha256": "6475fbab811e3bf3ff19097d668f5d16bc8522dd1ee000561c54513b7028a0a3",
+          "start_line": 475,
+          "end_line": 475,
+          "span_sha256": "37df8db08750ddf4d54df644601b07828802c70266c88bd4f8c8f3df8c9f5848",
+          "symbol": "module_candidates"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Manual read of the complete Rust function shows a direct call to the repository-local module_candidates definition anchored in the same module.",
+      "category": "call"
+    },
+    {
+      "id": "rust-tsimports-resolve-call",
+      "repo": "/Volumes/D/Projects/cgrx-opensource",
+      "revision": "b8d828524b903abeb053db9faef5abba40fea509",
+      "split": "train",
+      "question": "Which local symbol does resolve_call call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "crates/cgrx-languages/src/ts_imports.rs",
+          "sha256": "6475fbab811e3bf3ff19097d668f5d16bc8522dd1ee000561c54513b7028a0a3",
+          "start_line": 487,
+          "end_line": 493,
+          "span_sha256": "246aea8ec2a47774bab54508d24759d39b924af57660a7d5e6060530f4a95288",
+          "symbol": "resolve_call"
+        },
+        "target": {
+          "path": "crates/cgrx-languages/src/ts_imports.rs",
+          "sha256": "6475fbab811e3bf3ff19097d668f5d16bc8522dd1ee000561c54513b7028a0a3",
+          "start_line": 494,
+          "end_line": 494,
+          "span_sha256": "1c4a221625560941584308736d07628a50af896ca3f92589d6bdecbb5b7cceb8",
+          "symbol": "resolve_call_with_modules"
+        },
+        "site": {
+          "path": "crates/cgrx-languages/src/ts_imports.rs",
+          "sha256": "6475fbab811e3bf3ff19097d668f5d16bc8522dd1ee000561c54513b7028a0a3",
+          "start_line": 492,
+          "end_line": 492,
+          "span_sha256": "0952006706d43e2d428309a2f19c7518671a6c3fbdb13128b5b2a4cc946fc0e0",
+          "symbol": "resolve_call_with_modules"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Manual read of the complete Rust function shows a direct call to the repository-local resolve_call_with_modules definition anchored in the same module.",
+      "category": "call"
+    },
+    {
+      "id": "rust-tsimports-resolve-module",
+      "repo": "/Volumes/D/Projects/cgrx-opensource",
+      "revision": "b8d828524b903abeb053db9faef5abba40fea509",
+      "split": "train",
+      "question": "Which local symbol does resolve_call_with_modules call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "crates/cgrx-languages/src/ts_imports.rs",
+          "sha256": "6475fbab811e3bf3ff19097d668f5d16bc8522dd1ee000561c54513b7028a0a3",
+          "start_line": 494,
+          "end_line": 528,
+          "span_sha256": "3689950b9c458e528d76c63062d7f0072d02a2c399ffb3e65f76999b2bb71d15",
+          "symbol": "resolve_call_with_modules"
+        },
+        "target": {
+          "path": "crates/cgrx-languages/src/ts_imports.rs",
+          "sha256": "6475fbab811e3bf3ff19097d668f5d16bc8522dd1ee000561c54513b7028a0a3",
+          "start_line": 467,
+          "end_line": 467,
+          "span_sha256": "2f236efd2ad575dc76f8127bd3aef868a81af33a5eed35f2649032d359714f1f",
+          "symbol": "module_path"
+        },
+        "site": {
+          "path": "crates/cgrx-languages/src/ts_imports.rs",
+          "sha256": "6475fbab811e3bf3ff19097d668f5d16bc8522dd1ee000561c54513b7028a0a3",
+          "start_line": 512,
+          "end_line": 512,
+          "span_sha256": "eb6fcbefc1f74d36be8333ebf29906240b2b2fed467d0f708502c5b2a74a829a",
+          "symbol": "module_path"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Manual read of the complete Rust function shows a direct call to the repository-local module_path definition anchored in the same module.",
+      "category": "call"
+    },
+    {
+      "id": "rust-tsimports-resolve-export",
+      "repo": "/Volumes/D/Projects/cgrx-opensource",
+      "revision": "b8d828524b903abeb053db9faef5abba40fea509",
+      "split": "train",
+      "question": "Which local symbol does resolve_call_with_modules call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "crates/cgrx-languages/src/ts_imports.rs",
+          "sha256": "6475fbab811e3bf3ff19097d668f5d16bc8522dd1ee000561c54513b7028a0a3",
+          "start_line": 494,
+          "end_line": 528,
+          "span_sha256": "3689950b9c458e528d76c63062d7f0072d02a2c399ffb3e65f76999b2bb71d15",
+          "symbol": "resolve_call_with_modules"
+        },
+        "target": {
+          "path": "crates/cgrx-languages/src/ts_imports.rs",
+          "sha256": "6475fbab811e3bf3ff19097d668f5d16bc8522dd1ee000561c54513b7028a0a3",
+          "start_line": 530,
+          "end_line": 530,
+          "span_sha256": "19b2a447f98f94a917f607cf675af166d18668439fc8a241fdf100bfe7d36e8b",
+          "symbol": "resolve_export"
+        },
+        "site": {
+          "path": "crates/cgrx-languages/src/ts_imports.rs",
+          "sha256": "6475fbab811e3bf3ff19097d668f5d16bc8522dd1ee000561c54513b7028a0a3",
+          "start_line": 514,
+          "end_line": 514,
+          "span_sha256": "5ee4f497996b37131f1577c1f8ea20367fab7d5d31c9f0725830bc55429ba9d6",
+          "symbol": "resolve_export"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Manual read of the complete Rust function shows a direct call to the repository-local resolve_export definition anchored in the same module.",
+      "category": "call"
+    },
+    {
+      "id": "rust-tsimports-export-module",
+      "repo": "/Volumes/D/Projects/cgrx-opensource",
+      "revision": "b8d828524b903abeb053db9faef5abba40fea509",
+      "split": "train",
+      "question": "Which local symbol does resolve_export call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "crates/cgrx-languages/src/ts_imports.rs",
+          "sha256": "6475fbab811e3bf3ff19097d668f5d16bc8522dd1ee000561c54513b7028a0a3",
+          "start_line": 530,
+          "end_line": 579,
+          "span_sha256": "a0095c29ed01c19ee27c4a646182e571b5da1dc0fb9db7d9d16261b8ee50f2ec",
+          "symbol": "resolve_export"
+        },
+        "target": {
+          "path": "crates/cgrx-languages/src/ts_imports.rs",
+          "sha256": "6475fbab811e3bf3ff19097d668f5d16bc8522dd1ee000561c54513b7028a0a3",
+          "start_line": 467,
+          "end_line": 467,
+          "span_sha256": "2f236efd2ad575dc76f8127bd3aef868a81af33a5eed35f2649032d359714f1f",
+          "symbol": "module_path"
+        },
+        "site": {
+          "path": "crates/cgrx-languages/src/ts_imports.rs",
+          "sha256": "6475fbab811e3bf3ff19097d668f5d16bc8522dd1ee000561c54513b7028a0a3",
+          "start_line": 569,
+          "end_line": 569,
+          "span_sha256": "9116ca5ea2d06596599a41c02d72d2063685f42b6be01a94fa42d5d71516f97c",
+          "symbol": "module_path"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Manual read of the complete Rust function shows a direct call to the repository-local module_path definition anchored in the same module.",
+      "category": "call"
+    },
+    {
+      "id": "rust-tsimports-export-recursive",
+      "repo": "/Volumes/D/Projects/cgrx-opensource",
+      "revision": "b8d828524b903abeb053db9faef5abba40fea509",
+      "split": "train",
+      "question": "Which local symbol does resolve_export call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "crates/cgrx-languages/src/ts_imports.rs",
+          "sha256": "6475fbab811e3bf3ff19097d668f5d16bc8522dd1ee000561c54513b7028a0a3",
+          "start_line": 530,
+          "end_line": 579,
+          "span_sha256": "a0095c29ed01c19ee27c4a646182e571b5da1dc0fb9db7d9d16261b8ee50f2ec",
+          "symbol": "resolve_export"
+        },
+        "target": {
+          "path": "crates/cgrx-languages/src/ts_imports.rs",
+          "sha256": "6475fbab811e3bf3ff19097d668f5d16bc8522dd1ee000561c54513b7028a0a3",
+          "start_line": 530,
+          "end_line": 530,
+          "span_sha256": "19b2a447f98f94a917f607cf675af166d18668439fc8a241fdf100bfe7d36e8b",
+          "symbol": "resolve_export"
+        },
+        "site": {
+          "path": "crates/cgrx-languages/src/ts_imports.rs",
+          "sha256": "6475fbab811e3bf3ff19097d668f5d16bc8522dd1ee000561c54513b7028a0a3",
+          "start_line": 570,
+          "end_line": 570,
+          "span_sha256": "6909d890482e3ac695c860120557415e5c253495a393adf7cb4308eee7a138da",
+          "symbol": "resolve_export"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Manual read of the complete Rust function shows a direct call to the repository-local resolve_export definition anchored in the same module.",
+      "category": "call"
+    },
+    {
+      "id": "rust-pack-extract-walk",
+      "repo": "/Volumes/D/Projects/cgrx-opensource",
+      "revision": "b8d828524b903abeb053db9faef5abba40fea509",
+      "split": "train",
+      "question": "Which local symbol does extract call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "crates/cgrx-languages/src/pack.rs",
+          "sha256": "b9308ec2585a81c5e61292335a57402bdbbe3440764b23305090fb6bed024c7d",
+          "start_line": 271,
+          "end_line": 292,
+          "span_sha256": "8c340d2c4debaf91910b2a4b7d7ae3cdeebcbb2b3072bb5fa918a060220f1a35",
+          "symbol": "extract"
+        },
+        "target": {
+          "path": "crates/cgrx-languages/src/pack.rs",
+          "sha256": "b9308ec2585a81c5e61292335a57402bdbbe3440764b23305090fb6bed024c7d",
+          "start_line": 308,
+          "end_line": 308,
+          "span_sha256": "97fa7d674057bbd41fc8e247f17452d18e7384bf2064a17263293b35cd7d091b",
+          "symbol": "walk_with"
+        },
+        "site": {
+          "path": "crates/cgrx-languages/src/pack.rs",
+          "sha256": "b9308ec2585a81c5e61292335a57402bdbbe3440764b23305090fb6bed024c7d",
+          "start_line": 283,
+          "end_line": 283,
+          "span_sha256": "041ad11e7ae0fa6c28fb8ee220ff5e0e954ca45ef995c9b40fb58d93247423e7",
+          "symbol": "walk_with"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Manual read of the complete Rust function shows a direct call to the repository-local walk_with definition anchored in the same module.",
+      "category": "call"
+    },
+    {
+      "id": "rust-pack-extract-normalize",
+      "repo": "/Volumes/D/Projects/cgrx-opensource",
+      "revision": "b8d828524b903abeb053db9faef5abba40fea509",
+      "split": "train",
+      "question": "Which local symbol does extract call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "crates/cgrx-languages/src/pack.rs",
+          "sha256": "b9308ec2585a81c5e61292335a57402bdbbe3440764b23305090fb6bed024c7d",
+          "start_line": 271,
+          "end_line": 292,
+          "span_sha256": "8c340d2c4debaf91910b2a4b7d7ae3cdeebcbb2b3072bb5fa918a060220f1a35",
+          "symbol": "extract"
+        },
+        "target": {
+          "path": "crates/cgrx-languages/src/pack.rs",
+          "sha256": "b9308ec2585a81c5e61292335a57402bdbbe3440764b23305090fb6bed024c7d",
+          "start_line": 295,
+          "end_line": 295,
+          "span_sha256": "c481a6e8ff2112642450b2ab6f3178fa5dc76a6f4d0bf025e26818cecafc0597",
+          "symbol": "normalize_extraction"
+        },
+        "site": {
+          "path": "crates/cgrx-languages/src/pack.rs",
+          "sha256": "b9308ec2585a81c5e61292335a57402bdbbe3440764b23305090fb6bed024c7d",
+          "start_line": 290,
+          "end_line": 290,
+          "span_sha256": "bed1f0b28f32736bf6a12dca29bf818b4f692b43a4657afb1c04bcd34a4ee67a",
+          "symbol": "normalize_extraction"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Manual read of the complete Rust function shows a direct call to the repository-local normalize_extraction definition anchored in the same module.",
+      "category": "call"
+    },
+    {
+      "id": "rust-pack-walk-recursive",
+      "repo": "/Volumes/D/Projects/cgrx-opensource",
+      "revision": "b8d828524b903abeb053db9faef5abba40fea509",
+      "split": "train",
+      "question": "Which local symbol does walk_with call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "crates/cgrx-languages/src/pack.rs",
+          "sha256": "b9308ec2585a81c5e61292335a57402bdbbe3440764b23305090fb6bed024c7d",
+          "start_line": 308,
+          "end_line": 332,
+          "span_sha256": "2592af03222b4f107f52220aeebf579b615e8a24cc3344ae1473abf43f8e7431",
+          "symbol": "walk_with"
+        },
+        "target": {
+          "path": "crates/cgrx-languages/src/pack.rs",
+          "sha256": "b9308ec2585a81c5e61292335a57402bdbbe3440764b23305090fb6bed024c7d",
+          "start_line": 308,
+          "end_line": 308,
+          "span_sha256": "97fa7d674057bbd41fc8e247f17452d18e7384bf2064a17263293b35cd7d091b",
+          "symbol": "walk_with"
+        },
+        "site": {
+          "path": "crates/cgrx-languages/src/pack.rs",
+          "sha256": "b9308ec2585a81c5e61292335a57402bdbbe3440764b23305090fb6bed024c7d",
+          "start_line": 330,
+          "end_line": 330,
+          "span_sha256": "bb21387ffc1fc1cc92909aa2690e6b439b253ece908947d9c3b355d69bfc9762",
+          "symbol": "walk_with"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Manual read of the complete Rust function shows a direct call to the repository-local walk_with definition anchored in the same module.",
+      "category": "call"
+    },
+    {
+      "id": "rust-pack-symbol-text",
+      "repo": "/Volumes/D/Projects/cgrx-opensource",
+      "revision": "b8d828524b903abeb053db9faef5abba40fea509",
+      "split": "train",
+      "question": "Which local symbol does symbol call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "crates/cgrx-languages/src/pack.rs",
+          "sha256": "b9308ec2585a81c5e61292335a57402bdbbe3440764b23305090fb6bed024c7d",
+          "start_line": 348,
+          "end_line": 356,
+          "span_sha256": "9b4463b75744e9a3f5dbd8bca9c63dc880ebdf35190e498850676031d84cef75",
+          "symbol": "symbol"
+        },
+        "target": {
+          "path": "crates/cgrx-languages/src/pack.rs",
+          "sha256": "b9308ec2585a81c5e61292335a57402bdbbe3440764b23305090fb6bed024c7d",
+          "start_line": 344,
+          "end_line": 344,
+          "span_sha256": "2e42d6e17e929b4cfbe5c0f36cac237a341596005b8d2f6a880a3f1e896ec6d6",
+          "symbol": "text"
+        },
+        "site": {
+          "path": "crates/cgrx-languages/src/pack.rs",
+          "sha256": "b9308ec2585a81c5e61292335a57402bdbbe3440764b23305090fb6bed024c7d",
+          "start_line": 351,
+          "end_line": 351,
+          "span_sha256": "891f28c88b3d58422051c7811fa7184dc0efa22e948edeaf75eaac2d053c202c",
+          "symbol": "text"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Manual read of the complete Rust function shows a direct call to the repository-local text definition anchored in the same module.",
+      "category": "call"
+    },
+    {
+      "id": "rust-pack-unresolved-text",
+      "repo": "/Volumes/D/Projects/cgrx-opensource",
+      "revision": "b8d828524b903abeb053db9faef5abba40fea509",
+      "split": "train",
+      "question": "Which local symbol does unresolved call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "crates/cgrx-languages/src/pack.rs",
+          "sha256": "b9308ec2585a81c5e61292335a57402bdbbe3440764b23305090fb6bed024c7d",
+          "start_line": 358,
+          "end_line": 369,
+          "span_sha256": "727c6540e8177eacc90d1db5f5bb38796b3770afee542703ab5b9e362deffc18",
+          "symbol": "unresolved"
+        },
+        "target": {
+          "path": "crates/cgrx-languages/src/pack.rs",
+          "sha256": "b9308ec2585a81c5e61292335a57402bdbbe3440764b23305090fb6bed024c7d",
+          "start_line": 344,
+          "end_line": 344,
+          "span_sha256": "2e42d6e17e929b4cfbe5c0f36cac237a341596005b8d2f6a880a3f1e896ec6d6",
+          "symbol": "text"
+        },
+        "site": {
+          "path": "crates/cgrx-languages/src/pack.rs",
+          "sha256": "b9308ec2585a81c5e61292335a57402bdbbe3440764b23305090fb6bed024c7d",
+          "start_line": 367,
+          "end_line": 367,
+          "span_sha256": "e377bcb40b8b69ccda029693668f7f47e41f74d5612c40b1c02556714b435996",
+          "symbol": "text"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Manual read of the complete Rust function shows a direct call to the repository-local text definition anchored in the same module.",
+      "category": "call"
+    },
+    {
+      "id": "vex-network-parse-sanitize",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/SAME-SNAPSHOT-CBM/snapshots/vex",
+      "revision": "da5cd1a21f8f4650798cc19c92ff8790b324e6d3",
+      "split": "heldout",
+      "question": "Which local symbol does Parse call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "internal/networkprobe/parser.go",
+          "sha256": "4d0b822eb2bf73c1db5771a2ce074df3648c1caeb8052516349217011490a733",
+          "start_line": 16,
+          "end_line": 33,
+          "span_sha256": "72c496a5bf26e4898528d24fa1cea63c43eb30c6c7dc44d28ff1405483a337c2",
+          "symbol": "Parse"
+        },
+        "target": {
+          "path": "internal/networkprobe/parser.go",
+          "sha256": "4d0b822eb2bf73c1db5771a2ce074df3648c1caeb8052516349217011490a733",
+          "start_line": 35,
+          "end_line": 35,
+          "span_sha256": "e8c81907c1b1b077da923e5fe5c65702c0bb5f7a3a30abae9b4623d171a2b116",
+          "symbol": "sanitize"
+        },
+        "site": {
+          "path": "internal/networkprobe/parser.go",
+          "sha256": "4d0b822eb2bf73c1db5771a2ce074df3648c1caeb8052516349217011490a733",
+          "start_line": 28,
+          "end_line": 28,
+          "span_sha256": "da2e171840fb4bacacd58cc09f36550bd9b6ed0d69ca38d9804e1870c895453e",
+          "symbol": "sanitize"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Manual read of the complete Go function shows a direct same-package call to the unique sanitize declaration anchored in this file.",
+      "category": "call"
+    },
+    {
+      "id": "vex-network-sanitize-target",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/SAME-SNAPSHOT-CBM/snapshots/vex",
+      "revision": "da5cd1a21f8f4650798cc19c92ff8790b324e6d3",
+      "split": "heldout",
+      "question": "Which local symbol does sanitize call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "internal/networkprobe/parser.go",
+          "sha256": "4d0b822eb2bf73c1db5771a2ce074df3648c1caeb8052516349217011490a733",
+          "start_line": 35,
+          "end_line": 57,
+          "span_sha256": "b5e9e965775d1a615f9d62c14983fec6870355aab7922662eda20f2b82cda7f1",
+          "symbol": "sanitize"
+        },
+        "target": {
+          "path": "internal/networkprobe/parser.go",
+          "sha256": "4d0b822eb2bf73c1db5771a2ce074df3648c1caeb8052516349217011490a733",
+          "start_line": 59,
+          "end_line": 59,
+          "span_sha256": "bcdba5d0d24d7770b211ad5828549e756344f596588a71167ac9aaa82ae9313d",
+          "symbol": "boundedText"
+        },
+        "site": {
+          "path": "internal/networkprobe/parser.go",
+          "sha256": "4d0b822eb2bf73c1db5771a2ce074df3648c1caeb8052516349217011490a733",
+          "start_line": 37,
+          "end_line": 37,
+          "span_sha256": "2af2016630902398d6511daabfa25b312a1a6262fa2a3678582618d74e6c0327",
+          "symbol": "boundedText"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Manual read of the complete Go function shows a direct same-package call to the unique boundedText declaration anchored in this file.",
+      "category": "call"
+    },
+    {
+      "id": "vex-network-sanitize-route",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/SAME-SNAPSHOT-CBM/snapshots/vex",
+      "revision": "da5cd1a21f8f4650798cc19c92ff8790b324e6d3",
+      "split": "heldout",
+      "question": "Which local symbol does sanitize call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "internal/networkprobe/parser.go",
+          "sha256": "4d0b822eb2bf73c1db5771a2ce074df3648c1caeb8052516349217011490a733",
+          "start_line": 35,
+          "end_line": 57,
+          "span_sha256": "b5e9e965775d1a615f9d62c14983fec6870355aab7922662eda20f2b82cda7f1",
+          "symbol": "sanitize"
+        },
+        "target": {
+          "path": "internal/networkprobe/parser.go",
+          "sha256": "4d0b822eb2bf73c1db5771a2ce074df3648c1caeb8052516349217011490a733",
+          "start_line": 59,
+          "end_line": 59,
+          "span_sha256": "bcdba5d0d24d7770b211ad5828549e756344f596588a71167ac9aaa82ae9313d",
+          "symbol": "boundedText"
+        },
+        "site": {
+          "path": "internal/networkprobe/parser.go",
+          "sha256": "4d0b822eb2bf73c1db5771a2ce074df3648c1caeb8052516349217011490a733",
+          "start_line": 38,
+          "end_line": 38,
+          "span_sha256": "ad8580f47636758de9e068f4a86fa4c0acb20234b2bd9c9ebcda79da08a85caa",
+          "symbol": "boundedText"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Manual read of the complete Go function shows a direct same-package call to the unique boundedText declaration anchored in this file.",
+      "category": "call"
+    },
+    {
+      "id": "vex-network-sanitize-loss",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/SAME-SNAPSHOT-CBM/snapshots/vex",
+      "revision": "da5cd1a21f8f4650798cc19c92ff8790b324e6d3",
+      "split": "heldout",
+      "question": "Which local symbol does sanitize call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "internal/networkprobe/parser.go",
+          "sha256": "4d0b822eb2bf73c1db5771a2ce074df3648c1caeb8052516349217011490a733",
+          "start_line": 35,
+          "end_line": 57,
+          "span_sha256": "b5e9e965775d1a615f9d62c14983fec6870355aab7922662eda20f2b82cda7f1",
+          "symbol": "sanitize"
+        },
+        "target": {
+          "path": "internal/networkprobe/parser.go",
+          "sha256": "4d0b822eb2bf73c1db5771a2ce074df3648c1caeb8052516349217011490a733",
+          "start_line": 67,
+          "end_line": 67,
+          "span_sha256": "e4114a27ad6d505ba02db69cfa11f8fa422b66a657de6cd1f8a462c2497323e6",
+          "symbol": "boundedFloat"
+        },
+        "site": {
+          "path": "internal/networkprobe/parser.go",
+          "sha256": "4d0b822eb2bf73c1db5771a2ce074df3648c1caeb8052516349217011490a733",
+          "start_line": 41,
+          "end_line": 41,
+          "span_sha256": "29f454e84b72ade93d29d88a16b569fb74800a339b8d079b392797cd3f3608ab",
+          "symbol": "boundedFloat"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Manual read of the complete Go function shows a direct same-package call to the unique boundedFloat declaration anchored in this file.",
+      "category": "call"
+    },
+    {
+      "id": "vex-network-sanitize-latency",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/SAME-SNAPSHOT-CBM/snapshots/vex",
+      "revision": "da5cd1a21f8f4650798cc19c92ff8790b324e6d3",
+      "split": "heldout",
+      "question": "Which local symbol does sanitize call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "internal/networkprobe/parser.go",
+          "sha256": "4d0b822eb2bf73c1db5771a2ce074df3648c1caeb8052516349217011490a733",
+          "start_line": 35,
+          "end_line": 57,
+          "span_sha256": "b5e9e965775d1a615f9d62c14983fec6870355aab7922662eda20f2b82cda7f1",
+          "symbol": "sanitize"
+        },
+        "target": {
+          "path": "internal/networkprobe/parser.go",
+          "sha256": "4d0b822eb2bf73c1db5771a2ce074df3648c1caeb8052516349217011490a733",
+          "start_line": 67,
+          "end_line": 67,
+          "span_sha256": "e4114a27ad6d505ba02db69cfa11f8fa422b66a657de6cd1f8a462c2497323e6",
+          "symbol": "boundedFloat"
+        },
+        "site": {
+          "path": "internal/networkprobe/parser.go",
+          "sha256": "4d0b822eb2bf73c1db5771a2ce074df3648c1caeb8052516349217011490a733",
+          "start_line": 42,
+          "end_line": 42,
+          "span_sha256": "033d532703ee8597b8aa4959b654f149f0fdaaf9770316ac354870cca44c79af",
+          "symbol": "boundedFloat"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Manual read of the complete Go function shows a direct same-package call to the unique boundedFloat declaration anchored in this file.",
+      "category": "call"
+    },
+    {
+      "id": "vex-network-sanitize-hop-host",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/SAME-SNAPSHOT-CBM/snapshots/vex",
+      "revision": "da5cd1a21f8f4650798cc19c92ff8790b324e6d3",
+      "split": "heldout",
+      "question": "Which local symbol does sanitize call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "internal/networkprobe/parser.go",
+          "sha256": "4d0b822eb2bf73c1db5771a2ce074df3648c1caeb8052516349217011490a733",
+          "start_line": 35,
+          "end_line": 57,
+          "span_sha256": "b5e9e965775d1a615f9d62c14983fec6870355aab7922662eda20f2b82cda7f1",
+          "symbol": "sanitize"
+        },
+        "target": {
+          "path": "internal/networkprobe/parser.go",
+          "sha256": "4d0b822eb2bf73c1db5771a2ce074df3648c1caeb8052516349217011490a733",
+          "start_line": 59,
+          "end_line": 59,
+          "span_sha256": "bcdba5d0d24d7770b211ad5828549e756344f596588a71167ac9aaa82ae9313d",
+          "symbol": "boundedText"
+        },
+        "site": {
+          "path": "internal/networkprobe/parser.go",
+          "sha256": "4d0b822eb2bf73c1db5771a2ce074df3648c1caeb8052516349217011490a733",
+          "start_line": 47,
+          "end_line": 47,
+          "span_sha256": "449e141598f25811553034460a62ce493e9e11b0726d63b2d8e550ab364badd5",
+          "symbol": "boundedText"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Manual read of the complete Go function shows a direct same-package call to the unique boundedText declaration anchored in this file.",
+      "category": "call"
+    },
+    {
+      "id": "vex-config-shared-secret",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/SAME-SNAPSHOT-CBM/snapshots/vex",
+      "revision": "da5cd1a21f8f4650798cc19c92ff8790b324e6d3",
+      "split": "heldout",
+      "question": "Which local symbol does LoadSharedServiceConfig call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "internal/cmdconfig/service.go",
+          "sha256": "701f36b068f80bdceacbf0f1e6d8603e4579a4f15a1aec38cb6ef146478c6641",
+          "start_line": 82,
+          "end_line": 99,
+          "span_sha256": "d1265dbe642ae16efd1391789a58fdb6da1fe84461b5a5103b689aa20a7bf339",
+          "symbol": "LoadSharedServiceConfig"
+        },
+        "target": {
+          "path": "internal/cmdconfig/service.go",
+          "sha256": "701f36b068f80bdceacbf0f1e6d8603e4579a4f15a1aec38cb6ef146478c6641",
+          "start_line": 206,
+          "end_line": 206,
+          "span_sha256": "b190a6c5855bed471169c7014d61efec69aa64f11d0701d14d449b282ae8746b",
+          "symbol": "PaymentWebhookSecret"
+        },
+        "site": {
+          "path": "internal/cmdconfig/service.go",
+          "sha256": "701f36b068f80bdceacbf0f1e6d8603e4579a4f15a1aec38cb6ef146478c6641",
+          "start_line": 83,
+          "end_line": 83,
+          "span_sha256": "d5e3fc1788d227601c152c29c394524213d78e8d70b419eedf8f5127de59230f",
+          "symbol": "PaymentWebhookSecret"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Manual read of the complete Go function shows a direct same-package call to the unique PaymentWebhookSecret declaration anchored in this file.",
+      "category": "call"
+    },
+    {
+      "id": "vex-config-shared-billing",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/SAME-SNAPSHOT-CBM/snapshots/vex",
+      "revision": "da5cd1a21f8f4650798cc19c92ff8790b324e6d3",
+      "split": "heldout",
+      "question": "Which local symbol does LoadSharedServiceConfig call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "internal/cmdconfig/service.go",
+          "sha256": "701f36b068f80bdceacbf0f1e6d8603e4579a4f15a1aec38cb6ef146478c6641",
+          "start_line": 82,
+          "end_line": 99,
+          "span_sha256": "d1265dbe642ae16efd1391789a58fdb6da1fe84461b5a5103b689aa20a7bf339",
+          "symbol": "LoadSharedServiceConfig"
+        },
+        "target": {
+          "path": "internal/cmdconfig/service.go",
+          "sha256": "701f36b068f80bdceacbf0f1e6d8603e4579a4f15a1aec38cb6ef146478c6641",
+          "start_line": 168,
+          "end_line": 168,
+          "span_sha256": "70431ed4baa9b4e01588c1f0d0419acb5f62988e6ae9013f14bcab2e1512d61f",
+          "symbol": "BillingMode"
+        },
+        "site": {
+          "path": "internal/cmdconfig/service.go",
+          "sha256": "701f36b068f80bdceacbf0f1e6d8603e4579a4f15a1aec38cb6ef146478c6641",
+          "start_line": 86,
+          "end_line": 86,
+          "span_sha256": "cf05620fc3d7dc84a6ba979621c258d07bf7e409f75bb386aa1c7ca1688b6d25",
+          "symbol": "BillingMode"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Manual read of the complete Go function shows a direct same-package call to the unique BillingMode declaration anchored in this file.",
+      "category": "call"
+    },
+    {
+      "id": "vex-config-shared-hosts",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/SAME-SNAPSHOT-CBM/snapshots/vex",
+      "revision": "da5cd1a21f8f4650798cc19c92ff8790b324e6d3",
+      "split": "heldout",
+      "question": "Which local symbol does LoadSharedServiceConfig call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "internal/cmdconfig/service.go",
+          "sha256": "701f36b068f80bdceacbf0f1e6d8603e4579a4f15a1aec38cb6ef146478c6641",
+          "start_line": 82,
+          "end_line": 99,
+          "span_sha256": "d1265dbe642ae16efd1391789a58fdb6da1fe84461b5a5103b689aa20a7bf339",
+          "symbol": "LoadSharedServiceConfig"
+        },
+        "target": {
+          "path": "internal/cmdconfig/service.go",
+          "sha256": "701f36b068f80bdceacbf0f1e6d8603e4579a4f15a1aec38cb6ef146478c6641",
+          "start_line": 214,
+          "end_line": 214,
+          "span_sha256": "9b529a2ee4cfd23dcc19135ee2acbdb5822fd9e780794948a3f3e08f5fd9e3c1",
+          "symbol": "ProtectedControlHosts"
+        },
+        "site": {
+          "path": "internal/cmdconfig/service.go",
+          "sha256": "701f36b068f80bdceacbf0f1e6d8603e4579a4f15a1aec38cb6ef146478c6641",
+          "start_line": 93,
+          "end_line": 93,
+          "span_sha256": "6e1248634acca750a1fb53d36e50500e1a2f3168c74f086e0822fe6d3eb4ec66",
+          "symbol": "ProtectedControlHosts"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Manual read of the complete Go function shows a direct same-package call to the unique ProtectedControlHosts declaration anchored in this file.",
+      "category": "call"
+    },
+    {
+      "id": "vex-config-api-production",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/SAME-SNAPSHOT-CBM/snapshots/vex",
+      "revision": "da5cd1a21f8f4650798cc19c92ff8790b324e6d3",
+      "split": "heldout",
+      "question": "Which local symbol does LoadAPIServiceConfig call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "internal/cmdconfig/service.go",
+          "sha256": "701f36b068f80bdceacbf0f1e6d8603e4579a4f15a1aec38cb6ef146478c6641",
+          "start_line": 101,
+          "end_line": 136,
+          "span_sha256": "0af8588ae55ff4fb70e083da4ac3da04ec75a90530b23fc487a29174e8ee2e30",
+          "symbol": "LoadAPIServiceConfig"
+        },
+        "target": {
+          "path": "internal/cmdconfig/service.go",
+          "sha256": "701f36b068f80bdceacbf0f1e6d8603e4579a4f15a1aec38cb6ef146478c6641",
+          "start_line": 178,
+          "end_line": 178,
+          "span_sha256": "a41f9588398688e3132c1e75dde948eda7959126764a1079ab0b232beccde024",
+          "symbol": "IsProduction"
+        },
+        "site": {
+          "path": "internal/cmdconfig/service.go",
+          "sha256": "701f36b068f80bdceacbf0f1e6d8603e4579a4f15a1aec38cb6ef146478c6641",
+          "start_line": 108,
+          "end_line": 108,
+          "span_sha256": "511347d9be64ee8b9293351cd839b9b0853f9bed67eedb69bd78478d00271df4",
+          "symbol": "IsProduction"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Manual read of the complete Go function shows a direct same-package call to the unique IsProduction declaration anchored in this file.",
+      "category": "call"
+    },
+    {
+      "id": "vex-config-api-cohort",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/SAME-SNAPSHOT-CBM/snapshots/vex",
+      "revision": "da5cd1a21f8f4650798cc19c92ff8790b324e6d3",
+      "split": "heldout",
+      "question": "Which local symbol does LoadAPIServiceConfig call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "internal/cmdconfig/service.go",
+          "sha256": "701f36b068f80bdceacbf0f1e6d8603e4579a4f15a1aec38cb6ef146478c6641",
+          "start_line": 101,
+          "end_line": 136,
+          "span_sha256": "0af8588ae55ff4fb70e083da4ac3da04ec75a90530b23fc487a29174e8ee2e30",
+          "symbol": "LoadAPIServiceConfig"
+        },
+        "target": {
+          "path": "internal/cmdconfig/service.go",
+          "sha256": "701f36b068f80bdceacbf0f1e6d8603e4579a4f15a1aec38cb6ef146478c6641",
+          "start_line": 138,
+          "end_line": 138,
+          "span_sha256": "111af73730ed02d4f1fefac0dffdc4bb4e84204a0da67c46f03a79f616307e34",
+          "symbol": "parseIncyCohortUserIDs"
+        },
+        "site": {
+          "path": "internal/cmdconfig/service.go",
+          "sha256": "701f36b068f80bdceacbf0f1e6d8603e4579a4f15a1aec38cb6ef146478c6641",
+          "start_line": 113,
+          "end_line": 113,
+          "span_sha256": "aef5348a6c852b56bdd1f737777ae1307ae95d6978e859f6fd4eb3b30a48b69e",
+          "symbol": "parseIncyCohortUserIDs"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Manual read of the complete Go function shows a direct same-package call to the unique parseIncyCohortUserIDs declaration anchored in this file.",
+      "category": "call"
+    },
+    {
+      "id": "vex-config-api-node-map",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/SAME-SNAPSHOT-CBM/snapshots/vex",
+      "revision": "da5cd1a21f8f4650798cc19c92ff8790b324e6d3",
+      "split": "heldout",
+      "question": "Which local symbol does LoadAPIServiceConfig call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "internal/cmdconfig/service.go",
+          "sha256": "701f36b068f80bdceacbf0f1e6d8603e4579a4f15a1aec38cb6ef146478c6641",
+          "start_line": 101,
+          "end_line": 136,
+          "span_sha256": "0af8588ae55ff4fb70e083da4ac3da04ec75a90530b23fc487a29174e8ee2e30",
+          "symbol": "LoadAPIServiceConfig"
+        },
+        "target": {
+          "path": "internal/cmdconfig/service.go",
+          "sha256": "701f36b068f80bdceacbf0f1e6d8603e4579a4f15a1aec38cb6ef146478c6641",
+          "start_line": 245,
+          "end_line": 245,
+          "span_sha256": "51c779654b60ab09f2fe765300f966fbd5ae3aee843efa4a19ef6e1b04070b83",
+          "symbol": "awg3NodeByLocation"
+        },
+        "site": {
+          "path": "internal/cmdconfig/service.go",
+          "sha256": "701f36b068f80bdceacbf0f1e6d8603e4579a4f15a1aec38cb6ef146478c6641",
+          "start_line": 120,
+          "end_line": 120,
+          "span_sha256": "3402f6cd6350b2c49238a1e53d0f717b6a614db0d1f2a8b037e847eb068f6ec9",
+          "symbol": "awg3NodeByLocation"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Manual read of the complete Go function shows a direct same-package call to the unique awg3NodeByLocation declaration anchored in this file.",
+      "category": "call"
+    },
+    {
+      "id": "vex-config-scheduler-repair",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/SAME-SNAPSHOT-CBM/snapshots/vex",
+      "revision": "da5cd1a21f8f4650798cc19c92ff8790b324e6d3",
+      "split": "heldout",
+      "question": "Which local symbol does LoadSchedulerServiceConfig call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "internal/cmdconfig/service.go",
+          "sha256": "701f36b068f80bdceacbf0f1e6d8603e4579a4f15a1aec38cb6ef146478c6641",
+          "start_line": 142,
+          "end_line": 151,
+          "span_sha256": "d09d1ddb3f1436fb5cb814629ac7550ee002f036b32ad740a595bd61b033a3ee",
+          "symbol": "LoadSchedulerServiceConfig"
+        },
+        "target": {
+          "path": "internal/cmdconfig/service.go",
+          "sha256": "701f36b068f80bdceacbf0f1e6d8603e4579a4f15a1aec38cb6ef146478c6641",
+          "start_line": 187,
+          "end_line": 187,
+          "span_sha256": "72ed4715dcaf2c610c2c30e7812a33762bcd123dd6ccb6407aacd3977b155a56",
+          "symbol": "SchedulerAutoRepair"
+        },
+        "site": {
+          "path": "internal/cmdconfig/service.go",
+          "sha256": "701f36b068f80bdceacbf0f1e6d8603e4579a4f15a1aec38cb6ef146478c6641",
+          "start_line": 143,
+          "end_line": 143,
+          "span_sha256": "80d6f5d53632a0482bbae0ca2cb01e7778e69b7633958496607149f640c3caa8",
+          "symbol": "SchedulerAutoRepair"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Manual read of the complete Go function shows a direct same-package call to the unique SchedulerAutoRepair declaration anchored in this file.",
+      "category": "call"
+    },
+    {
+      "id": "vex-config-scheduler-recovery",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/SAME-SNAPSHOT-CBM/snapshots/vex",
+      "revision": "da5cd1a21f8f4650798cc19c92ff8790b324e6d3",
+      "split": "heldout",
+      "question": "Which local symbol does LoadSchedulerServiceConfig call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "internal/cmdconfig/service.go",
+          "sha256": "701f36b068f80bdceacbf0f1e6d8603e4579a4f15a1aec38cb6ef146478c6641",
+          "start_line": 142,
+          "end_line": 151,
+          "span_sha256": "d09d1ddb3f1436fb5cb814629ac7550ee002f036b32ad740a595bd61b033a3ee",
+          "symbol": "LoadSchedulerServiceConfig"
+        },
+        "target": {
+          "path": "internal/cmdconfig/service.go",
+          "sha256": "701f36b068f80bdceacbf0f1e6d8603e4579a4f15a1aec38cb6ef146478c6641",
+          "start_line": 199,
+          "end_line": 199,
+          "span_sha256": "7dc64fddf2e20e981f6c0cc679a69bd9abd38c964d4e3193b40d53f9e52629b4",
+          "symbol": "SchedulerNodeAutoRecovery"
+        },
+        "site": {
+          "path": "internal/cmdconfig/service.go",
+          "sha256": "701f36b068f80bdceacbf0f1e6d8603e4579a4f15a1aec38cb6ef146478c6641",
+          "start_line": 149,
+          "end_line": 149,
+          "span_sha256": "b5ab0307b81a8f94ccbacae5fefe40d8208f1146746c82d912fbf10f063e9c85",
+          "symbol": "SchedulerNodeAutoRecovery"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Manual read of the complete Go function shows a direct same-package call to the unique SchedulerNodeAutoRecovery declaration anchored in this file.",
+      "category": "call"
+    },
+    {
+      "id": "vex-config-protected-merge",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/SAME-SNAPSHOT-CBM/snapshots/vex",
+      "revision": "da5cd1a21f8f4650798cc19c92ff8790b324e6d3",
+      "split": "heldout",
+      "question": "Which local symbol does ProtectedControlHosts call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "internal/cmdconfig/service.go",
+          "sha256": "701f36b068f80bdceacbf0f1e6d8603e4579a4f15a1aec38cb6ef146478c6641",
+          "start_line": 214,
+          "end_line": 223,
+          "span_sha256": "3519c780e068e64c6f852f56cd1c31f644541eed3cc764ef153289bff71d5218",
+          "symbol": "ProtectedControlHosts"
+        },
+        "target": {
+          "path": "internal/cmdconfig/service.go",
+          "sha256": "701f36b068f80bdceacbf0f1e6d8603e4579a4f15a1aec38cb6ef146478c6641",
+          "start_line": 225,
+          "end_line": 225,
+          "span_sha256": "b4f22ad1e00af11dcaf01396ffd2b9030ee0d5662b043360504bc4c79e440396",
+          "symbol": "mergeLists"
+        },
+        "site": {
+          "path": "internal/cmdconfig/service.go",
+          "sha256": "701f36b068f80bdceacbf0f1e6d8603e4579a4f15a1aec38cb6ef146478c6641",
+          "start_line": 215,
+          "end_line": 215,
+          "span_sha256": "17d4ae038c7e2384eb6984ca81465b7a96ebcc301dd01e5c2b0cbd409f7ba624",
+          "symbol": "mergeLists"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Manual read of the complete Go function shows a direct same-package call to the unique mergeLists declaration anchored in this file.",
+      "category": "call"
+    },
+    {
+      "id": "vex-vpnctl-request-raw",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/SAME-SNAPSHOT-CBM/snapshots/vex",
+      "revision": "da5cd1a21f8f4650798cc19c92ff8790b324e6d3",
+      "split": "heldout",
+      "question": "Which local symbol does request call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "cmd/vpnctl/http_helpers.go",
+          "sha256": "0f9c7c1c89e0176da63d94a8493f5a7178f23b9f287b61e5df47e5d5c4e60770",
+          "start_line": 13,
+          "end_line": 15,
+          "span_sha256": "227ee37c4f850d2210646f2cceb5f72e31f26fa225e8c428ddbd58eae1079177",
+          "symbol": "request"
+        },
+        "target": {
+          "path": "cmd/vpnctl/http_helpers.go",
+          "sha256": "0f9c7c1c89e0176da63d94a8493f5a7178f23b9f287b61e5df47e5d5c4e60770",
+          "start_line": 29,
+          "end_line": 29,
+          "span_sha256": "9c3f8fc1fe6991825300a93312a2874f0659e2128cc73b6e5db48a38ed67ff3c",
+          "symbol": "requestRaw"
+        },
+        "site": {
+          "path": "cmd/vpnctl/http_helpers.go",
+          "sha256": "0f9c7c1c89e0176da63d94a8493f5a7178f23b9f287b61e5df47e5d5c4e60770",
+          "start_line": 14,
+          "end_line": 14,
+          "span_sha256": "3035572b752d48413e1060a0dd6eb54ee9c2f769332c7b6eeed8627f3fc0001f",
+          "symbol": "requestRaw"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Manual read of the complete Go function shows a direct same-package call to the unique requestRaw declaration anchored in this file.",
+      "category": "call"
+    },
+    {
+      "id": "vex-vpnctl-request-headers-raw",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/SAME-SNAPSHOT-CBM/snapshots/vex",
+      "revision": "da5cd1a21f8f4650798cc19c92ff8790b324e6d3",
+      "split": "heldout",
+      "question": "Which local symbol does requestWithHeaders call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "cmd/vpnctl/http_helpers.go",
+          "sha256": "0f9c7c1c89e0176da63d94a8493f5a7178f23b9f287b61e5df47e5d5c4e60770",
+          "start_line": 17,
+          "end_line": 19,
+          "span_sha256": "8831440da1975c3c2dbe2bd1768c98ba5f0e6e279421acc1e2d596b9bcd2b48f",
+          "symbol": "requestWithHeaders"
+        },
+        "target": {
+          "path": "cmd/vpnctl/http_helpers.go",
+          "sha256": "0f9c7c1c89e0176da63d94a8493f5a7178f23b9f287b61e5df47e5d5c4e60770",
+          "start_line": 29,
+          "end_line": 29,
+          "span_sha256": "9c3f8fc1fe6991825300a93312a2874f0659e2128cc73b6e5db48a38ed67ff3c",
+          "symbol": "requestRaw"
+        },
+        "site": {
+          "path": "cmd/vpnctl/http_helpers.go",
+          "sha256": "0f9c7c1c89e0176da63d94a8493f5a7178f23b9f287b61e5df47e5d5c4e60770",
+          "start_line": 18,
+          "end_line": 18,
+          "span_sha256": "baddd11478ff8f69a19e090182f5caf4865eb69f918ced43621f143379e63f8c",
+          "symbol": "requestRaw"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Manual read of the complete Go function shows a direct same-package call to the unique requestRaw declaration anchored in this file.",
+      "category": "call"
+    },
+    {
+      "id": "vex-vpnctl-request-decode-raw",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/SAME-SNAPSHOT-CBM/snapshots/vex",
+      "revision": "da5cd1a21f8f4650798cc19c92ff8790b324e6d3",
+      "split": "heldout",
+      "question": "Which local symbol does requestDecode call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "cmd/vpnctl/http_helpers.go",
+          "sha256": "0f9c7c1c89e0176da63d94a8493f5a7178f23b9f287b61e5df47e5d5c4e60770",
+          "start_line": 21,
+          "end_line": 27,
+          "span_sha256": "593f81daaf4fb5261ac78a10208e64ebc9326f99f56f5bf3b650f24c554895ad",
+          "symbol": "requestDecode"
+        },
+        "target": {
+          "path": "cmd/vpnctl/http_helpers.go",
+          "sha256": "0f9c7c1c89e0176da63d94a8493f5a7178f23b9f287b61e5df47e5d5c4e60770",
+          "start_line": 29,
+          "end_line": 29,
+          "span_sha256": "9c3f8fc1fe6991825300a93312a2874f0659e2128cc73b6e5db48a38ed67ff3c",
+          "symbol": "requestRaw"
+        },
+        "site": {
+          "path": "cmd/vpnctl/http_helpers.go",
+          "sha256": "0f9c7c1c89e0176da63d94a8493f5a7178f23b9f287b61e5df47e5d5c4e60770",
+          "start_line": 22,
+          "end_line": 22,
+          "span_sha256": "a60ed51d096a5c8c52c7557f53381ec80cbc43669805155b38bd4cfbad893dd6",
+          "symbol": "requestRaw"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Manual read of the complete Go function shows a direct same-package call to the unique requestRaw declaration anchored in this file.",
+      "category": "call"
+    },
+    {
+      "id": "vex-ratelimit-allow-shard",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/SAME-SNAPSHOT-CBM/snapshots/vex",
+      "revision": "da5cd1a21f8f4650798cc19c92ff8790b324e6d3",
+      "split": "heldout",
+      "question": "Which local symbol does Allow call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "internal/ratelimit/ratelimit.go",
+          "sha256": "7e362059e807cef67c1aeabefff8c0977858b6f1bf2fccc7009b5091cc2236b2",
+          "start_line": 47,
+          "end_line": 71,
+          "span_sha256": "c5646341cb10659f5aa5c07276790c46488aa97583a5527195c3e3de4f1c49c7",
+          "symbol": "Allow"
+        },
+        "target": {
+          "path": "internal/ratelimit/ratelimit.go",
+          "sha256": "7e362059e807cef67c1aeabefff8c0977858b6f1bf2fccc7009b5091cc2236b2",
+          "start_line": 89,
+          "end_line": 89,
+          "span_sha256": "34a85fbbd255e082232e7f9e1f60ea7b1358f9367338e06e083af3d9672765a5",
+          "symbol": "shardIndex"
+        },
+        "site": {
+          "path": "internal/ratelimit/ratelimit.go",
+          "sha256": "7e362059e807cef67c1aeabefff8c0977858b6f1bf2fccc7009b5091cc2236b2",
+          "start_line": 55,
+          "end_line": 55,
+          "span_sha256": "15c03010adaf5a20ef0e4420b9ee6729e6f5e8ed9181dd8b4372b733e44fd762",
+          "symbol": "shardIndex"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Manual read of the complete Go function shows a direct same-package call to the unique shardIndex declaration anchored in this file.",
+      "category": "call"
+    },
+    {
+      "id": "vex-ratelimit-allow-cleanup",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/SAME-SNAPSHOT-CBM/snapshots/vex",
+      "revision": "da5cd1a21f8f4650798cc19c92ff8790b324e6d3",
+      "split": "heldout",
+      "question": "Which local symbol does Allow call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "internal/ratelimit/ratelimit.go",
+          "sha256": "7e362059e807cef67c1aeabefff8c0977858b6f1bf2fccc7009b5091cc2236b2",
+          "start_line": 47,
+          "end_line": 71,
+          "span_sha256": "c5646341cb10659f5aa5c07276790c46488aa97583a5527195c3e3de4f1c49c7",
+          "symbol": "Allow"
+        },
+        "target": {
+          "path": "internal/ratelimit/ratelimit.go",
+          "sha256": "7e362059e807cef67c1aeabefff8c0977858b6f1bf2fccc7009b5091cc2236b2",
+          "start_line": 73,
+          "end_line": 73,
+          "span_sha256": "74b3294caaa066c861e529bbe4233d332dedfd2f7d789e480ed4b48b7f30b735",
+          "symbol": "cleanupLocked"
+        },
+        "site": {
+          "path": "internal/ratelimit/ratelimit.go",
+          "sha256": "7e362059e807cef67c1aeabefff8c0977858b6f1bf2fccc7009b5091cc2236b2",
+          "start_line": 58,
+          "end_line": 58,
+          "span_sha256": "9b94a32c57ba98ea7fac1ee95c6bf3a6a167c92f99e984c385c43f6fcca59cf0",
+          "symbol": "cleanupLocked"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Manual read of the complete Go function shows a direct same-package call to the unique cleanupLocked declaration anchored in this file.",
+      "category": "call"
+    },
+    {
+      "id": "vex-ratelimit-allow-expiry-new",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/SAME-SNAPSHOT-CBM/snapshots/vex",
+      "revision": "da5cd1a21f8f4650798cc19c92ff8790b324e6d3",
+      "split": "heldout",
+      "question": "Which local symbol does Allow call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "internal/ratelimit/ratelimit.go",
+          "sha256": "7e362059e807cef67c1aeabefff8c0977858b6f1bf2fccc7009b5091cc2236b2",
+          "start_line": 47,
+          "end_line": 71,
+          "span_sha256": "c5646341cb10659f5aa5c07276790c46488aa97583a5527195c3e3de4f1c49c7",
+          "symbol": "Allow"
+        },
+        "target": {
+          "path": "internal/ratelimit/ratelimit.go",
+          "sha256": "7e362059e807cef67c1aeabefff8c0977858b6f1bf2fccc7009b5091cc2236b2",
+          "start_line": 85,
+          "end_line": 85,
+          "span_sha256": "b4988a6d0c1e4d98d425d9f452d16b9219e0a526b203776b2c71cf53371bf00a",
+          "symbol": "bucketExpiry"
+        },
+        "site": {
+          "path": "internal/ratelimit/ratelimit.go",
+          "sha256": "7e362059e807cef67c1aeabefff8c0977858b6f1bf2fccc7009b5091cc2236b2",
+          "start_line": 61,
+          "end_line": 61,
+          "span_sha256": "408dcc5c85ec654a962d4903b8f6ed10488f41e2c666fc502f896118cb329e0f",
+          "symbol": "bucketExpiry"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Manual read of the complete Go function shows a direct same-package call to the unique bucketExpiry declaration anchored in this file.",
+      "category": "call"
+    },
+    {
+      "id": "vex-ratelimit-allow-expiry-existing",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/SAME-SNAPSHOT-CBM/snapshots/vex",
+      "revision": "da5cd1a21f8f4650798cc19c92ff8790b324e6d3",
+      "split": "heldout",
+      "question": "Which local symbol does Allow call at the anchored site?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "internal/ratelimit/ratelimit.go",
+          "sha256": "7e362059e807cef67c1aeabefff8c0977858b6f1bf2fccc7009b5091cc2236b2",
+          "start_line": 47,
+          "end_line": 71,
+          "span_sha256": "c5646341cb10659f5aa5c07276790c46488aa97583a5527195c3e3de4f1c49c7",
+          "symbol": "Allow"
+        },
+        "target": {
+          "path": "internal/ratelimit/ratelimit.go",
+          "sha256": "7e362059e807cef67c1aeabefff8c0977858b6f1bf2fccc7009b5091cc2236b2",
+          "start_line": 85,
+          "end_line": 85,
+          "span_sha256": "b4988a6d0c1e4d98d425d9f452d16b9219e0a526b203776b2c71cf53371bf00a",
+          "symbol": "bucketExpiry"
+        },
+        "site": {
+          "path": "internal/ratelimit/ratelimit.go",
+          "sha256": "7e362059e807cef67c1aeabefff8c0977858b6f1bf2fccc7009b5091cc2236b2",
+          "start_line": 68,
+          "end_line": 68,
+          "span_sha256": "a9f10528d30f813f7e3cc831b0ddae97f17b30f57386966980b49f0700b3f744",
+          "symbol": "bucketExpiry"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Manual read of the complete Go function shows a direct same-package call to the unique bucketExpiry declaration anchored in this file.",
+      "category": "call"
     }
   ]
 }
