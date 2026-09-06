@@ -222,7 +222,7 @@ git commit -m "feat: persist runtime observations safely"
 - Produces: `Runtime::runtime_evidence_status() -> Result<RuntimeEvidenceStatus, RuntimeError>`.
 - Produces: evidence-aware `trace_path_with_evidence` and `find_usages_with_evidence` methods.
 
-- [ ] **Step 1: Write four-language resolution fixtures**
+- [x] **Step 1: Write four-language resolution fixtures**
 
 Create one indexed project containing `.go`, `.ts`, `.tsx`, `.py`, and `.rs`
 callables. Feed observations with runtime-style qualified names and assert exact
@@ -235,26 +235,26 @@ assert_eq!(report.unresolved, 1);
 assert!(report.gaps.iter().any(|gap| gap.code == "runtime_ambiguous"));
 ```
 
-- [ ] **Step 2: Add OTLP privacy and hierarchy tests**
+- [x] **Step 2: Add OTLP privacy and hierarchy tests**
 
 Construct `resourceSpans/scopeSpans/spans` with a parent-child pair, code
 attributes, URL, SQL, arguments, stack trace, and raw trace IDs. Assert the
 normalized batch contains only allowed fields and serialized store bytes contain
 none of the forbidden values.
 
-- [ ] **Step 3: Run the focused tests and verify failure**
+- [x] **Step 3: Run the focused tests and verify failure**
 
 Run: `cargo test -p cgrx-cli --test runtime_evidence`
 
 Expected: compilation fails because runtime observation methods are missing.
 
-- [ ] **Step 4: Implement bounded parsers**
+- [x] **Step 4: Implement bounded parsers**
 
 Read at most `MAX_TRACE_BYTES + 1`; detect NDJSON versus OTLP top-level JSON;
 decode only known scalar attributes; enforce 100,000 span/call caps before
 allocation growth; hash trace/span IDs immediately and discard raw values.
 
-- [ ] **Step 5: Implement fail-closed endpoint resolution**
+- [x] **Step 5: Implement fail-closed endpoint resolution**
 
 Build deterministic indexes by canonical path and span, qualified name, and
 terminal name. Apply the five-stage resolution order from the spec. A stage with
@@ -262,7 +262,7 @@ multiple candidates returns an ambiguity and does not continue to a weaker
 stage. Verify node path hashes belong to the requested generation before
 publishing the resolved batch.
 
-- [ ] **Step 6: Implement fused traversal without changing static arcs**
+- [x] **Step 6: Implement fused traversal without changing static arcs**
 
 For `Static`, call the existing traversal unchanged. For `Observed`, traverse
 only active-revision resolved observations. For `All`, union by `(source,target)`
@@ -270,13 +270,13 @@ and label each result `observed` or `static+observed`. Keep deterministic orderi
 and apply depth/limit after evidence fusion; return independent truncation and
 runtime-gap metadata.
 
-- [ ] **Step 7: Run runtime and regression tests**
+- [x] **Step 7: Run runtime and regression tests**
 
 Run: `cargo test -p cgrx-cli --test runtime_evidence && cargo test -p cgrx-cli --test runtime && cargo test -p cgrx-retrieval`
 
 Expected: all tests pass; existing static traversal snapshots remain unchanged.
 
-- [ ] **Step 8: Commit parsing and fusion**
+- [x] **Step 8: Commit parsing and fusion**
 
 ```bash
 git add crates/cgrx-cli/src/lib.rs crates/cgrx-cli/src/runtime.rs crates/cgrx-cli/src/runtime/observations.rs crates/cgrx-cli/tests/runtime_evidence.rs
