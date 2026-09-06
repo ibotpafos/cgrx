@@ -1,3 +1,4 @@
+mod refactors;
 mod risks;
 mod ts_config;
 pub use risks::RiskBaseline;
@@ -38,7 +39,7 @@ use serde_json::{Value, json};
 
 use crate::intent::{TaskIntent, classify};
 
-const EXTRACTION_REVISION: u32 = 20;
+const EXTRACTION_REVISION: u32 = 23;
 
 const NODES_SEGMENT: &str = "nodes.seg";
 const EDGES_SEGMENT: &str = "edges.seg";
@@ -280,7 +281,81 @@ impl Runtime {
         scope: &Scope,
         limit: usize,
     ) -> Result<Value, RuntimeError> {
-        self.search_graph_with_matcher(query, scope, limit, path_in_scope)
+        self.search_graph_filtered(query, scope, limit, None, false)
+    }
+
+    pub fn search_graph_filtered(
+        &self,
+        query: &str,
+        scope: &Scope,
+        limit: usize,
+        language: Option<&str>,
+        include_body: bool,
+    ) -> Result<Value, RuntimeError> {
+        let language = language.map(str::trim);
+        if language
+            .is_some_and(|language| !matches!(language, "typescript" | "go" | "python" | "rust"))
+        {
+            return Err(RuntimeError::new(
+                "cgrx.invalid_arguments",
+                "language must be one of typescript, go, python, or rust",
+            ));
+        }
+        self.search_graph_with_matcher(query, scope, limit, language, include_body, path_in_scope)
+    }
+
+    pub fn get_outline(&self, path: &str, limit: usize) -> Result<Value, RuntimeError> {
+        let path = path.trim();
+        if path.is_empty() || Path::new(path).is_absolute() || !(1..=500).contains(&limit) {
+            return Err(RuntimeError::new(
+                "cgrx.invalid_arguments",
+                "path must be relative and non-empty; limit must be between 1 and 500",
+            ));
+        }
+        let language = pack_for_path(Path::new(path))
+            .map(|pack| pack.id())
+            .ok_or_else(|| RuntimeError::new("cgrx.unsupported_path", path.to_owned()))?;
+        if !self.stored.path_hashes.contains_key(path) {
+            return Err(RuntimeError::new(
+                "cgrx.path_not_indexed",
+                format!("path {path} was not indexed"),
+            ));
+        }
+        let scope = Scope {
+            include: vec![path.to_owned()],
+            exclude: Vec::new(),
+            relation_kinds: vec![RelationKind::Calls, RelationKind::Implements],
+            max_depth: 0,
+        };
+        let mut scoped = ScopedQuery::new(&self.stored, &scope, path_in_scope);
+        let mut documents: Vec<_> = self
+            .stored
+            .documents
+            .iter()
+            .filter(|document| document.provenance == "SYNTAX" && document.path == path)
+            .collect();
+        documents.sort_by_key(|document| (document.span_start, document.node_id));
+        let total = documents.len();
+        let symbols: Vec<_> = documents
+            .into_iter()
+            .take(limit)
+            .map(|document| {
+                json!({
+                    "node_id":document.node_id,
+                    "symbol":document.qualified_name,
+                    "span":{"start":document.span_start,"end":document.span_end}
+                })
+            })
+            .collect();
+        Ok(json!({
+            "snapshot":self.stored.snapshot,
+            "path":path,
+            "language":language,
+            "symbols":symbols,
+            "total":total,
+            "truncated":total > limit,
+            "coverage_gap_count":coverage_gap_count(&scoped.coverage(&self.stored.coverage))
+        }))
     }
 
     fn search_graph_with_matcher(
@@ -288,6 +363,8 @@ impl Runtime {
         query: &str,
         scope: &Scope,
         limit: usize,
+        language: Option<&str>,
+        include_body: bool,
         matches_scope: impl FnMut(&str, &Scope) -> bool,
     ) -> Result<Value, RuntimeError> {
         let query = query.trim();
@@ -316,37 +393,45 @@ impl Runtime {
             .documents
             .iter()
             .filter(|document| {
-                document.provenance == "SYNTAX" && scoped.contains_path(&document.path)
+                document.provenance == "SYNTAX"
+                    && scoped.contains_path(&document.path)
+                    && language.is_none_or(|language| {
+                        pack_for_path(Path::new(&document.path))
+                            .is_some_and(|pack| pack.id() == language)
+                    })
             })
             .filter_map(|document| {
                 let name = document.qualified_name.to_lowercase();
-                let rank = if name == folded {
-                    0
+                let (rank, matched_by) = if name == folded {
+                    (0, "symbol")
                 } else if name.starts_with(&folded) {
-                    1
+                    (1, "symbol")
                 } else if name.contains(&folded) {
-                    2
+                    (2, "symbol")
+                } else if include_body && document.search_text.to_lowercase().contains(&folded) {
+                    (3, "body")
                 } else {
                     return None;
                 };
                 let callers = caller_counts.get(&document.node_id).copied().unwrap_or(0);
                 let callees = callee_counts.get(&document.node_id).copied().unwrap_or(0);
-                Some((rank, document, callers, callees))
+                Some((rank, document, callers, callees, matched_by))
             })
             .collect();
-        matches.sort_by_key(|(rank, document, _, _)| {
+        matches.sort_by_key(|(rank, document, _, _, _)| {
             (*rank, &document.path, document.span_start, document.node_id)
         });
         let total = matches.len();
         let rows: Vec<_> = matches
             .into_iter()
             .take(limit)
-            .map(|(_, document, callers, callees)| {
+            .map(|(_, document, callers, callees, matched_by)| {
                 json!({
                     "node_id":document.node_id,
                     "symbol":document.qualified_name,
                     "path":document.path,
                     "span":{"start":document.span_start,"end":document.span_end},
+                    "matched_by":matched_by,
                     "callers":callers,
                     "callees":callees
                 })
@@ -355,6 +440,8 @@ impl Runtime {
         Ok(json!({
             "snapshot":self.stored.snapshot,
             "query":query,
+            "language":language,
+            "include_body":include_body,
             "matches":rows,
             "total":total,
             "truncated":total > limit,
@@ -519,6 +606,169 @@ impl Runtime {
             "direction":direction,
             "depth":depth,
             "nodes":nodes,
+            "total":total,
+            "truncated":total > limit,
+            "coverage_gap_count":coverage_gap_count(&scoped.coverage(&self.stored.coverage))
+        }))
+    }
+
+    pub fn find_usages(
+        &self,
+        symbol: &str,
+        path: Option<&str>,
+        scope: &Scope,
+        depth: u8,
+        limit: usize,
+    ) -> Result<Value, RuntimeError> {
+        let symbol = symbol.trim();
+        if symbol.is_empty()
+            || path.is_some_and(|path| path.trim().is_empty())
+            || !(1..=4).contains(&depth)
+            || !(1..=500).contains(&limit)
+        {
+            return Err(RuntimeError::new(
+                "cgrx.invalid_arguments",
+                "symbol and depth 1..4 are required; path must be non-empty when supplied; limit must be 1..500",
+            ));
+        }
+        let mut scoped = ScopedQuery::new(&self.stored, scope, path_in_scope);
+        let mut roots: Vec<_> = self
+            .stored
+            .documents
+            .iter()
+            .filter(|document| {
+                document.provenance == "SYNTAX"
+                    && scoped.contains_path(&document.path)
+                    && path.is_none_or(|path| document.path == path)
+                    && document.qualified_name == symbol
+            })
+            .collect();
+        if roots.is_empty() {
+            let folded = symbol.to_lowercase();
+            roots = self
+                .stored
+                .documents
+                .iter()
+                .filter(|document| {
+                    document.provenance == "SYNTAX"
+                        && scoped.contains_path(&document.path)
+                        && path.is_none_or(|path| document.path == path)
+                        && document.qualified_name.to_lowercase() == folded
+                })
+                .collect();
+        }
+        roots.sort_by_key(|document| (&document.path, document.span_start, document.node_id));
+        let root = match roots.as_slice() {
+            [] => {
+                return Err(RuntimeError::new(
+                    "cgrx.symbol_not_found",
+                    format!("symbol {symbol} was not found in scope"),
+                ));
+            }
+            [root] => *root,
+            _ => {
+                let candidates = roots
+                    .iter()
+                    .map(|document| format!("{}:{}", document.path, document.span_start))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                return Err(RuntimeError::new(
+                    "cgrx.ambiguous_symbol",
+                    format!("symbol {symbol} matches {candidates}; pass path"),
+                ));
+            }
+        };
+        let by_id: BTreeMap<_, _> = self
+            .stored
+            .documents
+            .iter()
+            .filter(|document| {
+                document.provenance == "SYNTAX" && scoped.contains_path(&document.path)
+            })
+            .map(|document| (document.node_id, document))
+            .collect();
+        let mut incoming = BTreeMap::<u64, Vec<&StoredArc>>::new();
+        for arc in scoped.definitive_arcs(&self.stored) {
+            incoming.entry(arc.target).or_default().push(arc);
+        }
+        for arcs in incoming.values_mut() {
+            arcs.sort_by_key(|arc| {
+                let evidence = arc.evidence.as_ref().expect("definitive edge evidence");
+                (&evidence.path, evidence.span.start, arc.kind, arc.source)
+            });
+        }
+        let mut visited = BTreeSet::from([root.node_id]);
+        let mut frontier = vec![root.node_id];
+        let mut usages = Vec::new();
+        for hop in 1..=depth {
+            let mut next = BTreeSet::new();
+            for target_id in &frontier {
+                let Some(target) = by_id.get(target_id).copied() else {
+                    continue;
+                };
+                for arc in incoming.get(target_id).into_iter().flatten() {
+                    if visited.contains(&arc.source) {
+                        continue;
+                    }
+                    let Some(source) = by_id.get(&arc.source).copied() else {
+                        continue;
+                    };
+                    let Some(evidence) = arc.evidence.as_ref() else {
+                        continue;
+                    };
+                    usages.push((arc, source, target, evidence, hop));
+                    next.insert(arc.source);
+                }
+            }
+            if next.is_empty() {
+                break;
+            }
+            visited.extend(&next);
+            frontier = next.into_iter().collect();
+        }
+        usages.sort_by_key(|(arc, source, target, evidence, hop)| {
+            (
+                *hop,
+                &evidence.path,
+                evidence.span.start,
+                &source.path,
+                source.span_start,
+                target.node_id,
+                arc.kind,
+                source.node_id,
+            )
+        });
+        usages.dedup_by_key(|(arc, source, target, evidence, hop)| {
+            (
+                *hop,
+                evidence.path.clone(),
+                evidence.span,
+                source.node_id,
+                target.node_id,
+                arc.kind,
+            )
+        });
+        let total = usages.len();
+        let rows: Vec<_> = usages
+            .into_iter()
+            .take(limit)
+            .map(|(arc, source, target, evidence, hop)| {
+                json!({
+                    "source":{"node_id":source.node_id,"symbol":source.qualified_name,"path":source.path,"span":{"start":source.span_start,"end":source.span_end}},
+                    "via":{"node_id":target.node_id,"symbol":target.qualified_name,"path":target.path},
+                    "relation":arc.kind,
+                    "site":{"path":evidence.path,"span":evidence.span},
+                    "resolver":evidence.resolver,
+                    "confidence":evidence.confidence,
+                    "hop":hop
+                })
+            })
+            .collect();
+        Ok(json!({
+            "snapshot":self.stored.snapshot,
+            "target":{"node_id":root.node_id,"symbol":root.qualified_name,"path":root.path,"span":{"start":root.span_start,"end":root.span_end}},
+            "depth":depth,
+            "usages":rows,
             "total":total,
             "truncated":total > limit,
             "coverage_gap_count":coverage_gap_count(&scoped.coverage(&self.stored.coverage))
@@ -2066,6 +2316,11 @@ fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPath, RuntimeE
             });
         }
     }
+    let ts_receiver_spans: BTreeSet<_> = ts_file
+        .as_ref()
+        .into_iter()
+        .flat_map(|facts| facts.receiver_calls.iter().map(|receiver| receiver.call))
+        .collect();
     if let Some(facts) = ts_file.as_ref() {
         for site in &facts.sites {
             let tag = match &site.binding {
@@ -2120,9 +2375,60 @@ fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPath, RuntimeE
                 semantic_tags: vec!["EXACT_CALL".to_owned(), tag.to_owned()],
             });
         }
+        for receiver in &facts.receiver_calls {
+            let span = Span {
+                start: receiver.call[0],
+                end: receiver.call[1],
+            };
+            if let Some(document) = documents.iter_mut().find(|document| {
+                document.provenance == "CALLS"
+                    && document.span_start == span.start
+                    && document.span_end == span.end
+                    && document.qualified_name == receiver.method
+            }) {
+                document
+                    .semantic_tags
+                    .retain(|value| value != "DYNAMIC_DISPATCH");
+                for tag in ["EXACT_CALL", "TS_RECEIVER_CALL"] {
+                    if !document.semantic_tags.iter().any(|value| value == tag) {
+                        document.semantic_tags.push(tag.to_owned());
+                    }
+                }
+                continue;
+            }
+            let slice = slice_source(
+                source,
+                ByteRange::new(span.start, span.end),
+                ContextWindow::lines(0),
+            );
+            documents.push(StoredDocument {
+                rust_module_target: None,
+                rust_self_target: None,
+                ts_lexical_target: None,
+                go_field_target: None,
+                go_import_path: None,
+                go_import_explicit_alias: false,
+                go_package: None,
+                go_receiver_target: None,
+                node_id: stable_node_id(relative, span, &format!("call:{}", receiver.method)),
+                qualified_name: receiver.method.clone(),
+                path: relative.to_owned(),
+                text: String::from_utf8_lossy(&slice.bytes).into_owned(),
+                search_text: String::from_utf8_lossy(&slice.bytes).into_owned(),
+                span_start: span.start,
+                span_end: span.end,
+                body_start: span.start,
+                body_end: span.end,
+                provenance: "CALLS".to_owned(),
+                semantic_tags: vec!["EXACT_CALL".to_owned(), "TS_RECEIVER_CALL".to_owned()],
+            });
+        }
     }
     let mut unresolved_by_span = BTreeMap::<(usize, usize), Vec<UnresolvedKind>>::new();
     for candidate in &unresolved {
+        if ts_receiver_spans.contains(&[candidate.span.start, candidate.span.end]) {
+            continue;
+        }
         unresolved_by_span
             .entry((candidate.span.start, candidate.span.end))
             .or_default()
@@ -2321,25 +2627,30 @@ fn ts_config_supported_for(path: &str, configs: &BTreeMap<String, TsResolutionCo
     ts_config::nearest(path, configs).is_none_or(|config| config.supported)
 }
 
+// Only immutable specifiers are deduplicated, within one source/pass. File,
+// config and directory witnesses are still re-observed on every refresh.
+fn ts_module_specifiers(facts: &TsFileFacts) -> BTreeSet<&str> {
+    facts
+        .imports
+        .iter()
+        .map(|import| import.module.as_str())
+        .chain(facts.exports.values().flatten().filter_map(|export| {
+            if let cgrx_languages::ts_imports::Export::From { module, .. } = export {
+                Some(module.as_str())
+            } else {
+                None
+            }
+        }))
+        .collect()
+}
+
 fn ts_config_modules(
     files: &BTreeMap<String, StoredTsFileFacts>,
     configs: &BTreeMap<String, TsResolutionConfig>,
 ) -> BTreeMap<(String, String), String> {
     let mut modules = BTreeMap::new();
     for (path, stored) in files {
-        for module in stored
-            .facts
-            .imports
-            .iter()
-            .map(|i| i.module.as_str())
-            .chain(stored.facts.exports.values().flatten().filter_map(|e| {
-                if let cgrx_languages::ts_imports::Export::From { module, .. } = e {
-                    Some(module.as_str())
-                } else {
-                    None
-                }
-            }))
-        {
+        for module in ts_module_specifiers(&stored.facts) {
             if let Some(mapped) = ts_config::mapped(path, module, configs) {
                 modules.insert((path.clone(), module.to_owned()), mapped);
             }
@@ -2349,6 +2660,8 @@ fn ts_config_modules(
 }
 
 fn ts_inventory_candidates(ts_files: &BTreeMap<String, StoredTsFileFacts>) -> BTreeSet<String> {
+    #[cfg(test)]
+    ts_inventory_cache_tests::INVENTORY_BUILDS.with(|n| n.set(n.get() + 1));
     let mut paths = BTreeSet::new();
     for (caller, stored) in ts_files.iter().filter(|(path, _)| {
         path.ends_with(".ts") && !path.ends_with(".d.ts") || path.ends_with(".tsx")
@@ -2370,25 +2683,9 @@ fn ts_inventory_candidates(ts_files: &BTreeMap<String, StoredTsFileFacts>) -> BT
                 break;
             }
         }
-        let modules = stored
-            .facts
-            .imports
-            .iter()
-            .map(|import| import.module.as_str())
-            .chain(
-                stored
-                    .facts
-                    .exports
-                    .values()
-                    .flatten()
-                    .filter_map(|export| {
-                        let cgrx_languages::ts_imports::Export::From { module, .. } = export else {
-                            return None;
-                        };
-                        Some(module.as_str())
-                    }),
-            );
-        for module in modules {
+        for module in ts_module_specifiers(&stored.facts) {
+            #[cfg(test)]
+            ts_inventory_cache_tests::MODULE_EXPANSIONS.with(|n| n.set(n.get() + 1));
             paths.extend(cgrx_languages::ts_imports::module_candidates(
                 caller, module,
             ));
@@ -2458,13 +2755,13 @@ fn scan_ts_inventory(
     configs: &mut BTreeMap<String, TsResolutionConfig>,
 ) -> Result<(bool, Vec<(String, Hash32)>), RuntimeError> {
     let mut directory_cache = TsDirectoryCache::default();
+    let mut candidates = ts_inventory_candidates(ts_files);
     let (collected_configs, config_paths, config_witness) =
-        ts_config::collect(root, ts_files, &mut directory_cache);
+        ts_config::collect(root, &candidates, &mut directory_cache);
     #[cfg(test)]
     ts_config::tests::after_collect(root);
     let mut changed = *configs != collected_configs;
     *configs = collected_configs;
-    let mut candidates = ts_inventory_candidates(ts_files);
     candidates.extend(config_paths.iter().cloned());
     for ((from, _), mapped) in ts_config_modules(ts_files, configs) {
         candidates.extend(cgrx_languages::ts_imports::module_candidates(
@@ -3212,6 +3509,64 @@ fn rebuild_arcs_with_cargo(
         // A receiver proof is never eligible for name/package guessing, even
         // when its target has disappeared during refresh or metadata is absent.
         let target = if call
+            .semantic_tags
+            .iter()
+            .any(|tag| tag == "TS_RECEIVER_CALL")
+        {
+            if !ts_config_supported_for(&call.path, ts_resolution_configs) {
+                None
+            } else {
+                let classified = cgrx_languages::ts_imports::classify_receiver_call_with_modules(
+                    &ts_inventory,
+                    &call.path,
+                    [call.span_start, call.span_end],
+                    &modules,
+                );
+                match classified.classification {
+                    ImportClassification::Exact(resolved) => (|| {
+                        let caller = source_document?;
+                        let caller_span = classified.caller?;
+                        if caller.span_start != caller_span[0]
+                            || caller.span_end != caller_span[1]
+                            || resolved.dependencies.iter().any(|path| {
+                                ts_files.get(path).is_none_or(|facts| {
+                                    path_hashes.get(path) != Some(&facts.source_hash)
+                                })
+                            })
+                            || resolved.dependencies.iter().any(|path| {
+                                ts_config::nearest(path, ts_resolution_configs).is_some_and(|c| {
+                                    c.dependencies
+                                        .iter()
+                                        .any(|(path, hash)| path_hashes.get(path) != Some(hash))
+                                })
+                            })
+                            || !ts_paths_portable_for(
+                                &resolved.dependencies,
+                                ts_files,
+                                ts_resolution_configs,
+                            )
+                            || resolved
+                                .dependencies
+                                .iter()
+                                .any(|path| !ts_config_supported_for(path, ts_resolution_configs))
+                        {
+                            return None;
+                        }
+                        let mut matches = syntax_by_path
+                            .get(resolved.path.as_str())?
+                            .iter()
+                            .filter(|document| {
+                                document.qualified_name == target_name
+                                    && document.span_start == resolved.target[0]
+                                    && document.span_end == resolved.target[1]
+                            });
+                        let target = matches.next()?;
+                        matches.next().is_none().then_some(target.node_id)
+                    })(),
+                    ImportClassification::Rejected | ImportClassification::NotImport => None,
+                }
+            }
+        } else if call
             .semantic_tags
             .iter()
             .any(|tag| tag == "TS_IMPORT_CALL" || tag == "TS_IMPORT_REJECTED")
@@ -4043,6 +4398,10 @@ fn generation_id(revision: &str) -> u64 {
 
 fn git_bytes(root: &Path, args: &[&str]) -> Result<Vec<u8>, RuntimeError> {
     let output = Command::new(crate::git_executable())
+        // These are read-only queries. In particular, status must not persist
+        // its stat-cache refresh into the user's Git index or acquire optional
+        // index locks. Git still reports working-tree, staged and HEAD changes.
+        .env("GIT_OPTIONAL_LOCKS", "0")
         .args(args)
         .current_dir(root)
         .output()
@@ -4595,6 +4954,12 @@ mod proof_edge_tests {
             runtime.search_graph("contract", &scope, 10).unwrap()["matches"][0]["callers"],
             2
         );
+        let usages = runtime
+            .find_usages("contract", None, &scope, 1, 10)
+            .expect("find proven usages across relations");
+        assert_eq!(usages["total"], 2);
+        assert_eq!(usages["usages"][0]["relation"], "CALLS");
+        assert_eq!(usages["usages"][1]["relation"], "IMPLEMENTS");
     }
 
     #[test]
@@ -4649,7 +5014,7 @@ mod proof_edge_tests {
         };
         let mut evaluations = BTreeMap::<String, usize>::new();
         let result = runtime
-            .search_graph_with_matcher("repeated", &scope, 50, |path, scope| {
+            .search_graph_with_matcher("repeated", &scope, 50, None, false, |path, scope| {
                 *evaluations.entry(path.to_owned()).or_default() += 1;
                 path_in_scope(path, scope)
             })
@@ -5161,7 +5526,7 @@ mod compact_storage_tests {
             serde_json::from_value::<StoredDocument>(encoded).unwrap(),
             doc
         );
-        assert_eq!(EXTRACTION_REVISION, 20);
+        assert_eq!(EXTRACTION_REVISION, 23);
     }
 
     #[test]
@@ -5268,6 +5633,10 @@ mod ts_inventory_cache_tests {
     use std::cell::Cell;
     use std::sync::atomic::{AtomicU64, Ordering};
     thread_local! { pub(super) static DIRECTORY_READS: Cell<usize> = const { Cell::new(0) }; }
+    thread_local! {
+        pub(super) static INVENTORY_BUILDS: Cell<usize> = const { Cell::new(0) };
+        pub(super) static MODULE_EXPANSIONS: Cell<usize> = const { Cell::new(0) };
+    }
     static ID: AtomicU64 = AtomicU64::new(0);
     struct Fixture(PathBuf);
     impl Drop for Fixture {
@@ -5275,6 +5644,54 @@ mod ts_inventory_cache_tests {
             let _ = fs::remove_dir_all(&self.0);
         }
     }
+    #[test]
+    fn repeated_named_imports_expand_once_per_inventory_pass() {
+        let fixture = Fixture(std::env::temp_dir().join(format!(
+            "cgrx-candidate-cache-{}-{}",
+            std::process::id(),
+            ID.fetch_add(1, Ordering::Relaxed)
+        )));
+        fs::create_dir_all(&fixture.0).unwrap();
+        let source = "import { a, b, c } from './worker'; export { d, e } from './worker';";
+        fs::write(fixture.0.join("main.ts"), source).unwrap();
+        let hash = Hash32(*blake3::hash(source.as_bytes()).as_bytes());
+        let mut files = BTreeMap::from([(
+            "main.ts".to_owned(),
+            StoredTsFileFacts {
+                source_hash: hash,
+                facts: TsFileFacts::parse("main.ts", source.as_bytes()),
+                inventory_only: false,
+            },
+        )]);
+        let mut hashes = BTreeMap::from([("main.ts".to_owned(), hash)]);
+        let mut configs = BTreeMap::new();
+        for pass in 0..2 {
+            INVENTORY_BUILDS.with(|n| n.set(0));
+            MODULE_EXPANSIONS.with(|n| n.set(0));
+            let (_, invalid) =
+                scan_ts_inventory(&fixture.0, &mut hashes, &mut files, &mut configs).unwrap();
+            assert!(invalid.is_empty());
+            assert_eq!(
+                INVENTORY_BUILDS.with(Cell::get),
+                1,
+                "one candidate set per pass"
+            );
+            assert_eq!(
+                MODULE_EXPANSIONS.with(Cell::get),
+                1,
+                "one expansion per distinct module"
+            );
+            if pass == 0 {
+                fs::write(fixture.0.join("worker.ts"), "export function a() {}").unwrap();
+            } else {
+                assert!(
+                    files["worker.ts"].inventory_only,
+                    "new filesystem target remains a presence blocker"
+                );
+            }
+        }
+    }
+
     #[test]
     fn directory_reads_are_shared_within_inventory_but_not_across_refreshes() {
         let fixture = Fixture(std::env::temp_dir().join(format!(

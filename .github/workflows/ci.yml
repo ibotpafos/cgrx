@@ -14,9 +14,19 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Node.js 26
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 26
+          check-latest: true
+          package-manager-cache: false
+      - name: Verify Node.js 26
+        run: node --version | grep -E '^v26\.'
       - name: Installer offline contracts
         run: python3 -m unittest discover -s scripts -p test_install.py
+      - name: Corpus schema and supported-language matrix
+        run: python3 -m unittest discover -s scripts -p 'test_validate_*.py'
       - name: Rust toolchain
         run: rustup toolchain install 1.89.0 --profile minimal --component clippy --component rustfmt
       - run: cargo fmt --all -- --check
@@ -28,3 +38,5 @@ jobs:
       - run: python3 scripts/eval_relationships.py target/release/cgrx
       - name: Relationship evaluator integrity and real MCP fanout
         run: CGRX_EVAL_BINARY=target/release/cgrx python3 -m unittest discover -s scripts -p test_eval_relationships.py
+      - name: Refactor evaluator integrity
+        run: python3 -m unittest discover -s scripts -p test_eval_refactors.py

@@ -1,0 +1,68 @@
+{
+  "schema_version": 1,
+  "relations": ["CALLS", "IMPORTS", "REFERENCE", "UNRESOLVED"],
+  "languages": [
+    {
+      "id": "typescript",
+      "module": "typescript",
+      "source": "crates/cgrx-languages/src/typescript.rs",
+      "extensions": ["ts", "tsx"],
+      "cells": {
+        "ts": {
+          "CALLS": ["vocal-chat-rooms-getRooms"],
+          "IMPORTS": ["vocal-ts-auth-import-service"],
+          "REFERENCE": ["gd-notification-preferences"],
+          "UNRESOLVED": ["vocal-ts-response-clear-cookie-unresolved"]
+        },
+        "tsx": {
+          "CALLS": ["pyramid-tsx-create-project-fetch-projects"],
+          "IMPORTS": ["pyramid-tsx-main-import-app"],
+          "REFERENCE": ["pyramid-tsx-open-project-reference"],
+          "UNRESOLVED": ["pyramid-tsx-login-callback-unresolved"]
+        }
+      }
+    },
+    {
+      "id": "go",
+      "module": "go",
+      "source": "crates/cgrx-languages/src/go.rs",
+      "extensions": ["go"],
+      "cells": {
+        "go": {
+          "CALLS": ["vpn-bool-default"],
+          "IMPORTS": ["vex-go-networkprobe-import-domain"],
+          "REFERENCE": ["pyramid-dependency-edge-type"],
+          "UNRESOLVED": ["vex-go-context-err-unresolved"]
+        }
+      }
+    },
+    {
+      "id": "python",
+      "module": "python",
+      "source": "crates/cgrx-languages/src/python.rs",
+      "extensions": ["py"],
+      "cells": {
+        "py": {
+          "CALLS": ["itsdangerous-encoding-base64_encode-want_bytes"],
+          "IMPORTS": ["itsdangerous-encoding-import-BadData"],
+          "REFERENCE": ["itsdangerous-url_safe-URLSafeSerializerMixin-reference"],
+          "UNRESOLVED": ["itsdangerous-signer-verify_signature-unresolved-get_signature"]
+        }
+      }
+    },
+    {
+      "id": "rust",
+      "module": "rust",
+      "source": "crates/cgrx-languages/src/rust.rs",
+      "extensions": ["rs"],
+      "cells": {
+        "rs": {
+          "CALLS": ["cgrx-git-text-git-bytes"],
+          "IMPORTS": ["rust-typescript-import-extraction"],
+          "REFERENCE": ["rust-typescript-extract-reference"],
+          "UNRESOLVED": ["rust-tsconfig-read-closure-unresolved"]
+        }
+      }
+    }
+  ]
+}

@@ -121,6 +121,15 @@ fn ts_lexical_tsx_arrow_and_nested_body_attribution() {
     assert_eq!(fixture.trace("tail", "main.tsx")["total"], 0);
 }
 #[test]
+fn ts_lexical_named_arrow_can_call_stable_outer_arrow() {
+    let source = "function Projects() { const fetchProjects = async () => 1; const createProject = async () => { fetchProjects(); }; return <button onClick={createProject}/>; }";
+    let fixture = Fixture::new(source, "tsx");
+    let result = fixture.trace("createProject", "main.tsx");
+    assert_eq!(result["total"], 1, "{result}");
+    assert_eq!(result["nodes"][0]["symbol"], "fetchProjects");
+    assert_eq!(result["nodes"][0]["path"], "main.tsx");
+}
+#[test]
 fn ts_lexical_same_name_sibling_exact_span() {
     let source = "function sibling() { const tail = () => 1; return tail(); } function caller() { const tail = () => 2; { return tail(); } }";
     let fixture = Fixture::new(source, "ts");
@@ -368,16 +377,22 @@ fn ts_lexical_metadata_is_compact_and_proofs_are_present_only_on_exact_calls() {
         "ts",
     );
     let stored = fixture.stored();
-    assert_eq!(stored["extraction_revision"], 20);
+    assert_eq!(stored["extraction_revision"], 23);
     let docs = stored["documents"].as_array().unwrap();
     let proofs: Vec<_> = docs
         .iter()
         .filter(|d| d.get("ts_lexical_target").is_some())
         .collect();
-    assert_eq!(proofs.len(), 1);
-    assert_eq!(proofs[0]["qualified_name"], "tail");
+    // The fixture's other.ts also contains a named function calling a stable
+    // module-level const arrow, so both files carry one exact lexical proof.
+    assert_eq!(proofs.len(), 2);
+    let proof = proofs
+        .iter()
+        .find(|proof| proof["path"] == "main.ts")
+        .unwrap();
+    assert_eq!(proof["qualified_name"], "tail");
     assert!(
-        proofs[0]["ts_lexical_target"]["target"]["end"]
+        proof["ts_lexical_target"]["target"]["end"]
             .as_u64()
             .unwrap()
             > 0
@@ -444,4 +459,9 @@ fn ts_lexical_class_method_local_arrow_still_has_exact_proof() {
 #[test]
 fn managed_revision_nine_reindexes_to_distinct_generation() {
     assert_managed_revision_reindexes(9);
+}
+
+#[test]
+fn managed_revision_twenty_reindexes_to_distinct_generation() {
+    assert_managed_revision_reindexes(20);
 }

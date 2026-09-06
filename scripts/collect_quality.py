@@ -27,6 +27,29 @@ def digest(data):
     return hashlib.sha256(data).hexdigest()
 
 
+def select_tasks(tasks, selection):
+    """Select a preregistered corpus slice without consulting engine output."""
+    require(isinstance(selection, dict), 'selection must be an object')
+    allowed = {'ids', 'relations', 'splits', 'repos', 'categories'}
+    require(set(selection) <= allowed, 'unknown selection field')
+    selected = list(tasks)
+    fields = {
+        'ids': lambda task: task['id'],
+        'relations': lambda task: task['expected']['relation'],
+        'splits': lambda task: task['split'],
+        'repos': lambda task: task['repo'],
+        'categories': lambda task: task.get('category', 'legacy'),
+    }
+    for key, value in selection.items():
+        require(isinstance(value, list) and value
+                and all(isinstance(item, str) and item for item in value),
+                'invalid selection '+key)
+        require(len(value) == len(set(value)), 'duplicate selection '+key)
+        selected = [task for task in selected if fields[key](task) in value]
+    require(selected, 'selection matched no tasks')
+    return selected
+
+
 def response(raw, request_id):
     obj = read_json(raw)
     require(isinstance(obj, dict) and obj.get('jsonrpc') == '2.0', 'invalid RPC envelope')
@@ -397,6 +420,8 @@ def attest(engine, value, task):
 
 def collect(corpus, config, factory=Stdio, counter=None):
     validate(corpus)
+    selection = config.get('selection')
+    tasks = select_tasks(corpus['tasks'], selection) if selection is not None else corpus['tasks']
     protocol = config['protocol']
     require(protocol['cache'] in ('warm','process-cold'), 'unsupported cache protocol')
     for key, low, high in [('repetitions',3,100),('warmups',0,10),('retries',0,3),('limit',1,50),('max_response_bytes',1024,16777216)]:
@@ -408,17 +433,24 @@ def collect(corpus, config, factory=Stdio, counter=None):
     require(type(protocol.get('request_budget')) is int and protocol['request_budget'] ==
             protocol['repetitions']*(1+protocol['retries'])+protocol['warmups']+5*sessions,
             'request budget must equal repetitions*(1+retries)+warmups+5*sessions')
+    snapshots = {}
+    for task in tasks:
+        key = (task['repo'], task['revision'])
+        if key not in snapshots:
+            snapshots[key] = frozen_snapshot(*key)
     identity, count = counter if counter else tokenizer(config['tokenizer'])
     specs = config['engines']
     output = {'schema_version':1,'environment':platform.platform()+'; single sequential collector',
               'tokenizer':identity,'engines':{e:engine_identity(specs[e]) for e in ('cgrx','cbm')},
               'config_sha256':digest(json.dumps(config,sort_keys=True).encode()),
               'protocol':protocol,'corpus_sha256':digest(json.dumps(corpus,sort_keys=True).encode()),
+              'selection':selection,
+              'selected_corpus_sha256':digest(json.dumps(tasks,sort_keys=True).encode()),
               'cases':[], 'collector':{'version':1,'metric_scope':'tool requests, not end-task agent totals',
                   'rss':'sampled endpoint PID high-water; excludes daemon/children and is not OS peak',
                   'cache':'process-cold retains persistent index and OS page cache; setup status precedes query'}}
-    for task_index, task in enumerate(corpus['tasks']):
-        snap = frozen_snapshot(task['repo'],task['revision'])
+    for task_index, task in enumerate(tasks):
+        snap = snapshots[(task['repo'],task['revision'])]
         target = task['evidence']['target']
         record = f'{target["path"]}:{target["symbol"]}:{target["start_line"]}'
         suffix = Path(task['evidence']['source']['path']).suffix
@@ -439,6 +471,8 @@ def collect(corpus, config, factory=Stdio, counter=None):
             budget = {'used':0,'limit':protocol['request_budget']}
             all_rss, token_total, actuals = [], 0, []
             try:
+                require(frozen_snapshot(task['repo'],task['revision']) == snap,
+                        'snapshot changed before engine collection')
                 params = call_request(engine,task,specs[engine],protocol['limit'])
                 for repetition in range(protocol['repetitions']):
                     if transport is None:

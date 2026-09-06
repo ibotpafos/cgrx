@@ -250,7 +250,10 @@ fn tools_list_advertises_bounded_graph_search_and_trace() {
         .collect();
 
     assert!(names.contains(&"search_graph"), "tools: {names:?}");
+    assert!(names.contains(&"get_outline"), "tools: {names:?}");
     assert!(names.contains(&"trace_path"), "tools: {names:?}");
+    assert!(names.contains(&"find_usages"), "tools: {names:?}");
+    assert!(names.contains(&"suggest_refactors"), "tools: {names:?}");
     assert!(names.contains(&"get_code_snippet"), "tools: {names:?}");
     assert!(names.contains(&"check_index_coverage"), "tools: {names:?}");
     let coverage = tools
@@ -264,6 +267,22 @@ fn tools_list_advertises_bounded_graph_search_and_trace() {
     assert_eq!(
         coverage["inputSchema"]["properties"]["limit"]["maximum"],
         500
+    );
+    let refactors = tools
+        .iter()
+        .find(|tool| tool["name"] == "suggest_refactors")
+        .unwrap();
+    assert_eq!(
+        refactors["inputSchema"]["properties"]["language"]["enum"],
+        json!(["typescript", "go", "python", "rust"])
+    );
+    assert_eq!(
+        refactors["inputSchema"]["properties"]["min_score"]["maximum"],
+        1000
+    );
+    assert_eq!(
+        refactors["inputSchema"]["properties"]["limit"]["maximum"],
+        50
     );
 }
 
@@ -314,11 +333,25 @@ fn graph_tools_without_a_backend_return_a_typed_adapter_error() {
             "params":{"name":"search_graph","arguments":{"query":"target"}}
         }),
     );
+    let outlined = dispatch(
+        &mut server,
+        json!({
+            "jsonrpc":"2.0","id":10,"method":"tools/call",
+            "params":{"name":"get_outline","arguments":{"path":"src/lib.rs"}}
+        }),
+    );
     let traced = dispatch(
         &mut server,
         json!({
             "jsonrpc":"2.0","id":6,"method":"tools/call",
             "params":{"name":"trace_path","arguments":{"symbol":"target"}}
+        }),
+    );
+    let usages = dispatch(
+        &mut server,
+        json!({
+            "jsonrpc":"2.0","id":11,"method":"tools/call",
+            "params":{"name":"find_usages","arguments":{"symbol":"target"}}
         }),
     );
     let snippet = dispatch(
@@ -341,7 +374,15 @@ fn graph_tools_without_a_backend_return_a_typed_adapter_error() {
         "cgrx.index_adapter_not_connected"
     );
     assert_eq!(
+        outlined["error"]["data"]["code"],
+        "cgrx.index_adapter_not_connected"
+    );
+    assert_eq!(
         traced["error"]["data"]["code"],
+        "cgrx.index_adapter_not_connected"
+    );
+    assert_eq!(
+        usages["error"]["data"]["code"],
         "cgrx.index_adapter_not_connected"
     );
     assert_eq!(
