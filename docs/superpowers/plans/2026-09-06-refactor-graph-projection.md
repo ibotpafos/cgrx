@@ -274,7 +274,7 @@ git commit -m "feat: expose refactor suggestions over MCP"
 - Consumes: Task 3 MCP `suggest_refactors`.
 - Produces: watched-server E2E evidence that projections follow the live graph.
 
-- [ ] **Step 1: Add a failing watched-server test**
+- [x] **Step 1: Add a failing watched-server test**
 
 Start `cgrx serve --state ... --watch-root ...`, request a candidate, edit one source body so the pair is no longer similar, then request again without restarting:
 
@@ -285,17 +285,17 @@ assert_eq!(after["total"], 0);
 
 Restore similarity, commit it, call through the same server and assert a changed snapshot plus a projection id different from the first response.
 
-- [ ] **Step 2: Run the watcher test and verify failure**
+- [x] **Step 2: Run the watcher test and verify failure**
 
 Run: `cargo test --test cli watched_suggest_refactors_refreshes_projection_without_restart -- --nocapture`
 
 Expected: FAIL until the MCP route exists.
 
-- [ ] **Step 3: Complete watcher and smoke coverage**
+- [x] **Step 3: Complete watcher and smoke coverage**
 
 Keep the tool on the normal backend refresh path. Extend `scripts/smoke_mcp.py` with matching Python functions and assert one hypothetical candidate, exact snapshot fields, empty remove set, and tool count 11.
 
-- [ ] **Step 4: Run E2E tests**
+- [x] **Step 4: Run E2E tests**
 
 ```sh
 cargo test --test cli watched_suggest_refactors_refreshes_projection_without_restart -- --nocapture
@@ -305,7 +305,7 @@ python3 scripts/smoke_mcp.py target/release/cgrx
 
 Expected: watched refresh PASS; smoke reports `TOOLS=11` and `REFACTORS=1`.
 
-- [ ] **Step 5: Commit live refresh coverage**
+- [x] **Step 5: Commit live refresh coverage**
 
 ```sh
 git add tests/cli.rs scripts/smoke_mcp.py

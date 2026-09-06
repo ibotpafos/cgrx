@@ -353,7 +353,12 @@ fn serve(args: &[String]) -> Result<(), String> {
         if let Some(root) = &watch_root {
             runtime.refresh(root).map_err(|error| error.to_string())?;
         }
-        Server::with_backend(RuntimeMcpBackend::new(runtime, watch_root))
+        let backend = if let Some(root) = watch_root {
+            RuntimeMcpBackend::managed(runtime, root, PathBuf::from(state))
+        } else {
+            RuntimeMcpBackend::new(runtime, None)
+        };
+        Server::with_backend(backend)
     } else {
         let root = root.unwrap_or_else(|| PathBuf::from("."));
         let root = root.canonicalize().map_err(|error| error.to_string())?;

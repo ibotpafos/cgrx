@@ -890,6 +890,101 @@ fn watched_serve_refreshes_a_changed_tracked_file_without_restart() {
 }
 
 #[test]
+fn watched_suggest_refactors_refreshes_projection_without_restart() {
+    let repository = TestDirectory::new("watch-refactor-repo");
+    let state = TestDirectory::new("watch-refactor-state");
+    git(repository.path(), &["init", "-q"]);
+    git(
+        repository.path(),
+        &["config", "user.email", "test@example.invalid"],
+    );
+    git(repository.path(), &["config", "user.name", "CGRX Test"]);
+    let initial = b"fn save(value: i32) {}\nfn first(input: i32) -> i32 { let prepared = input + 1; save(prepared); prepared }\nfn second(value: i32) -> i32 { let output = value + 9; save(output); output }\n";
+    fs::write(repository.path().join("main.rs"), initial).expect("write initial fixture");
+    git(repository.path(), &["add", "main.rs"]);
+    git(repository.path(), &["commit", "-qm", "fixture"]);
+    assert!(
+        cli()
+            .args(["index", "--root"])
+            .arg(repository.path())
+            .arg("--state")
+            .arg(state.path())
+            .arg("--json")
+            .status()
+            .expect("index executes")
+            .success()
+    );
+
+    let mut child = cli()
+        .args(["serve", "--state"])
+        .arg(state.path())
+        .arg("--watch-root")
+        .arg(repository.path())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("watched serve starts");
+    let mut stdin = child.stdin.take().expect("stdin is piped");
+    let mut stdout = BufReader::new(child.stdout.take().expect("stdout is piped"));
+    let request = |id| {
+        serde_json::json!({
+            "jsonrpc":"2.0","id":id,"method":"tools/call",
+            "params":{"name":"suggest_refactors","arguments":{
+                "scope":"main.rs","language":"rust","min_score":760,"limit":20
+            }}
+        })
+    };
+
+    writeln!(stdin, "{}", request(1)).expect("initial request writes");
+    stdin.flush().expect("initial request flushes");
+    let before = read_json_line(&mut stdout);
+    let before = &before["result"]["structuredContent"];
+    assert_eq!(before["total"], 1, "{before}");
+    let first_projection = before["candidates"][0]["projection"]["id"]
+        .as_str()
+        .expect("initial projection id")
+        .to_owned();
+    let first_snapshot = before["snapshot"].clone();
+
+    fs::write(
+        repository.path().join("main.rs"),
+        b"fn save(value: i32) {}\nfn first(input: i32) -> i32 { let prepared = input + 1; save(prepared); prepared }\nfn second(mut value: i32) -> i32 { while value > 0 { value -= 1; } panic!(\"{}\", value); }\n",
+    )
+    .expect("break structural similarity");
+    writeln!(stdin, "{}", request(2)).expect("changed request writes");
+    stdin.flush().expect("changed request flushes");
+    let changed = read_json_line(&mut stdout);
+    let changed = &changed["result"]["structuredContent"];
+    assert_ne!(changed["snapshot"], first_snapshot);
+    assert_eq!(changed["total"], 0, "{changed}");
+
+    fs::write(
+        repository.path().join("main.rs"),
+        b"fn save(value: i32) {}\nfn first(input: i32) -> i32 { let prepared = input + 1; save(prepared); prepared }\nfn second(value: i32) -> i32 { let output = value + 8; save(output); output }\n",
+    )
+    .expect("restore structural similarity");
+    git(repository.path(), &["add", "main.rs"]);
+    git(repository.path(), &["commit", "-qm", "restore similarity"]);
+    writeln!(stdin, "{}", request(3)).expect("committed request writes");
+    stdin.flush().expect("committed request flushes");
+    let committed_response = read_json_line(&mut stdout);
+    assert!(
+        committed_response.get("error").is_none(),
+        "{committed_response}"
+    );
+    let committed = &committed_response["result"]["structuredContent"];
+    assert_ne!(committed["snapshot"], first_snapshot);
+    assert_eq!(committed["total"], 1, "{committed}");
+    assert_ne!(
+        committed["candidates"][0]["projection"]["id"],
+        first_projection
+    );
+
+    drop(stdin);
+    assert!(child.wait().expect("serve exits at EOF").success());
+}
+
+#[test]
 fn serve_state_expands_real_revision_bound_evidence_once() {
     let repository = TestDirectory::new("expand-repo");
     let state = TestDirectory::new("expand-state");
