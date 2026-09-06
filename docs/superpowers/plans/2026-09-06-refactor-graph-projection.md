@@ -34,7 +34,7 @@
 - Consumes: private parent-module `StoredDocument`, `StoredArc`, `RuntimeError`, and `pack_for_path`.
 - Produces: `normalized_tokens(source: &str) -> Vec<String>`, `RefactorFingerprint`, and deterministic `Similarity` components.
 
-- [ ] **Step 1: Add failing normalization and scoring tests**
+- [x] **Step 1: Add failing normalization and scoring tests**
 
 Add tests proving renamed locals and changed literals retain the same structural shape, control-flow changes do not, and bodies below eight normalized tokens are ineligible:
 
@@ -60,13 +60,13 @@ fn tiny_bodies_are_ineligible() {
 }
 ```
 
-- [ ] **Step 2: Run the new unit tests and verify failure**
+- [x] **Step 2: Run the new unit tests and verify failure**
 
 Run: `cargo test -p cgrx-cli runtime::refactors::tests -- --nocapture`
 
 Expected: compilation fails because the fingerprint helpers do not exist.
 
-- [ ] **Step 3: Implement the bounded fingerprint types**
+- [x] **Step 3: Implement the bounded fingerprint types**
 
 ```rust
 const MIN_BODY_TOKENS: usize = 8;
@@ -99,13 +99,13 @@ fn jaccard<T: Ord>(left: &BTreeSet<T>, right: &BTreeSet<T>) -> u16 {
 
 The scanner retains punctuation and a fixed cross-language keyword set, maps quoted/numeric literals to `lit`, maps all other identifiers to `id`, and removes line/block comments. Build four-token ordered shingles. Calculate total as 35% body-token overlap, 35% ordered-shingle overlap, 20% callee overlap, and 10% body-size compatibility. All values use 0..=1000.
 
-- [ ] **Step 4: Run unit tests**
+- [x] **Step 4: Run unit tests**
 
 Run: `cargo test -p cgrx-cli runtime::refactors::tests -- --nocapture`
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit the fingerprint engine**
+- [x] **Step 5: Commit the fingerprint engine**
 
 ```sh
 git add crates/cgrx-cli/src/runtime.rs crates/cgrx-cli/src/runtime/refactors.rs
