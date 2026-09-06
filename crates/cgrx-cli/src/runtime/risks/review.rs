@@ -96,11 +96,17 @@ pub(super) fn build(
                 chain.push(json!(proof));
             }
             chain.push(impact["current_edge"].clone());
+            let call_depth = chain.len();
             tests.push(json!({
                 "path":test.path,"symbol":test.qualified_name,"line":line,
                 "source_hash":stored.path_hashes.get(&test.path),
                 "selection":"test_convention_candidate","execution_status":"not_run",
                 "impact_index":index,"call_chain":chain,
+                "reach":{
+                    "status":"proven_call_path","call_depth":call_depth,
+                    "test_identity":"convention_candidate",
+                    "behavioral_coverage":"unknown"
+                },
             }));
         }
         if truncated {
@@ -112,8 +118,37 @@ pub(super) fn build(
     } else {
         "candidates_found"
     };
+    let test_reach = (0..impacts.len())
+        .map(|impact_index| {
+            let candidate_test_indexes = tests
+                .iter()
+                .enumerate()
+                .filter_map(|(test_index, test)| {
+                    (test["impact_index"].as_u64() == Some(impact_index as u64))
+                        .then_some(test_index)
+                })
+                .collect::<Vec<_>>();
+            let depths = candidate_test_indexes
+                .iter()
+                .filter_map(|&test_index| tests[test_index]["reach"]["call_depth"].as_u64())
+                .collect::<Vec<_>>();
+            let status = if candidate_test_indexes.is_empty() {
+                "no_candidate_in_bounded_graph"
+            } else {
+                "candidate_paths_found"
+            };
+            json!({
+                "impact_index":impact_index,"status":status,
+                "candidate_test_indexes":candidate_test_indexes,
+                "min_call_depth":depths.iter().min(),"max_call_depth":depths.iter().max(),
+                "test_identity":"convention_candidate","behavioral_coverage":"unknown",
+                "execution_status":"not_run"
+            })
+        })
+        .collect::<Vec<_>>();
     json!({
-        "execution_status":"not_run","related_tests":tests,"test_discovery":discovery,
+        "execution_status":"not_run","related_tests":tests,"test_reach":test_reach,
+        "test_discovery":discovery,
         "review_impacts":(0..impacts.len()).collect::<Vec<_>>(),
         "truncated":truncated,"max_call_depth":2,"complete_test_suite":false,
         "coverage_reference":"coverage_gaps",

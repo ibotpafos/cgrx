@@ -156,11 +156,20 @@ fn verification_plan_selects_two_hop_test_with_proofs_not_execution() {
     assert_eq!(tests[0]["symbol"], "test_feature");
     assert_eq!(tests[0]["selection"], "test_convention_candidate");
     assert_eq!(tests[0]["call_chain"].as_array().unwrap().len(), 2);
+    assert_eq!(tests[0]["reach"]["status"], "proven_call_path");
+    assert_eq!(tests[0]["reach"]["call_depth"], 2);
+    assert_eq!(tests[0]["reach"]["behavioral_coverage"], "unknown");
     for proof in tests[0]["call_chain"].as_array().unwrap() {
         assert_eq!(proof["confidence"], "PROVEN");
     }
     assert_eq!(p["max_call_depth"], 2);
     assert_eq!(p["complete_test_suite"], false);
+    assert_eq!(p["test_reach"][0]["impact_index"], 0);
+    assert_eq!(p["test_reach"][0]["status"], "candidate_paths_found");
+    assert_eq!(p["test_reach"][0]["candidate_test_indexes"], json!([0]));
+    assert_eq!(p["test_reach"][0]["min_call_depth"], 2);
+    assert_eq!(p["test_reach"][0]["max_call_depth"], 2);
+    assert_eq!(p["test_reach"][0]["behavioral_coverage"], "unknown");
     assert_eq!(f.scan(20), r);
 }
 
@@ -199,6 +208,70 @@ fn verification_plan_no_test_is_unknown_not_no_tests_exist() {
     );
     assert_eq!(r["verification_plan"]["complete_test_suite"], false);
     assert_eq!(r["verification_plan"]["review_impacts"], json!([0]));
+    assert_eq!(
+        r["verification_plan"]["test_reach"][0]["status"],
+        "no_candidate_in_bounded_graph"
+    );
+    assert_eq!(
+        r["verification_plan"]["test_reach"][0]["candidate_test_indexes"],
+        json!([])
+    );
+    assert_eq!(
+        r["verification_plan"]["test_reach"][0]["behavioral_coverage"],
+        "unknown"
+    );
+}
+
+#[test]
+fn verification_plan_test_reach_covers_every_supported_language() {
+    let cases = [
+        (
+            "feature.test.ts",
+            "function target() { return 1; }\nfunction verifiesFeature() { target(); }\n",
+            "return 1",
+            "return 2",
+            "verifiesFeature",
+        ),
+        (
+            "feature_test.go",
+            "package feature\nfunc target() int { return 1 }\nfunc TestFeature() { target() }\n",
+            "return 1",
+            "return 2",
+            "TestFeature",
+        ),
+        (
+            "test_feature.py",
+            "def target():\n    return 1\ndef test_feature():\n    target()\n",
+            "return 1",
+            "return 2",
+            "test_feature",
+        ),
+        (
+            "feature.rs",
+            "fn target() -> u32 { 1 }\nfn test_feature() { target(); }\n",
+            "{ 1 }",
+            "{ 2 }",
+            "test_feature",
+        ),
+    ];
+    for (path, source, needle, replacement, expected_symbol) in cases {
+        let mut f = Fixture::with_files(&[(path, source)]);
+        fs::write(f.root.join(path), source.replacen(needle, replacement, 1)).unwrap();
+        f.runtime.refresh(&f.root).unwrap();
+        let r = f.scan(20);
+        assert_eq!(
+            r["verification_plan"]["related_tests"][0]["symbol"], expected_symbol,
+            "{path}: {r}"
+        );
+        assert_eq!(
+            r["verification_plan"]["related_tests"][0]["reach"]["status"], "proven_call_path",
+            "{path}: {r}"
+        );
+        assert_eq!(
+            r["verification_plan"]["test_reach"][0]["status"], "candidate_paths_found",
+            "{path}: {r}"
+        );
+    }
 }
 
 #[test]

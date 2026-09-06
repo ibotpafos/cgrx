@@ -70,6 +70,14 @@ It is a read-only checklist, not a test runner:
   `call_chain` runs from the candidate toward it. Each proof has a current
   source hash and callsite span. This is structural dependency, not proof that
   a test asserts the changed behavior or is discovered by a runner.
+- `test_reach` is a per-impact summary that improves on a yes/no reach flag.
+  `candidate_paths_found` means at least one convention-selected candidate has
+  a current, source-verified one- or two-edge CALLS path. The referenced tests
+  carry `reach.status=proven_call_path` and exact depth. Test identity remains
+  `convention_candidate`, `behavioral_coverage` remains `unknown`, and
+  `execution_status` remains `not_run`. `no_candidate_in_bounded_graph` is an
+  abstention within the two-edge budget, not evidence that no relevant test
+  exists.
 - All selected endpoints are checked against indexed file hashes. Stale source,
   material parser/stale/exclusion gaps and exhausted source budgets suppress
   affected candidates. An unrelated dynamic-dispatch gap keeps the plan partial
