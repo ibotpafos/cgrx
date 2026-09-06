@@ -43,6 +43,12 @@ pub trait ToolBackend: Send + Sync {
         include_body: bool,
     ) -> Result<Value, BackendError>;
     fn get_outline(&mut self, path: &str, limit: u32) -> Result<Value, BackendError>;
+    fn get_architecture(
+        &mut self,
+        scope: Value,
+        package_depth: u8,
+        limit: u32,
+    ) -> Result<Value, BackendError>;
     fn trace_path(
         &mut self,
         symbol: &str,
@@ -293,6 +299,7 @@ impl Server {
             "orient" => self.orient(from_value(call.arguments)?)?,
             "search_graph" => self.search_graph(from_value(call.arguments)?)?,
             "get_outline" => self.get_outline(from_value(call.arguments)?)?,
+            "get_architecture" => self.get_architecture(from_value(call.arguments)?)?,
             "trace_path" => self.trace_path(from_value(call.arguments)?)?,
             "find_usages" => self.find_usages(from_value(call.arguments)?)?,
             "suggest_refactors" => self.suggest_refactors(from_value(call.arguments)?)?,
@@ -396,6 +403,22 @@ impl Server {
         };
         backend
             .get_outline(&arguments.path, arguments.limit)
+            .map_err(backend_error)
+    }
+
+    fn get_architecture(
+        &mut self,
+        arguments: GetArchitectureArguments,
+    ) -> Result<Value, JsonRpcError> {
+        let Some(backend) = &mut self.backend else {
+            return Err(JsonRpcError::typed(
+                -32020,
+                "cgrx.index_adapter_not_connected",
+                "get_architecture requires an indexed runtime backend",
+            ));
+        };
+        backend
+            .get_architecture(arguments.scope, arguments.package_depth, arguments.limit)
             .map_err(backend_error)
     }
 
@@ -559,6 +582,7 @@ fn model_visible_result(tool: &str, structured: &Value) -> Value {
         "expand" => compact_expand(structured),
         "search_graph" => compact_search(structured),
         "get_outline" => compact_outline(structured),
+        "get_architecture" => compact_architecture(structured),
         "trace_path" => compact_trace(structured),
         "find_usages" => compact_usages(structured),
         "suggest_refactors" => compact_refactors(structured),
@@ -676,6 +700,22 @@ fn compact_outline(value: &Value) -> Value {
     });
     insert_more_when_true(&mut compact, value.get("truncated"));
     compact
+}
+
+fn compact_architecture(value: &Value) -> Value {
+    json!({
+        "at":snapshot_tag(value.get("snapshot")),
+        "relation_kinds":value.get("relation_kinds"),
+        "packages":value.get("packages"),
+        "boundaries":value.get("boundaries"),
+        "hotspots":value.get("hotspots"),
+        "cycles":value.get("cycles"),
+        "communities":value.get("communities"),
+        "totals":value.get("totals"),
+        "gaps":value.get("coverage_gap_count"),
+        "partial":value.get("partial"),
+        "more":value.get("truncated")
+    })
 }
 
 fn compact_trace(value: &Value) -> Value {
@@ -960,6 +1000,24 @@ struct GetOutlineArguments {
 }
 
 #[derive(Deserialize)]
+struct GetArchitectureArguments {
+    #[serde(default)]
+    scope: Value,
+    #[serde(default = "default_package_depth")]
+    package_depth: u8,
+    #[serde(default = "default_architecture_limit")]
+    limit: u32,
+}
+
+const fn default_package_depth() -> u8 {
+    2
+}
+
+const fn default_architecture_limit() -> u32 {
+    50
+}
+
+#[derive(Deserialize)]
 struct TracePathArguments {
     symbol: String,
     #[serde(default)]
@@ -1119,6 +1177,7 @@ fn model_visible_schema() -> Value {
         {"name":"orient","description":"Context","inputSchema":{"type":"object","required":["task","budget","mode","scope"],"properties":{"task":{"type":"string"},"budget":{"type":"integer","minimum":1},"mode":{"enum":["FAST","PRECISE","BOUNDED"]},"scope":bounded_scope.clone()}}},
         {"name":"search_graph","description":"Symbols or bodies","inputSchema":{"type":"object","required":["query"],"properties":{"query":{"type":"string"},"language":{"enum":["typescript","go","python","rust"]},"include_body":{"type":"boolean"},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":50}}}},
         {"name":"get_outline","description":"File symbols","inputSchema":{"type":"object","required":["path"],"properties":{"path":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":500}}}},
+        {"name":"get_architecture","description":"Packages, proven boundaries, hotspots, cycles and communities","inputSchema":{"type":"object","properties":{"scope":path_or_scope.clone(),"package_depth":{"type":"integer","minimum":1,"maximum":4},"limit":{"type":"integer","minimum":1,"maximum":100}}}},
         {"name":"trace_path","description":"Calls","inputSchema":{"type":"object","required":["symbol"],"properties":{"symbol":{"type":"string"},"path":{"type":"string"},"direction":{"enum":["callers","callees","both"]},"depth":{"type":"integer","minimum":1,"maximum":4},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":50}}}},
         {"name":"find_usages","description":"Proven usages","inputSchema":{"type":"object","required":["symbol"],"properties":{"symbol":{"type":"string"},"path":{"type":"string"},"depth":{"type":"integer","minimum":1,"maximum":4},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":500}}}},
         {"name":"suggest_refactors","description":"Similar code and hypothetical graph delta","inputSchema":{"type":"object","properties":{"language":{"enum":["typescript","go","python","rust"]},"min_score":{"type":"integer","minimum":0,"maximum":1000},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":50}}}},
@@ -1143,6 +1202,10 @@ fn model_visible_schema() -> Value {
         (
             "Outline a file",
             "List indexed symbols and definition spans in source order without returning their bodies.",
+        ),
+        (
+            "Map architecture",
+            "Summarize packages, proven cross-package boundaries, hotspots, cycles and deterministic communities.",
         ),
         (
             "Trace calls",
@@ -1182,7 +1245,7 @@ fn model_visible_schema() -> Value {
             json!({"readOnlyHint":false,"destructiveHint":false,"openWorldHint":false});
         tool["outputSchema"] = json!({"type":"object","additionalProperties":true});
     }
-    tools[10]["inputSchema"]["properties"]["paths_or_scope"] = path_or_scope;
+    tools[11]["inputSchema"]["properties"]["paths_or_scope"] = path_or_scope;
     tools
 }
 
@@ -1212,7 +1275,7 @@ mod openai_metadata_tests {
     #[test]
     fn openai_tool_contract() {
         let tools = model_visible_schema();
-        assert_eq!(tools.as_array().unwrap().len(), 11);
+        assert_eq!(tools.as_array().unwrap().len(), 12);
         for tool in tools.as_array().unwrap() {
             assert!(tool["title"].as_str().is_some_and(|s| !s.is_empty()));
             assert!(tool["description"].as_str().is_some_and(|s| s.len() > 20));

@@ -658,6 +658,21 @@ impl ToolBackend for RuntimeMcpBackend {
             .map_err(|error| BackendError::new(error.code(), error.to_string()))
     }
 
+    fn get_architecture(
+        &mut self,
+        scope: Value,
+        package_depth: u8,
+        limit: u32,
+    ) -> Result<Value, BackendError> {
+        self.refresh()?;
+        let scope = graph_scope(&scope)?;
+        let limit = usize::try_from(limit)
+            .map_err(|_| BackendError::new("cgrx.invalid_arguments", "limit is out of range"))?;
+        self.runtime
+            .get_architecture(&scope, usize::from(package_depth), limit)
+            .map_err(|error| BackendError::new(error.code(), error.to_string()))
+    }
+
     fn trace_path(
         &mut self,
         symbol: &str,

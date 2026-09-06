@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { createState, projectGraph, reduce, serializeAgentPlan, summarizeBoundedResult } from "../state.js";
+import { createState, projectArchitecture, projectGraph, reduce, serializeAgentPlan, summarizeBoundedResult } from "../state.js";
 
 const snapshot = {
   repo_revision: "a".repeat(40),
@@ -19,8 +19,8 @@ test("state keeps selection and camera for the same graph identity", () => {
   assert.equal(state.requestGeneration, 2);
 });
 
-test("state exposes current changes preview and compare modes", () => {
-  for (const mode of ["current", "changes", "preview", "compare"]) {
+test("state exposes current architecture changes preview and compare modes", () => {
+  for (const mode of ["current", "architecture", "changes", "preview", "compare"]) {
     assert.equal(reduce(createState(snapshot), { type: "mode", mode }).mode, mode);
   }
   assert.throws(() => reduce(createState(snapshot), { type: "mode", mode: "unknown" }));
@@ -41,6 +41,28 @@ test("new snapshot invalidates strategies and older graph responses", () => {
     generation: 3
   });
   assert.deepEqual(ignored, state);
+});
+
+test("architecture projection turns proven package boundaries into graph evidence", () => {
+  const graph = projectArchitecture({
+    snapshot,
+    packages: [
+      { name: "api", files: 2, symbols: 4, fan_in: 1, fan_out: 2 },
+      { name: "core", files: 1, symbols: 3, fan_in: 2, fan_out: 1 }
+    ],
+    boundaries: [{
+      source: "api", target: "core", edges: 2, relations: ["CALLS"],
+      confidence: "PROVEN", evidence: [{ path: "api/handler.ts", span: { start: 10, end: 20 } }]
+    }],
+    cycles: [{ packages: ["api", "core"], kind: "PACKAGE_CALL_CYCLE" }],
+    partial: false
+  });
+  assert.deepEqual(graph.nodes.map((node) => node.node_id), ["package:api", "package:core"]);
+  assert.equal(graph.edges[0].source, "package:api");
+  assert.equal(graph.edges[0].target, "package:core");
+  assert.equal(graph.edges[0].confidence, "PROVEN");
+  assert.equal(graph.nodes[0].cycle, true);
+  assert.equal(graph.root.symbol, "Architecture");
 });
 
 test("projectGraph marks proposed edges without mutating current evidence", () => {

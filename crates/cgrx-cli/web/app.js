@@ -1,5 +1,5 @@
 import { edgeStyle, layoutGraph } from "./layout.js";
-import { createState, projectGraph, reduce, serializeAgentPlan, snapshotKey, summarizeBoundedResult } from "./state.js";
+import { createState, projectArchitecture, projectGraph, reduce, serializeAgentPlan, snapshotKey, summarizeBoundedResult } from "./state.js";
 
 const NS = "http://www.w3.org/2000/svg";
 const tokenKey = `cgrx-token:${location.host}`;
@@ -10,6 +10,7 @@ if (location.hash) history.replaceState(null, "", `${location.pathname}${locatio
 
 let state = createState();
 let currentGraph = null;
+let currentArchitecture = null;
 let currentCandidate = null;
 let currentStrategy = null;
 let requestGeneration = 0;
@@ -50,6 +51,7 @@ export async function loadStatus() {
     currentCandidate = null;
     el["strategy-panel"].hidden = true;
     await loadRefactors();
+    await loadArchitecture();
     if (currentGraph?.root) await loadGraph(currentGraph.root.symbol, currentGraph.root.path);
   }
   return value;
@@ -113,6 +115,13 @@ async function loadRefactors() {
   }
 }
 
+async function loadArchitecture() {
+  const value = await api("/api/architecture?scope=**&package_depth=2&limit=50");
+  currentArchitecture = projectArchitecture(value);
+  if (state.mode === "architecture") renderMode();
+  return value;
+}
+
 function renderGraph(graph) {
   const layer = el["camera-layer"];
   layer.replaceChildren();
@@ -150,6 +159,16 @@ function drawGraph(graph, layer) {
 }
 
 function renderMode() {
+  if (state.mode === "architecture") {
+    if (!currentArchitecture) {
+      setMessage("Loading architecture projection…");
+      return;
+    }
+    el["graph-title"].textContent = "Architecture";
+    el["graph-message"].hidden = true;
+    renderGraph(currentArchitecture);
+    return;
+  }
   if (!currentGraph) return;
   if (state.mode === "compare" && currentStrategy) {
     const layer = el["camera-layer"];
@@ -237,9 +256,14 @@ async function selectNode(node) {
     ["Path", node.path],
     ["Span", `${node.span.start}–${node.span.end}`],
     ["Source hash", node.source_hash],
-    ["State", node.lane === "tests" ? "candidate · not run" : "current · indexed"]
+    ["State", node.lane === "tests" ? "candidate · not run" : "current · indexed"],
+    ...(node.kind === "package" ? [
+      ["Files", node.files], ["Symbols", node.symbols], ["Fan in", node.fan_in],
+      ["Fan out", node.fan_out], ["Cycle", node.cycle ? "candidate package cycle" : "none detected"]
+    ] : [])
   ]);
   renderMode();
+  if (node.kind === "package") return;
   try {
     const snippet = await api(
       `/api/snippet?symbol=${encodeURIComponent(node.symbol)}&path=${encodeURIComponent(node.path)}`
@@ -384,6 +408,9 @@ document.querySelectorAll("[data-mode]").forEach((button) => button.addEventList
     candidate.classList.toggle("is-active", candidate === button);
   });
   renderMode();
+  if (state.mode === "architecture" && !currentArchitecture) {
+    loadArchitecture().catch((error) => setMessage(error.message));
+  }
 }));
 el["zoom-in"].addEventListener("click", () => zoom(1.2));
 el["zoom-out"].addEventListener("click", () => zoom(1 / 1.2));
@@ -469,7 +496,7 @@ function graphPoint(event) {
   };
 }
 
-Promise.all([loadStatus(), loadRefactors()]).catch((error) => {
+Promise.all([loadStatus(), loadRefactors(), loadArchitecture()]).catch((error) => {
   el.freshness.textContent = "offline";
   el.freshness.className = "badge badge--stale";
   setMessage(error.message);

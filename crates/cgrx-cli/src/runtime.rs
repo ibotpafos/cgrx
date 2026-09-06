@@ -1,3 +1,4 @@
+mod architecture;
 mod graph_view;
 mod refactors;
 mod risks;
