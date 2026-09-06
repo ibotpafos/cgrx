@@ -219,7 +219,7 @@ fn suggest_refactors(
 ) -> Result<Value, BackendError>;
 ```
 
-- [ ] **Step 1: Add failing MCP schema and compact-response tests**
+- [x] **Step 1: Add failing MCP schema and compact-response tests**
 
 Require `suggest_refactors` in `tools/list`, validate language/minimum/limit schema constraints, and assert compact columns:
 
@@ -231,21 +231,21 @@ assert_eq!(
 assert_eq!(visible["status"], "hypothetical");
 ```
 
-- [ ] **Step 2: Run MCP tests and verify failure**
+- [x] **Step 2: Run MCP tests and verify failure**
 
 Run: `cargo test -p cgrx-mcp && cargo test --test mcp_stdio tools_list_advertises_bounded_graph_search_and_trace`
 
 Expected: FAIL because the tool is not registered.
 
-- [ ] **Step 3: Wire backend arguments and schema**
+- [x] **Step 3: Wire backend arguments and schema**
 
 Add `SuggestRefactorsArguments` with defaults `min_score=760` and `limit=20`. Call `RuntimeMcpBackend::refresh()`, parse the existing graph scope, and invoke the runtime method. Register one schema with optional `language`, `min_score` 0..=1000, `scope`, and `limit` 1..=50.
 
-- [ ] **Step 4: Add compact shaping**
+- [x] **Step 4: Add compact shaping**
 
 `compact_refactors` deduplicates paths; emits the six asserted columns plus `at`, `status: hypothetical`, `n`, `gaps`, and `payload_tokens`; and adds `more=true` only for truncation. Calculate `payload_tokens` with the existing bundled `Tokenizer::o200k_base()` over the canonical compact payload before adding the telemetry field, so evaluators do not need a second tokenizer implementation.
 
-- [ ] **Step 5: Run MCP and schema gates**
+- [x] **Step 5: Run MCP and schema gates**
 
 Run:
 
@@ -257,7 +257,7 @@ cargo test --test cli schema_count_is_machine_readable_and_under_two_thousand_to
 
 Expected: PASS and schema token count <= 2000.
 
-- [ ] **Step 6: Commit MCP exposure**
+- [x] **Step 6: Commit MCP exposure**
 
 ```sh
 git add crates/cgrx-mcp/src/tools.rs crates/cgrx-cli/src/main.rs tests/mcp_stdio.rs tests/cli.rs

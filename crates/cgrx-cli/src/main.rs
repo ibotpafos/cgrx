@@ -686,6 +686,22 @@ impl ToolBackend for RuntimeMcpBackend {
             .map_err(|error| BackendError::new(error.code(), error.to_string()))
     }
 
+    fn suggest_refactors(
+        &mut self,
+        scope: Value,
+        language: Option<&str>,
+        min_score: u16,
+        limit: u32,
+    ) -> Result<Value, BackendError> {
+        self.refresh()?;
+        let scope = graph_scope(&scope)?;
+        let limit = usize::try_from(limit)
+            .map_err(|_| BackendError::new("cgrx.invalid_arguments", "limit is out of range"))?;
+        self.runtime
+            .suggest_refactors(&scope, language, min_score, limit)
+            .map_err(|error| BackendError::new(error.code(), error.to_string()))
+    }
+
     fn get_code_snippet(
         &mut self,
         symbol: &str,

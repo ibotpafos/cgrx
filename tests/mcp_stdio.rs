@@ -253,6 +253,7 @@ fn tools_list_advertises_bounded_graph_search_and_trace() {
     assert!(names.contains(&"get_outline"), "tools: {names:?}");
     assert!(names.contains(&"trace_path"), "tools: {names:?}");
     assert!(names.contains(&"find_usages"), "tools: {names:?}");
+    assert!(names.contains(&"suggest_refactors"), "tools: {names:?}");
     assert!(names.contains(&"get_code_snippet"), "tools: {names:?}");
     assert!(names.contains(&"check_index_coverage"), "tools: {names:?}");
     let coverage = tools
@@ -266,6 +267,22 @@ fn tools_list_advertises_bounded_graph_search_and_trace() {
     assert_eq!(
         coverage["inputSchema"]["properties"]["limit"]["maximum"],
         500
+    );
+    let refactors = tools
+        .iter()
+        .find(|tool| tool["name"] == "suggest_refactors")
+        .unwrap();
+    assert_eq!(
+        refactors["inputSchema"]["properties"]["language"]["enum"],
+        json!(["typescript", "go", "python", "rust"])
+    );
+    assert_eq!(
+        refactors["inputSchema"]["properties"]["min_score"]["maximum"],
+        1000
+    );
+    assert_eq!(
+        refactors["inputSchema"]["properties"]["limit"]["maximum"],
+        50
     );
 }
 
