@@ -56,3 +56,62 @@ Keep tool microbenchmarks separate: per-call latency, serialized response bytes,
 warm/cold index state and repetitions diagnose tool costs. They do not measure
 agent task correctness or total tokens. This protocol is a proposed experiment,
 not measured A/B results.
+
+## Change verification plan (development)
+
+`scan_risks(repo, mode="changes", limit=20)` now includes `verification_plan`.
+It is a read-only checklist, not a test runner:
+
+- `review_findings` and `review_impacts` are zero-based references into the
+  response arrays: inspect those candidates and their evidence first.
+- `related_tests` contains **test candidates** selected by conventional symbol
+  or file names, connected by one or two current, proven CALLS edges to a
+  returned changed-callee impact. `impact_index` identifies the changed target;
+  `call_chain` runs from the candidate toward it. Each proof has a current
+  source hash and callsite span. This is structural dependency, not proof that
+  a test asserts the changed behavior or is discovered by a runner.
+- `test_reach` is a per-impact summary that improves on a yes/no reach flag.
+  `candidate_paths_found` means at least one convention-selected candidate has
+  a current, source-verified one- or two-edge CALLS path. The referenced tests
+  carry `reach.status=proven_call_path` and exact depth. Test identity remains
+  `convention_candidate`, `behavioral_coverage` remains `unknown`, and
+  `execution_status` remains `not_run`. `no_candidate_in_bounded_graph` is an
+  abstention within the two-edge budget, not evidence that no relevant test
+  exists.
+- All selected endpoints are checked against indexed file hashes. Stale source,
+  material parser/stale/exclusion gaps and exhausted source budgets suppress
+  affected candidates. An unrelated dynamic-dispatch gap keeps the plan partial
+  but does not erase an independently proven positive CALLS edge.
+- `execution_status="not_run"` means **no test was executed**. Confirm candidate
+  identity, inspect its assertions and use the repository's test instructions.
+  The tool deliberately does not guess commands, workspace packages or flags.
+- `partial` inherits scan uncertainty; `truncated` specifically reports the
+  test-candidate output cap. Each result array is bounded by `limit`; the two
+  arrays do not share one combined cap. See top-level `coverage_gaps` and counts.
+- `complete_test_suite=false` always. `no_candidates_in_bounded_graph` does not
+  mean no tests exist. Selection starts from returned baseline-backed impacts:
+  newly added/removed symbols, paths beyond two calls, unsupported framework
+  callbacks, Rust attributes without naming hints and unresolved imports may
+  require manual discovery. `review_changed_paths` reminds the agent to inspect
+  the changed-path list independently of graph findings.
+
+Reusable agent instruction:
+
+~~~text
+After editing, call scan_risks with the same canonical repo and a small limit.
+Inspect review_findings and review_impacts using their response-array indices.
+For related_tests, verify candidate identity and assertions, then choose test
+commands from repository instructions. Record actual command results separately;
+never translate not_run into passed. Read changed paths and coverage gaps even
+when related_tests is empty. Refresh after further edits; do not reuse old spans.
+~~~
+
+This first slice has bounded regression/MCP tests, not a measured improvement
+in end-task agent accuracy or total token consumption.
+
+Positive impact evidence is independent of unrelated unresolved calls in the
+same file: those gaps keep `partial=true`, but do not erase an existing proven
+CALLS relationship. Both caller and changed-target source hashes are checked
+before emitting an impact. Parser/stale/exclusion gaps still suppress affected
+impacts. Removed-target findings remain stricter: any relevant baseline/current
+coverage gap prevents an absence-based candidate.
