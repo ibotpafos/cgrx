@@ -1,3 +1,5 @@
+mod strategies;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
@@ -435,6 +437,10 @@ impl Runtime {
         let mut coverage_gaps = coverage_gap_page(&coverage, 0, 20);
         coverage_gaps.extend(gaps.iter().map(|code| json!({"code":code})));
         let coverage_gap_count = index_gap_count + gaps.len();
+        for candidate in &mut values {
+            candidate["strategies"] =
+                strategies::derive(candidate, self.snapshot(), &coverage_gaps, partial).into();
+        }
 
         Ok(json!({
             "snapshot":self.snapshot(),
@@ -570,6 +576,15 @@ fn candidate_json(
         })
         .collect::<Vec<_>>();
 
+    let projection = json!({
+        "id":projection_id,
+        "status":"hypothetical",
+        "helper":helper,
+        "preserve":preserve,
+        "add":add,
+        "move_to_helper":move_to_helper,
+        "remove":[]
+    });
     (
         json!({
             "kind":"extract_shared_helper",
@@ -585,15 +600,7 @@ fn candidate_json(
                 "total":candidate.similarity.total
             },
             "shared_callees":shared_callees,
-            "projection":{
-                "id":projection_id,
-                "status":"hypothetical",
-                "helper":helper,
-                "preserve":preserve,
-                "add":add,
-                "move_to_helper":move_to_helper,
-                "remove":[]
-            }
+            "projection":projection
         }),
         evidence_truncated,
     )
