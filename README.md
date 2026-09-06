@@ -78,6 +78,7 @@ updates, uninstalling and troubleshooting.
 | search_graph | Bounded symbol/body discovery with optional language filter |
 | get_outline | File symbols and definition spans without bodies |
 | trace_path | Caller/callee traversal |
+| find_usages | Proven incoming call/implementation sites with evidence |
 | get_code_snippet | Exact source definition |
 | check_index_coverage | Recorded gaps for paths/scopes |
 | orient | Budgeted task context |
@@ -91,6 +92,9 @@ both `.ts` and `.tsx`. Every match reports `matched_by` as `symbol` or `body`.
 Use `get_outline` with a repository-relative source path to inspect its symbols
 in source order without paying for function bodies; `limit` defaults to 200 and
 is capped at 500.
+`find_usages` resolves an exact target symbol, then returns only proven incoming
+`CALLS`/`IMPLEMENTS` edges allowed by `scope`, including callsite path/span and
+resolver class. It fails on ambiguous symbols unless `path` disambiguates them.
 
 See [the Trace MCP reference comparison](docs/reference-trace-mcp.md) for the
 evidence behind this search slice and the capabilities that remain separate.

@@ -32,15 +32,18 @@ with tempfile.TemporaryDirectory(prefix="cgrx-smoke-") as directory:
         {"jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": {
             "name": "get_outline", "arguments": {"repo": directory,
             "path": "main.py", "limit": 20}}},
+        {"jsonrpc": "2.0", "id": 6, "method": "tools/call", "params": {
+            "name": "find_usages", "arguments": {"repo": directory,
+            "symbol": "target", "path": "main.py", "limit": 20}}},
     ]
     result = subprocess.run([binary, "serve", "--multi-repo"],
                             input="".join(json.dumps(f) + "\n" for f in frames),
                             text=True, capture_output=True, timeout=60)
     assert result.returncode == 0, result.stderr
     responses = [json.loads(line) for line in result.stdout.splitlines()]
-    assert len(responses) == 5, responses
+    assert len(responses) == 6, responses
     assert all("error" not in r for r in responses), responses
-    assert len(responses[1]["result"]["tools"]) == 9, responses[1]
+    assert len(responses[1]["result"]["tools"]) == 10, responses[1]
     nodes = responses[2]["result"]["structuredContent"]["nodes"]
     assert len(nodes) == 1 and nodes[0]["symbol"] == "caller", responses[2]
     matches = responses[3]["result"]["structuredContent"]["matches"]
@@ -48,4 +51,7 @@ with tempfile.TemporaryDirectory(prefix="cgrx-smoke-") as directory:
     assert matches[0]["matched_by"] == "body", responses[3]
     symbols = responses[4]["result"]["structuredContent"]["symbols"]
     assert [item["symbol"] for item in symbols] == ["target", "caller"], responses[4]
-print("MCP_SMOKE=PASS; TOOLS=9; CALLER=caller; BODY_SEARCH=target; OUTLINE=2")
+    usages = responses[5]["result"]["structuredContent"]["usages"]
+    assert len(usages) == 1 and usages[0]["source"]["symbol"] == "caller", responses[5]
+    assert usages[0]["confidence"] == "PROVEN", responses[5]
+print("MCP_SMOKE=PASS; TOOLS=10; CALLER=caller; BODY_SEARCH=target; OUTLINE=2; USAGES=1")

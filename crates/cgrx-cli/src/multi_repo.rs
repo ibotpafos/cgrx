@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
-const TOOLS: [&str; 9] = [
+const TOOLS: [&str; 10] = [
     "scan_risks",
     "orient",
     "expand",
@@ -18,6 +18,7 @@ const TOOLS: [&str; 9] = [
     "search_graph",
     "get_outline",
     "trace_path",
+    "find_usages",
     "get_code_snippet",
     "check_index_coverage",
 ];

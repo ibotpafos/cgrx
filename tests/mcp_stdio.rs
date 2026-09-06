@@ -252,6 +252,7 @@ fn tools_list_advertises_bounded_graph_search_and_trace() {
     assert!(names.contains(&"search_graph"), "tools: {names:?}");
     assert!(names.contains(&"get_outline"), "tools: {names:?}");
     assert!(names.contains(&"trace_path"), "tools: {names:?}");
+    assert!(names.contains(&"find_usages"), "tools: {names:?}");
     assert!(names.contains(&"get_code_snippet"), "tools: {names:?}");
     assert!(names.contains(&"check_index_coverage"), "tools: {names:?}");
     let coverage = tools
@@ -329,6 +330,13 @@ fn graph_tools_without_a_backend_return_a_typed_adapter_error() {
             "params":{"name":"trace_path","arguments":{"symbol":"target"}}
         }),
     );
+    let usages = dispatch(
+        &mut server,
+        json!({
+            "jsonrpc":"2.0","id":11,"method":"tools/call",
+            "params":{"name":"find_usages","arguments":{"symbol":"target"}}
+        }),
+    );
     let snippet = dispatch(
         &mut server,
         json!({
@@ -354,6 +362,10 @@ fn graph_tools_without_a_backend_return_a_typed_adapter_error() {
     );
     assert_eq!(
         traced["error"]["data"]["code"],
+        "cgrx.index_adapter_not_connected"
+    );
+    assert_eq!(
+        usages["error"]["data"]["code"],
         "cgrx.index_adapter_not_connected"
     );
     assert_eq!(

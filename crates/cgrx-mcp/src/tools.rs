@@ -52,6 +52,13 @@ pub trait ToolBackend: Send + Sync {
         scope: Value,
         limit: u32,
     ) -> Result<Value, BackendError>;
+    fn find_usages(
+        &mut self,
+        symbol: &str,
+        path: Option<&str>,
+        scope: Value,
+        limit: u32,
+    ) -> Result<Value, BackendError>;
     fn get_code_snippet(&mut self, symbol: &str, path: Option<&str>)
     -> Result<Value, BackendError>;
     fn check_index_coverage(
@@ -274,6 +281,7 @@ impl Server {
             "search_graph" => self.search_graph(from_value(call.arguments)?)?,
             "get_outline" => self.get_outline(from_value(call.arguments)?)?,
             "trace_path" => self.trace_path(from_value(call.arguments)?)?,
+            "find_usages" => self.find_usages(from_value(call.arguments)?)?,
             "get_code_snippet" => self.get_code_snippet(from_value(call.arguments)?)?,
             "check_index_coverage" => self.check_index_coverage(from_value(call.arguments)?)?,
             "expand" => self.expand(from_value(call.arguments)?)?,
@@ -397,6 +405,24 @@ impl Server {
             .map_err(backend_error)
     }
 
+    fn find_usages(&mut self, arguments: FindUsagesArguments) -> Result<Value, JsonRpcError> {
+        let Some(backend) = &mut self.backend else {
+            return Err(JsonRpcError::typed(
+                -32020,
+                "cgrx.index_adapter_not_connected",
+                "find_usages requires an indexed runtime backend",
+            ));
+        };
+        backend
+            .find_usages(
+                &arguments.symbol,
+                arguments.path.as_deref(),
+                arguments.scope,
+                arguments.limit,
+            )
+            .map_err(backend_error)
+    }
+
     fn get_code_snippet(
         &mut self,
         arguments: GetCodeSnippetArguments,
@@ -498,6 +524,7 @@ fn model_visible_result(tool: &str, structured: &Value) -> Value {
         "search_graph" => compact_search(structured),
         "get_outline" => compact_outline(structured),
         "trace_path" => compact_trace(structured),
+        "find_usages" => compact_usages(structured),
         "get_code_snippet" => compact_snippet(structured),
         "check_index_coverage" => compact_coverage(structured),
         "status" => compact_status(structured),
@@ -648,6 +675,47 @@ fn compact_trace(value: &Value) -> Value {
         "rows": rows,
         "n": value.get("total"),
         "gaps": value.get("coverage_gap_count"),
+    });
+    insert_more_when_true(&mut compact, value.get("truncated"));
+    compact
+}
+
+fn compact_usages(value: &Value) -> Value {
+    let mut paths = Vec::<String>::new();
+    let rows: Vec<_> = value
+        .get("usages")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .map(|item| {
+            let site_path = item.pointer("/site/path").and_then(Value::as_str);
+            let path_id = site_path.map(|path| {
+                paths
+                    .iter()
+                    .position(|stored| stored == path)
+                    .unwrap_or_else(|| {
+                        paths.push(path.to_owned());
+                        paths.len() - 1
+                    })
+            });
+            json!([
+                item.pointer("/source/symbol"),
+                path_id,
+                item.get("relation"),
+                item.pointer("/site/span/start"),
+                item.pointer("/site/span/end"),
+                item.get("resolver")
+            ])
+        })
+        .collect();
+    let mut compact = json!({
+        "at":snapshot_tag(value.get("snapshot")),
+        "target":value.get("target").map(compact_trace_root),
+        "paths":paths,
+        "cols":["source","path_id","relation","site_start","site_end","resolver"],
+        "rows":rows,
+        "n":value.get("total"),
+        "gaps":value.get("coverage_gap_count")
     });
     insert_more_when_true(&mut compact, value.get("truncated"));
     compact
@@ -804,6 +872,17 @@ struct TracePathArguments {
 }
 
 #[derive(Deserialize)]
+struct FindUsagesArguments {
+    symbol: String,
+    #[serde(default)]
+    path: Option<String>,
+    #[serde(default)]
+    scope: Value,
+    #[serde(default = "default_outline_limit")]
+    limit: u32,
+}
+
+#[derive(Deserialize)]
 struct GetCodeSnippetArguments {
     symbol: String,
     #[serde(default)]
@@ -915,6 +994,7 @@ fn model_visible_schema() -> Value {
         {"name":"search_graph","description":"Symbols or bodies","inputSchema":{"type":"object","required":["query"],"properties":{"query":{"type":"string"},"language":{"enum":["typescript","go","python","rust"]},"include_body":{"type":"boolean"},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":50}}}},
         {"name":"get_outline","description":"File symbols","inputSchema":{"type":"object","required":["path"],"properties":{"path":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":500}}}},
         {"name":"trace_path","description":"Calls","inputSchema":{"type":"object","required":["symbol"],"properties":{"symbol":{"type":"string"},"path":{"type":"string"},"direction":{"enum":["callers","callees","both"]},"depth":{"type":"integer","minimum":1,"maximum":4},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":50}}}},
+        {"name":"find_usages","description":"Proven usages","inputSchema":{"type":"object","required":["symbol"],"properties":{"symbol":{"type":"string"},"path":{"type":"string"},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":500}}}},
         {"name":"get_code_snippet","description":"Source","inputSchema":{"type":"object","required":["symbol"],"properties":{"symbol":{"type":"string"},"path":{"type":"string"}}}},
         {"name":"check_index_coverage","description":"Coverage","inputSchema":{"type":"object","properties":{"paths":{"type":"array","items":{"type":"string"}},"scopes":{"type":"array","items":{"type":"string"}},"offset":{"type":"integer","minimum":0},"limit":{"type":"integer","minimum":1,"maximum":500}}}},
         {"name":"expand","description":"Expand","inputSchema":{"type":"object","required":["handle","budget"],"properties":{"handle":{"type":"string"},"budget":{"type":"integer","minimum":1}}}},
@@ -942,6 +1022,10 @@ fn model_visible_schema() -> Value {
             "Trace callers or callees of a discovered symbol; use path to resolve ambiguity.",
         ),
         (
+            "Find usages",
+            "List proven incoming call or implementation sites with resolver evidence and coverage gaps.",
+        ),
+        (
             "Read source",
             "Read the definition of a discovered symbol; use path when names collide.",
         ),
@@ -967,7 +1051,7 @@ fn model_visible_schema() -> Value {
             json!({"readOnlyHint":false,"destructiveHint":false,"openWorldHint":false});
         tool["outputSchema"] = json!({"type":"object","additionalProperties":true});
     }
-    tools[8]["inputSchema"]["properties"]["paths_or_scope"] = path_or_scope;
+    tools[9]["inputSchema"]["properties"]["paths_or_scope"] = path_or_scope;
     tools
 }
 
@@ -997,7 +1081,7 @@ mod openai_metadata_tests {
     #[test]
     fn openai_tool_contract() {
         let tools = model_visible_schema();
-        assert_eq!(tools.as_array().unwrap().len(), 9);
+        assert_eq!(tools.as_array().unwrap().len(), 10);
         for tool in tools.as_array().unwrap() {
             assert!(tool["title"].as_str().is_some_and(|s| !s.is_empty()));
             assert!(tool["description"].as_str().is_some_and(|s| s.len() > 20));

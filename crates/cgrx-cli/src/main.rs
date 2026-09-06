@@ -669,6 +669,22 @@ impl ToolBackend for RuntimeMcpBackend {
             .map_err(|error| BackendError::new(error.code(), error.to_string()))
     }
 
+    fn find_usages(
+        &mut self,
+        symbol: &str,
+        path: Option<&str>,
+        scope: Value,
+        limit: u32,
+    ) -> Result<Value, BackendError> {
+        self.refresh()?;
+        let scope = graph_scope(&scope)?;
+        let limit = usize::try_from(limit)
+            .map_err(|_| BackendError::new("cgrx.invalid_arguments", "limit is out of range"))?;
+        self.runtime
+            .find_usages(symbol, path, &scope, limit)
+            .map_err(|error| BackendError::new(error.code(), error.to_string()))
+    }
+
     fn get_code_snippet(
         &mut self,
         symbol: &str,

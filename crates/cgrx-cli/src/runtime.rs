@@ -611,6 +611,133 @@ impl Runtime {
         }))
     }
 
+    pub fn find_usages(
+        &self,
+        symbol: &str,
+        path: Option<&str>,
+        scope: &Scope,
+        limit: usize,
+    ) -> Result<Value, RuntimeError> {
+        let symbol = symbol.trim();
+        if symbol.is_empty()
+            || path.is_some_and(|path| path.trim().is_empty())
+            || !(1..=500).contains(&limit)
+        {
+            return Err(RuntimeError::new(
+                "cgrx.invalid_arguments",
+                "symbol must be non-empty; path must be non-empty when supplied; limit must be 1..500",
+            ));
+        }
+        let mut scoped = ScopedQuery::new(&self.stored, scope, path_in_scope);
+        let mut roots: Vec<_> = self
+            .stored
+            .documents
+            .iter()
+            .filter(|document| {
+                document.provenance == "SYNTAX"
+                    && scoped.contains_path(&document.path)
+                    && path.is_none_or(|path| document.path == path)
+                    && document.qualified_name == symbol
+            })
+            .collect();
+        if roots.is_empty() {
+            let folded = symbol.to_lowercase();
+            roots = self
+                .stored
+                .documents
+                .iter()
+                .filter(|document| {
+                    document.provenance == "SYNTAX"
+                        && scoped.contains_path(&document.path)
+                        && path.is_none_or(|path| document.path == path)
+                        && document.qualified_name.to_lowercase() == folded
+                })
+                .collect();
+        }
+        roots.sort_by_key(|document| (&document.path, document.span_start, document.node_id));
+        let root = match roots.as_slice() {
+            [] => {
+                return Err(RuntimeError::new(
+                    "cgrx.symbol_not_found",
+                    format!("symbol {symbol} was not found in scope"),
+                ));
+            }
+            [root] => *root,
+            _ => {
+                let candidates = roots
+                    .iter()
+                    .map(|document| format!("{}:{}", document.path, document.span_start))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                return Err(RuntimeError::new(
+                    "cgrx.ambiguous_symbol",
+                    format!("symbol {symbol} matches {candidates}; pass path"),
+                ));
+            }
+        };
+        let by_id: BTreeMap<_, _> = self
+            .stored
+            .documents
+            .iter()
+            .filter(|document| {
+                document.provenance == "SYNTAX" && scoped.contains_path(&document.path)
+            })
+            .map(|document| (document.node_id, document))
+            .collect();
+        let mut usages: Vec<_> = scoped
+            .definitive_arcs(&self.stored)
+            .into_iter()
+            .filter(|arc| arc.target == root.node_id)
+            .filter_map(|arc| {
+                Some((
+                    arc,
+                    by_id.get(&arc.source).copied()?,
+                    arc.evidence.as_ref()?,
+                ))
+            })
+            .collect();
+        usages.sort_by_key(|(arc, source, evidence)| {
+            (
+                &evidence.path,
+                evidence.span.start,
+                &source.path,
+                source.span_start,
+                arc.kind,
+                source.node_id,
+            )
+        });
+        usages.dedup_by_key(|(arc, source, evidence)| {
+            (
+                evidence.path.clone(),
+                evidence.span,
+                source.node_id,
+                arc.kind,
+            )
+        });
+        let total = usages.len();
+        let rows: Vec<_> = usages
+            .into_iter()
+            .take(limit)
+            .map(|(arc, source, evidence)| {
+                json!({
+                    "source":{"node_id":source.node_id,"symbol":source.qualified_name,"path":source.path,"span":{"start":source.span_start,"end":source.span_end}},
+                    "relation":arc.kind,
+                    "site":{"path":evidence.path,"span":evidence.span},
+                    "resolver":evidence.resolver,
+                    "confidence":evidence.confidence
+                })
+            })
+            .collect();
+        Ok(json!({
+            "snapshot":self.stored.snapshot,
+            "target":{"node_id":root.node_id,"symbol":root.qualified_name,"path":root.path,"span":{"start":root.span_start,"end":root.span_end}},
+            "usages":rows,
+            "total":total,
+            "truncated":total > limit,
+            "coverage_gap_count":coverage_gap_count(&scoped.coverage(&self.stored.coverage))
+        }))
+    }
+
     pub fn get_code_snippet(
         &self,
         symbol: &str,
@@ -4790,6 +4917,12 @@ mod proof_edge_tests {
             runtime.search_graph("contract", &scope, 10).unwrap()["matches"][0]["callers"],
             2
         );
+        let usages = runtime
+            .find_usages("contract", None, &scope, 10)
+            .expect("find proven usages across relations");
+        assert_eq!(usages["total"], 2);
+        assert_eq!(usages["usages"][0]["relation"], "CALLS");
+        assert_eq!(usages["usages"][1]["relation"], "IMPLEMENTS");
     }
 
     #[test]

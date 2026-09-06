@@ -18,10 +18,15 @@ contract instead of adding another always-visible MCP tool:
 - `get_outline` returns a file's symbols and definition spans in source order,
   without returning bodies; this gives agents a compact navigation step before
   requesting exact source.
+- `find_usages` returns proven incoming `CALLS` and `IMPLEMENTS` sites with exact
+  evidence spans and resolver classes. Ambiguous targets fail until the caller
+  supplies a path, and uncertain edges stay out of the result.
 
 The coverage tests exercise body discovery and file outlines across `.ts`,
 `.tsx`, `.go`, `.py`, and `.rs`, including language rejection, deterministic
 source order, truncation, and missing-path errors.
+Usage-site tests cover direct calls in all five extensions plus relation-aware
+deduplication between `CALLS` and `IMPLEMENTS` evidence.
 
 ## Seven-project outline measurement
 

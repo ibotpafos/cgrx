@@ -1572,6 +1572,80 @@ fn top() { middle(); }
 }
 
 #[test]
+fn find_usages_returns_proven_sites_for_every_supported_extension() {
+    let repository = TestDirectory::new("find-usages-languages");
+    git(repository.path(), &["init", "-q"]);
+    git(
+        repository.path(),
+        &["config", "user.email", "test@example.invalid"],
+    );
+    git(repository.path(), &["config", "user.name", "CGRX Test"]);
+    let fixtures = [
+        (
+            "usage.ts",
+            "function tsTarget() {}\nfunction tsCaller() { tsTarget(); }\n",
+            "tsTarget",
+            "tsCaller",
+        ),
+        (
+            "usage.tsx",
+            "function tsxTarget() { return <div />; }\nfunction tsxCaller() { tsxTarget(); return <span />; }\n",
+            "tsxTarget",
+            "tsxCaller",
+        ),
+        (
+            "usage.go",
+            "package sample\nfunc goTarget() {}\nfunc goCaller() { goTarget() }\n",
+            "goTarget",
+            "goCaller",
+        ),
+        (
+            "usage.py",
+            "def py_target():\n    pass\n\ndef py_caller():\n    py_target()\n",
+            "py_target",
+            "py_caller",
+        ),
+        (
+            "usage.rs",
+            "fn rust_target() {}\nfn rust_caller() { rust_target(); }\n",
+            "rust_target",
+            "rust_caller",
+        ),
+    ];
+    for (path, source, _, _) in fixtures {
+        fs::write(repository.path().join(path), source).expect("write usage fixture");
+    }
+    git(repository.path(), &["add", "."]);
+    git(repository.path(), &["commit", "-qm", "fixture"]);
+    let state = TestDirectory::new("find-usages-languages-state");
+    Runtime::index(repository.path(), state.path()).expect("index repository");
+    let runtime = Runtime::open(state.path()).expect("open runtime");
+    let scope = Scope {
+        include: vec!["**".to_owned()],
+        exclude: Vec::new(),
+        relation_kinds: vec![RelationKind::Calls],
+        max_depth: 4,
+    };
+
+    for (path, _, target, caller) in fixtures {
+        let result = runtime
+            .find_usages(target, Some(path), &scope, 20)
+            .expect("find usages");
+        assert_eq!(result["total"], 1, "{path}: {result}");
+        assert_eq!(result["usages"][0]["source"]["symbol"], caller);
+        assert_eq!(result["usages"][0]["relation"], "CALLS");
+        assert_eq!(result["usages"][0]["site"]["path"], path);
+        assert_eq!(result["usages"][0]["confidence"], "PROVEN");
+        assert!(
+            result["usages"][0]["site"]["span"]["end"].as_u64().unwrap()
+                > result["usages"][0]["site"]["span"]["start"]
+                    .as_u64()
+                    .unwrap()
+        );
+    }
+}
+
+#[test]
 fn trace_path_requires_a_path_for_ambiguous_short_symbols() {
     let repository = TestDirectory::new("ambiguous-trace-symbol");
     git(repository.path(), &["init", "-q"]);
@@ -1602,6 +1676,14 @@ fn trace_path_requires_a_path_for_ambiguous_short_symbols() {
         .trace_path("duplicate", Some("a.rs"), "both", 2, &scope, 10)
         .expect("path disambiguates symbol");
     assert_eq!(resolved["root"]["path"], "a.rs");
+    let usage_error = runtime
+        .find_usages("duplicate", None, &scope, 10)
+        .expect_err("usage lookup also fails on ambiguous symbols");
+    assert_eq!(usage_error.code(), "cgrx.ambiguous_symbol");
+    let usages = runtime
+        .find_usages("duplicate", Some("a.rs"), &scope, 10)
+        .expect("path disambiguates usage lookup");
+    assert_eq!(usages["target"]["path"], "a.rs");
 }
 
 #[test]
