@@ -228,6 +228,7 @@ pub struct Runtime {
     changed_paths: BTreeSet<String>,
     refresh_input_bytes: u64,
     source_fingerprints: BTreeMap<String, SourceFingerprint>,
+    ts_verified_fingerprints: BTreeMap<String, SourceFingerprint>,
     base_traversal_truncated: bool,
     untracked_scan_cache: Option<UntrackedScanCache>,
 }
@@ -1239,11 +1240,12 @@ impl Runtime {
                 .dynamic_dispatch
                 .extend(extracted.dynamic_dispatch);
         }
-        let (inventory_changed, invalid_ts_sources) = scan_ts_inventory(
+        let (inventory_changed, invalid_ts_sources) = scan_ts_inventory_cached(
             &root,
             &mut self.stored.path_hashes,
             &mut self.stored.ts_files,
             &mut self.stored.ts_resolution_configs,
+            &mut self.ts_verified_fingerprints,
         )?;
         requires_normalize |= inventory_changed;
         for (relative, marker_hash) in invalid_ts_sources {
@@ -1573,6 +1575,7 @@ impl Runtime {
             changed_paths: BTreeSet::new(),
             refresh_input_bytes: 0,
             source_fingerprints: BTreeMap::new(),
+            ts_verified_fingerprints: BTreeMap::new(),
             base_traversal_truncated,
             untracked_scan_cache: None,
         })
@@ -2760,6 +2763,16 @@ fn scan_ts_inventory(
     ts_files: &mut BTreeMap<String, StoredTsFileFacts>,
     configs: &mut BTreeMap<String, TsResolutionConfig>,
 ) -> Result<(bool, Vec<(String, Hash32)>), RuntimeError> {
+    scan_ts_inventory_cached(root, path_hashes, ts_files, configs, &mut BTreeMap::new())
+}
+
+fn scan_ts_inventory_cached(
+    root: &Path,
+    path_hashes: &mut BTreeMap<String, Hash32>,
+    ts_files: &mut BTreeMap<String, StoredTsFileFacts>,
+    configs: &mut BTreeMap<String, TsResolutionConfig>,
+    verified_fingerprints: &mut BTreeMap<String, SourceFingerprint>,
+) -> Result<(bool, Vec<(String, Hash32)>), RuntimeError> {
     let mut directory_cache = TsDirectoryCache::default();
     let mut candidates = ts_inventory_candidates(ts_files);
     let (collected_configs, config_paths, config_witness) =
@@ -2781,6 +2794,7 @@ fn scan_ts_inventory(
         let metadata = match fs::symlink_metadata(&absolute) {
             Ok(metadata) => metadata,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                verified_fingerprints.remove(&relative);
                 if ts_files
                     .get(&relative)
                     .is_some_and(|stored| !stored.inventory_only)
@@ -2803,6 +2817,7 @@ fn scan_ts_inventory(
                 continue;
             }
             Err(_) => {
+                verified_fingerprints.remove(&relative);
                 let marker = Hash32(*blake3::hash(b"CGRX_TS_UNREADABLE_SOURCE").as_bytes());
                 if ts_files
                     .get(&relative)
@@ -2822,13 +2837,23 @@ fn scan_ts_inventory(
             .is_some_and(|stored| !stored.inventory_only)
         {
             if !plain || !metadata.is_file() {
+                verified_fingerprints.remove(&relative);
                 invalid_sources.push((
                     relative,
                     Hash32(*blake3::hash(b"CGRX_TS_UNSUPPORTED_PATH_KIND").as_bytes()),
                 ));
                 continue;
             }
+            let fingerprint = source_fingerprint(&metadata);
+            // Reuse a content proof only after path-kind validation and only while
+            // the device, inode, size, mtime and ctime identity is unchanged.
+            if verified_fingerprints.get(&relative) == Some(&fingerprint) {
+                continue;
+            }
+            #[cfg(test)]
+            ts_inventory_cache_tests::SOURCE_READS.with(|count| count.set(count.get() + 1));
             let Ok(source) = fs::read(&absolute) else {
+                verified_fingerprints.remove(&relative);
                 invalid_sources.push((
                     relative,
                     Hash32(*blake3::hash(b"CGRX_TS_UNREADABLE_SOURCE").as_bytes()),
@@ -2837,10 +2862,14 @@ fn scan_ts_inventory(
             };
             let hash = Hash32(*blake3::hash(&source).as_bytes());
             if ts_files.get(&relative).map(|stored| stored.source_hash) != Some(hash) {
+                verified_fingerprints.remove(&relative);
                 invalid_sources.push((relative, hash));
+            } else {
+                verified_fingerprints.insert(relative, fingerprint);
             }
             continue;
         }
+        verified_fingerprints.remove(&relative);
         let nested =
             crosses_nested_git_boundary(root, Path::new(&relative), &mut nested_boundary_cache);
         let source = if !plain || metadata.file_type().is_symlink() || !metadata.is_file() || nested
@@ -5639,6 +5668,7 @@ mod ts_inventory_cache_tests {
     use std::cell::Cell;
     use std::sync::atomic::{AtomicU64, Ordering};
     thread_local! { pub(super) static DIRECTORY_READS: Cell<usize> = const { Cell::new(0) }; }
+    thread_local! { pub(super) static SOURCE_READS: Cell<usize> = const { Cell::new(0) }; }
     thread_local! {
         pub(super) static INVENTORY_BUILDS: Cell<usize> = const { Cell::new(0) };
         pub(super) static MODULE_EXPANSIONS: Cell<usize> = const { Cell::new(0) };
@@ -5752,6 +5782,57 @@ mod ts_inventory_cache_tests {
             6,
             "a new refresh must re-enumerate directories"
         );
+    }
+
+    #[test]
+    fn verified_sources_are_not_rehashed_until_metadata_changes() {
+        let fixture = Fixture(std::env::temp_dir().join(format!(
+            "cgrx-source-fingerprint-cache-{}-{}",
+            std::process::id(),
+            ID.fetch_add(1, Ordering::Relaxed)
+        )));
+        fs::create_dir_all(&fixture.0).unwrap();
+        let source = "export const value = 1;";
+        fs::write(fixture.0.join("target.ts"), source).unwrap();
+        let hash = Hash32(*blake3::hash(source.as_bytes()).as_bytes());
+        let mut files = BTreeMap::from([(
+            "target.ts".to_owned(),
+            StoredTsFileFacts {
+                source_hash: hash,
+                facts: TsFileFacts::parse("target.ts", source.as_bytes()),
+                inventory_only: false,
+            },
+        )]);
+        let mut hashes = BTreeMap::from([("target.ts".to_owned(), hash)]);
+        let mut configs = BTreeMap::new();
+        let mut fingerprints = BTreeMap::new();
+
+        SOURCE_READS.with(|count| count.set(0));
+        for _ in 0..2 {
+            let (_, invalid) = scan_ts_inventory_cached(
+                &fixture.0,
+                &mut hashes,
+                &mut files,
+                &mut configs,
+                &mut fingerprints,
+            )
+            .unwrap();
+            assert!(invalid.is_empty());
+        }
+        assert_eq!(SOURCE_READS.with(Cell::get), 1);
+
+        fs::write(fixture.0.join("target.ts"), "export const value = 2;").unwrap();
+        let (_, invalid) = scan_ts_inventory_cached(
+            &fixture.0,
+            &mut hashes,
+            &mut files,
+            &mut configs,
+            &mut fingerprints,
+        )
+        .unwrap();
+        assert_eq!(SOURCE_READS.with(Cell::get), 2);
+        assert_eq!(invalid.len(), 1);
+        assert_eq!(invalid[0].0, "target.ts");
     }
     #[test]
     fn cached_directory_identity_rechecks_case_and_symlink_changes() {
