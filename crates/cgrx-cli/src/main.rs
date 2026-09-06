@@ -1,4 +1,5 @@
 mod multi_repo;
+mod visualize;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::env;
@@ -28,7 +29,7 @@ fn main() {
 fn run(args: Vec<String>) -> Result<(), String> {
     let Some(command) = args.first().map(String::as_str) else {
         return Err(
-            "expected init, index, serve, orient, expand, status, schema, usage-report, or bench"
+            "expected init, index, serve, visualize, orient, expand, status, schema, usage-report, or bench"
                 .to_owned(),
         );
     };
@@ -42,6 +43,7 @@ fn run(args: Vec<String>) -> Result<(), String> {
         "init" => init(args.get(1).map(PathBuf::from))?,
         "index" => index(&args[1..])?,
         "serve" => serve(&args[1..])?,
+        "visualize" => visualize::run(&args[1..])?,
         "orient" => {
             if let Some(state) = optional_flag(&args[1..], "--state") {
                 runtime_orient(Path::new(state), &args[1..])?;

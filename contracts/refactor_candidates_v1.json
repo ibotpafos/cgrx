@@ -427,77 +427,187 @@
     {
       "id": "cgrx",
       "repo": "/Volumes/D/Projects/cgrx-opensource",
-      "revision": "b8d828524b903abeb053db9faef5abba40fea509",
+      "revision": "e55018497074c40ea89cd3c1a6d2f357806a4a5b",
       "scope": "crates/cgrx-cli/src/**",
       "candidates": [
         {
-          "id": "cgrx:refactor1.c089810790e6c9dd",
+          "id": "cgrx:refactor1.f4b9322c0829b0b5",
           "left": {
-            "node_id": 4731213854485495779,
+            "node_id": 6187461200918374100,
+            "path": "crates/cgrx-cli/src/main.rs",
+            "span": {
+              "end": 23577,
+              "start": 23567
+            },
+            "symbol": "trace_path"
+          },
+          "right": {
+            "node_id": 7283025940452525496,
+            "path": "crates/cgrx-cli/src/main.rs",
+            "span": {
+              "end": 24178,
+              "start": 24167
+            },
+            "symbol": "find_usages"
+          },
+          "label": "unreviewed"
+        },
+        {
+          "id": "cgrx:refactor1.a55474595672f82c",
+          "left": {
+            "node_id": 4234006948587975240,
             "path": "crates/cgrx-cli/src/runtime.rs",
             "span": {
-              "end": 60269,
-              "start": 60264
+              "end": 70053,
+              "start": 70048
             },
             "symbol": "spawn"
           },
           "right": {
-            "node_id": 11186997707976643802,
+            "node_id": 7080668072123366305,
             "path": "crates/cgrx-cli/src/runtime.rs",
             "span": {
-              "end": 106589,
-              "start": 106584
+              "end": 118666,
+              "start": 118661
             },
             "symbol": "spawn"
           },
           "label": "unreviewed"
         },
         {
-          "id": "cgrx:refactor1.397ecbf039d5bf93",
+          "id": "cgrx:refactor1.04c9e4846b8e0c6f",
           "left": {
-            "node_id": 7110474014958696907,
+            "node_id": 6392376376540689722,
             "path": "crates/cgrx-cli/src/main.rs",
             "span": {
-              "end": 22408,
-              "start": 22396
+              "end": 22581,
+              "start": 22569
             },
             "symbol": "search_graph"
           },
           "right": {
-            "node_id": 7703581939977314104,
+            "node_id": 7283025940452525496,
             "path": "crates/cgrx-cli/src/main.rs",
             "span": {
-              "end": 22912,
-              "start": 22902
+              "end": 24178,
+              "start": 24167
+            },
+            "symbol": "find_usages"
+          },
+          "label": "unreviewed"
+        },
+        {
+          "id": "cgrx:refactor1.1999e597b75e219a",
+          "left": {
+            "node_id": 6392376376540689722,
+            "path": "crates/cgrx-cli/src/main.rs",
+            "span": {
+              "end": 22581,
+              "start": 22569
+            },
+            "symbol": "search_graph"
+          },
+          "right": {
+            "node_id": 6187461200918374100,
+            "path": "crates/cgrx-cli/src/main.rs",
+            "span": {
+              "end": 23577,
+              "start": 23567
             },
             "symbol": "trace_path"
           },
           "label": "unreviewed"
         },
         {
-          "id": "cgrx:refactor1.efa5f1e7045105e8",
+          "id": "cgrx:refactor1.78f2d5578f1debf3",
           "left": {
-            "node_id": 8144633206163874999,
+            "node_id": 6392376376540689722,
+            "path": "crates/cgrx-cli/src/main.rs",
+            "span": {
+              "end": 22581,
+              "start": 22569
+            },
+            "symbol": "search_graph"
+          },
+          "right": {
+            "node_id": 9455755498059283022,
+            "path": "crates/cgrx-cli/src/main.rs",
+            "span": {
+              "end": 24750,
+              "start": 24733
+            },
+            "symbol": "suggest_refactors"
+          },
+          "label": "unreviewed"
+        },
+        {
+          "id": "cgrx:refactor1.da0604e21830a34d",
+          "left": {
+            "node_id": 7283025940452525496,
+            "path": "crates/cgrx-cli/src/main.rs",
+            "span": {
+              "end": 24178,
+              "start": 24167
+            },
+            "symbol": "find_usages"
+          },
+          "right": {
+            "node_id": 9455755498059283022,
+            "path": "crates/cgrx-cli/src/main.rs",
+            "span": {
+              "end": 24750,
+              "start": 24733
+            },
+            "symbol": "suggest_refactors"
+          },
+          "label": "unreviewed"
+        },
+        {
+          "id": "cgrx:refactor1.7a605e7cad9567e7",
+          "left": {
+            "node_id": 6187461200918374100,
+            "path": "crates/cgrx-cli/src/main.rs",
+            "span": {
+              "end": 23577,
+              "start": 23567
+            },
+            "symbol": "trace_path"
+          },
+          "right": {
+            "node_id": 9455755498059283022,
+            "path": "crates/cgrx-cli/src/main.rs",
+            "span": {
+              "end": 24750,
+              "start": 24733
+            },
+            "symbol": "suggest_refactors"
+          },
+          "label": "unreviewed"
+        },
+        {
+          "id": "cgrx:refactor1.606db00ada9dde3a",
+          "left": {
+            "node_id": 9939680733544137747,
             "path": "crates/cgrx-cli/src/runtime.rs",
             "span": {
-              "end": 201447,
-              "start": 201388
+              "end": 219132,
+              "start": 219073
             },
             "symbol": "cached_directory_identity_rechecks_case_and_symlink_changes"
           },
           "right": {
-            "node_id": 18114134590920387927,
+            "node_id": 13735359646017542623,
             "path": "crates/cgrx-cli/src/runtime.rs",
             "span": {
-              "end": 202892,
-              "start": 202836
+              "end": 220577,
+              "start": 220521
             },
             "symbol": "missing_directory_can_be_created_without_reusing_absence"
           },
           "label": "unreviewed"
         },
         {
-          "id": "cgrx:refactor1.3de5ecee6168ccf3",
+          "id": "cgrx:refactor1.16fcf2943e675b18",
           "left": {
             "node_id": 8548572567693918922,
             "path": "crates/cgrx-cli/src/runtime/ts_config.rs",
@@ -519,183 +629,205 @@
           "label": "unreviewed"
         },
         {
-          "id": "cgrx:refactor1.bedd17e7b1fb5e31",
+          "id": "cgrx:refactor1.daee47ccd3639ada",
           "left": {
-            "node_id": 13913033947909737445,
+            "node_id": 4281706514372638522,
             "path": "crates/cgrx-cli/src/runtime.rs",
             "span": {
-              "end": 38263,
-              "start": 38258
+              "end": 48047,
+              "start": 48042
             },
             "symbol": "index"
           },
           "right": {
-            "node_id": 4510458301428738431,
+            "node_id": 12945952487438616940,
             "path": "crates/cgrx-cli/src/runtime.rs",
             "span": {
-              "end": 38415,
-              "start": 38395
+              "end": 48199,
+              "start": 48179
             },
             "symbol": "index_committed_head"
           },
           "label": "unreviewed"
         },
         {
-          "id": "cgrx:refactor1.72fe31dd2184a23e",
+          "id": "cgrx:refactor1.2825fa18e4fda5e9",
           "left": {
-            "node_id": 3956667629870475816,
+            "node_id": 1491086065005132479,
             "path": "crates/cgrx-cli/src/runtime.rs",
             "span": {
-              "end": 154323,
-              "start": 154256
+              "end": 169589,
+              "start": 169522
             },
             "symbol": "rust_module_proof_missing_stale_or_duplicate_metadata_never_guesses"
           },
           "right": {
-            "node_id": 10491744106487710020,
+            "node_id": 10195568739253890661,
             "path": "crates/cgrx-cli/src/runtime.rs",
             "span": {
-              "end": 156051,
-              "start": 155990
+              "end": 171317,
+              "start": 171256
             },
             "symbol": "rust_self_owner_proof_missing_or_stale_metadata_never_guesses"
           },
           "label": "unreviewed"
         },
         {
-          "id": "cgrx:refactor1.10c0a75ca3a5ad60",
+          "id": "cgrx:refactor1.5731e5da75ff1246",
           "left": {
-            "node_id": 9642056332623283534,
+            "node_id": 13497962591534716156,
             "path": "crates/cgrx-cli/src/main.rs",
             "span": {
-              "end": 32577,
-              "start": 32574
+              "end": 34373,
+              "start": 34370
             },
             "symbol": "git"
           },
           "right": {
-            "node_id": 14592727292034621177,
+            "node_id": 11257019185126406325,
             "path": "crates/cgrx-cli/src/runtime.rs",
             "span": {
-              "end": 152500,
-              "start": 152491
+              "end": 167486,
+              "start": 167477
             },
             "symbol": "git_bytes"
           },
           "label": "unreviewed"
         },
         {
-          "id": "cgrx:refactor1.9e75cb5b1332da90",
+          "id": "cgrx:refactor1.2def861160f5020b",
           "left": {
-            "node_id": 6201060177868806142,
+            "node_id": 14737472459416143689,
             "path": "crates/cgrx-cli/src/runtime.rs",
             "span": {
-              "end": 181456,
-              "start": 181395
+              "end": 197051,
+              "start": 196990
             },
             "symbol": "refresh_invalidates_non_calls_even_on_unrelated_source_change"
           },
           "right": {
-            "node_id": 2867655323283834118,
+            "node_id": 6168522202611293857,
             "path": "crates/cgrx-cli/src/runtime.rs",
             "span": {
-              "end": 190513,
-              "start": 190463
+              "end": 206108,
+              "start": 206058
             },
             "symbol": "refresh_keeps_non_calls_only_without_source_change"
           },
           "label": "unreviewed"
         },
         {
-          "id": "cgrx:refactor1.1d802d9f4f3c9f78",
+          "id": "cgrx:refactor1.a3f3ae39484dc3e4",
           "left": {
-            "node_id": 10815352451217576779,
+            "node_id": 5234748931440425205,
             "path": "crates/cgrx-cli/src/runtime.rs",
             "span": {
-              "end": 179781,
-              "start": 179716
+              "end": 195376,
+              "start": 195311
             },
             "symbol": "proof_bearing_non_calls_arc_survives_open_normalization_unchanged"
           },
           "right": {
-            "node_id": 13815012928603178508,
+            "node_id": 15834560182793936992,
             "path": "crates/cgrx-cli/src/runtime.rs",
             "span": {
-              "end": 185870,
-              "start": 185815
+              "end": 201465,
+              "start": 201410
             },
             "symbol": "legacy_json_is_rebuilt_from_documents_not_old_endpoints"
           },
           "label": "unreviewed"
         },
         {
-          "id": "cgrx:refactor1.5718617d308bca13",
+          "id": "cgrx:refactor1.d3d86e848d3cae26",
           "left": {
-            "node_id": 12152651264031737449,
+            "node_id": 3318638277367549003,
             "path": "crates/cgrx-cli/src/runtime.rs",
             "span": {
-              "end": 178412,
-              "start": 178359
+              "end": 194007,
+              "start": 193954
             },
             "symbol": "legacy_arc_without_evidence_is_rebuilt_from_documents"
           },
           "right": {
-            "node_id": 10815352451217576779,
+            "node_id": 5234748931440425205,
             "path": "crates/cgrx-cli/src/runtime.rs",
             "span": {
-              "end": 179781,
-              "start": 179716
+              "end": 195376,
+              "start": 195311
             },
             "symbol": "proof_bearing_non_calls_arc_survives_open_normalization_unchanged"
           },
           "label": "unreviewed"
         },
         {
-          "id": "cgrx:refactor1.912acb0741bfa65b",
+          "id": "cgrx:refactor1.2d71f647dffe2c30",
           "left": {
-            "node_id": 6201060177868806142,
+            "node_id": 9832021179870506634,
+            "path": "crates/cgrx-cli/src/runtime/refactors.rs",
+            "span": {
+              "end": 21203,
+              "start": 21154
+            },
+            "symbol": "ordered_shingles_distinguish_changed_control_flow"
+          },
+          "right": {
+            "node_id": 17170145707545057844,
+            "path": "crates/cgrx-cli/src/runtime/refactors.rs",
+            "span": {
+              "end": 21616,
+              "start": 21552
+            },
+            "symbol": "identical_structure_without_graph_neighbors_scores_eight_hundred"
+          },
+          "label": "unreviewed"
+        },
+        {
+          "id": "cgrx:refactor1.2a775220b2b311e4",
+          "left": {
+            "node_id": 14737472459416143689,
             "path": "crates/cgrx-cli/src/runtime.rs",
             "span": {
-              "end": 181456,
-              "start": 181395
+              "end": 197051,
+              "start": 196990
             },
             "symbol": "refresh_invalidates_non_calls_even_on_unrelated_source_change"
           },
           "right": {
-            "node_id": 9392099923851538501,
+            "node_id": 11365631132083104467,
             "path": "crates/cgrx-cli/src/runtime.rs",
             "span": {
-              "end": 181992,
-              "start": 181941
+              "end": 197587,
+              "start": 197536
             },
             "symbol": "refresh_drops_changed_or_deleted_non_calls_evidence"
           },
           "label": "unreviewed"
         },
         {
-          "id": "cgrx:refactor1.464faedfa387aabe",
+          "id": "cgrx:refactor1.664ab1bac215d277",
           "left": {
-            "node_id": 9629335538989994788,
+            "node_id": 834419921751856226,
             "path": "crates/cgrx-cli/src/main.rs",
             "span": {
-              "end": 13917,
-              "start": 13899
+              "end": 14090,
+              "start": 14072
             },
             "symbol": "managed_state_path"
           },
           "right": {
-            "node_id": 9642056332623283534,
+            "node_id": 13497962591534716156,
             "path": "crates/cgrx-cli/src/main.rs",
             "span": {
-              "end": 32577,
-              "start": 32574
+              "end": 34373,
+              "start": 34370
             },
             "symbol": "git"
           },
           "label": "unreviewed"
         },
         {
-          "id": "cgrx:refactor1.07018399af8e7f99",
+          "id": "cgrx:refactor1.9681dd017d7c9a2b",
           "left": {
             "node_id": 7222214175531113413,
             "path": "crates/cgrx-cli/src/intent.rs",
@@ -717,154 +849,154 @@
           "label": "unreviewed"
         },
         {
-          "id": "cgrx:refactor1.c02d4912857e10f8",
+          "id": "cgrx:refactor1.92dcbaeb504ba4cb",
           "left": {
-            "node_id": 17717406093796638382,
+            "node_id": 15196157171697149591,
             "path": "crates/cgrx-cli/src/runtime.rs",
             "span": {
-              "end": 7599,
-              "start": 7591
+              "end": 7614,
+              "start": 7606
             },
             "symbol": "snapshot"
           },
           "right": {
-            "node_id": 3392469166482718411,
+            "node_id": 17712767778005649189,
             "path": "crates/cgrx-cli/src/runtime.rs",
             "span": {
-              "end": 26325,
-              "start": 26317
+              "end": 36109,
+              "start": 36101
             },
             "symbol": "coverage"
           },
           "label": "unreviewed"
         },
         {
-          "id": "cgrx:refactor1.26a0e6fbe8590846",
+          "id": "cgrx:refactor1.5e2199039cc2442c",
           "left": {
-            "node_id": 17804645398724286174,
+            "node_id": 12732696125698140240,
             "path": "crates/cgrx-cli/src/runtime.rs",
             "span": {
-              "end": 158783,
-              "start": 158779
+              "end": 174049,
+              "start": 174045
             },
             "symbol": "drop"
           },
           "right": {
-            "node_id": 1943851671454361233,
+            "node_id": 8457245480760476012,
             "path": "crates/cgrx-cli/src/runtime.rs",
             "span": {
-              "end": 199250,
-              "start": 199246
+              "end": 215036,
+              "start": 215032
             },
             "symbol": "drop"
           },
           "label": "unreviewed"
         },
         {
-          "id": "cgrx:refactor1.9aacc9bd47291dc2",
+          "id": "cgrx:refactor1.2ca49457ec042885",
           "left": {
-            "node_id": 17804645398724286174,
+            "node_id": 12732696125698140240,
             "path": "crates/cgrx-cli/src/runtime.rs",
             "span": {
-              "end": 158783,
-              "start": 158779
+              "end": 174049,
+              "start": 174045
             },
             "symbol": "drop"
           },
           "right": {
-            "node_id": 8640694878824519882,
+            "node_id": 8230631503189177464,
             "path": "crates/cgrx-cli/src/runtime/ts_config.rs",
             "span": {
-              "end": 21200,
-              "start": 21196
+              "end": 21323,
+              "start": 21319
             },
             "symbol": "drop"
           },
           "label": "unreviewed"
         },
         {
-          "id": "cgrx:refactor1.ad7b13684d7d9524",
+          "id": "cgrx:refactor1.e5edde1747c637b7",
           "left": {
-            "node_id": 1943851671454361233,
+            "node_id": 8457245480760476012,
             "path": "crates/cgrx-cli/src/runtime.rs",
             "span": {
-              "end": 199250,
-              "start": 199246
+              "end": 215036,
+              "start": 215032
             },
             "symbol": "drop"
           },
           "right": {
-            "node_id": 8640694878824519882,
+            "node_id": 8230631503189177464,
             "path": "crates/cgrx-cli/src/runtime/ts_config.rs",
             "span": {
-              "end": 21200,
-              "start": 21196
+              "end": 21323,
+              "start": 21319
             },
             "symbol": "drop"
           },
           "label": "unreviewed"
         },
         {
-          "id": "cgrx:refactor1.b15a39bde65b6140",
+          "id": "cgrx:refactor1.3ed9450e954f371e",
           "left": {
-            "node_id": 3956667629870475816,
+            "node_id": 1491086065005132479,
             "path": "crates/cgrx-cli/src/runtime.rs",
             "span": {
-              "end": 154323,
-              "start": 154256
+              "end": 169589,
+              "start": 169522
             },
             "symbol": "rust_module_proof_missing_stale_or_duplicate_metadata_never_guesses"
           },
           "right": {
-            "node_id": 14806742425848390992,
+            "node_id": 10392916992998497671,
             "path": "crates/cgrx-cli/src/runtime.rs",
             "span": {
-              "end": 162925,
-              "start": 162857
+              "end": 178191,
+              "start": 178123
             },
             "symbol": "go_field_exact_proof_never_falls_back_with_missing_or_stale_identity"
           },
           "label": "unreviewed"
         },
         {
-          "id": "cgrx:refactor1.468bfd0c7c06fd63",
+          "id": "cgrx:refactor1.113a706bbcabca46",
           "left": {
-            "node_id": 17000295222119265745,
+            "node_id": 6056990713769065410,
             "path": "crates/cgrx-cli/src/runtime.rs",
             "span": {
-              "end": 194715,
-              "start": 194673
+              "end": 210310,
+              "start": 210268
             },
             "symbol": "sparse_go_field_proof_preserves_json_shape"
           },
           "right": {
-            "node_id": 17836531347069237772,
+            "node_id": 9558238809081925830,
             "path": "crates/cgrx-cli/src/runtime.rs",
             "span": {
-              "end": 196537,
-              "start": 196477
+              "end": 212132,
+              "start": 212072
             },
             "symbol": "compact_storage_retains_nondefault_proof_and_search_metadata"
           },
           "label": "unreviewed"
         },
         {
-          "id": "cgrx:refactor1.26c8e961da04ff89",
+          "id": "cgrx:refactor1.f4294e3a697593b2",
           "left": {
-            "node_id": 8926400754194165581,
+            "node_id": 429405436941802183,
             "path": "crates/cgrx-cli/src/runtime.rs",
             "span": {
-              "end": 193966,
-              "start": 193915
+              "end": 209561,
+              "start": 209510
             },
             "symbol": "sparse_go_field_proof_uses_one_pointer_per_document"
           },
           "right": {
-            "node_id": 17000295222119265745,
+            "node_id": 6056990713769065410,
             "path": "crates/cgrx-cli/src/runtime.rs",
             "span": {
-              "end": 194715,
-              "start": 194673
+              "end": 210310,
+              "start": 210268
             },
             "symbol": "sparse_go_field_proof_preserves_json_shape"
           },

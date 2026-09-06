@@ -1,6 +1,8 @@
+mod graph_view;
 mod refactors;
 mod risks;
 mod ts_config;
+pub use graph_view::{GraphDirection, GraphViewRequest};
 pub use risks::RiskBaseline;
 use ts_config::TsResolutionConfig;
 
@@ -73,6 +75,10 @@ impl RuntimeError {
             code,
             detail: detail.into(),
         }
+    }
+
+    pub fn public(code: &'static str, detail: impl Into<String>) -> Self {
+        Self::new(code, detail)
     }
 
     #[must_use]

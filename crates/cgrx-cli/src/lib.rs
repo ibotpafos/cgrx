@@ -4,7 +4,10 @@ mod cargo_roots;
 mod intent;
 mod runtime;
 
-pub use runtime::{IndexReport, OrientReport, RiskBaseline, Runtime, RuntimeError};
+pub use runtime::{
+    GraphDirection, GraphViewRequest, IndexReport, OrientReport, RiskBaseline, Runtime,
+    RuntimeError,
+};
 
 /// Git executable used by all runtime subprocesses.
 ///
