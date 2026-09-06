@@ -69,6 +69,48 @@ fn repository_with_file(label: &str, name: &str, source: &[u8]) -> TestDirectory
     repository
 }
 
+fn refactor_repository() -> TestDirectory {
+    let repository = TestDirectory::new("refactor-candidates");
+    git(repository.path(), &["init", "-q"]);
+    git(
+        repository.path(),
+        &["config", "user.email", "test@example.invalid"],
+    );
+    git(repository.path(), &["config", "user.name", "CGRX Test"]);
+    let fixtures = [
+        (
+            "similar.ts",
+            "function saveTs(value: number) {}\nfunction firstTs(input: number) { const prepared = input + 1; saveTs(prepared); return prepared; }\nfunction secondTs(value: number) { const output = value + 9; saveTs(output); return output; }\nfunction unrelatedTs(input: number) { while (input > 0) { input -= 1; } throw input; }\n",
+        ),
+        (
+            "similar.tsx",
+            "function saveTsx(value: number) {}\nfunction firstTsx(input: number) { const prepared = input + 1; saveTsx(prepared); return <div>{prepared}</div>; }\nfunction secondTsx(value: number) { const output = value + 9; saveTsx(output); return <div>{output}</div>; }\n",
+        ),
+        (
+            "similar.go",
+            "package sample\nfunc saveGo(value int) {}\nfunc firstGo(input int) int { prepared := input + 1; saveGo(prepared); return prepared }\nfunc secondGo(value int) int { output := value + 9; saveGo(output); return output }\n",
+        ),
+        (
+            "similar.py",
+            "def save_py(value):\n    pass\n\ndef first_py(input_value):\n    prepared = input_value + 1\n    save_py(prepared)\n    return prepared\n\ndef second_py(value):\n    output = value + 9\n    save_py(output)\n    return output\n",
+        ),
+        (
+            "similar.rs",
+            "fn save_rs(value: i32) {}\nfn first_rs(input: i32) -> i32 { let prepared = input + 1; save_rs(prepared); prepared }\nfn second_rs(value: i32) -> i32 { let output = value + 9; save_rs(output); output }\n",
+        ),
+        (
+            "negative.py",
+            "def tiny(value):\n    return value\n\ndef same_name(value):\n    if value:\n        save_left(value)\n        return value\n\ndef same_name(value):\n    for item in value:\n        transform(item)\n    raise RuntimeError(value)\n",
+        ),
+    ];
+    for (path, source) in fixtures {
+        fs::write(repository.path().join(path), source).expect("write refactor fixture");
+    }
+    git(repository.path(), &["add", "."]);
+    git(repository.path(), &["commit", "-qm", "fixture"]);
+    repository
+}
+
 fn orient(runtime: &Runtime, task: &str, relation_kinds: Vec<RelationKind>) -> OrientReport {
     runtime
         .orient(QueryRequest {
@@ -83,6 +125,100 @@ fn orient(runtime: &Runtime, task: &str, relation_kinds: Vec<RelationKind>) -> O
             token_budget: 800,
         })
         .expect("orient query")
+}
+
+fn calls_scope(path: &str) -> Scope {
+    Scope {
+        include: vec![path.to_owned()],
+        exclude: Vec::new(),
+        relation_kinds: vec![RelationKind::Calls],
+        max_depth: 1,
+    }
+}
+
+#[test]
+fn suggest_refactors_projects_shared_helper_for_every_supported_extension() {
+    let repository = refactor_repository();
+    let state = TestDirectory::new("refactor-candidates-state");
+    Runtime::index(repository.path(), state.path()).expect("index repository");
+    let runtime = Runtime::open(state.path()).expect("open runtime");
+
+    for (path, language, callee) in [
+        ("similar.ts", "typescript", "saveTs"),
+        ("similar.tsx", "typescript", "saveTsx"),
+        ("similar.go", "go", "saveGo"),
+        ("similar.py", "python", "save_py"),
+        ("similar.rs", "rust", "save_rs"),
+    ] {
+        let result = runtime
+            .suggest_refactors(&calls_scope(path), Some(language), 760, 20)
+            .expect("suggest refactors");
+        assert_eq!(result["total"], 1, "{path}: {result}");
+        if path == "similar.ts" {
+            assert!(
+                result["inspected_pairs"].as_u64().unwrap() > result["total"].as_u64().unwrap(),
+                "{path}: inspected pair telemetry must include rejected pairs: {result}"
+            );
+        }
+        assert_eq!(result["candidates"][0]["kind"], "extract_shared_helper");
+        assert_eq!(result["candidates"][0]["confidence"], "candidate");
+        assert_eq!(result["candidates"][0]["language"], language);
+        assert_eq!(
+            result["candidates"][0]["shared_callees"][0]["target"]["symbol"],
+            callee
+        );
+        assert_eq!(
+            result["candidates"][0]["shared_callees"][0]["confidence"],
+            "PROVEN"
+        );
+        assert_eq!(
+            result["candidates"][0]["projection"]["status"],
+            "hypothetical"
+        );
+        assert_eq!(
+            result["candidates"][0]["projection"]["remove"],
+            serde_json::json!([])
+        );
+        assert_eq!(
+            result["candidates"][0]["projection"]["add"]
+                .as_array()
+                .unwrap()
+                .len(),
+            2
+        );
+        assert_eq!(
+            result,
+            runtime
+                .suggest_refactors(&calls_scope(path), Some(language), 760, 20)
+                .expect("repeat suggestions"),
+            "{path} ordering must be deterministic"
+        );
+    }
+}
+
+#[test]
+fn suggest_refactors_rejects_invalid_arguments_and_weak_pairs() {
+    let repository = refactor_repository();
+    let state = TestDirectory::new("refactor-negative-state");
+    Runtime::index(repository.path(), state.path()).expect("index repository");
+    let runtime = Runtime::open(state.path()).expect("open runtime");
+
+    let negative = runtime
+        .suggest_refactors(&calls_scope("negative.py"), Some("python"), 760, 20)
+        .expect("scan negative fixture");
+    assert_eq!(negative["total"], 0, "{negative}");
+
+    for (language, score, limit) in [
+        (Some("java"), 760, 20),
+        (Some("rust"), 1001, 20),
+        (Some("rust"), 760, 0),
+        (Some("rust"), 760, 51),
+    ] {
+        let error = runtime
+            .suggest_refactors(&calls_scope("similar.rs"), language, score, limit)
+            .expect_err("invalid arguments fail closed");
+        assert_eq!(error.code(), "cgrx.invalid_arguments");
+    }
 }
 
 fn stored_arcs(state: &Path) -> Vec<serde_json::Value> {

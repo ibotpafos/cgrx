@@ -134,7 +134,7 @@ impl Runtime {
 }
 ```
 
-- [ ] **Step 1: Write failing supported-language and negative fixtures**
+- [x] **Step 1: Write failing supported-language and negative fixtures**
 
 Add one committed repository fixture containing structurally matching functions for `.ts`, `.tsx`, `.go`, `.py` and `.rs`. Each pair calls the same proven `save*` target and differs in local names/literals. Add negative pairs for a tiny wrapper and same-name code with different control flow.
 
@@ -151,13 +151,13 @@ assert_eq!(candidate["shared_callees"][0]["confidence"], "PROVEN");
 
 Also assert deterministic ordering, invalid language rejection, `min_score` above 1000 rejection, and `limit` outside 1..=50 rejection.
 
-- [ ] **Step 2: Run the focused integration test and verify failure**
+- [x] **Step 2: Run the focused integration test and verify failure**
 
 Run: `cargo test -p cgrx-cli suggest_refactors -- --nocapture`
 
 Expected: compilation fails because `Runtime::suggest_refactors` is missing.
 
-- [ ] **Step 3: Implement bounded candidate generation**
+- [x] **Step 3: Implement bounded candidate generation**
 
 Use:
 
@@ -180,17 +180,17 @@ fingerprints_are_eligible
 
 Set `partial=true` with `REFACTOR_DOCUMENT_BUDGET`, `REFACTOR_PAIR_BUDGET`, or `REFACTOR_EVIDENCE_BUDGET` when a bound is hit.
 
-- [ ] **Step 4: Implement snapshot-bound projections**
+- [x] **Step 4: Implement snapshot-bound projections**
 
 Hash canonical snapshot fields plus sorted pair node ids into `refactor1.<16 hex>`. Return `preserve` from definitive incoming edges, `add` as both entry points calling the helper, `move_to_helper` from the intersection of definitive outgoing targets, and empty `remove`. Sort every edge set by relation, path, span and node identity.
 
-- [ ] **Step 5: Run focused tests**
+- [x] **Step 5: Run focused tests**
 
 Run: `cargo test -p cgrx-cli suggest_refactors -- --nocapture`
 
 Expected: PASS for five extensions and all negative/validation cases.
 
-- [ ] **Step 6: Commit runtime discovery**
+- [x] **Step 6: Commit runtime discovery**
 
 ```sh
 git add crates/cgrx-cli/src/runtime/refactors.rs crates/cgrx-cli/tests/runtime.rs
