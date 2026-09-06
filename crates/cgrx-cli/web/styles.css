@@ -77,6 +77,7 @@ button { color: inherit; }
 .node { cursor: pointer; outline: none; }
 .node rect { fill: var(--surface-raised); stroke: var(--line-strong); stroke-width: 1; rx: 9; }
 .node:hover rect, .node:focus-visible rect, .node.is-selected rect { stroke: var(--focus); stroke-width: 2; }
+.node--pinned rect { stroke-dasharray: 2 4; }
 .node__title { fill: var(--text); font: 600 12px ui-monospace, monospace; }
 .node__path { fill: var(--muted); font: 10px ui-monospace, monospace; }
 .node__status { fill: var(--proven); }

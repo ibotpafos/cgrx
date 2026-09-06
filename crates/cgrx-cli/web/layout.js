@@ -22,11 +22,13 @@ export function layoutGraph(graph, viewport = {}) {
       const laneIndex = counts.get(lane) || 0;
       counts.set(lane, laneIndex + 1);
       const y = lane === "tests" ? 448 + laneIndex * 92 : 152 + laneIndex * 92;
+      const pin = viewport.pins?.[identity(node)];
       return {
         ...node,
         lane,
-        x: LANE_X[lane],
-        y,
+        x: pin?.x ?? LANE_X[lane],
+        y: pin?.y ?? y,
+        pinned: Boolean(pin),
         width: 216,
         height: 64
       };

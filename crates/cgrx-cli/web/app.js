@@ -15,11 +15,13 @@ let currentStrategy = null;
 let requestGeneration = 0;
 let changedPaths = [];
 let panStart = null;
+let nodeDrag = null;
+let pinnedPositions = {};
 
 const ids = [
   "freshness", "revision", "search-form", "search-input", "search-results", "match-count",
   "refactor-list", "candidate-count", "graph-title", "graph-message", "graph-canvas",
-  "camera-layer", "inspector-content", "selection-kind", "strategy-panel", "strategy-tabs",
+  "graph-svg", "camera-layer", "inspector-content", "selection-kind", "strategy-panel", "strategy-tabs",
   "strategy-detail", "copy-agent", "copy-mcp", "announcer", "zoom-in", "zoom-out", "reset-view"
 ];
 const el = Object.fromEntries(ids.map((id) => [id, document.getElementById(id)]));
@@ -112,7 +114,7 @@ function renderGraph(graph) {
 
 function drawGraph(graph, layer) {
   const viewport = el["graph-canvas"].getBoundingClientRect();
-  const layout = layoutGraph(graph, { width: viewport.width, height: viewport.height });
+  const layout = layoutGraph(graph, { width: viewport.width, height: viewport.height, pins: pinnedPositions });
   for (const [label, x, y] of [
     ["CALLERS", 96, 54],
     ["ENTRY POINT", 382, 54],
@@ -193,7 +195,7 @@ function renderEdge(source, target, edge) {
 function renderNode(node) {
   const group = svg("g", {
     transform: `translate(${node.x} ${node.y})`,
-    class: `node ${node.lane === "tests" ? "node--test " : ""}${node.changed ? "node--changed " : ""}${state.selectedNodeId === node.node_id ? "is-selected" : ""}`,
+    class: `node ${node.lane === "tests" ? "node--test " : ""}${node.changed ? "node--changed " : ""}${node.pinned ? "node--pinned " : ""}${state.selectedNodeId === node.node_id ? "is-selected" : ""}`,
     tabindex: "0",
     role: "button",
     "aria-label": `${node.symbol}, ${node.path}, ${node.lane}`
@@ -207,6 +209,14 @@ function renderNode(node) {
   const select = () => selectNode(node);
   group.addEventListener("click", select);
   group.addEventListener("keydown", activate(select));
+  group.addEventListener("pointerdown", (event) => {
+    event.stopPropagation();
+    nodeDrag = {
+      key: String(node.node_id ?? node.id),
+      start: graphPoint(event),
+      origin: { x: node.x, y: node.y }
+    };
+  });
   return group;
 }
 
@@ -369,8 +379,9 @@ document.querySelectorAll("[data-mode]").forEach((button) => button.addEventList
 el["zoom-in"].addEventListener("click", () => zoom(1.2));
 el["zoom-out"].addEventListener("click", () => zoom(1 / 1.2));
 el["reset-view"].addEventListener("click", () => {
+  pinnedPositions = {};
   state = reduce(state, { type: "camera", camera: { x: 0, y: 0, scale: 1 } });
-  applyCamera();
+  renderMode();
 });
 el["graph-canvas"].addEventListener("wheel", (event) => {
   event.preventDefault();
@@ -394,6 +405,19 @@ el["graph-canvas"].addEventListener("pointermove", (event) => {
   applyCamera();
 });
 el["graph-canvas"].addEventListener("pointerup", () => { panStart = null; });
+document.addEventListener("pointermove", (event) => {
+  if (!nodeDrag) return;
+  const point = graphPoint(event);
+  pinnedPositions = {
+    ...pinnedPositions,
+    [nodeDrag.key]: {
+      x: nodeDrag.origin.x + point.x - nodeDrag.start.x,
+      y: nodeDrag.origin.y + point.y - nodeDrag.start.y
+    }
+  };
+  renderMode();
+});
+document.addEventListener("pointerup", () => { nodeDrag = null; });
 el["graph-canvas"].addEventListener("keydown", (event) => {
   const movement = { ArrowLeft: [-28, 0], ArrowRight: [28, 0], ArrowUp: [0, -28], ArrowDown: [0, 28] }[event.key];
   if (!movement) return;
@@ -424,6 +448,16 @@ el["copy-mcp"].addEventListener("click", () => {
 async function copy(value, announcement) {
   await navigator.clipboard.writeText(value);
   el.announcer.textContent = announcement;
+}
+
+function graphPoint(event) {
+  const matrix = el["graph-svg"].getScreenCTM();
+  if (!matrix) return { x: event.clientX, y: event.clientY };
+  const point = new DOMPoint(event.clientX, event.clientY).matrixTransform(matrix.inverse());
+  return {
+    x: (point.x - state.camera.x) / state.camera.scale,
+    y: (point.y - state.camera.y) / state.camera.scale
+  };
 }
 
 Promise.all([loadStatus(), loadRefactors()]).catch((error) => {

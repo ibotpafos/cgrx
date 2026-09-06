@@ -42,3 +42,17 @@ test("edgeStyle keeps certainty readable without color", () => {
   assert.equal(edgeStyle({ status: "preserved" }).className, "edge edge--preserved");
   assert.equal(edgeStyle({ status: "remove" }).marker, "×");
 });
+
+test("layoutGraph preserves explicit node pins until reset", () => {
+  const pinned = layoutGraph(graph, {
+    width: 980,
+    height: 620,
+    pins: { "2": { x: 510, y: 92 } }
+  });
+  const selected = pinned.nodes.find((node) => node.node_id === 2);
+  assert.deepEqual({ x: selected.x, y: selected.y, pinned: selected.pinned }, {
+    x: 510,
+    y: 92,
+    pinned: true
+  });
+});

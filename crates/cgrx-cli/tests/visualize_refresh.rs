@@ -152,4 +152,35 @@ fn source_change_refreshes_snapshot_and_strategy_identity_without_restart() {
         .as_str()
         .expect("refreshed strategy");
     assert_ne!(first_id, refreshed_id);
+
+    let refreshed_digest = refreshed["snapshot"]["working_tree_digest"].clone();
+    let extra = repository.0.join("extra.ts");
+    fs::write(&extra, "export function extra() { return 1; }\n").expect("add source");
+    let added = request(&server, "/api/status");
+    assert_ne!(
+        added["snapshot"]["working_tree_digest"], refreshed_digest,
+        "adding a supported source refreshes the graph"
+    );
+    fs::remove_file(&extra).expect("delete added source");
+    let deleted = request(&server, "/api/status");
+    assert_eq!(
+        deleted["snapshot"]["working_tree_digest"], refreshed_digest,
+        "deleting the added source restores the prior snapshot"
+    );
+
+    let renamed_path = repository.0.join("renamed.ts");
+    fs::rename(&path, &renamed_path).expect("rename source");
+    let renamed = request(&server, "/api/status");
+    assert_ne!(
+        renamed["snapshot"]["working_tree_digest"], refreshed_digest,
+        "renaming a supported source refreshes the graph"
+    );
+    let renamed_refactors = request(
+        &server,
+        "/api/refactors?scope=**&language=typescript&min_score=760&limit=8",
+    );
+    assert_eq!(
+        renamed_refactors["candidates"][0]["left"]["path"],
+        "renamed.ts"
+    );
 }
