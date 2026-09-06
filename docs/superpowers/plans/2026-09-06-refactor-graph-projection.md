@@ -370,7 +370,7 @@ git commit -m "test: evaluate refactor suggestions"
 - Consumes: all prior tasks.
 - Produces: a locally verified clean branch with explicit remaining gates.
 
-- [ ] **Step 1: Run formatting, linting and full tests**
+- [x] **Step 1: Run formatting, linting and full tests**
 
 ```sh
 cargo fmt --all -- --check
@@ -380,7 +380,7 @@ cargo test --locked --workspace
 
 Expected: PASS; report intentionally ignored release/special tests.
 
-- [ ] **Step 2: Run release and product gates**
+- [x] **Step 2: Run release and product gates**
 
 ```sh
 cargo build --locked --release -p cgrx-cli
@@ -395,10 +395,10 @@ target/release/cgrx schema --count-tokens
 
 Expected: existing relationship precision/recall 1.0, all frozen contracts valid, and schema <= 2000 tokens.
 
-- [ ] **Step 3: Run dogfood risk and coverage checks**
+- [x] **Step 3: Run dogfood risk and coverage checks**
 
 Run status, search, trace, snippet, coverage and changes-risk tools through the installed CGRX MCP for every changed Rust/Python path. Read exact source for partial coverage. Treat scan findings as candidates.
 
-- [ ] **Step 4: Update Linear and verify final tree**
+- [x] **Step 4: Update Linear and verify final tree**
 
 Post commits, verification, corpus label state and remaining manual-review gate to IBO-282. Verify `git status --short` is clean. Do not push, open a PR, merge or deploy.
