@@ -186,6 +186,16 @@ impl Runtime {
             .map_err(|error| RuntimeError::new("cgrx.runtime_evidence_store", error.to_string()))
     }
 
+    pub fn prune_runtime_evidence(
+        &self,
+        before_unix_nanos: u64,
+        dry_run: bool,
+    ) -> Result<cgrx_store::PruneReport, RuntimeError> {
+        ObservationStore::open(&self.state_root)
+            .and_then(|store| store.prune_before(before_unix_nanos, dry_run))
+            .map_err(|error| RuntimeError::new("cgrx.runtime_evidence_store", error.to_string()))
+    }
+
     pub fn find_usages_with_evidence(
         &self,
         symbol: &str,

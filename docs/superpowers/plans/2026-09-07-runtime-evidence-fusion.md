@@ -294,32 +294,32 @@ git commit -m "feat: fuse observed runtime call paths"
 - Consumes: runtime import/status and store prune interfaces.
 - Produces: `cgrx observe import`, `cgrx observe status`, and `cgrx observe prune`.
 
-- [ ] **Step 1: Write real-binary CLI tests**
+- [x] **Step 1: Write real-binary CLI tests**
 
 Assert missing `--input`, missing revision, traversal paths, over-limit files,
 duplicate imports, JSON status, dry-run prune, and real prune. Verify every error
 exits 2 and leaves observation hashes unchanged.
 
-- [ ] **Step 2: Run the CLI tests and verify unknown command failure**
+- [x] **Step 2: Run the CLI tests and verify unknown command failure**
 
 Run: `cargo test -p cgrx-cli --test cli observe_ -- --nocapture`
 
 Expected: tests fail with `unknown command observe`.
 
-- [ ] **Step 3: Implement strict argument parsing and JSON reports**
+- [x] **Step 3: Implement strict argument parsing and JSON reports**
 
 Accept only the exact flags in the spec. `--format auto` supports `ndjson` and
 `otlp-json`. Canonicalize `--root`, accept stdin only for `--input -`, and emit a
 single JSON object under `--json`. Prune requires `--dry-run` unless `--apply` is
 present, with the two flags mutually exclusive.
 
-- [ ] **Step 4: Run CLI and full cgrx-cli tests**
+- [x] **Step 4: Run CLI and full cgrx-cli tests**
 
 Run: `cargo test -p cgrx-cli --test cli && cargo test -p cgrx-cli`
 
 Expected: all tests pass.
 
-- [ ] **Step 5: Commit CLI lifecycle**
+- [x] **Step 5: Commit CLI lifecycle**
 
 ```bash
 git add crates/cgrx-cli/src/main.rs crates/cgrx-cli/tests/cli.rs README.md

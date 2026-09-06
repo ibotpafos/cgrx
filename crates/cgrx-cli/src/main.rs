@@ -5,12 +5,12 @@ mod visualize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::fs;
-use std::io::{self, BufRead, Write};
+use std::io::{self, BufRead, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use cgrx_capsule::Tokenizer;
-use cgrx_cli::Runtime;
+use cgrx_cli::{Runtime, RuntimeEvidenceFormat};
 use cgrx_core::{
     CapsuleStatus, Hash32, QueryRequest, RelationKind, RepoSnapshot, Scope, canonical_hash,
 };
@@ -30,7 +30,7 @@ fn main() {
 fn run(args: Vec<String>) -> Result<(), String> {
     let Some(command) = args.first().map(String::as_str) else {
         return Err(
-            "expected init, index, serve, visualize, orient, expand, status, schema, skill, usage-report, or bench"
+            "expected init, index, observe, serve, visualize, orient, expand, status, schema, skill, usage-report, or bench"
                 .to_owned(),
         );
     };
@@ -43,6 +43,7 @@ fn run(args: Vec<String>) -> Result<(), String> {
         }
         "init" => init(args.get(1).map(PathBuf::from))?,
         "index" => index(&args[1..])?,
+        "observe" => observe(&args[1..])?,
         "serve" => serve(&args[1..])?,
         "visualize" => visualize::run(&args[1..])?,
         "orient" => {
@@ -68,6 +69,137 @@ fn run(args: Vec<String>) -> Result<(), String> {
         "usage-report" => usage_report(&args[1..])?,
         "bench" => println!("{}", json!({"status":"DELEGATED_TO_BENCH_HARNESS"})),
         other => return Err(format!("unknown command {other}")),
+    }
+    Ok(())
+}
+
+fn observe(args: &[String]) -> Result<(), String> {
+    let Some(action) = args.first().map(String::as_str) else {
+        return Err("observe requires import, status, or prune".to_owned());
+    };
+    let rest = &args[1..];
+    if !rest.iter().any(|argument| argument == "--json") {
+        return Err("observe requires --json".to_owned());
+    }
+    let root = Path::new(optional_flag(rest, "--root").unwrap_or("."))
+        .canonicalize()
+        .map_err(|error| error.to_string())?;
+    let state = managed_state_path(&root)?;
+    let runtime = open_managed_runtime(&root, &state)?;
+    let output = match action {
+        "import" => {
+            validate_flags(
+                rest,
+                &[
+                    "--root",
+                    "--input",
+                    "--format",
+                    "--revision",
+                    "--environment",
+                    "--json",
+                ],
+            )?;
+            let input_path = flag(rest, "--input")?;
+            let input = read_observation_input(input_path)?;
+            let format = match optional_flag(rest, "--format").unwrap_or("auto") {
+                "auto" => RuntimeEvidenceFormat::Auto,
+                "ndjson" => RuntimeEvidenceFormat::Ndjson,
+                "otlp-json" => RuntimeEvidenceFormat::OtlpJson,
+                _ => {
+                    return Err(
+                        "observe import --format must be auto, ndjson, or otlp-json".to_owned()
+                    );
+                }
+            };
+            serde_json::to_value(
+                runtime
+                    .import_runtime_evidence(
+                        &root,
+                        &input,
+                        format,
+                        optional_flag(rest, "--revision"),
+                        optional_flag(rest, "--environment"),
+                    )
+                    .map_err(|error| error.to_string())?,
+            )
+            .map_err(|error| error.to_string())?
+        }
+        "status" => {
+            validate_flags(rest, &["--root", "--json"])?;
+            serde_json::to_value(
+                runtime
+                    .runtime_evidence_status()
+                    .map_err(|error| error.to_string())?,
+            )
+            .map_err(|error| error.to_string())?
+        }
+        "prune" => {
+            validate_flags(
+                rest,
+                &[
+                    "--root",
+                    "--before-unix-nanos",
+                    "--dry-run",
+                    "--apply",
+                    "--json",
+                ],
+            )?;
+            let dry_run = rest.iter().any(|argument| argument == "--dry-run");
+            let apply = rest.iter().any(|argument| argument == "--apply");
+            if dry_run == apply {
+                return Err("observe prune requires exactly one of --dry-run or --apply".to_owned());
+            }
+            let before = flag(rest, "--before-unix-nanos")?
+                .parse::<u64>()
+                .map_err(|_| "observe prune timestamp must be an unsigned integer".to_owned())?;
+            serde_json::to_value(
+                runtime
+                    .prune_runtime_evidence(before, dry_run)
+                    .map_err(|error| error.to_string())?,
+            )
+            .map_err(|error| error.to_string())?
+        }
+        _ => return Err(format!("unknown observe action {action}")),
+    };
+    println!("{output}");
+    Ok(())
+}
+
+fn read_observation_input(path: &str) -> Result<Vec<u8>, String> {
+    let maximum = cgrx_core::MAX_TRACE_BYTES;
+    if path == "-" {
+        let mut input = Vec::new();
+        io::stdin()
+            .take((maximum + 1) as u64)
+            .read_to_end(&mut input)
+            .map_err(|error| error.to_string())?;
+        if input.len() > maximum {
+            return Err(format!("runtime evidence exceeds {maximum} bytes"));
+        }
+        return Ok(input);
+    }
+    let metadata = fs::metadata(path).map_err(|error| error.to_string())?;
+    if metadata.len() > maximum as u64 {
+        return Err(format!("runtime evidence exceeds {maximum} bytes"));
+    }
+    fs::read(path).map_err(|error| error.to_string())
+}
+
+fn validate_flags(args: &[String], allowed: &[&str]) -> Result<(), String> {
+    let boolean = ["--json", "--dry-run", "--apply"];
+    let mut cursor = 0;
+    while cursor < args.len() {
+        let flag = args[cursor].as_str();
+        if !allowed.contains(&flag) {
+            return Err(format!("unexpected argument {flag}"));
+        }
+        cursor += 1;
+        if !boolean.contains(&flag) {
+            if cursor >= args.len() || args[cursor].starts_with("--") {
+                return Err(format!("{flag} requires a value"));
+            }
+            cursor += 1;
+        }
     }
     Ok(())
 }
