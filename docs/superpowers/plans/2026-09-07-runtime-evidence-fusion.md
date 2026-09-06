@@ -64,7 +64,7 @@
 - Produces: `RuntimeEndpoint`, `NormalizedObservation`, `NormalizedBatch`, `ResolutionKind`, `ObservationGap`, `EvidenceSelector`, `RuntimeEvidenceError`, `MAX_TRACE_BYTES`, `MAX_TRACE_SPANS`, and `MAX_TRACE_CALLS`.
 - Produces: `NormalizedBatch::canonical_id(&self, repo_id: &str) -> Hash32`.
 
-- [ ] **Step 1: Write failing canonicalization and validation tests**
+- [x] **Step 1: Write failing canonicalization and validation tests**
 
 ```rust
 #[test]
@@ -81,13 +81,13 @@ fn evidence_selector_defaults_to_static() {
 }
 ```
 
-- [ ] **Step 2: Run the tests and verify missing types fail**
+- [x] **Step 2: Run the tests and verify missing types fail**
 
 Run: `cargo test -p cgrx-core --test runtime_evidence`
 
 Expected: compilation fails because `cgrx_core::runtime_evidence` does not exist.
 
-- [ ] **Step 3: Implement exact normalized types and bounds**
+- [x] **Step 3: Implement exact normalized types and bounds**
 
 ```rust
 pub const MAX_TRACE_BYTES: usize = 4 * 1024 * 1024;
@@ -119,13 +119,13 @@ valid lines, and total count using checked or saturating arithmetic. Sort and
 merge identical normalized observations before hashing canonical JSON with the
 existing `canonical_hash` helper.
 
-- [ ] **Step 4: Run core tests**
+- [x] **Step 4: Run core tests**
 
 Run: `cargo test -p cgrx-core`
 
 Expected: all core unit and integration tests pass.
 
-- [ ] **Step 5: Commit the contract**
+- [x] **Step 5: Commit the contract**
 
 ```bash
 git add crates/cgrx-core/src/lib.rs crates/cgrx-core/src/runtime_evidence.rs crates/cgrx-core/tests/runtime_evidence.rs
