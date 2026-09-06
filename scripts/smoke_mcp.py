@@ -81,5 +81,9 @@ with tempfile.TemporaryDirectory(prefix="cgrx-smoke-") as directory:
     assert architecture["reference_resolution"] == {
         "proven": 0, "external": 0, "out_of_scope": 0, "unresolved_local": 0
     }, responses[7]
+    assert architecture["symbol_community_detection"]["method"] == \
+        "DETERMINISTIC_WEIGHTED_MODULARITY", responses[7]
+    assert architecture["totals"]["symbol_communities"] >= 1, responses[7]
+    assert architecture["symbol_communities"][0]["top_nodes"], responses[7]
     assert set(architecture["snapshot"]) == {"repo_revision", "working_tree_digest", "graph_generation"}, responses[7]
 print("MCP_SMOKE=PASS; TOOLS=12; CALLER=caller; BODY_SEARCH=target; OUTLINE=5; USAGES=1; REFACTORS=1; ARCHITECTURE=1")

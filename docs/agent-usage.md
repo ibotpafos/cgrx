@@ -1,25 +1,25 @@
-# Agent usage
+# Agent skill
 
-Use one multi-repo CGRX MCP server. Pass the absolute Git worktree root
-in repo on every call; never reuse handles across repositories/sessions.
+CGRX ships the reusable `cgrx-code-discovery` skill instead of requiring a
+large permanent block in `AGENTS.md`. Install or update it with:
 
-Reusable agent instruction:
-
-~~~text
-Use CGRX for task-directed code discovery.
-1. status: confirm repo revision, freshness and graph state.
-2. search_graph: find relevant symbols with a small limit.
-3. trace_path: follow callers/callees, initially depth=1.
-4. get_code_snippet: read definitions behind material claims.
-5. check_index_coverage: check all evidence paths together.
-For partial, unknown, excluded or stale coverage, inspect source directly.
-Use text search for literals, configuration and unsupported relationships.
-A missing edge is not proof of dead code. scan_risks reports candidates,
-not confirmed bugs. Verify findings with source and compiler/tests.
-Use orient/expand for budgeted context and only reuse returned handles
-within the same live session and repository.
-Do not put source code, credentials or raw queries in usage logs.
+~~~sh
+cgrx skill install
 ~~~
+
+The skill uses OpenAI's progressive-disclosure layout: a concise trigger in
+`SKILL.md`, detailed change-verification and budgeted-context references, and
+`agents/openai.yaml` metadata declaring the registered `cgrx` MCP dependency.
+Its source is under
+`crates/cgrx-cli/assets/cgrx-code-discovery` and is embedded in the executable,
+so the installed workflow always matches that CGRX build.
+The layout follows the
+[official OpenAI skill documentation](https://developers.openai.com/codex/skills).
+
+The command writes to `$HOME/.agents/skills/cgrx-code-discovery`. It also
+migrates the earlier marked `cgrx-agent` block out of
+`$HOME/.codex/AGENTS.md`, preserving all unrelated rules and saving the
+pre-migration file as `AGENTS.md.cgrx-backup`.
 
 ## Patch-impact evidence
 
