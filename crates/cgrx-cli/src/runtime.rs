@@ -77,6 +77,10 @@ impl RuntimeError {
         }
     }
 
+    pub fn public(code: &'static str, detail: impl Into<String>) -> Self {
+        Self::new(code, detail)
+    }
+
     #[must_use]
     pub const fn code(&self) -> &'static str {
         self.code
