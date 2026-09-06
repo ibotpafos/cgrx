@@ -118,8 +118,9 @@ The workspace has six modes:
 - **Compare** shows current and selected future graphs with one synchronized
   camera.
 - **Git history** shows the repository's branches, tags, commits and merges in
-  a virtualized read-only lane graph; selecting a commit opens its evidence in
-  the inspector. History is bounded to 500 commits per request.
+  a virtualized read-only lane graph. Commit details and changed files load only
+  when opened, and selecting a file lazily requests a bounded patch. History is
+  capped at 500 commits, details at 500 files and an individual patch at 256 KiB.
 
 Every refactor candidate exposes preserve-entry-points, canonical-entry-point
 and consolidate paths. A path that could remove an entry point is marked

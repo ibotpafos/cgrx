@@ -93,6 +93,13 @@ impl HttpRequest {
             .find(|(candidate, _)| candidate == name)
             .map(|(_, value)| value.as_str())
     }
+
+    pub(super) fn queries<'a>(&'a self, name: &'a str) -> impl Iterator<Item = &'a str> {
+        self.query
+            .iter()
+            .filter(move |(candidate, _)| candidate == name)
+            .map(|(_, value)| value.as_str())
+    }
 }
 
 fn percent_decode(value: &str) -> Result<String, HttpResponse> {

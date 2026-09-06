@@ -78,6 +78,8 @@ fn start_server() -> (TestDirectory, Server) {
     git(repository.path(), &["checkout", "-qb", "feature"]);
     fs::write(repository.path().join("feature.rs"), "fn feature() {}\n")
         .expect("write feature source");
+    fs::write(repository.path().join("large.txt"), "x".repeat(300_000))
+        .expect("write large diff fixture");
     git(repository.path(), &["add", "."]);
     git(repository.path(), &["commit", "-qm", "feature commit"]);
     git(repository.path(), &["checkout", "-q", "main"]);
@@ -202,6 +204,7 @@ fn serves_bounded_git_history_in_web_git_graph_protocol_shape() {
     assert_eq!(commit["author"]["name"], "CGRX Test");
     assert_eq!(value["head"], commit["oid"]);
     assert_eq!(value["hasMore"], false);
+    assert_eq!(value["repositoryId"], "local");
     assert!(
         value["refs"]
             .as_array()
@@ -217,10 +220,94 @@ fn serves_bounded_git_history_in_web_git_graph_protocol_shape() {
         1
     );
     assert_eq!(bounded_value["hasMore"], true);
+    assert_eq!(bounded_value["cursor"], "1");
+
+    let selected_ref = request(
+        &server,
+        "GET",
+        "/api/git-history?limit=10&ref=feature",
+        true,
+    );
+    let selected_ref_body = selected_ref.split_once("\r\n\r\n").expect("HTTP body").1;
+    let selected_ref_value: serde_json::Value =
+        serde_json::from_str(selected_ref_body).expect("selected ref JSON");
+    assert_eq!(
+        selected_ref_value["commits"][0]["message"],
+        "feature commit"
+    );
 
     let invalid = request(&server, "GET", "/api/git-history?limit=501", true);
     assert!(invalid.starts_with("HTTP/1.1 400"), "{invalid}");
     assert!(invalid.contains("cgrx.invalid_arguments"), "{invalid}");
+}
+
+#[test]
+fn serves_lazy_commit_details_and_bounded_file_diff() {
+    let (_repository, server) = start_server();
+    let history = request(&server, "GET", "/api/git-history?limit=10", true);
+    let history_body = history.split_once("\r\n\r\n").expect("HTTP body").1;
+    let history_value: serde_json::Value =
+        serde_json::from_str(history_body).expect("history JSON");
+    let head = history_value["commits"][0]["oid"]
+        .as_str()
+        .expect("head oid");
+    let base = history_value["commits"][0]["parents"][0]
+        .as_str()
+        .expect("first parent");
+
+    let details = request(&server, "GET", &format!("/api/git-commit?oid={head}"), true);
+    assert!(details.starts_with("HTTP/1.1 200"), "{details}");
+    let details_body = details.split_once("\r\n\r\n").expect("HTTP body").1;
+    let details_value: serde_json::Value =
+        serde_json::from_str(details_body).expect("details JSON");
+    assert_eq!(details_value["commit"]["oid"], head);
+    assert_eq!(details_value["body"], "merge feature\n");
+    assert!(details_value["changes"].as_array().is_some_and(|changes| {
+        changes
+            .iter()
+            .any(|change| change["path"] == "feature.rs" && change["kind"] == "add")
+    }));
+
+    let diff = request(
+        &server,
+        "GET",
+        &format!("/api/git-diff?base={base}&head={head}&path=feature.rs&context=2"),
+        true,
+    );
+    assert!(diff.starts_with("HTTP/1.1 200"), "{diff}");
+    let diff_body = diff.split_once("\r\n\r\n").expect("HTTP body").1;
+    let diff_value: serde_json::Value = serde_json::from_str(diff_body).expect("diff JSON");
+    assert!(
+        diff_value["patch"]
+            .as_str()
+            .is_some_and(|patch| patch.contains("+fn feature() {}"))
+    );
+    assert_eq!(diff_value["truncated"], false);
+
+    let large_diff = request(
+        &server,
+        "GET",
+        &format!("/api/git-diff?base={base}&head={head}&path=large.txt"),
+        true,
+    );
+    assert!(large_diff.starts_with("HTTP/1.1 200"), "{large_diff}");
+    let large_body = large_diff.split_once("\r\n\r\n").expect("HTTP body").1;
+    let large_value: serde_json::Value = serde_json::from_str(large_body).expect("large JSON");
+    assert_eq!(large_value["truncated"], true);
+    assert!(
+        large_value["patch"]
+            .as_str()
+            .is_some_and(|patch| patch.ends_with("… output truncated by CGRX …\n"))
+    );
+
+    let invalid = request(
+        &server,
+        "GET",
+        &format!("/api/git-diff?base={base}&head={head}&path=../feature.rs"),
+        true,
+    );
+    assert!(invalid.starts_with("HTTP/1.1 400"), "{invalid}");
+    assert!(invalid.contains("cgrx.invalid_path"), "{invalid}");
 }
 
 #[test]

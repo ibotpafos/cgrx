@@ -16,6 +16,12 @@ use serde_json::json;
 use self::http::{HttpRequest, HttpResponse};
 use super::{managed_state_path, open_managed_runtime};
 
+const GIT_HISTORY_MAX_COMMITS: usize = 500;
+const GIT_CHANGE_MAX_FILES: usize = 500;
+const GIT_DIFF_MAX_BYTES: usize = 256 * 1024;
+type GitFileStats = std::collections::BTreeMap<String, (u64, u64, bool)>;
+type ParsedNumstat = (GitFileStats, u64, u64);
+
 pub(super) fn run(args: &[String]) -> Result<(), String> {
     let options = Options::parse(args)?;
     let root = options
@@ -147,6 +153,8 @@ impl Visualizer {
             "/api/refactors" => self.api_result(self.refactors(request)),
             "/api/snippet" => self.api_result(self.snippet(request)),
             "/api/git-history" => self.api_result(self.git_history(request)),
+            "/api/git-commit" => self.api_result(self.git_commit(request)),
+            "/api/git-diff" => self.api_result(self.git_diff(request)),
             _ => HttpResponse::json_error(404, "cgrx.not_found", "route not found"),
         };
         response.head(head)
@@ -230,21 +238,50 @@ impl Visualizer {
 
     fn git_history(&self, request: &HttpRequest) -> Result<serde_json::Value, RuntimeError> {
         let limit = number::<usize>(request, "limit", 200)?;
-        if !(1..=500).contains(&limit) {
+        if !(1..=GIT_HISTORY_MAX_COMMITS).contains(&limit) {
             return Err(RuntimeError::public(
                 "cgrx.invalid_arguments",
                 "query parameter limit must be from 1 to 500",
             ));
         }
+        let offset = request.query("cursor").map_or(Ok(0), |value| {
+            value.parse::<usize>().map_err(|_| {
+                RuntimeError::public("cgrx.invalid_arguments", "cursor must be a decimal offset")
+            })
+        })?;
+        if offset >= GIT_HISTORY_MAX_COMMITS {
+            return Err(RuntimeError::public(
+                "cgrx.invalid_arguments",
+                "cursor must be less than 500",
+            ));
+        }
+        let page_limit = limit.min(GIT_HISTORY_MAX_COMMITS - offset);
+        let requested_refs = request.queries("ref").collect::<Vec<_>>();
+        if requested_refs.len() > 16 {
+            return Err(RuntimeError::public(
+                "cgrx.invalid_arguments",
+                "at most 16 refs may be selected",
+            ));
+        }
+        let mut args = vec![
+            "log".to_owned(),
+            "-z".to_owned(),
+            "--topo-order".to_owned(),
+            format!("--skip={offset}"),
+            format!("--max-count={}", page_limit + 1),
+            "--format=%H%x00%P%x00%an%x00%aI%x00%cI%x00%s".to_owned(),
+        ];
+        if requested_refs.is_empty() {
+            args.push("--all".to_owned());
+        } else {
+            for reference in requested_refs {
+                args.push(self.resolve_revision(reference, true)?);
+            }
+        }
+        args.push("--".to_owned());
         let output = Command::new(cgrx_cli::git_executable())
-            .args([
-                "log",
-                "-z",
-                "--all",
-                "--topo-order",
-                &format!("--max-count={}", limit + 1),
-                "--format=%H%x00%P%x00%an%x00%aI%x00%cI%x00%s",
-            ])
+            .env("GIT_OPTIONAL_LOCKS", "0")
+            .args(&args)
             .current_dir(&self.root)
             .output()
             .map_err(|error| git_history_error("read commit history", error))?;
@@ -253,7 +290,7 @@ impl Visualizer {
         }
         let fields = output.stdout.split(|byte| *byte == 0).collect::<Vec<_>>();
         let mut commits = Vec::new();
-        for record in fields.chunks(6).take(limit) {
+        for record in fields.chunks(6).take(page_limit) {
             if record.len() < 6 || record[0].is_empty() {
                 continue;
             }
@@ -271,9 +308,13 @@ impl Visualizer {
             .chunks(6)
             .filter(|record| !record[0].is_empty())
             .count()
-            > limit;
+            > page_limit;
+        let returned = commits.len();
+        let next_offset = offset + returned;
+        let has_more = has_more && next_offset < GIT_HISTORY_MAX_COMMITS;
         let refs = self.git_refs()?;
         let head_output = Command::new(cgrx_cli::git_executable())
+            .env("GIT_OPTIONAL_LOCKS", "0")
             .args(["rev-parse", "HEAD"])
             .current_dir(&self.root)
             .output()
@@ -293,13 +334,206 @@ impl Visualizer {
             "refs":refs,
             "head":head,
             "hasMore":has_more,
-            "repositoryId":self.root,
+            "cursor":has_more.then(|| next_offset.to_string()),
+            "repositoryId":"local",
             "repositoryName":repository_name
         }))
     }
 
+    fn git_commit(&self, request: &HttpRequest) -> Result<serde_json::Value, RuntimeError> {
+        let oid = self.resolve_revision(required(request, "oid")?, false)?;
+        let output = Command::new(cgrx_cli::git_executable())
+            .env("GIT_OPTIONAL_LOCKS", "0")
+            .args([
+                "show",
+                "-s",
+                "-z",
+                "--format=%H%x00%P%x00%an%x00%ae%x00%aI%x00%cI%x00%s%x00%B",
+                &oid,
+                "--",
+            ])
+            .current_dir(&self.root)
+            .output()
+            .map_err(|error| git_history_error("read commit details", error))?;
+        if !output.status.success() {
+            return Err(git_output_error("read commit details", &output.stderr));
+        }
+        let fields = output.stdout.split(|byte| *byte == 0).collect::<Vec<_>>();
+        if fields.len() < 8 {
+            return Err(git_history_error(
+                "read commit details",
+                "incomplete Git output",
+            ));
+        }
+        let parents = utf8(fields[1], "commit parents")?
+            .split_whitespace()
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        let (changes, _, _, _) = self.git_changes(parents.first().map(String::as_str), &oid)?;
+        let refs = self
+            .git_refs()?
+            .into_iter()
+            .filter(|reference| reference["target"] == oid)
+            .collect::<Vec<_>>();
+        let body = bounded_git_text(fields[7], 64 * 1024);
+        Ok(json!({
+            "snapshot":self.runtime.snapshot(),
+            "commit":{
+                "oid":oid,
+                "parents":parents,
+                "message":utf8(fields[6], "commit subject")?,
+                "kind":"commit",
+                "author":{"name":utf8(fields[2], "commit author")?,"email":utf8(fields[3], "commit email")?},
+                "authoredAt":utf8(fields[4], "author date")?,
+                "committedAt":utf8(fields[5], "commit date")?
+            },
+            "refs":refs,
+            "changes":changes,
+            "body":body
+        }))
+    }
+
+    fn git_diff(&self, request: &HttpRequest) -> Result<serde_json::Value, RuntimeError> {
+        let base = self.resolve_revision(required(request, "base")?, false)?;
+        let head = self.resolve_revision(required(request, "head")?, false)?;
+        let path = optional_path(request)?.ok_or_else(|| {
+            RuntimeError::public("cgrx.invalid_arguments", "query parameter path is required")
+        })?;
+        let context = number::<usize>(request, "context", 3)?;
+        if context > 20 {
+            return Err(RuntimeError::public(
+                "cgrx.invalid_arguments",
+                "context must be from 0 to 20",
+            ));
+        }
+        let output = Command::new(cgrx_cli::git_executable())
+            .env("GIT_OPTIONAL_LOCKS", "0")
+            .args([
+                "diff",
+                "--no-ext-diff",
+                "--no-color",
+                &format!("--unified={context}"),
+                &base,
+                &head,
+                "--",
+                path,
+            ])
+            .current_dir(&self.root)
+            .output()
+            .map_err(|error| git_history_error("read file diff", error))?;
+        if !output.status.success() {
+            return Err(git_output_error("read file diff", &output.stderr));
+        }
+        let truncated = output.stdout.len() > GIT_DIFF_MAX_BYTES;
+        let patch = bounded_git_text(&output.stdout, GIT_DIFF_MAX_BYTES);
+        Ok(json!({
+            "snapshot":self.runtime.snapshot(),
+            "base":{"kind":"commit","oid":base},
+            "head":{"kind":"commit","oid":head},
+            "path":path,
+            "patch":patch,
+            "truncated":truncated
+        }))
+    }
+
+    fn resolve_revision(&self, revision: &str, allow_ref: bool) -> Result<String, RuntimeError> {
+        let valid_oid = matches!(revision.len(), 40 | 64)
+            && revision.bytes().all(|byte| byte.is_ascii_hexdigit());
+        if !valid_oid && (!allow_ref || revision.is_empty() || revision.len() > 255) {
+            return Err(RuntimeError::public(
+                "cgrx.invalid_arguments",
+                "revision must be a full commit id or a bounded selected ref",
+            ));
+        }
+        let expression = format!("{revision}^{{commit}}");
+        let output = Command::new(cgrx_cli::git_executable())
+            .env("GIT_OPTIONAL_LOCKS", "0")
+            .args(["rev-parse", "--verify", "--end-of-options", &expression])
+            .current_dir(&self.root)
+            .output()
+            .map_err(|error| git_history_error("resolve revision", error))?;
+        if !output.status.success() {
+            return Err(RuntimeError::public(
+                "cgrx.revision_not_found",
+                "Git revision was not found",
+            ));
+        }
+        Ok(utf8(&output.stdout, "resolved revision")?.trim().to_owned())
+    }
+
+    fn git_changes(
+        &self,
+        base: Option<&str>,
+        head: &str,
+    ) -> Result<(Vec<serde_json::Value>, u64, u64, bool), RuntimeError> {
+        let mut status_args = vec![
+            "diff".to_owned(),
+            "--name-status".to_owned(),
+            "-z".to_owned(),
+            "-M".to_owned(),
+            "-C".to_owned(),
+        ];
+        let mut stat_args = vec![
+            "diff".to_owned(),
+            "--numstat".to_owned(),
+            "-z".to_owned(),
+            "-M".to_owned(),
+            "-C".to_owned(),
+        ];
+        if let Some(base) = base {
+            status_args.extend([base.to_owned(), head.to_owned(), "--".to_owned()]);
+            stat_args.extend([base.to_owned(), head.to_owned(), "--".to_owned()]);
+        } else {
+            status_args = vec![
+                "diff-tree".to_owned(),
+                "--root".to_owned(),
+                "--no-commit-id".to_owned(),
+                "--name-status".to_owned(),
+                "-r".to_owned(),
+                "-z".to_owned(),
+                "-M".to_owned(),
+                "-C".to_owned(),
+                head.to_owned(),
+                "--".to_owned(),
+            ];
+            stat_args = vec![
+                "diff-tree".to_owned(),
+                "--root".to_owned(),
+                "--no-commit-id".to_owned(),
+                "--numstat".to_owned(),
+                "-r".to_owned(),
+                "-z".to_owned(),
+                "-M".to_owned(),
+                "-C".to_owned(),
+                head.to_owned(),
+                "--".to_owned(),
+            ];
+        }
+        let status = self.git_output(&status_args, "read changed files")?;
+        let stats = self.git_output(&stat_args, "read change statistics")?;
+        let (stat_by_path, additions, deletions) = parse_numstat(&stats)?;
+        let mut changes = parse_name_status(&status, &stat_by_path)?;
+        let truncated = changes.len() > GIT_CHANGE_MAX_FILES;
+        changes.truncate(GIT_CHANGE_MAX_FILES);
+        Ok((changes, additions, deletions, truncated))
+    }
+
+    fn git_output(&self, args: &[String], action: &str) -> Result<Vec<u8>, RuntimeError> {
+        let output = Command::new(cgrx_cli::git_executable())
+            .env("GIT_OPTIONAL_LOCKS", "0")
+            .args(args)
+            .current_dir(&self.root)
+            .output()
+            .map_err(|error| git_history_error(action, error))?;
+        if !output.status.success() {
+            return Err(git_output_error(action, &output.stderr));
+        }
+        Ok(output.stdout)
+    }
+
     fn git_refs(&self) -> Result<Vec<serde_json::Value>, RuntimeError> {
         let output = Command::new(cgrx_cli::git_executable())
+            .env("GIT_OPTIONAL_LOCKS", "0")
             .args([
                 "for-each-ref",
                 "--format=%(refname)%00%(objectname)%00%(*objectname)%00",
@@ -362,6 +596,102 @@ fn utf8<'a>(value: &'a [u8], label: &str) -> Result<&'a str, RuntimeError> {
     })
 }
 
+fn bounded_git_text(value: &[u8], limit: usize) -> String {
+    let bounded = &value[..value.len().min(limit)];
+    let mut text = String::from_utf8_lossy(bounded).into_owned();
+    if value.len() > limit {
+        text.push_str("\n… output truncated by CGRX …\n");
+    }
+    text
+}
+
+fn parse_numstat(output: &[u8]) -> Result<ParsedNumstat, RuntimeError> {
+    let fields = output.split(|byte| *byte == 0).collect::<Vec<_>>();
+    let mut index = 0;
+    let mut by_path = std::collections::BTreeMap::new();
+    let mut total_additions = 0_u64;
+    let mut total_deletions = 0_u64;
+    while index < fields.len() {
+        if fields[index].is_empty() {
+            index += 1;
+            continue;
+        }
+        let record = utf8(fields[index], "change statistics")?;
+        let mut parts = record.splitn(3, '\t');
+        let additions = parts.next().unwrap_or_default();
+        let deletions = parts.next().unwrap_or_default();
+        let inline_path = parts.next().unwrap_or_default();
+        let binary = additions == "-" || deletions == "-";
+        let added = additions.parse::<u64>().unwrap_or(0);
+        let deleted = deletions.parse::<u64>().unwrap_or(0);
+        total_additions = total_additions.saturating_add(added);
+        total_deletions = total_deletions.saturating_add(deleted);
+        let path = if inline_path.is_empty() && index + 2 < fields.len() {
+            index += 2;
+            utf8(fields[index], "renamed path")?
+        } else {
+            inline_path
+        };
+        if !path.is_empty() {
+            by_path.insert(path.to_owned(), (added, deleted, binary));
+        }
+        index += 1;
+    }
+    Ok((by_path, total_additions, total_deletions))
+}
+
+fn parse_name_status(
+    output: &[u8],
+    stats: &GitFileStats,
+) -> Result<Vec<serde_json::Value>, RuntimeError> {
+    let fields = output.split(|byte| *byte == 0).collect::<Vec<_>>();
+    let mut changes = Vec::new();
+    let mut index = 0;
+    while index < fields.len() {
+        if fields[index].is_empty() {
+            index += 1;
+            continue;
+        }
+        let status = utf8(fields[index], "change status")?;
+        index += 1;
+        let previous = if status.starts_with('R') || status.starts_with('C') {
+            let value = fields
+                .get(index)
+                .ok_or_else(|| git_history_error("read changed files", "missing previous path"))?;
+            index += 1;
+            Some(utf8(value, "previous path")?.to_owned())
+        } else {
+            None
+        };
+        let value = fields
+            .get(index)
+            .ok_or_else(|| git_history_error("read changed files", "missing path"))?;
+        index += 1;
+        let path = utf8(value, "changed path")?;
+        let kind = match status.as_bytes().first().copied() {
+            Some(b'A') => "add",
+            Some(b'M') | Some(b'T') => "modify",
+            Some(b'D') => "delete",
+            Some(b'R') => "rename",
+            Some(b'C') => "copy",
+            _ => "unknown",
+        };
+        let (additions, deletions, binary) = stats.get(path).copied().unwrap_or((0, 0, false));
+        let mut change = json!({
+            "path":path,
+            "kind":if binary { "binary" } else { kind },
+            "additions":additions,
+            "deletions":deletions,
+            "binary":binary
+        });
+        if let Some(previous) = previous {
+            change["previousPath"] = json!(previous);
+        }
+        changes.push(change);
+    }
+    Ok(changes)
+}
+
 fn git_history_error(action: &str, error: impl std::fmt::Display) -> RuntimeError {
     RuntimeError::public(
         "cgrx.git_history_failed",
@@ -391,6 +721,7 @@ fn optional_path(request: &HttpRequest) -> Result<Option<&str>, RuntimeError> {
         return Ok(None);
     };
     if value.trim().is_empty()
+        || value.contains('\0')
         || Path::new(value).is_absolute()
         || Path::new(value).components().any(|component| {
             matches!(
