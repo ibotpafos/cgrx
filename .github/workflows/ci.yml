@@ -17,6 +17,8 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Installer offline contracts
         run: python3 -m unittest discover -s scripts -p test_install.py
+      - name: Corpus schema and supported-language matrix
+        run: python3 -m unittest discover -s scripts -p 'test_validate_*.py'
       - name: Rust toolchain
         run: rustup toolchain install 1.89.0 --profile minimal --component clippy --component rustfmt
       - run: cargo fmt --all -- --check

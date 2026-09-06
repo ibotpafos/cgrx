@@ -149,7 +149,9 @@ impl LanguagePack for TypeScript {
 
 // Two file passes: collect lexical environments (including declarations after a
 // call), then classify. Lookup walks scope parents, never the AST/file. Captures
-// and parameter initializers deliberately receive no lexical call proof.
+// Parameter initializers and anonymous captures deliberately receive no lexical
+// call proof. A named function/arrow may capture a stable outer const arrow:
+// both caller and target then have exact syntax identity.
 #[derive(Clone, Copy)]
 struct Binding {
     target: Option<Span>,
@@ -539,10 +541,7 @@ impl LexicalContext {
         if binding.syntax_function {
             return CallBinding::Syntax;
         }
-        if self.has_error
-            || self.scopes[binding_scope].function != scope.function
-            || call.start_byte() < binding.initialized
-        {
+        if self.has_error || call.start_byte() < binding.initialized {
             return CallBinding::Gap;
         }
         match (binding.target, scope.owner) {

@@ -1,6 +1,6 @@
 {
   "schema_version": 2,
-  "provenance": "NEXT curated source truth. Original 12 v1 tasks retained unchanged. New selections are manually read direct call/import/type references or explicit unresolved dispatches, not graph-derived answers. Each exact assertion is counted once, not relabeled across categories. Public repositories were independently cloned from each task repository_url into separate read-only fixtures; HEAD plus full-file and inclusive raw-line SHA-256 anchors pin provenance. No source bodies, key values or secrets are copied into this manifest. All public evidence is heldout, and no evidence file crosses splits. Category impact means a source dependency worth reviewing if the target changes, not an executed patch or a bug. UNRESOLVED has no target evidence and never denotes a positive edge. Negative distractors are bounded identifier absence only. This is a 195-assertion Python, Go, TypeScript and Rust slice, not an exhaustive benchmark claim.",
+  "provenance": "NEXT curated source truth. Original 12 v1 tasks retained unchanged. New selections are manually read direct call/import/type references or explicit unresolved dispatches, not graph-derived answers. Each exact assertion is counted once, not relabeled across categories. Public repositories were independently cloned from each task repository_url into separate read-only fixtures; HEAD plus full-file and inclusive raw-line SHA-256 anchors pin provenance. No source bodies, key values or secrets are copied into this manifest. All public evidence is heldout, and no evidence file crosses splits. Category impact means a source dependency worth reviewing if the target changes, not an executed patch or a bug. UNRESOLVED has no target evidence and never denotes a positive edge. Negative distractors are bounded identifier absence only. This is a 206-assertion Python, Go, TypeScript and Rust slice, not an exhaustive benchmark claim.",
   "tasks": [
     {
       "id": "gd-notification-preferences",
@@ -8883,6 +8883,469 @@
       },
       "rationale": "Manual read of the complete Go function shows a direct same-package call to the unique bucketExpiry declaration anchored in this file.",
       "category": "call"
+    },
+    {
+      "id": "pyramid-tsx-create-project-fetch-projects",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/EXPANDED-GRAPH-CORPUS/snapshots/pyramid",
+      "revision": "dbca43c53d7f49bbf988813cd97720098be3ac3f",
+      "split": "heldout",
+      "category": "call",
+      "question": "Which local function does createProject call after closing the dialog?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "frontend/src/pages/Projects.tsx",
+          "sha256": "e912a68443780d75d7a7076bdf709fd06323a367d755234fd7ca567c8a1d7667",
+          "start_line": 51,
+          "end_line": 62,
+          "span_sha256": "cc0f2efcfa89980a8eec4e4d163ff4649e0a3d692402173b9cf48903fd2e0fc2",
+          "symbol": "createProject"
+        },
+        "site": {
+          "path": "frontend/src/pages/Projects.tsx",
+          "sha256": "e912a68443780d75d7a7076bdf709fd06323a367d755234fd7ca567c8a1d7667",
+          "start_line": 61,
+          "end_line": 61,
+          "span_sha256": "eae7c9fbcd3fee055f2c33a60e40aea24139c3974ca85c2e34eabf7ee0333880",
+          "symbol": "fetchProjects"
+        },
+        "target": {
+          "path": "frontend/src/pages/Projects.tsx",
+          "sha256": "e912a68443780d75d7a7076bdf709fd06323a367d755234fd7ca567c8a1d7667",
+          "start_line": 36,
+          "end_line": 36,
+          "span_sha256": "04e9fc35f8128fa14d046d230eec468a344e20d13d2695df6360ecda69670e74",
+          "symbol": "fetchProjects"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The complete arrow-function body directly calls the unique local fetchProjects binding."
+    },
+    {
+      "id": "pyramid-tsx-main-import-app",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/EXPANDED-GRAPH-CORPUS/snapshots/pyramid",
+      "revision": "dbca43c53d7f49bbf988813cd97720098be3ac3f",
+      "split": "heldout",
+      "category": "import",
+      "question": "Which local declaration supplies the App import in main.tsx?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "frontend/src/main.tsx",
+          "sha256": "5f49dce6e6cc4b5d678cf529ef892af0ab7dfa6afb300b11ad559224019b8b05",
+          "start_line": 3,
+          "end_line": 3,
+          "span_sha256": "76e6a8919c3012804f7c37d47de8c6b5e778531821ceb2bcaa0600eb7fa90170",
+          "symbol": "App"
+        },
+        "site": {
+          "path": "frontend/src/main.tsx",
+          "sha256": "5f49dce6e6cc4b5d678cf529ef892af0ab7dfa6afb300b11ad559224019b8b05",
+          "start_line": 3,
+          "end_line": 3,
+          "span_sha256": "76e6a8919c3012804f7c37d47de8c6b5e778531821ceb2bcaa0600eb7fa90170",
+          "symbol": "App"
+        },
+        "target": {
+          "path": "frontend/src/App.tsx",
+          "sha256": "e1b2024a27074ebc949c7b1a976dfe41b28d56ea15746453a80c2b7b0ec0b73b",
+          "start_line": 15,
+          "end_line": 15,
+          "span_sha256": "afc33da513defc2fdf87c3b666992bc0e522fae097f1261d870218e14f9e6972",
+          "symbol": "App"
+        }
+      },
+      "expected": {
+        "relation": "IMPORTS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The explicit relative default import resolves from main.tsx to the App declaration in App.tsx."
+    },
+    {
+      "id": "pyramid-tsx-open-project-reference",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/EXPANDED-GRAPH-CORPUS/snapshots/pyramid",
+      "revision": "dbca43c53d7f49bbf988813cd97720098be3ac3f",
+      "split": "heldout",
+      "category": "reference",
+      "question": "Which local interface types the project parameter of openProject?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "frontend/src/pages/Projects.tsx",
+          "sha256": "e912a68443780d75d7a7076bdf709fd06323a367d755234fd7ca567c8a1d7667",
+          "start_line": 71,
+          "end_line": 76,
+          "span_sha256": "b933224ed13f04938baefdb1aa5c3d6333ddb6bf7c79a8caf73bb284e9a56b4e",
+          "symbol": "openProject"
+        },
+        "site": {
+          "path": "frontend/src/pages/Projects.tsx",
+          "sha256": "e912a68443780d75d7a7076bdf709fd06323a367d755234fd7ca567c8a1d7667",
+          "start_line": 71,
+          "end_line": 71,
+          "span_sha256": "ab3f59342416032fc26810345b0e4c87e1609e7d744f59eb203025f718f168e1",
+          "symbol": "Project"
+        },
+        "target": {
+          "path": "frontend/src/pages/Projects.tsx",
+          "sha256": "e912a68443780d75d7a7076bdf709fd06323a367d755234fd7ca567c8a1d7667",
+          "start_line": 11,
+          "end_line": 11,
+          "span_sha256": "51c20e95301e609b6e3aa75186a68aa5d9257309a2a15a8a5ed7c1442adfad2b",
+          "symbol": "Project"
+        }
+      },
+      "expected": {
+        "relation": "REFERENCE",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The parameter annotation names the unique local Project interface declared above the function."
+    },
+    {
+      "id": "pyramid-tsx-login-callback-unresolved",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/EXPANDED-GRAPH-CORPUS/snapshots/pyramid",
+      "revision": "dbca43c53d7f49bbf988813cd97720098be3ac3f",
+      "split": "heldout",
+      "category": "ambiguous",
+      "question": "Can the onLogin callback dispatch be assigned one definitive implementation from Login.tsx?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "frontend/src/pages/Login.tsx",
+          "sha256": "b5a555c76ba9c11598eb4693dc68575c267e23b80e0c419e74fa33707716bf90",
+          "start_line": 18,
+          "end_line": 59,
+          "span_sha256": "7bc45d981ded130035ceced1f488dc664404407e80d5496bd6efabdac0fa6836",
+          "symbol": "handleSubmit"
+        },
+        "site": {
+          "path": "frontend/src/pages/Login.tsx",
+          "sha256": "b5a555c76ba9c11598eb4693dc68575c267e23b80e0c419e74fa33707716bf90",
+          "start_line": 48,
+          "end_line": 48,
+          "span_sha256": "5dc690452e6c1523010ad72596d108c89469b65be10e034626689bb65f415134",
+          "symbol": "onLogin"
+        }
+      },
+      "expected": {
+        "relation": "UNRESOLVED",
+        "source": "source",
+        "target": null,
+        "site": "site"
+      },
+      "rationale": "onLogin is a function-valued component prop; this source states its signature but not one definitive runtime callback target."
+    },
+    {
+      "id": "vex-go-networkprobe-import-domain",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/SAME-SNAPSHOT-CBM/snapshots/vex",
+      "revision": "da5cd1a21f8f4650798cc19c92ff8790b324e6d3",
+      "split": "heldout",
+      "category": "import",
+      "question": "Which local package is imported as domain by the network probe parser?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "internal/networkprobe/parser.go",
+          "sha256": "4d0b822eb2bf73c1db5771a2ce074df3648c1caeb8052516349217011490a733",
+          "start_line": 8,
+          "end_line": 8,
+          "span_sha256": "83a40cf4d800de51cc99b8e2f7d1568c2a81b683edb1faabe0afc1b2e51bc875",
+          "symbol": "domain"
+        },
+        "site": {
+          "path": "internal/networkprobe/parser.go",
+          "sha256": "4d0b822eb2bf73c1db5771a2ce074df3648c1caeb8052516349217011490a733",
+          "start_line": 8,
+          "end_line": 8,
+          "span_sha256": "83a40cf4d800de51cc99b8e2f7d1568c2a81b683edb1faabe0afc1b2e51bc875",
+          "symbol": "domain"
+        },
+        "target": {
+          "path": "internal/domain/node_types.go",
+          "sha256": "450cbcf47768344f2cafe24e767408b8a852ee183fcf97678f02cd51e182febd",
+          "start_line": 1,
+          "end_line": 1,
+          "span_sha256": "20277d173f0daff513ee59eec0467237637433a46483fee4fbb8daf468e131e3",
+          "symbol": "domain"
+        }
+      },
+      "expected": {
+        "relation": "IMPORTS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The module-qualified import path vpn/internal/domain resolves to the local package declaration anchored in internal/domain."
+    },
+    {
+      "id": "vex-go-context-err-unresolved",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/SAME-SNAPSHOT-CBM/snapshots/vex",
+      "revision": "da5cd1a21f8f4650798cc19c92ff8790b324e6d3",
+      "split": "heldout",
+      "category": "ambiguous",
+      "question": "Can ctx.Err in MemoryLimiter.Allow be assigned one definitive concrete method target?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "internal/ratelimit/ratelimit.go",
+          "sha256": "7e362059e807cef67c1aeabefff8c0977858b6f1bf2fccc7009b5091cc2236b2",
+          "start_line": 47,
+          "end_line": 71,
+          "span_sha256": "c5646341cb10659f5aa5c07276790c46488aa97583a5527195c3e3de4f1c49c7",
+          "symbol": "Allow"
+        },
+        "site": {
+          "path": "internal/ratelimit/ratelimit.go",
+          "sha256": "7e362059e807cef67c1aeabefff8c0977858b6f1bf2fccc7009b5091cc2236b2",
+          "start_line": 48,
+          "end_line": 48,
+          "span_sha256": "4ebc862015eb08865cafcb2e8e6f0bed7b2e3e531e5b251ad45cbc66956912d1",
+          "symbol": "Err"
+        }
+      },
+      "expected": {
+        "relation": "UNRESOLVED",
+        "source": "source",
+        "target": null,
+        "site": "site"
+      },
+      "rationale": "ctx has the interface type context.Context, so the call has no single concrete implementation target in this source."
+    },
+    {
+      "id": "rust-typescript-import-extraction",
+      "repo": "/Volumes/D/Projects/cgrx-opensource",
+      "revision": "b8d828524b903abeb053db9faef5abba40fea509",
+      "split": "train",
+      "category": "import",
+      "question": "Which local declaration supplies the Extraction import in the TypeScript language pack?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "crates/cgrx-languages/src/typescript.rs",
+          "sha256": "b7b2b8cdc9231d9ffc85bffe0707edec1c922499a80d8fe9f5e042f23b2d5f03",
+          "start_line": 4,
+          "end_line": 7,
+          "span_sha256": "0cbc5ff1b7db350bcc02fa33f65ef5bb83ff226c7fb86d408f9f8e5d4a2147be",
+          "symbol": "Extraction"
+        },
+        "site": {
+          "path": "crates/cgrx-languages/src/typescript.rs",
+          "sha256": "b7b2b8cdc9231d9ffc85bffe0707edec1c922499a80d8fe9f5e042f23b2d5f03",
+          "start_line": 5,
+          "end_line": 5,
+          "span_sha256": "9f26d4539e9d9ced82b15cdef2ff4c9490f0a6814179adeaca326a3ec6de390c",
+          "symbol": "Extraction"
+        },
+        "target": {
+          "path": "crates/cgrx-languages/src/pack.rs",
+          "sha256": "b9308ec2585a81c5e61292335a57402bdbbe3440764b23305090fb6bed024c7d",
+          "start_line": 105,
+          "end_line": 105,
+          "span_sha256": "dd531e4567e27ea542088a8a36e8a9920b71bed26f48d93687aa8112838e0567",
+          "symbol": "Extraction"
+        }
+      },
+      "expected": {
+        "relation": "IMPORTS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The explicit crate-local use binding names Extraction from pack, whose struct declaration is anchored at the target."
+    },
+    {
+      "id": "rust-typescript-extract-reference",
+      "repo": "/Volumes/D/Projects/cgrx-opensource",
+      "revision": "b8d828524b903abeb053db9faef5abba40fea509",
+      "split": "train",
+      "category": "reference",
+      "question": "Which local type is the return value of the TypeScript extract method?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "crates/cgrx-languages/src/typescript.rs",
+          "sha256": "b7b2b8cdc9231d9ffc85bffe0707edec1c922499a80d8fe9f5e042f23b2d5f03",
+          "start_line": 36,
+          "end_line": 61,
+          "span_sha256": "c705d3631610d9137e5acc9e6030944d45048a219667627421a49778a30a15f3",
+          "symbol": "extract"
+        },
+        "site": {
+          "path": "crates/cgrx-languages/src/typescript.rs",
+          "sha256": "b7b2b8cdc9231d9ffc85bffe0707edec1c922499a80d8fe9f5e042f23b2d5f03",
+          "start_line": 36,
+          "end_line": 36,
+          "span_sha256": "e2b80a0372cadea7083840bfe9e04b02a445a87009963ddac6fb9d757ce0c4d3",
+          "symbol": "Extraction"
+        },
+        "target": {
+          "path": "crates/cgrx-languages/src/pack.rs",
+          "sha256": "b9308ec2585a81c5e61292335a57402bdbbe3440764b23305090fb6bed024c7d",
+          "start_line": 105,
+          "end_line": 105,
+          "span_sha256": "dd531e4567e27ea542088a8a36e8a9920b71bed26f48d93687aa8112838e0567",
+          "symbol": "Extraction"
+        }
+      },
+      "expected": {
+        "relation": "REFERENCE",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The method return annotation names the imported Extraction struct defined at the target anchor."
+    },
+    {
+      "id": "rust-tsconfig-read-closure-unresolved",
+      "repo": "/Volumes/D/Projects/cgrx-opensource",
+      "revision": "b8d828524b903abeb053db9faef5abba40fea509",
+      "split": "train",
+      "category": "ambiguous",
+      "question": "Can the read closure call in validate_final be assigned one definitive function declaration?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "evidence": {
+        "source": {
+          "path": "crates/cgrx-cli/src/runtime/ts_config.rs",
+          "sha256": "5461b4db7e66e1ae2f080df1c94ec61a27b50fd95d05e183f52944f0c0607acf",
+          "start_line": 542,
+          "end_line": 583,
+          "span_sha256": "767030cf036b5f3bcfaaedd799bc480ddbc6f98c2477f587fbf423cbf839eca8",
+          "symbol": "validate_final"
+        },
+        "site": {
+          "path": "crates/cgrx-cli/src/runtime/ts_config.rs",
+          "sha256": "5461b4db7e66e1ae2f080df1c94ec61a27b50fd95d05e183f52944f0c0607acf",
+          "start_line": 558,
+          "end_line": 558,
+          "span_sha256": "0e308be50a2d1cf9bf69ea50b0072c4ec64a3f412189416ba1c02bc1d80bca2e",
+          "symbol": "read"
+        }
+      },
+      "expected": {
+        "relation": "UNRESOLVED",
+        "source": "source",
+        "target": null,
+        "site": "site"
+      },
+      "rationale": "read is an impl FnMut parameter supplied by the caller, so this function body does not identify one definitive implementation target."
+    },
+    {
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/IBO-271-MULTIPROJECT-20260905/vocal-snapshot",
+      "revision": "8613b9fc15a0989ccc5bd1d5fb41dcc0d350d578",
+      "split": "heldout",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "id": "vocal-ts-auth-import-service",
+      "category": "import",
+      "question": "Which local declaration supplies the AuthService import in auth.controller.ts?",
+      "evidence": {
+        "source": {
+          "path": "apps/api/src/auth/auth.controller.ts",
+          "sha256": "6bf53780ce7e78cb55d25dc5c244739319c2eb66ad7795b9a1666ddf963071a6",
+          "start_line": 4,
+          "end_line": 4,
+          "span_sha256": "6c7393f8708faf2a9eb2c66237dfe9614060f773b25b48e8dd0e81fc68e80092",
+          "symbol": "AuthService"
+        },
+        "target": {
+          "path": "apps/api/src/auth/auth.service.ts",
+          "sha256": "412400a9871936651e98e841b087e9abaf101cd6eee29ef14229f2ec4c699604",
+          "start_line": 15,
+          "end_line": 15,
+          "span_sha256": "7c08f79703640c102e387c82f490a43b7ed1aed3ac9886ce798037a56fbb5c27",
+          "symbol": "AuthService"
+        },
+        "site": {
+          "path": "apps/api/src/auth/auth.controller.ts",
+          "sha256": "6bf53780ce7e78cb55d25dc5c244739319c2eb66ad7795b9a1666ddf963071a6",
+          "start_line": 4,
+          "end_line": 4,
+          "span_sha256": "6c7393f8708faf2a9eb2c66237dfe9614060f773b25b48e8dd0e81fc68e80092",
+          "symbol": "AuthService"
+        }
+      },
+      "expected": {
+        "relation": "IMPORTS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The explicit relative import names AuthService; the target file contains the unique exported class declaration."
+    },
+    {
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/IBO-271-MULTIPROJECT-20260905/vocal-snapshot",
+      "revision": "8613b9fc15a0989ccc5bd1d5fb41dcc0d350d578",
+      "split": "heldout",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-06"
+      },
+      "id": "vocal-ts-response-clear-cookie-unresolved",
+      "category": "ambiguous",
+      "question": "Can response.clearCookie in logout be assigned one definitive repository-local method target?",
+      "evidence": {
+        "source": {
+          "path": "apps/api/src/auth/auth.controller.ts",
+          "sha256": "6bf53780ce7e78cb55d25dc5c244739319c2eb66ad7795b9a1666ddf963071a6",
+          "start_line": 43,
+          "end_line": 45,
+          "span_sha256": "e010acb78d3136fae150e74f0821e6c22c5b15e96300d307a788076cb600f7e2",
+          "symbol": "logout"
+        },
+        "site": {
+          "path": "apps/api/src/auth/auth.controller.ts",
+          "sha256": "6bf53780ce7e78cb55d25dc5c244739319c2eb66ad7795b9a1666ddf963071a6",
+          "start_line": 44,
+          "end_line": 44,
+          "span_sha256": "1623fdc400db91bdaa9329a5eee877a9ba9258b7103d303a356edc98b1d66e89",
+          "symbol": "clearCookie"
+        }
+      },
+      "expected": {
+        "relation": "UNRESOLVED",
+        "source": "source",
+        "target": null,
+        "site": "site"
+      },
+      "rationale": "response has the external Express Response interface type, and this repository source does not identify one concrete clearCookie implementation."
     }
   ]
 }

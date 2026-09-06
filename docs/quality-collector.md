@@ -16,6 +16,14 @@ SHA-256 snapshot digest frames sorted tracked paths and file bytes with 8-byte
 big-endian lengths. It rechecks source and executable hashes after each arm.
 This is before/after verification, not an OS-enforced source lock.
 
+`validate_language_coverage.py` checks the corpus against
+`contracts/language_coverage_v1.json`. The contract is tied to the language packs
+registered by `pack_for_path` and requires CALLS, IMPORTS, REFERENCE and
+UNRESOLVED tasks for every supported source extension. A newly registered pack,
+extension, missing relation cell, stale task ID, wrong relation or wrong source
+extension fails closed. This proves the declared matrix is populated; it does
+not claim every construct in a language grammar has a semantic oracle.
+
 Discover CBM from the installed purpose-built MCP registration/launcher, **not**
 by guessing a binary name. On the development host the `codebase-memory-mcp`
 registration identified `/Users/ila/.local/bin/codebase-memory-mcp`; `--help`

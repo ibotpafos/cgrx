@@ -1090,6 +1090,24 @@ fn typescript_const_arrow_lexical_symbol_and_non_syntax_proof() {
 }
 
 #[test]
+fn typescript_named_arrow_capture_has_exact_lexical_proof() {
+    let source = b"function caller() { const tail = () => 0; const nested = () => tail(); }";
+    let path = Path::new("main.tsx");
+    let extraction = pack_for_path(path).unwrap().extract(path, source).unwrap();
+    let edge = extraction
+        .edges
+        .iter()
+        .find(|edge| edge.target == "tail")
+        .expect("stable outer const arrow is exact");
+    let Provenance::TsLexical { target, caller } = edge.provenance else {
+        panic!("captured arrow requires lexical proof");
+    };
+    assert_eq!(&source[target.start..target.end], b"tail");
+    assert_eq!(&source[caller.start..caller.end], b"nested");
+    assert!(!extraction.unresolved.iter().any(|gap| gap.text == "tail()"));
+}
+
+#[test]
 fn typescript_unsupported_lexical_bindings_keep_dispatch_gaps() {
     let sources = [
         "function caller() { tail(); const tail = () => 0; }",
@@ -1101,7 +1119,6 @@ fn typescript_unsupported_lexical_bindings_keep_dispatch_gaps() {
         "function caller() { var tail = () => 0; tail = other; tail(); }",
         "const tail = () => 0; function caller(tail: unknown) { tail(); }",
         "const tail = () => 0; function caller(value = tail()) {}",
-        "function caller() { const tail = () => 0; const nested = () => tail(); }",
         "function caller() { const tail = () => 0; const nested = function tail() { tail(); }; }",
         "function caller() { const tail = () => 0; const nested = (tail) => tail(); }",
     ];
