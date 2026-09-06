@@ -1,4 +1,4 @@
-const MODES = new Set(["current", "architecture", "changes", "preview", "compare"]);
+const MODES = new Set(["current", "architecture", "changes", "preview", "compare", "history"]);
 
 export function createState(snapshot = null) {
   return {

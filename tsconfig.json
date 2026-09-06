@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "target": "ES2024",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2024", "DOM", "DOM.Iterable"],
+    "strict": true,
+    "noEmit": true,
+    "verbatimModuleSyntax": true
+  },
+  "include": [
+    "crates/cgrx-cli/web/git-history.ts",
+    "crates/cgrx-cli/web/vendor-entry.ts"
+  ]
+}

@@ -108,7 +108,7 @@ evidence inspector remain available without pointer-only interaction. Dragging
 a node pins it, arrow keys pan the canvas, and Reset restores the deterministic
 layout.
 
-The workspace has five modes:
+The workspace has six modes:
 
 - **Current** shows only indexed evidence from the active snapshot.
 - **Architecture** aggregates the same proven relationships into packages and
@@ -117,13 +117,17 @@ The workspace has five modes:
 - **Preview** overlays one selected refactor strategy.
 - **Compare** shows current and selected future graphs with one synchronized
   camera.
+- **Git history** shows the repository's branches, tags, commits and merges in
+  a virtualized read-only lane graph; selecting a commit opens its evidence in
+  the inspector. History is bounded to 500 commits per request.
 
 Every refactor candidate exposes preserve-entry-points, canonical-entry-point
 and consolidate paths. A path that could remove an entry point is marked
 `blocked_by_gaps` whenever coverage, dispatch, truncation or public-surface
 uncertainty remains. **Copy agent plan** copies the exact structured
 `agent_handoff` returned by `suggest_refactors`; the agent must revalidate the
-snapshot before editing. Node.js is used only for frontend contract tests and
+snapshot before editing. The Git history renderer is bundled into the binary,
+so Node.js is used only for frontend tests and rebuilding web dependencies and
 is not required by the released executable.
 
 ## MCP tools
@@ -230,6 +234,11 @@ account; it is not a remote authenticated hosting service.
 
 ~~~sh
 cargo fmt --all -- --check
+npm ci
+npm run typecheck:web
+npm run build:web-vendor
+npm run verify:web-csp
+npm test
 cargo clippy --locked --workspace --all-targets -- -D warnings
 cargo test --locked --workspace
 cargo build --locked --release -p cgrx-cli

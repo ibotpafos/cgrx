@@ -1,4 +1,6 @@
 import { edgeStyle, layoutGraph } from "./layout.js";
+import "./vendor/web-git-graph.js";
+import { pageForGitGraph } from "./git-history.js";
 import { createState, projectArchitecture, projectGraph, reduce, serializeAgentPlan, snapshotKey, summarizeBoundedResult } from "./state.js";
 
 const NS = "http://www.w3.org/2000/svg";
@@ -13,6 +15,8 @@ let currentGraph = null;
 let currentArchitecture = null;
 let currentCandidate = null;
 let currentStrategy = null;
+let currentHistory = null;
+let historyLimit = 200;
 let requestGeneration = 0;
 let changedPaths = [];
 let panStart = null;
@@ -22,7 +26,7 @@ let pinnedPositions = {};
 const ids = [
   "freshness", "revision", "search-form", "search-input", "search-results", "match-count",
   "refactor-list", "candidate-count", "graph-title", "graph-message", "graph-canvas",
-  "graph-svg", "camera-layer", "inspector-content", "selection-kind", "strategy-panel", "strategy-tabs",
+  "graph-svg", "camera-layer", "git-history-panel", "git-history", "inspector-content", "selection-kind", "strategy-panel", "strategy-tabs",
   "strategy-detail", "copy-agent", "copy-mcp", "announcer", "zoom-in", "zoom-out", "reset-view"
 ];
 const el = Object.fromEntries(ids.map((id) => [id, document.getElementById(id)]));
@@ -52,6 +56,8 @@ export async function loadStatus() {
     el["strategy-panel"].hidden = true;
     await loadRefactors();
     await loadArchitecture();
+    currentHistory = null;
+    if (state.mode === "history") await loadGitHistory();
     if (currentGraph?.root) await loadGraph(currentGraph.root.symbol, currentGraph.root.path);
   }
   return value;
@@ -122,6 +128,20 @@ async function loadArchitecture() {
   return value;
 }
 
+async function loadGitHistory(limit = historyLimit) {
+  historyLimit = Math.min(500, Math.max(1, limit));
+  const value = await api(`/api/git-history?limit=${historyLimit}`);
+  currentHistory = value;
+  el["git-history"].data = pageForGitGraph(value);
+  el["git-history"].theme = "dark";
+  el["git-history"].density = "compact";
+  el["git-history"].columns = "commit";
+  el["git-history"].dateFormat = "relative";
+  el["git-history"].avatars = false;
+  if (state.mode === "history") renderMode();
+  return value;
+}
+
 function renderGraph(graph) {
   const layer = el["camera-layer"];
   layer.replaceChildren();
@@ -159,6 +179,17 @@ function drawGraph(graph, layer) {
 }
 
 function renderMode() {
+  const history = state.mode === "history";
+  el["graph-canvas"].hidden = history;
+  el["git-history-panel"].hidden = !history;
+  document.querySelector(".view-actions").hidden = history;
+  document.querySelector(".legend").hidden = history;
+  if (history) {
+    el["graph-title"].textContent = "Git history";
+    el["graph-message"].hidden = true;
+    if (!currentHistory) setMessage("Loading Git history…");
+    return;
+  }
   if (state.mode === "architecture") {
     if (!currentArchitecture) {
       setMessage("Loading architecture projection…");
@@ -170,6 +201,7 @@ function renderMode() {
     return;
   }
   if (!currentGraph) return;
+  el["graph-title"].textContent = currentGraph.root.symbol;
   if (state.mode === "compare" && currentStrategy) {
     const layer = el["camera-layer"];
     layer.replaceChildren();
@@ -411,7 +443,27 @@ document.querySelectorAll("[data-mode]").forEach((button) => button.addEventList
   if (state.mode === "architecture" && !currentArchitecture) {
     loadArchitecture().catch((error) => setMessage(error.message));
   }
+  if (state.mode === "history" && !currentHistory) {
+    loadGitHistory().catch((error) => setMessage(error.message));
+  }
 }));
+el["git-history"].addEventListener("gitgraph-commit-select", (event) => {
+  const commit = event.detail.commit;
+  const refs = (currentHistory?.refs || []).filter((ref) => ref.target === commit.oid).map((ref) => ref.name);
+  el["selection-kind"].textContent = "commit";
+  el["inspector-content"].innerHTML = facts([
+    ["Commit", commit.oid],
+    ["Subject", commit.message],
+    ["Author", commit.author?.name],
+    ["Authored", commit.authoredAt],
+    ["Parents", commit.parents.join(", ") || "root"],
+    ["Refs", refs.join(", ") || "none"]
+  ]);
+});
+el["git-history"].addEventListener("gitgraph-load-more", () => {
+  if (historyLimit >= 500) return;
+  loadGitHistory(historyLimit + 100).catch((error) => setMessage(error.message));
+});
 el["zoom-in"].addEventListener("click", () => zoom(1.2));
 el["zoom-out"].addEventListener("click", () => zoom(1 / 1.2));
 el["reset-view"].addEventListener("click", () => {

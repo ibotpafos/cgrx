@@ -137,6 +137,8 @@ impl Visualizer {
             "/assets/styles.css" => HttpResponse::css(assets::STYLES),
             "/assets/layout.js" => HttpResponse::javascript(assets::LAYOUT),
             "/assets/state.js" => HttpResponse::javascript(assets::STATE),
+            "/assets/git-history.js" => HttpResponse::javascript(assets::GIT_HISTORY),
+            "/assets/vendor/web-git-graph.js" => HttpResponse::javascript(assets::WEB_GIT_GRAPH),
             "/assets/app.js" => HttpResponse::javascript(assets::APP),
             "/api/status" => self.status(),
             "/api/search" => self.api_result(self.search(request)),
@@ -144,6 +146,7 @@ impl Visualizer {
             "/api/architecture" => self.api_result(self.architecture(request)),
             "/api/refactors" => self.api_result(self.refactors(request)),
             "/api/snippet" => self.api_result(self.snippet(request)),
+            "/api/git-history" => self.api_result(self.git_history(request)),
             _ => HttpResponse::json_error(404, "cgrx.not_found", "route not found"),
         };
         response.head(head)
@@ -225,6 +228,114 @@ impl Visualizer {
             .get_code_snippet(required(request, "symbol")?, optional_path(request)?)
     }
 
+    fn git_history(&self, request: &HttpRequest) -> Result<serde_json::Value, RuntimeError> {
+        let limit = number::<usize>(request, "limit", 200)?;
+        if !(1..=500).contains(&limit) {
+            return Err(RuntimeError::public(
+                "cgrx.invalid_arguments",
+                "query parameter limit must be from 1 to 500",
+            ));
+        }
+        let output = Command::new(cgrx_cli::git_executable())
+            .args([
+                "log",
+                "-z",
+                "--all",
+                "--topo-order",
+                &format!("--max-count={}", limit + 1),
+                "--format=%H%x00%P%x00%an%x00%aI%x00%cI%x00%s",
+            ])
+            .current_dir(&self.root)
+            .output()
+            .map_err(|error| git_history_error("read commit history", error))?;
+        if !output.status.success() {
+            return Err(git_output_error("read commit history", &output.stderr));
+        }
+        let fields = output.stdout.split(|byte| *byte == 0).collect::<Vec<_>>();
+        let mut commits = Vec::new();
+        for record in fields.chunks(6).take(limit) {
+            if record.len() < 6 || record[0].is_empty() {
+                continue;
+            }
+            commits.push(json!({
+                "oid":utf8(record[0], "commit id")?,
+                "parents":utf8(record[1], "commit parents")?.split_whitespace().collect::<Vec<_>>(),
+                "message":utf8(record[5], "commit subject")?,
+                "kind":"commit",
+                "author":{"name":utf8(record[2], "commit author")?},
+                "authoredAt":utf8(record[3], "author date")?,
+                "committedAt":utf8(record[4], "commit date")?
+            }));
+        }
+        let has_more = fields
+            .chunks(6)
+            .filter(|record| !record[0].is_empty())
+            .count()
+            > limit;
+        let refs = self.git_refs()?;
+        let head_output = Command::new(cgrx_cli::git_executable())
+            .args(["rev-parse", "HEAD"])
+            .current_dir(&self.root)
+            .output()
+            .map_err(|error| git_history_error("read HEAD", error))?;
+        if !head_output.status.success() {
+            return Err(git_output_error("read HEAD", &head_output.stderr));
+        }
+        let head = utf8(&head_output.stdout, "HEAD")?.trim();
+        let repository_name = self
+            .root
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("repository");
+        Ok(json!({
+            "snapshot":self.runtime.snapshot(),
+            "commits":commits,
+            "refs":refs,
+            "head":head,
+            "hasMore":has_more,
+            "repositoryId":self.root,
+            "repositoryName":repository_name
+        }))
+    }
+
+    fn git_refs(&self) -> Result<Vec<serde_json::Value>, RuntimeError> {
+        let output = Command::new(cgrx_cli::git_executable())
+            .args([
+                "for-each-ref",
+                "--format=%(refname)%00%(objectname)%00%(*objectname)%00",
+            ])
+            .current_dir(&self.root)
+            .output()
+            .map_err(|error| git_history_error("read refs", error))?;
+        if !output.status.success() {
+            return Err(git_output_error("read refs", &output.stderr));
+        }
+        let mut refs = Vec::new();
+        for line in output.stdout.split(|byte| *byte == b'\n') {
+            let record = line.split(|byte| *byte == 0).collect::<Vec<_>>();
+            if record.len() < 3 || record[0].is_empty() {
+                continue;
+            }
+            let full_name = utf8(record[0], "ref name")?;
+            let (kind, name) = if let Some(name) = full_name.strip_prefix("refs/heads/") {
+                ("head", name)
+            } else if let Some(name) = full_name.strip_prefix("refs/remotes/") {
+                ("remote", name)
+            } else if let Some(name) = full_name.strip_prefix("refs/tags/") {
+                ("tag", name)
+            } else {
+                continue;
+            };
+            let target_bytes = if record[2].is_empty() {
+                record[1]
+            } else {
+                record[2]
+            };
+            refs.push(json!({"name":name,"target":utf8(target_bytes, "ref target")?,"kind":kind}));
+        }
+        Ok(refs)
+    }
+
     fn refresh(&mut self) -> Result<(), String> {
         match self.runtime.refresh(&self.root) {
             Ok(_) => Ok(()),
@@ -240,6 +351,27 @@ impl Visualizer {
             Err(error) => Err(error.to_string()),
         }
     }
+}
+
+fn utf8<'a>(value: &'a [u8], label: &str) -> Result<&'a str, RuntimeError> {
+    std::str::from_utf8(value).map_err(|_| {
+        RuntimeError::public(
+            "cgrx.git_history_failed",
+            format!("{label} is not valid UTF-8"),
+        )
+    })
+}
+
+fn git_history_error(action: &str, error: impl std::fmt::Display) -> RuntimeError {
+    RuntimeError::public(
+        "cgrx.git_history_failed",
+        format!("failed to {action}: {error}"),
+    )
+}
+
+fn git_output_error(action: &str, stderr: &[u8]) -> RuntimeError {
+    let detail = String::from_utf8_lossy(stderr);
+    git_history_error(action, detail.trim())
 }
 
 fn required<'a>(request: &'a HttpRequest, name: &str) -> Result<&'a str, RuntimeError> {
