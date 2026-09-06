@@ -191,7 +191,7 @@ fn multi_repo_architecture_returns_snapshot_bound_package_projection() {
     assert!(payload["snapshot"]["repo_revision"].is_string());
     assert_eq!(
         payload["relation_kinds"],
-        json!(["CALLS", "IMPLEMENTS", "IMPORTS"])
+        json!(["CALLS", "IMPLEMENTS", "IMPORTS", "REFERENCES"])
     );
     assert_eq!(payload["packages"][0]["name"], ".");
     assert_eq!(payload["packages"][0]["symbols"], 2);

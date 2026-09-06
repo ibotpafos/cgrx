@@ -24,6 +24,72 @@ fn extraction_rejects_absolute_repository_paths() {
 }
 
 #[test]
+fn static_reference_subset_is_exact_and_shadow_aware_for_every_language() {
+    type ReferenceCase<'a> = (&'a str, &'a [u8], &'a [(&'a str, &'a str)]);
+    let cases: [ReferenceCase<'_>; 4] = [
+        (
+            "api.ts",
+            b"import type { Model } from './model';\nimport type { External } from 'external';\ntype A = Model;\ntype B = External;\n",
+            &[("Model", "./model"), ("External", "external")],
+        ),
+        (
+            "api.go",
+            b"package api\nimport (\"example.com/repo/model\"; \"fmt\")\ntype A struct { V model.Model }\ntype B struct { V fmt.Stringer }\n",
+            &[("model.Model", "example.com/repo/model"), ("fmt.Stringer", "fmt")],
+        ),
+        (
+            "api.py",
+            b"import package.model as model\nimport os\ndef local(v: model.Model): return v\ndef external(v: os.PathLike): return v\n",
+            &[("model.Model", "package.model"), ("os.PathLike", "os")],
+        ),
+        (
+            "api.rs",
+            b"type A = crate::model::Model;\nfn external<T: serde::Serialize>(v: T) -> T { v }\n",
+            &[("crate::model::Model", "crate::model::Model"), ("serde::Serialize", "serde::Serialize")],
+        ),
+    ];
+    for (path, source, expected) in cases {
+        let path = Path::new(path);
+        let extraction = pack_for_path(path).unwrap().extract(path, source).unwrap();
+        let references = extraction
+            .edges
+            .iter()
+            .filter(|edge| edge.relation == RelationKind::References)
+            .map(|edge| {
+                (
+                    std::str::from_utf8(&source[edge.span.start..edge.span.end]).unwrap(),
+                    edge.target.as_str(),
+                )
+            })
+            .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(
+            references,
+            expected.iter().copied().collect(),
+            "{}",
+            path.display()
+        );
+    }
+
+    let shadowed = [
+        ("api.go", b"package api\nimport \"example.com/repo/model\"\nfunc f(model any) { _ = model.Value }\n".as_slice()),
+        ("api.py", b"import package.model as model\ndef f(model: object): return model.Value\n".as_slice()),
+        ("api.ts", b"import { Model } from './model';\ntype Model = string;\ntype Alias = Model;\n".as_slice()),
+    ];
+    for (path, source) in shadowed {
+        let path = Path::new(path);
+        let extraction = pack_for_path(path).unwrap().extract(path, source).unwrap();
+        assert!(
+            !extraction
+                .edges
+                .iter()
+                .any(|edge| edge.relation == RelationKind::References),
+            "{}",
+            path.display()
+        );
+    }
+}
+
+#[test]
 fn typescript_direct_call_has_span_and_syntax_provenance() {
     let (path, source) = fixture("ts-direct-call/repo/src/main.ts");
     let pack = pack_for_path(&path).expect("TypeScript language pack registered");
@@ -312,7 +378,7 @@ fn go_frozen_fixture_has_exact_spans_and_hash() {
             .iter()
             .map(|byte| format!("{byte:02x}"))
             .collect::<String>(),
-        "843f4b960f31e8c5ae24834f8a6c73823cf64a7e49fc555a78fe5d722a5fd84a"
+        "a9624b3517fb92d958c0003b473eae693af6dd9177cbbe7f9dd53cea75e3076e"
     );
 }
 

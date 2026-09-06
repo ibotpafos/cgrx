@@ -206,6 +206,81 @@ impl Runtime {
             }
         }
 
+        let mut proven_references = 0usize;
+        let mut external_references = 0usize;
+        let mut out_of_scope_references = 0usize;
+        let mut unresolved_references = Vec::new();
+        for reference in self.stored.documents.iter().filter(|document| {
+            document.provenance == "REFERENCES" && path_in_scope(&document.path, scope)
+        }) {
+            let resolution = resolve_import(
+                &reference.path,
+                &reference.qualified_name,
+                &self.stored.path_hashes,
+                &self.stored.go_modules,
+                &self.stored.cargo_manifests,
+                &ts_files,
+                &ts_modules,
+            );
+            let target_path = match resolution {
+                ImportResolution::Proven(path) if path_in_scope(&path, scope) => path,
+                ImportResolution::Proven(_) => {
+                    out_of_scope_references += 1;
+                    continue;
+                }
+                ImportResolution::External => {
+                    external_references += 1;
+                    continue;
+                }
+                ImportResolution::UnresolvedLocal => {
+                    unresolved_references.push(json!({
+                        "code":"UNRESOLVED_LOCAL_REFERENCE",
+                        "path":reference.path,
+                        "span":{"start":reference.span_start,"end":reference.span_end}
+                    }));
+                    continue;
+                }
+            };
+            let source_package = package_name(&reference.path, package_depth);
+            let target_package = package_name(&target_path, package_depth);
+            if source_package == target_package {
+                proven_references += 1;
+                continue;
+            }
+            let Some(source_stats) = package_stats.get_mut(&source_package) else {
+                continue;
+            };
+            source_stats.fan_out += 1;
+            let Some(target_stats) = package_stats.get_mut(&target_package) else {
+                continue;
+            };
+            target_stats.fan_in += 1;
+            package_adjacency
+                .entry(source_package.clone())
+                .or_default()
+                .insert(target_package.clone());
+            let boundary = boundaries
+                .entry((source_package, target_package))
+                .or_default();
+            boundary.edges += 1;
+            boundary.relations.insert("REFERENCES".to_owned());
+            if boundary.evidence.len() < 8 {
+                let evidence = EdgeEvidence {
+                    path: reference.path.clone(),
+                    span: ByteRange::new(reference.span_start, reference.span_end),
+                    source_hash: self.stored.path_hashes[&reference.path],
+                    resolver: ResolverClass::TypeExact,
+                    confidence: ConfidenceClass::Proven,
+                    assumptions: Vec::new(),
+                    counter_evidence: Vec::new(),
+                };
+                boundary
+                    .evidence
+                    .push(serde_json::to_value(evidence).expect("serialize reference evidence"));
+            }
+            proven_references += 1;
+        }
+
         let total_packages = package_stats.len();
         let visible_package_names = package_stats
             .keys()
@@ -314,6 +389,7 @@ impl Runtime {
         let coverage = coverage_for_scope(&self.stored.coverage, scope);
         let coverage_gap_count = coverage_gap_count(&coverage);
         let unresolved_import_count = unresolved_imports.len();
+        let unresolved_reference_count = unresolved_references.len();
         let packages_truncated = total_packages > limit;
         let boundaries_truncated = total_boundaries > boundary_values.len();
         let hotspots_truncated = total_hotspots > limit;
@@ -330,6 +406,11 @@ impl Runtime {
                 .into_iter()
                 .take(20usize.saturating_sub(gaps.len())),
         );
+        gaps.extend(
+            unresolved_references
+                .into_iter()
+                .take(20usize.saturating_sub(gaps.len())),
+        );
         if truncated {
             gaps.push(json!({"code":"ARCHITECTURE_RESULT_LIMIT"}));
         }
@@ -337,7 +418,7 @@ impl Runtime {
         Ok(json!({
             "snapshot":self.snapshot(),
             "package_depth":package_depth,
-            "relation_kinds":["CALLS","IMPLEMENTS","IMPORTS"],
+            "relation_kinds":["CALLS","IMPLEMENTS","IMPORTS","REFERENCES"],
             "packages":packages,
             "boundaries":boundary_values,
             "hotspots":hotspots,
@@ -356,14 +437,21 @@ impl Runtime {
                 "out_of_scope":out_of_scope_imports,
                 "unresolved_local":unresolved_import_count
             },
+            "reference_resolution":{
+                "proven":proven_references,
+                "external":external_references,
+                "out_of_scope":out_of_scope_references,
+                "unresolved_local":unresolved_reference_count
+            },
             "truncated":truncated,
-            "partial":truncated || coverage_gap_count > 0 || unresolved_import_count > 0,
+            "partial":truncated || coverage_gap_count > 0 || unresolved_import_count > 0 || unresolved_reference_count > 0,
             "coverage_gaps":gaps,
-            "coverage_gap_count":coverage_gap_count + unresolved_import_count + usize::from(truncated),
-            "coverage_gaps_truncated":coverage_gap_count + unresolved_import_count > 20,
+            "coverage_gap_count":coverage_gap_count + unresolved_import_count + unresolved_reference_count + usize::from(truncated),
+            "coverage_gaps_truncated":coverage_gap_count + unresolved_import_count + unresolved_reference_count > 20,
             "limitations":[
-                "Architecture uses proven CALLS, IMPLEMENTS and unambiguous repository-local IMPORTS relationships.",
+                "Architecture uses proven CALLS, IMPLEMENTS, unambiguous repository-local IMPORTS and conservative static REFERENCES relationships.",
                 "External imports are counted but omitted from the repository graph.",
+                "REFERENCES currently covers imported type or qualified symbol usage and omits calls and unqualified dynamic names.",
                 "Communities are deterministic weakly connected package components, not semantic clusters.",
                 "Missing or unresolved relationships remain coverage gaps, not absent dependencies."
             ]

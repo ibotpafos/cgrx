@@ -774,6 +774,7 @@ fn compact_architecture(value: &Value) -> Value {
         "communities":communities,
         "totals":value.get("totals"),
         "import_resolution":value.get("import_resolution"),
+        "reference_resolution":value.get("reference_resolution"),
         "gaps":value.get("coverage_gap_count"),
         "partial":value.get("partial")
     });
@@ -1240,7 +1241,7 @@ fn model_visible_schema() -> Value {
         {"name":"orient","description":"Context","inputSchema":{"type":"object","required":["task","budget","mode","scope"],"properties":{"task":{"type":"string"},"budget":{"type":"integer","minimum":1},"mode":{"enum":["FAST","PRECISE","BOUNDED"]},"scope":bounded_scope.clone()}}},
         {"name":"search_graph","description":"Symbols or bodies","inputSchema":{"type":"object","required":["query"],"properties":{"query":{"type":"string"},"language":{"enum":["typescript","go","python","rust"]},"include_body":{"type":"boolean"},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":50}}}},
         {"name":"get_outline","description":"File symbols","inputSchema":{"type":"object","required":["path"],"properties":{"path":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":500}}}},
-        {"name":"get_architecture","description":"Packages, proven call, implementation and local-import boundaries, hotspots, cycles and communities","inputSchema":{"type":"object","properties":{"scope":path_or_scope.clone(),"package_depth":{"type":"integer","minimum":1,"maximum":4},"limit":{"type":"integer","minimum":1,"maximum":100}}}},
+        {"name":"get_architecture","description":"Packages, proven call, implementation, local-import and static-reference boundaries, hotspots, cycles and communities","inputSchema":{"type":"object","properties":{"scope":path_or_scope.clone(),"package_depth":{"type":"integer","minimum":1,"maximum":4},"limit":{"type":"integer","minimum":1,"maximum":100}}}},
         {"name":"trace_path","description":"Calls","inputSchema":{"type":"object","required":["symbol"],"properties":{"symbol":{"type":"string"},"path":{"type":"string"},"direction":{"enum":["callers","callees","both"]},"depth":{"type":"integer","minimum":1,"maximum":4},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":50}}}},
         {"name":"find_usages","description":"Proven usages","inputSchema":{"type":"object","required":["symbol"],"properties":{"symbol":{"type":"string"},"path":{"type":"string"},"depth":{"type":"integer","minimum":1,"maximum":4},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":500}}}},
         {"name":"suggest_refactors","description":"Similar code and hypothetical graph delta","inputSchema":{"type":"object","properties":{"language":{"enum":["typescript","go","python","rust"]},"min_score":{"type":"integer","minimum":0,"maximum":1000},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":50}}}},
@@ -1417,7 +1418,7 @@ mod openai_metadata_tests {
     fn compact_architecture_keeps_agent_payload_bounded_without_losing_evidence_pointer() {
         let structured = json!({
             "snapshot":{"repo_revision":"abc123","working_tree_digest":"00","graph_generation":9},
-            "relation_kinds":["CALLS","IMPLEMENTS","IMPORTS"],
+            "relation_kinds":["CALLS","IMPLEMENTS","IMPORTS","REFERENCES"],
             "packages":[{"name":"api","files":2,"symbols":4,"fan_in":1,"fan_out":2}],
             "boundaries":[{
                 "source":"api","target":"core","edges":2,"relations":["CALLS"],
@@ -1431,6 +1432,7 @@ mod openai_metadata_tests {
             "communities":[{"packages":["api","core"],"method":"DETERMINISTIC_WEAK_COMPONENT"}],
             "totals":{"packages":2,"boundaries":1,"hotspots":1,"cycles":1,"communities":1},
             "import_resolution":{"proven":1,"external":2,"out_of_scope":0,"unresolved_local":0},
+            "reference_resolution":{"proven":2,"external":1,"out_of_scope":0,"unresolved_local":0},
             "coverage_gap_count":0,"partial":false,"truncated":false
         });
 
@@ -1450,6 +1452,7 @@ mod openai_metadata_tests {
         );
         assert_eq!(compact["boundaries"][0][5], "api/handler.ts");
         assert_eq!(compact["import_resolution"]["proven"], 1);
+        assert_eq!(compact["reference_resolution"]["proven"], 2);
         let encoded = serde_json::to_string(&compact).unwrap();
         assert!(!encoded.contains(&"x".repeat(20_000)));
         assert!(

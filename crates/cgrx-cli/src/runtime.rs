@@ -42,7 +42,7 @@ use serde_json::{Value, json};
 
 use crate::intent::{TaskIntent, classify};
 
-const EXTRACTION_REVISION: u32 = 24;
+const EXTRACTION_REVISION: u32 = 25;
 
 const NODES_SEGMENT: &str = "nodes.seg";
 const EDGES_SEGMENT: &str = "edges.seg";
@@ -2180,6 +2180,33 @@ fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPath, RuntimeE
             body_end: edge.span.end,
             provenance: "IMPORTS".to_owned(),
             semantic_tags: vec!["IMPORTS".to_owned()],
+        });
+    }
+    for edge in edges
+        .iter()
+        .filter(|edge| edge.relation == LanguageRelation::References)
+    {
+        let text = String::from_utf8_lossy(&source[edge.span.start..edge.span.end]).into_owned();
+        documents.push(StoredDocument {
+            rust_module_target: None,
+            rust_self_target: None,
+            ts_lexical_target: None,
+            go_field_target: None,
+            go_import_path: None,
+            go_import_explicit_alias: false,
+            go_package: None,
+            go_receiver_target: None,
+            node_id: stable_node_id(relative, edge.span, &format!("reference:{text}")),
+            qualified_name: edge.target.clone(),
+            path: relative.to_owned(),
+            text: text.clone(),
+            search_text: text,
+            span_start: edge.span.start,
+            span_end: edge.span.end,
+            body_start: edge.span.start,
+            body_end: edge.span.end,
+            provenance: "REFERENCES".to_owned(),
+            semantic_tags: vec!["REFERENCES".to_owned()],
         });
     }
     for edge in edges {
@@ -5563,7 +5590,7 @@ mod compact_storage_tests {
             serde_json::from_value::<StoredDocument>(encoded).unwrap(),
             doc
         );
-        assert_eq!(EXTRACTION_REVISION, 24);
+        assert_eq!(EXTRACTION_REVISION, 25);
     }
 
     #[test]
