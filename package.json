@@ -1,0 +1,11 @@
+{
+  "name": "cgrx-graph-explorer",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test crates/cgrx-cli/web/tests/*.test.js"
+  },
+  "engines": {
+    "node": ">=26 <27"
+  }
+}

@@ -161,6 +161,18 @@ impl HttpResponse {
         Self::new(200, "text/html; charset=utf-8", body.as_bytes().to_vec())
     }
 
+    pub(super) fn css(body: &str) -> Self {
+        Self::new(200, "text/css; charset=utf-8", body.as_bytes().to_vec())
+    }
+
+    pub(super) fn javascript(body: &str) -> Self {
+        Self::new(
+            200,
+            "text/javascript; charset=utf-8",
+            body.as_bytes().to_vec(),
+        )
+    }
+
     pub(super) fn json(value: serde_json::Value) -> Self {
         Self::new(
             200,

@@ -197,3 +197,27 @@ fn http_boundary_rejects_malformed_and_traversal_requests() {
     let _ = stream.read_to_string(&mut oversized);
     assert!(oversized.starts_with("HTTP/1.1 413"), "{oversized}");
 }
+
+#[test]
+fn serves_embedded_assets_with_security_headers() {
+    let (_repository, server) = start_server();
+    for (path, content_type, marker) in [
+        ("/", "text/html", "CGRX Evidence Graph"),
+        ("/assets/styles.css", "text/css", "--surface"),
+        ("/assets/layout.js", "text/javascript", "layoutGraph"),
+        ("/assets/state.js", "text/javascript", "createState"),
+        ("/assets/app.js", "text/javascript", "loadStatus"),
+    ] {
+        let response = request(&server, "GET", path, false);
+        assert!(response.starts_with("HTTP/1.1 200"), "{path}: {response}");
+        assert!(
+            response.contains(&format!("Content-Type: {content_type}")),
+            "{path}: {response}"
+        );
+        assert!(
+            response.contains("Content-Security-Policy:"),
+            "{path}: {response}"
+        );
+        assert!(response.contains(marker), "{path}: {response}");
+    }
+}

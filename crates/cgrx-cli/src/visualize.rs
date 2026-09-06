@@ -127,6 +127,10 @@ impl Visualizer {
         }
         let response = match request.path.as_str() {
             "/" | "/index.html" => HttpResponse::html(assets::INDEX),
+            "/assets/styles.css" => HttpResponse::css(assets::STYLES),
+            "/assets/layout.js" => HttpResponse::javascript(assets::LAYOUT),
+            "/assets/state.js" => HttpResponse::javascript(assets::STATE),
+            "/assets/app.js" => HttpResponse::javascript(assets::APP),
             "/api/status" => self.status(),
             "/api/search" => self.api_result(self.search(request)),
             "/api/graph" => self.api_result(self.graph(request)),

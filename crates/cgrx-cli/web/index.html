@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>CGRX Evidence Graph</title>
+  <link rel="stylesheet" href="/assets/styles.css">
+  <script type="module" src="/assets/app.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#graph-canvas">Skip to graph</a>
+  <header class="topbar">
+    <div class="brand" aria-label="CGRX Evidence Graph Explorer">
+      <span class="brand__mark" aria-hidden="true">CX</span>
+      <span><strong>CGRX</strong><small>Evidence Graph</small></span>
+    </div>
+    <div class="snapshot" aria-live="polite">
+      <span id="freshness" class="badge badge--loading">connecting</span>
+      <code id="revision">loading snapshot</code>
+    </div>
+  </header>
+
+  <main class="workspace">
+    <aside class="rail" aria-label="Graph discovery">
+      <form id="search-form" class="search" role="search">
+        <label for="search-input">Find a symbol</label>
+        <div class="search__row">
+          <input id="search-input" name="query" autocomplete="off" placeholder="Runtime, handler, save…" required>
+          <button type="submit" aria-label="Search">↵</button>
+        </div>
+      </form>
+      <section class="rail__section" aria-labelledby="results-title">
+        <div class="section-title"><h2 id="results-title">Matches</h2><span id="match-count">0</span></div>
+        <div id="search-results" class="item-list"><p class="quiet">Search by intent or symbol.</p></div>
+      </section>
+      <section class="rail__section rail__section--grow" aria-labelledby="refactors-title">
+        <div class="section-title"><h2 id="refactors-title">Refactor paths</h2><span id="candidate-count">0</span></div>
+        <div id="refactor-list" class="item-list"><p class="quiet">Scanning bounded candidates…</p></div>
+      </section>
+    </aside>
+
+    <section class="stage" aria-labelledby="graph-title">
+      <div class="stage__toolbar">
+        <div>
+          <p class="eyebrow">Focused neighborhood</p>
+          <h1 id="graph-title">Choose a symbol</h1>
+        </div>
+        <div class="mode-switch" role="group" aria-label="Graph mode">
+          <button class="is-active" data-mode="current">Current</button>
+          <button data-mode="changes">Changes</button>
+          <button data-mode="preview">Preview</button>
+          <button data-mode="compare">Compare</button>
+        </div>
+        <div class="view-actions">
+          <button id="zoom-out" aria-label="Zoom out">−</button>
+          <button id="reset-view">Reset</button>
+          <button id="zoom-in" aria-label="Zoom in">+</button>
+        </div>
+      </div>
+      <div id="graph-message" class="graph-message">
+        <strong>Trace evidence, then compare futures.</strong>
+        <span>Current edges stay separate from hypothetical refactor paths.</span>
+      </div>
+      <div id="graph-canvas" class="graph-canvas" tabindex="0" aria-label="Interactive code relationship graph">
+        <svg id="graph-svg" role="img" aria-labelledby="graph-title graph-description">
+          <desc id="graph-description">A focused code graph arranged from callers through selected entry points to callees, with tests below.</desc>
+          <g id="camera-layer"></g>
+        </svg>
+      </div>
+      <footer class="legend" aria-label="Evidence legend">
+        <span><i class="key key--proven">✓</i> proven now</span>
+        <span><i class="key key--gap">?</i> unresolved gap</span>
+        <span><i class="key key--future">+</i> proposed future</span>
+        <span><i class="key key--test">T</i> candidate test · not run</span>
+      </footer>
+    </section>
+
+    <aside class="inspector" aria-label="Evidence inspector">
+      <div class="section-title"><h2>Evidence</h2><span id="selection-kind">none</span></div>
+      <div id="inspector-content" class="inspector__content">
+        <p class="quiet">Select a node or edge to inspect its source identity, resolver and confidence.</p>
+      </div>
+      <section id="strategy-panel" class="strategy-panel" hidden>
+        <div id="strategy-tabs" class="strategy-tabs" role="tablist" aria-label="Refactor strategies"></div>
+        <div id="strategy-detail"></div>
+        <div class="copy-actions">
+          <button id="copy-agent">Copy agent plan</button>
+          <button id="copy-mcp" class="button--quiet">Copy MCP call</button>
+        </div>
+      </section>
+    </aside>
+  </main>
+  <div id="announcer" class="sr-only" aria-live="polite"></div>
+</body>
+</html>

@@ -1,5 +1,5 @@
-pub(super) const INDEX: &str = r#"<!doctype html>
-<html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>CGRX Graph Explorer</title></head>
-<body><main><h1>CGRX Graph Explorer</h1><p>Evidence graph loading…</p></main></body>
-</html>"#;
+pub(super) const INDEX: &str = include_str!("../../web/index.html");
+pub(super) const STYLES: &str = include_str!("../../web/styles.css");
+pub(super) const LAYOUT: &str = include_str!("../../web/layout.js");
+pub(super) const STATE: &str = include_str!("../../web/state.js");
+pub(super) const APP: &str = include_str!("../../web/app.js");
