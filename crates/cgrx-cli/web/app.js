@@ -1,6 +1,6 @@
 import { edgeStyle, layoutGraph } from "./layout.js";
 import "./vendor/web-git-graph.js";
-import { pageForGitGraph } from "./git-history.js";
+import { CgrxGitGraphProvider } from "./git-history.js";
 import { createState, projectArchitecture, projectGraph, reduce, serializeAgentPlan, snapshotKey, summarizeBoundedResult } from "./state.js";
 
 const NS = "http://www.w3.org/2000/svg";
@@ -15,8 +15,7 @@ let currentGraph = null;
 let currentArchitecture = null;
 let currentCandidate = null;
 let currentStrategy = null;
-let currentHistory = null;
-let historyLimit = 200;
+let historyConnected = false;
 let requestGeneration = 0;
 let changedPaths = [];
 let panStart = null;
@@ -31,10 +30,11 @@ const ids = [
 ];
 const el = Object.fromEntries(ids.map((id) => [id, document.getElementById(id)]));
 
-async function api(path) {
+async function api(path, signal) {
   const response = await fetch(path, {
     headers: { "X-CGRX-Token": capability },
-    cache: "no-store"
+    cache: "no-store",
+    signal
   });
   const value = await response.json();
   if (!response.ok) throw new Error(value?.error?.detail || `Request failed: ${response.status}`);
@@ -56,8 +56,7 @@ export async function loadStatus() {
     el["strategy-panel"].hidden = true;
     await loadRefactors();
     await loadArchitecture();
-    currentHistory = null;
-    if (state.mode === "history") await loadGitHistory();
+    if (historyConnected) el["git-history"].refresh();
     if (currentGraph?.root) await loadGraph(currentGraph.root.symbol, currentGraph.root.path);
   }
   return value;
@@ -128,18 +127,15 @@ async function loadArchitecture() {
   return value;
 }
 
-async function loadGitHistory(limit = historyLimit) {
-  historyLimit = Math.min(500, Math.max(1, limit));
-  const value = await api(`/api/git-history?limit=${historyLimit}`);
-  currentHistory = value;
-  el["git-history"].data = pageForGitGraph(value);
+function connectGitHistory() {
+  if (historyConnected) return;
   el["git-history"].theme = "dark";
   el["git-history"].density = "compact";
   el["git-history"].columns = "commit";
   el["git-history"].dateFormat = "relative";
   el["git-history"].avatars = false;
-  if (state.mode === "history") renderMode();
-  return value;
+  el["git-history"].provider = new CgrxGitGraphProvider(api);
+  historyConnected = true;
 }
 
 function renderGraph(graph) {
@@ -187,7 +183,6 @@ function renderMode() {
   if (history) {
     el["graph-title"].textContent = "Git history";
     el["graph-message"].hidden = true;
-    if (!currentHistory) setMessage("Loading Git history…");
     return;
   }
   if (state.mode === "architecture") {
@@ -443,13 +438,11 @@ document.querySelectorAll("[data-mode]").forEach((button) => button.addEventList
   if (state.mode === "architecture" && !currentArchitecture) {
     loadArchitecture().catch((error) => setMessage(error.message));
   }
-  if (state.mode === "history" && !currentHistory) {
-    loadGitHistory().catch((error) => setMessage(error.message));
-  }
+  if (state.mode === "history") connectGitHistory();
 }));
 el["git-history"].addEventListener("gitgraph-commit-select", (event) => {
   const commit = event.detail.commit;
-  const refs = (currentHistory?.refs || []).filter((ref) => ref.target === commit.oid).map((ref) => ref.name);
+  const refs = (el["git-history"].data?.refs || []).filter((ref) => ref.target === commit.oid).map((ref) => ref.name);
   el["selection-kind"].textContent = "commit";
   el["inspector-content"].innerHTML = facts([
     ["Commit", commit.oid],
@@ -460,9 +453,8 @@ el["git-history"].addEventListener("gitgraph-commit-select", (event) => {
     ["Refs", refs.join(", ") || "none"]
   ]);
 });
-el["git-history"].addEventListener("gitgraph-load-more", () => {
-  if (historyLimit >= 500) return;
-  loadGitHistory(historyLimit + 100).catch((error) => setMessage(error.message));
+el["git-history"].addEventListener("gitgraph-error", (event) => {
+  setMessage(event.detail?.error?.message || "Git history request failed");
 });
 el["zoom-in"].addEventListener("click", () => zoom(1.2));
 el["zoom-out"].addEventListener("click", () => zoom(1 / 1.2));
