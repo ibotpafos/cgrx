@@ -141,6 +141,7 @@ impl Visualizer {
             "/api/status" => self.status(),
             "/api/search" => self.api_result(self.search(request)),
             "/api/graph" => self.api_result(self.graph(request)),
+            "/api/architecture" => self.api_result(self.architecture(request)),
             "/api/refactors" => self.api_result(self.refactors(request)),
             "/api/snippet" => self.api_result(self.snippet(request)),
             _ => HttpResponse::json_error(404, "cgrx.not_found", "route not found"),
@@ -208,6 +209,14 @@ impl Visualizer {
             request.query("language").filter(|value| !value.is_empty()),
             number(request, "min_score", 760)?,
             number(request, "limit", 8)?,
+        )
+    }
+
+    fn architecture(&self, request: &HttpRequest) -> Result<serde_json::Value, RuntimeError> {
+        self.runtime.get_architecture(
+            &scope(request, 4),
+            number(request, "package_depth", 2)?,
+            number(request, "limit", 50)?,
         )
     }
 

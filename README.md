@@ -17,6 +17,8 @@ explicitly on each request. No embedding service, hosted index or API key.
 - Candidate relationship-risk detection for working-tree changes.
 - Snapshot-bound refactoring candidates with hypothetical graph projections.
 - Local evidence graph explorer with current, changed and refactor-future views.
+- Snapshot-bound architecture projection with packages, proven boundaries,
+  hotspots, package cycles and deterministic communities.
 - Incremental working-tree refresh, isolated repo identities and writer locks.
 - Rust, Go, TypeScript/JavaScript/TSX and Python parsing. Resolution depth varies
   by language; this does not replace a compiler or language server.
@@ -94,9 +96,11 @@ evidence inspector remain available without pointer-only interaction. Dragging
 a node pins it, arrow keys pan the canvas, and Reset restores the deterministic
 layout.
 
-The workspace has four modes:
+The workspace has five modes:
 
 - **Current** shows only indexed evidence from the active snapshot.
+- **Architecture** aggregates the same proven relationships into packages and
+  exposes fan-in, fan-out, file and symbol counts in the inspector.
 - **Changes** marks nodes from changed source paths.
 - **Preview** overlays one selected refactor strategy.
 - **Compare** shows current and selected future graphs with one synchronized
@@ -117,6 +121,7 @@ is not required by the released executable.
 | status | Snapshot, graph counts, freshness, coverage |
 | search_graph | Bounded symbol/body discovery with optional language filter |
 | get_outline | File symbols and definition spans without bodies |
+| get_architecture | Packages, proven boundaries, hotspots, cycles and communities |
 | trace_path | Caller/callee traversal |
 | find_usages | Proven direct or transitive incoming call/implementation sites |
 | get_code_snippet | Exact source definition |
@@ -133,6 +138,12 @@ both `.ts` and `.tsx`. Every match reports `matched_by` as `symbol` or `body`.
 Use `get_outline` with a repository-relative source path to inspect its symbols
 in source order without paying for function bodies; `limit` defaults to 200 and
 is capped at 500.
+`get_architecture` groups symbols by the first `package_depth` path components
+and aggregates only proven `CALLS` and `IMPLEMENTS` relationships. It returns
+evidence-bearing cross-package boundaries, fan-in hotspots, strongly connected
+package cycles and deterministic weak-component communities. Results are bound
+to the current snapshot and report truncation and coverage gaps; this contract
+does not claim import or semantic-community edges.
 `find_usages` resolves an exact target symbol, then returns only proven incoming
 `CALLS`/`IMPLEMENTS` edges allowed by `scope`, including callsite path/span and
 resolver class. `depth` defaults to 1 and is capped at 4; transitive rows include

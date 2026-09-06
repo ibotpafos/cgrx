@@ -135,7 +135,7 @@ fn multi_repo_lazy_schema_and_notifications() {
     );
     let r = m.rpc("tools/list", json!({}));
     let ts = r["result"]["tools"].as_array().unwrap();
-    assert_eq!(ts.len(), 11);
+    assert_eq!(ts.len(), 12);
     for t in ts {
         assert!(
             t["inputSchema"]["required"]
@@ -172,6 +172,27 @@ fn multi_repo_refactor_payload_tokens_cover_decorated_response() {
         .unwrap()
         .count(&serde_json::to_string(&visible).unwrap());
     assert_eq!(reported, u64::from(expected));
+}
+
+#[test]
+fn multi_repo_architecture_returns_snapshot_bound_package_projection() {
+    let d = Dir::new();
+    let repo = d.repo(
+        "architecture",
+        "fn target() {}\nfn caller() { target(); }\n",
+    );
+    let mut m = Mcp::new(&d.0, "1", &d.0.join("log"));
+    let response = m.tool(
+        "get_architecture",
+        json!({"repo":repo,"scope":"**","package_depth":1,"limit":20}),
+    );
+    assert!(response.get("result").is_some(), "{response}");
+    let payload = &response["result"]["structuredContent"];
+    assert!(payload["snapshot"]["repo_revision"].is_string());
+    assert_eq!(payload["relation_kinds"], json!(["CALLS", "IMPLEMENTS"]));
+    assert_eq!(payload["packages"][0]["name"], ".");
+    assert_eq!(payload["packages"][0]["symbols"], 2);
+    assert_eq!(payload["partial"], false);
 }
 #[test]
 fn multi_repo_invalid_flags() {

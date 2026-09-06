@@ -251,6 +251,7 @@ fn tools_list_advertises_bounded_graph_search_and_trace() {
 
     assert!(names.contains(&"search_graph"), "tools: {names:?}");
     assert!(names.contains(&"get_outline"), "tools: {names:?}");
+    assert!(names.contains(&"get_architecture"), "tools: {names:?}");
     assert!(names.contains(&"trace_path"), "tools: {names:?}");
     assert!(names.contains(&"find_usages"), "tools: {names:?}");
     assert!(names.contains(&"suggest_refactors"), "tools: {names:?}");
@@ -283,6 +284,18 @@ fn tools_list_advertises_bounded_graph_search_and_trace() {
     assert_eq!(
         refactors["inputSchema"]["properties"]["limit"]["maximum"],
         50
+    );
+    let architecture = tools
+        .iter()
+        .find(|tool| tool["name"] == "get_architecture")
+        .unwrap();
+    assert_eq!(
+        architecture["inputSchema"]["properties"]["package_depth"]["maximum"],
+        4
+    );
+    assert_eq!(
+        architecture["inputSchema"]["properties"]["limit"]["maximum"],
+        100
     );
 }
 

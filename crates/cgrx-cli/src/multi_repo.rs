@@ -11,13 +11,14 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
-const TOOLS: [&str; 11] = [
+const TOOLS: [&str; 12] = [
     "scan_risks",
     "orient",
     "expand",
     "status",
     "search_graph",
     "get_outline",
+    "get_architecture",
     "trace_path",
     "find_usages",
     "suggest_refactors",

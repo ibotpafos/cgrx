@@ -154,6 +154,7 @@ fn read_only_api_routes_share_the_current_snapshot() {
         "/api/search?q=selected&scope=**&limit=8",
         "/api/graph?symbol=selected&path=main.rs&direction=both&depth=1&node_limit=80&edge_limit=160",
         "/api/refactors?scope=**&language=rust&min_score=760&limit=8",
+        "/api/architecture?scope=**&package_depth=1&limit=20",
         "/api/snippet?symbol=selected&path=main.rs",
     ];
     let mut snapshots = Vec::new();

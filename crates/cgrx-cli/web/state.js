@@ -1,4 +1,4 @@
-const MODES = new Set(["current", "changes", "preview", "compare"]);
+const MODES = new Set(["current", "architecture", "changes", "preview", "compare"]);
 
 export function createState(snapshot = null) {
   return {
@@ -128,6 +128,43 @@ export function projectGraph(current, strategy) {
     nodes.set(key, { ...nodes.get(key), status: "remove" });
   }
   return { ...current, nodes: [...nodes.values()], edges, projection: strategy.strategy_id };
+}
+
+export function projectArchitecture(value) {
+  const cyclic = new Set((value.cycles || []).flatMap((cycle) => cycle.packages || []));
+  const nodes = (value.packages || []).map((item) => ({
+    node_id: `package:${item.name}`,
+    symbol: item.name,
+    path: item.name,
+    span: { start: 0, end: 0 },
+    source_hash: "package-projection",
+    lane: "entrypoints",
+    kind: "package",
+    files: item.files,
+    symbols: item.symbols,
+    fan_in: item.fan_in,
+    fan_out: item.fan_out,
+    cycle: cyclic.has(item.name),
+    status: "current"
+  }));
+  const edges = (value.boundaries || []).map((item) => ({
+    source: `package:${item.source}`,
+    target: `package:${item.target}`,
+    relation: (item.relations || []).join("+") || "CALLS",
+    confidence: item.confidence,
+    status: "current",
+    evidence: item.evidence?.[0],
+    evidence_count: item.edges
+  }));
+  return {
+    snapshot: value.snapshot,
+    root: { symbol: "Architecture", path: "." },
+    nodes,
+    edges,
+    containers: [],
+    partial: value.partial,
+    coverage_gap_count: value.coverage_gap_count
+  };
 }
 
 function identity(node) {

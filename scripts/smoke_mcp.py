@@ -41,15 +41,18 @@ with tempfile.TemporaryDirectory(prefix="cgrx-smoke-") as directory:
         {"jsonrpc": "2.0", "id": 7, "method": "tools/call", "params": {
             "name": "suggest_refactors", "arguments": {"repo": directory,
             "scope": "main.py", "language": "python", "min_score": 760, "limit": 20}}},
+        {"jsonrpc": "2.0", "id": 8, "method": "tools/call", "params": {
+            "name": "get_architecture", "arguments": {"repo": directory,
+            "scope": "**", "package_depth": 1, "limit": 20}}},
     ]
     result = subprocess.run([binary, "serve", "--multi-repo"],
                             input="".join(json.dumps(f) + "\n" for f in frames),
                             text=True, capture_output=True, timeout=60)
     assert result.returncode == 0, result.stderr
     responses = [json.loads(line) for line in result.stdout.splitlines()]
-    assert len(responses) == 7, responses
+    assert len(responses) == 8, responses
     assert all("error" not in r for r in responses), responses
-    assert len(responses[1]["result"]["tools"]) == 11, responses[1]
+    assert len(responses[1]["result"]["tools"]) == 12, responses[1]
     nodes = responses[2]["result"]["structuredContent"]["nodes"]
     assert len(nodes) == 1 and nodes[0]["symbol"] == "caller", responses[2]
     matches = responses[3]["result"]["structuredContent"]["matches"]
@@ -68,4 +71,9 @@ with tempfile.TemporaryDirectory(prefix="cgrx-smoke-") as directory:
     assert refactors["candidates"][0]["projection"]["remove"] == [], responses[6]
     visible = json.loads(responses[6]["result"]["content"][0]["text"])
     assert visible["payload_tokens"] > 0, visible
-print("MCP_SMOKE=PASS; TOOLS=11; CALLER=caller; BODY_SEARCH=target; OUTLINE=5; USAGES=1; REFACTORS=1")
+    architecture = responses[7]["result"]["structuredContent"]
+    assert architecture["packages"][0]["name"] == ".", responses[7]
+    assert architecture["packages"][0]["symbols"] == 5, responses[7]
+    assert architecture["relation_kinds"] == ["CALLS", "IMPLEMENTS"], responses[7]
+    assert set(architecture["snapshot"]) == {"repo_revision", "working_tree_digest", "graph_generation"}, responses[7]
+print("MCP_SMOKE=PASS; TOOLS=12; CALLER=caller; BODY_SEARCH=target; OUTLINE=5; USAGES=1; REFACTORS=1; ARCHITECTURE=1")
