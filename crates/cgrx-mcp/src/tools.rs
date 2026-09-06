@@ -703,19 +703,81 @@ fn compact_outline(value: &Value) -> Value {
 }
 
 fn compact_architecture(value: &Value) -> Value {
-    json!({
+    let packages = value
+        .get("packages")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .map(|item| {
+            json!([
+                item.get("name"),
+                item.get("files"),
+                item.get("symbols"),
+                item.get("fan_in"),
+                item.get("fan_out")
+            ])
+        })
+        .collect::<Vec<_>>();
+    let boundaries = value
+        .get("boundaries")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .map(|item| {
+            let evidence = item
+                .get("evidence")
+                .and_then(Value::as_array)
+                .and_then(|items| items.first());
+            json!([
+                item.get("source"),
+                item.get("target"),
+                item.get("edges"),
+                item.get("relations"),
+                item.get("confidence"),
+                evidence.and_then(|row| row.get("path")),
+                evidence.and_then(|row| row.pointer("/span/start")),
+                evidence.and_then(|row| row.pointer("/span/end"))
+            ])
+        })
+        .collect::<Vec<_>>();
+    let hotspots = value
+        .get("hotspots")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .map(|item| json!([item.get("symbol"), item.get("path"), item.get("fan_in")]))
+        .collect::<Vec<_>>();
+    let cycles = value
+        .get("cycles")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|item| item.get("packages"))
+        .collect::<Vec<_>>();
+    let communities = value
+        .get("communities")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|item| item.get("packages"))
+        .collect::<Vec<_>>();
+    let mut compact = json!({
         "at":snapshot_tag(value.get("snapshot")),
         "relation_kinds":value.get("relation_kinds"),
-        "packages":value.get("packages"),
-        "boundaries":value.get("boundaries"),
-        "hotspots":value.get("hotspots"),
-        "cycles":value.get("cycles"),
-        "communities":value.get("communities"),
+        "package_cols":["name","files","symbols","fan_in","fan_out"],
+        "packages":packages,
+        "boundary_cols":["source","target","edges","relations","confidence","path","start","end"],
+        "boundaries":boundaries,
+        "hotspot_cols":["symbol","path","fan_in"],
+        "hotspots":hotspots,
+        "cycles":cycles,
+        "communities":communities,
         "totals":value.get("totals"),
         "gaps":value.get("coverage_gap_count"),
-        "partial":value.get("partial"),
-        "more":value.get("truncated")
-    })
+        "partial":value.get("partial")
+    });
+    insert_more_when_true(&mut compact, value.get("truncated"));
+    compact
 }
 
 fn compact_trace(value: &Value) -> Value {
@@ -1348,5 +1410,49 @@ mod openai_metadata_tests {
             .unwrap()
             .count(&serde_json::to_string(&counted).unwrap());
         assert_eq!(compact["payload_tokens"], expected);
+    }
+
+    #[test]
+    fn compact_architecture_keeps_agent_payload_bounded_without_losing_evidence_pointer() {
+        let structured = json!({
+            "snapshot":{"repo_revision":"abc123","working_tree_digest":"00","graph_generation":9},
+            "relation_kinds":["CALLS","IMPLEMENTS"],
+            "packages":[{"name":"api","files":2,"symbols":4,"fan_in":1,"fan_out":2}],
+            "boundaries":[{
+                "source":"api","target":"core","edges":2,"relations":["CALLS"],
+                "confidence":"PROVEN","evidence":[{
+                    "path":"api/handler.ts","span":{"start":10,"end":20},
+                    "proof":"x".repeat(20_000)
+                }]
+            }],
+            "hotspots":[{"symbol":"save","path":"core/store.ts","fan_in":8}],
+            "cycles":[{"packages":["api","core"],"kind":"PACKAGE_CALL_CYCLE"}],
+            "communities":[{"packages":["api","core"],"method":"DETERMINISTIC_WEAK_COMPONENT"}],
+            "totals":{"packages":2,"boundaries":1,"hotspots":1,"cycles":1,"communities":1},
+            "coverage_gap_count":0,"partial":false,"truncated":false
+        });
+
+        let compact = compact_architecture(&structured);
+        assert_eq!(
+            compact["boundary_cols"],
+            json!([
+                "source",
+                "target",
+                "edges",
+                "relations",
+                "confidence",
+                "path",
+                "start",
+                "end"
+            ])
+        );
+        assert_eq!(compact["boundaries"][0][5], "api/handler.ts");
+        let encoded = serde_json::to_string(&compact).unwrap();
+        assert!(!encoded.contains(&"x".repeat(20_000)));
+        assert!(
+            encoded.len() < 2_000,
+            "compact payload bytes: {}",
+            encoded.len()
+        );
     }
 }
