@@ -42,7 +42,7 @@ use serde_json::{Value, json};
 
 use crate::intent::{TaskIntent, classify};
 
-const EXTRACTION_REVISION: u32 = 23;
+const EXTRACTION_REVISION: u32 = 24;
 
 const NODES_SEGMENT: &str = "nodes.seg";
 const EDGES_SEGMENT: &str = "edges.seg";
@@ -2150,6 +2150,36 @@ fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPath, RuntimeE
             } else {
                 Vec::new()
             },
+        });
+    }
+    for edge in edges
+        .iter()
+        .filter(|edge| edge.relation == LanguageRelation::Imports)
+    {
+        // Import resolution must use the exact parser-owned statement. A
+        // line-oriented context slice can contain adjacent imports and make an
+        // external specifier look like a second repository-local dependency.
+        let text = String::from_utf8_lossy(&source[edge.span.start..edge.span.end]).into_owned();
+        documents.push(StoredDocument {
+            rust_module_target: None,
+            rust_self_target: None,
+            ts_lexical_target: None,
+            go_field_target: None,
+            go_import_path: None,
+            go_import_explicit_alias: false,
+            go_package: None,
+            go_receiver_target: None,
+            node_id: stable_node_id(relative, edge.span, &format!("import:{text}")),
+            qualified_name: edge.target.clone(),
+            path: relative.to_owned(),
+            text: text.clone(),
+            search_text: text,
+            span_start: edge.span.start,
+            span_end: edge.span.end,
+            body_start: edge.span.start,
+            body_end: edge.span.end,
+            provenance: "IMPORTS".to_owned(),
+            semantic_tags: vec!["IMPORTS".to_owned()],
         });
     }
     for edge in edges {
@@ -5533,7 +5563,7 @@ mod compact_storage_tests {
             serde_json::from_value::<StoredDocument>(encoded).unwrap(),
             doc
         );
-        assert_eq!(EXTRACTION_REVISION, 23);
+        assert_eq!(EXTRACTION_REVISION, 24);
     }
 
     #[test]

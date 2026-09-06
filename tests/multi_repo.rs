@@ -189,7 +189,10 @@ fn multi_repo_architecture_returns_snapshot_bound_package_projection() {
     assert!(response.get("result").is_some(), "{response}");
     let payload = &response["result"]["structuredContent"];
     assert!(payload["snapshot"]["repo_revision"].is_string());
-    assert_eq!(payload["relation_kinds"], json!(["CALLS", "IMPLEMENTS"]));
+    assert_eq!(
+        payload["relation_kinds"],
+        json!(["CALLS", "IMPLEMENTS", "IMPORTS"])
+    );
     assert_eq!(payload["packages"][0]["name"], ".");
     assert_eq!(payload["packages"][0]["symbols"], 2);
     assert_eq!(payload["partial"], false);

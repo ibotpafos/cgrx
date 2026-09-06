@@ -711,6 +711,17 @@ fn module_path(
         .filter(|p| !p.ends_with(".d.ts"))
 }
 
+/// Resolve one static module specifier to exactly one indexed source file.
+/// Callers supply revision-bound alias mappings; ambiguous candidates abstain.
+pub fn resolve_module_path(
+    files: &BTreeMap<String, TsFileFacts>,
+    from: &str,
+    module: &str,
+    modules: &BTreeMap<(String, String), String>,
+) -> Option<String> {
+    module_path(files, from, module, modules)
+}
+
 pub fn resolve_call(
     files: &BTreeMap<String, TsFileFacts>,
     path: &str,
