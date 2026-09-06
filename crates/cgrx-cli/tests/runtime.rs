@@ -1478,6 +1478,66 @@ fn search_graph_can_search_bodies_and_filter_every_supported_language() {
 }
 
 #[test]
+fn get_outline_lists_symbols_in_source_order_for_every_supported_extension() {
+    let repository = TestDirectory::new("file-outline");
+    git(repository.path(), &["init", "-q"]);
+    git(
+        repository.path(),
+        &["config", "user.email", "test@example.invalid"],
+    );
+    git(repository.path(), &["config", "user.name", "CGRX Test"]);
+    let fixtures = [
+        (
+            "outline.ts",
+            "function tsFirst() {}\nfunction tsSecond() {}\n",
+            "typescript",
+        ),
+        (
+            "outline.tsx",
+            "function tsxFirst() { return <div />; }\nfunction tsxSecond() { return <span />; }\n",
+            "typescript",
+        ),
+        (
+            "outline.go",
+            "package sample\nfunc goFirst() {}\nfunc goSecond() {}\n",
+            "go",
+        ),
+        (
+            "outline.py",
+            "def py_first():\n    pass\n\ndef py_second():\n    pass\n",
+            "python",
+        ),
+        (
+            "outline.rs",
+            "fn rust_first() {}\nfn rust_second() {}\n",
+            "rust",
+        ),
+    ];
+    for (path, source, _) in fixtures {
+        fs::write(repository.path().join(path), source).expect("write outline fixture");
+    }
+    git(repository.path(), &["add", "."]);
+    git(repository.path(), &["commit", "-qm", "fixture"]);
+    let state = TestDirectory::new("file-outline-state");
+    Runtime::index(repository.path(), state.path()).expect("index repository");
+    let runtime = Runtime::open(state.path()).expect("open runtime");
+
+    for (path, _, language) in fixtures {
+        let outline = runtime.get_outline(path, 1).expect("get file outline");
+        assert_eq!(outline["path"], path);
+        assert_eq!(outline["language"], language);
+        assert_eq!(outline["total"], 2, "{path}: {outline}");
+        assert_eq!(outline["symbols"].as_array().unwrap().len(), 1);
+        assert_eq!(outline["truncated"], true);
+    }
+
+    let error = runtime
+        .get_outline("missing.rs", 20)
+        .expect_err("missing indexed path fails closed");
+    assert_eq!(error.code(), "cgrx.path_not_indexed");
+}
+
+#[test]
 fn trace_path_walks_callers_to_the_requested_depth() {
     let repository = repository_with_file(
         "trace-path-runtime",

@@ -250,6 +250,7 @@ fn tools_list_advertises_bounded_graph_search_and_trace() {
         .collect();
 
     assert!(names.contains(&"search_graph"), "tools: {names:?}");
+    assert!(names.contains(&"get_outline"), "tools: {names:?}");
     assert!(names.contains(&"trace_path"), "tools: {names:?}");
     assert!(names.contains(&"get_code_snippet"), "tools: {names:?}");
     assert!(names.contains(&"check_index_coverage"), "tools: {names:?}");
@@ -314,6 +315,13 @@ fn graph_tools_without_a_backend_return_a_typed_adapter_error() {
             "params":{"name":"search_graph","arguments":{"query":"target"}}
         }),
     );
+    let outlined = dispatch(
+        &mut server,
+        json!({
+            "jsonrpc":"2.0","id":10,"method":"tools/call",
+            "params":{"name":"get_outline","arguments":{"path":"src/lib.rs"}}
+        }),
+    );
     let traced = dispatch(
         &mut server,
         json!({
@@ -338,6 +346,10 @@ fn graph_tools_without_a_backend_return_a_typed_adapter_error() {
 
     assert_eq!(
         searched["error"]["data"]["code"],
+        "cgrx.index_adapter_not_connected"
+    );
+    assert_eq!(
+        outlined["error"]["data"]["code"],
         "cgrx.index_adapter_not_connected"
     );
     assert_eq!(

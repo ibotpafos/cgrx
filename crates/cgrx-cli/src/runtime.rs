@@ -303,6 +303,60 @@ impl Runtime {
         self.search_graph_with_matcher(query, scope, limit, language, include_body, path_in_scope)
     }
 
+    pub fn get_outline(&self, path: &str, limit: usize) -> Result<Value, RuntimeError> {
+        let path = path.trim();
+        if path.is_empty() || Path::new(path).is_absolute() || !(1..=500).contains(&limit) {
+            return Err(RuntimeError::new(
+                "cgrx.invalid_arguments",
+                "path must be relative and non-empty; limit must be between 1 and 500",
+            ));
+        }
+        let language = pack_for_path(Path::new(path))
+            .map(|pack| pack.id())
+            .ok_or_else(|| RuntimeError::new("cgrx.unsupported_path", path.to_owned()))?;
+        if !self.stored.path_hashes.contains_key(path) {
+            return Err(RuntimeError::new(
+                "cgrx.path_not_indexed",
+                format!("path {path} was not indexed"),
+            ));
+        }
+        let scope = Scope {
+            include: vec![path.to_owned()],
+            exclude: Vec::new(),
+            relation_kinds: vec![RelationKind::Calls, RelationKind::Implements],
+            max_depth: 0,
+        };
+        let mut scoped = ScopedQuery::new(&self.stored, &scope, path_in_scope);
+        let mut documents: Vec<_> = self
+            .stored
+            .documents
+            .iter()
+            .filter(|document| document.provenance == "SYNTAX" && document.path == path)
+            .collect();
+        documents.sort_by_key(|document| (document.span_start, document.node_id));
+        let total = documents.len();
+        let symbols: Vec<_> = documents
+            .into_iter()
+            .take(limit)
+            .map(|document| {
+                json!({
+                    "node_id":document.node_id,
+                    "symbol":document.qualified_name,
+                    "span":{"start":document.span_start,"end":document.span_end}
+                })
+            })
+            .collect();
+        Ok(json!({
+            "snapshot":self.stored.snapshot,
+            "path":path,
+            "language":language,
+            "symbols":symbols,
+            "total":total,
+            "truncated":total > limit,
+            "coverage_gap_count":coverage_gap_count(&scoped.coverage(&self.stored.coverage))
+        }))
+    }
+
     fn search_graph_with_matcher(
         &self,
         query: &str,

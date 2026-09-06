@@ -76,6 +76,7 @@ updates, uninstalling and troubleshooting.
 | --- | --- |
 | status | Snapshot, graph counts, freshness, coverage |
 | search_graph | Bounded symbol/body discovery with optional language filter |
+| get_outline | File symbols and definition spans without bodies |
 | trace_path | Caller/callee traversal |
 | get_code_snippet | Exact source definition |
 | check_index_coverage | Recorded gaps for paths/scopes |
@@ -87,6 +88,9 @@ updates, uninstalling and troubleshooting.
 also locate a term inside symbol bodies, and use `language` (`typescript`, `go`,
 `python`, or `rust`) to keep mixed-repository results focused. TypeScript covers
 both `.ts` and `.tsx`. Every match reports `matched_by` as `symbol` or `body`.
+Use `get_outline` with a repository-relative source path to inspect its symbols
+in source order without paying for function bodies; `limit` defaults to 200 and
+is capped at 500.
 
 See [the Trace MCP reference comparison](docs/reference-trace-mcp.md) for the
 evidence behind this search slice and the capabilities that remain separate.

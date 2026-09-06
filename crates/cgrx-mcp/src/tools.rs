@@ -42,6 +42,7 @@ pub trait ToolBackend: Send + Sync {
         language: Option<&str>,
         include_body: bool,
     ) -> Result<Value, BackendError>;
+    fn get_outline(&mut self, path: &str, limit: u32) -> Result<Value, BackendError>;
     fn trace_path(
         &mut self,
         symbol: &str,
@@ -271,6 +272,7 @@ impl Server {
             }
             "orient" => self.orient(from_value(call.arguments)?)?,
             "search_graph" => self.search_graph(from_value(call.arguments)?)?,
+            "get_outline" => self.get_outline(from_value(call.arguments)?)?,
             "trace_path" => self.trace_path(from_value(call.arguments)?)?,
             "get_code_snippet" => self.get_code_snippet(from_value(call.arguments)?)?,
             "check_index_coverage" => self.check_index_coverage(from_value(call.arguments)?)?,
@@ -359,6 +361,19 @@ impl Server {
                 arguments.language.as_deref(),
                 arguments.include_body,
             )
+            .map_err(backend_error)
+    }
+
+    fn get_outline(&mut self, arguments: GetOutlineArguments) -> Result<Value, JsonRpcError> {
+        let Some(backend) = &mut self.backend else {
+            return Err(JsonRpcError::typed(
+                -32020,
+                "cgrx.index_adapter_not_connected",
+                "get_outline requires an indexed runtime backend",
+            ));
+        };
+        backend
+            .get_outline(&arguments.path, arguments.limit)
             .map_err(backend_error)
     }
 
@@ -481,6 +496,7 @@ fn model_visible_result(tool: &str, structured: &Value) -> Value {
         "orient" => compact_orient(structured),
         "expand" => compact_expand(structured),
         "search_graph" => compact_search(structured),
+        "get_outline" => compact_outline(structured),
         "trace_path" => compact_trace(structured),
         "get_code_snippet" => compact_snippet(structured),
         "check_index_coverage" => compact_coverage(structured),
@@ -566,6 +582,33 @@ fn compact_search(value: &Value) -> Value {
         "rows": rows,
         "n": value.get("total"),
         "gaps": value.get("coverage_gap_count"),
+    });
+    insert_more_when_true(&mut compact, value.get("truncated"));
+    compact
+}
+
+fn compact_outline(value: &Value) -> Value {
+    let rows: Vec<_> = value
+        .get("symbols")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .map(|item| {
+            json!([
+                item.get("symbol"),
+                item.pointer("/span/start"),
+                item.pointer("/span/end")
+            ])
+        })
+        .collect();
+    let mut compact = json!({
+        "at":snapshot_tag(value.get("snapshot")),
+        "path":value.get("path"),
+        "language":value.get("language"),
+        "cols":["symbol","start","end"],
+        "rows":rows,
+        "n":value.get("total"),
+        "gaps":value.get("coverage_gap_count"),
     });
     insert_more_when_true(&mut compact, value.get("truncated"));
     compact
@@ -739,6 +782,13 @@ struct SearchGraphArguments {
 }
 
 #[derive(Deserialize)]
+struct GetOutlineArguments {
+    path: String,
+    #[serde(default = "default_outline_limit")]
+    limit: u32,
+}
+
+#[derive(Deserialize)]
 struct TracePathArguments {
     symbol: String,
     #[serde(default)]
@@ -778,6 +828,10 @@ const fn default_coverage_limit() -> usize {
 
 const fn default_graph_limit() -> u32 {
     20
+}
+
+const fn default_outline_limit() -> u32 {
+    200
 }
 
 fn default_trace_direction() -> String {
@@ -859,6 +913,7 @@ fn model_visible_schema() -> Value {
         {"name":"scan_risks","description":"Change risks; candidates only.","inputSchema":{"type":"object","properties":{"mode":{"enum":["changes"]},"limit":{"type":"integer","minimum":1,"maximum":50}}}},
         {"name":"orient","description":"Context","inputSchema":{"type":"object","required":["task","budget","mode","scope"],"properties":{"task":{"type":"string"},"budget":{"type":"integer","minimum":1},"mode":{"enum":["FAST","PRECISE","BOUNDED"]},"scope":bounded_scope.clone()}}},
         {"name":"search_graph","description":"Symbols or bodies","inputSchema":{"type":"object","required":["query"],"properties":{"query":{"type":"string"},"language":{"enum":["typescript","go","python","rust"]},"include_body":{"type":"boolean"},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":50}}}},
+        {"name":"get_outline","description":"File symbols","inputSchema":{"type":"object","required":["path"],"properties":{"path":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":500}}}},
         {"name":"trace_path","description":"Calls","inputSchema":{"type":"object","required":["symbol"],"properties":{"symbol":{"type":"string"},"path":{"type":"string"},"direction":{"enum":["callers","callees","both"]},"depth":{"type":"integer","minimum":1,"maximum":4},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":50}}}},
         {"name":"get_code_snippet","description":"Source","inputSchema":{"type":"object","required":["symbol"],"properties":{"symbol":{"type":"string"},"path":{"type":"string"}}}},
         {"name":"check_index_coverage","description":"Coverage","inputSchema":{"type":"object","properties":{"paths":{"type":"array","items":{"type":"string"}},"scopes":{"type":"array","items":{"type":"string"}},"offset":{"type":"integer","minimum":0},"limit":{"type":"integer","minimum":1,"maximum":500}}}},
@@ -877,6 +932,10 @@ fn model_visible_schema() -> Value {
         (
             "Search symbols",
             "Find code symbols by name, or opt into body search and language filtering, before tracing calls or reading definitions.",
+        ),
+        (
+            "Outline a file",
+            "List indexed symbols and definition spans in source order without returning their bodies.",
         ),
         (
             "Trace calls",
@@ -908,7 +967,7 @@ fn model_visible_schema() -> Value {
             json!({"readOnlyHint":false,"destructiveHint":false,"openWorldHint":false});
         tool["outputSchema"] = json!({"type":"object","additionalProperties":true});
     }
-    tools[7]["inputSchema"]["properties"]["paths_or_scope"] = path_or_scope;
+    tools[8]["inputSchema"]["properties"]["paths_or_scope"] = path_or_scope;
     tools
 }
 
@@ -938,7 +997,7 @@ mod openai_metadata_tests {
     #[test]
     fn openai_tool_contract() {
         let tools = model_visible_schema();
-        assert_eq!(tools.as_array().unwrap().len(), 8);
+        assert_eq!(tools.as_array().unwrap().len(), 9);
         for tool in tools.as_array().unwrap() {
             assert!(tool["title"].as_str().is_some_and(|s| !s.is_empty()));
             assert!(tool["description"].as_str().is_some_and(|s| s.len() > 20));

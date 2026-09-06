@@ -134,7 +134,7 @@ fn multi_repo_lazy_schema_and_notifications() {
     );
     let r = m.rpc("tools/list", json!({}));
     let ts = r["result"]["tools"].as_array().unwrap();
-    assert_eq!(ts.len(), 8);
+    assert_eq!(ts.len(), 9);
     for t in ts {
         assert!(
             t["inputSchema"]["required"]

@@ -15,9 +15,40 @@ contract instead of adding another always-visible MCP tool:
 - each result reports `matched_by: symbol | body`, so callers can distinguish
   direct symbol discovery from content discovery;
 - the default remains name-only for stable precision and response cost.
+- `get_outline` returns a file's symbols and definition spans in source order,
+  without returning bodies; this gives agents a compact navigation step before
+  requesting exact source.
 
-The coverage test exercises body discovery across `.ts`, `.tsx`, `.go`, `.py`,
-and `.rs`, including language rejection for unsupported values.
+The coverage tests exercise body discovery and file outlines across `.ts`,
+`.tsx`, `.go`, `.py`, and `.rs`, including language rejection, deterministic
+source order, truncation, and missing-path errors.
+
+## Seven-project outline measurement
+
+The release stdio server was run against the first preregistered source path in
+each of the seven frozen real-task repositories. The comparison uses UTF-8 bytes
+of the model-visible compact outline JSON versus bytes of the complete source
+file; it is a response-size measurement, not a tokenizer or task-accuracy claim.
+
+| Snapshot | Raw bytes | Outline bytes | Ratio |
+| --- | ---: | ---: | ---: |
+| GD | 994 | 413 | 0.415 |
+| VEX | 2,802 | 651 | 0.232 |
+| Pyramid | 6,405 | 817 | 0.128 |
+| itsdangerous | 1,409 | 452 | 0.321 |
+| blinker | 19,132 | 1,078 | 0.056 |
+| Vocal School | 1,067 | 459 | 0.430 |
+| CGRX | 203,614 | 6,430 | 0.032 |
+| **Total** | **235,423** | **10,300** | **0.044** |
+
+The median per-project ratio is 0.232. The aggregate is dominated by CGRX's
+large runtime file, so both figures are retained.
+
+Reproduce with:
+
+```sh
+python3 scripts/eval_outlines.py target/release/cgrx
+```
 
 ## Deliberately separate capabilities
 

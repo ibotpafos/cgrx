@@ -642,6 +642,15 @@ impl ToolBackend for RuntimeMcpBackend {
             .map_err(|error| BackendError::new(error.code(), error.to_string()))
     }
 
+    fn get_outline(&mut self, path: &str, limit: u32) -> Result<Value, BackendError> {
+        self.refresh()?;
+        let limit = usize::try_from(limit)
+            .map_err(|_| BackendError::new("cgrx.invalid_arguments", "limit is out of range"))?;
+        self.runtime
+            .get_outline(path, limit)
+            .map_err(|error| BackendError::new(error.code(), error.to_string()))
+    }
+
     fn trace_path(
         &mut self,
         symbol: &str,
