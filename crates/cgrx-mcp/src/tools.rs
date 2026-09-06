@@ -759,7 +759,14 @@ fn compact_architecture(value: &Value) -> Value {
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
-        .filter_map(|item| item.get("packages"))
+        .map(|item| {
+            json!([
+                item.get("packages"),
+                item.get("internal_weight"),
+                item.get("cut_weight"),
+                item.get("cohesion")
+            ])
+        })
         .collect::<Vec<_>>();
     let mut compact = json!({
         "at":snapshot_tag(value.get("snapshot")),
@@ -771,7 +778,9 @@ fn compact_architecture(value: &Value) -> Value {
         "hotspot_cols":["symbol","path","fan_in"],
         "hotspots":hotspots,
         "cycles":cycles,
+        "community_cols":["packages","internal_weight","cut_weight","cohesion"],
         "communities":communities,
+        "community_detection":value.get("community_detection"),
         "totals":value.get("totals"),
         "import_resolution":value.get("import_resolution"),
         "reference_resolution":value.get("reference_resolution"),
@@ -1241,7 +1250,7 @@ fn model_visible_schema() -> Value {
         {"name":"orient","description":"Context","inputSchema":{"type":"object","required":["task","budget","mode","scope"],"properties":{"task":{"type":"string"},"budget":{"type":"integer","minimum":1},"mode":{"enum":["FAST","PRECISE","BOUNDED"]},"scope":bounded_scope.clone()}}},
         {"name":"search_graph","description":"Symbols or bodies","inputSchema":{"type":"object","required":["query"],"properties":{"query":{"type":"string"},"language":{"enum":["typescript","go","python","rust"]},"include_body":{"type":"boolean"},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":50}}}},
         {"name":"get_outline","description":"File symbols","inputSchema":{"type":"object","required":["path"],"properties":{"path":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":500}}}},
-        {"name":"get_architecture","description":"Packages, proven call, implementation, local-import and static-reference boundaries, hotspots, cycles and communities","inputSchema":{"type":"object","properties":{"scope":path_or_scope.clone(),"package_depth":{"type":"integer","minimum":1,"maximum":4},"limit":{"type":"integer","minimum":1,"maximum":100}}}},
+        {"name":"get_architecture","description":"Packages, proven boundaries, hotspots, cycles and weighted semantic communities","inputSchema":{"type":"object","properties":{"scope":path_or_scope.clone(),"package_depth":{"type":"integer","minimum":1,"maximum":4},"limit":{"type":"integer","minimum":1,"maximum":100}}}},
         {"name":"trace_path","description":"Calls","inputSchema":{"type":"object","required":["symbol"],"properties":{"symbol":{"type":"string"},"path":{"type":"string"},"direction":{"enum":["callers","callees","both"]},"depth":{"type":"integer","minimum":1,"maximum":4},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":50}}}},
         {"name":"find_usages","description":"Proven usages","inputSchema":{"type":"object","required":["symbol"],"properties":{"symbol":{"type":"string"},"path":{"type":"string"},"depth":{"type":"integer","minimum":1,"maximum":4},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":500}}}},
         {"name":"suggest_refactors","description":"Similar code and hypothetical graph delta","inputSchema":{"type":"object","properties":{"language":{"enum":["typescript","go","python","rust"]},"min_score":{"type":"integer","minimum":0,"maximum":1000},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":50}}}},
@@ -1269,7 +1278,7 @@ fn model_visible_schema() -> Value {
         ),
         (
             "Map architecture",
-            "Summarize packages, proven cross-package boundaries, hotspots, cycles and deterministic communities.",
+            "Summarize packages, proven cross-package boundaries, hotspots, cycles and deterministic weighted communities.",
         ),
         (
             "Trace calls",
@@ -1429,7 +1438,8 @@ mod openai_metadata_tests {
             }],
             "hotspots":[{"symbol":"save","path":"core/store.ts","fan_in":8}],
             "cycles":[{"packages":["api","core"],"kind":"PACKAGE_CALL_CYCLE"}],
-            "communities":[{"packages":["api","core"],"method":"DETERMINISTIC_WEAK_COMPONENT"}],
+            "communities":[{"packages":["api","core"],"method":"DETERMINISTIC_WEIGHTED_MODULARITY","internal_weight":8,"cut_weight":1,"cohesion":0.8888888888888888}],
+            "community_detection":{"method":"DETERMINISTIC_WEIGHTED_MODULARITY","relation_weights":{"CALLS":4,"IMPLEMENTS":4,"IMPORTS":2,"REFERENCES":1},"modularity":0.25,"iterations":2},
             "totals":{"packages":2,"boundaries":1,"hotspots":1,"cycles":1,"communities":1},
             "import_resolution":{"proven":1,"external":2,"out_of_scope":0,"unresolved_local":0},
             "reference_resolution":{"proven":2,"external":1,"out_of_scope":0,"unresolved_local":0},
@@ -1453,6 +1463,11 @@ mod openai_metadata_tests {
         assert_eq!(compact["boundaries"][0][5], "api/handler.ts");
         assert_eq!(compact["import_resolution"]["proven"], 1);
         assert_eq!(compact["reference_resolution"]["proven"], 2);
+        assert_eq!(compact["communities"][0][1], 8);
+        assert_eq!(
+            compact["community_detection"]["method"],
+            "DETERMINISTIC_WEIGHTED_MODULARITY"
+        );
         let encoded = serde_json::to_string(&compact).unwrap();
         assert!(!encoded.contains(&"x".repeat(20_000)));
         assert!(

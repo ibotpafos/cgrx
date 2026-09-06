@@ -23,6 +23,19 @@ struct BoundaryStats {
     evidence: Vec<Value>,
 }
 
+struct SemanticCommunity {
+    packages: Vec<String>,
+    internal_weight: u64,
+    cut_weight: u64,
+    cohesion: f64,
+}
+
+struct CommunityDetection {
+    communities: Vec<SemanticCommunity>,
+    modularity: f64,
+    iterations: usize,
+}
+
 enum ImportResolution {
     Proven(String),
     External,
@@ -77,6 +90,7 @@ impl Runtime {
         let mut incoming = BTreeMap::<u64, usize>::new();
         let mut boundaries = BTreeMap::<(String, String), BoundaryStats>::new();
         let mut package_adjacency = BTreeMap::<String, BTreeSet<String>>::new();
+        let mut semantic_adjacency = BTreeMap::<String, BTreeMap<String, u64>>::new();
         for arc in arcs {
             *incoming.entry(arc.target).or_default() += 1;
             let Some(source_package) = package_by_node.get(&arc.source) else {
@@ -100,14 +114,21 @@ impl Runtime {
                 .entry(source_package.clone())
                 .or_default()
                 .insert(target_package.clone());
+            let (relation, semantic_weight) = match arc.kind {
+                cgrx_core::RelationKind::Calls => ("CALLS", 4),
+                cgrx_core::RelationKind::Implements => ("IMPLEMENTS", 4),
+            };
+            add_semantic_edge(
+                &mut semantic_adjacency,
+                source_package,
+                target_package,
+                semantic_weight,
+            );
             let boundary = boundaries
                 .entry((source_package.clone(), target_package.clone()))
                 .or_default();
             boundary.edges += 1;
-            boundary.relations.insert(match arc.kind {
-                cgrx_core::RelationKind::Calls => "CALLS".to_owned(),
-                cgrx_core::RelationKind::Implements => "IMPLEMENTS".to_owned(),
-            });
+            boundary.relations.insert(relation.to_owned());
             if boundary.evidence.len() < 8
                 && let Some(evidence) = arc.evidence.as_ref()
             {
@@ -183,6 +204,7 @@ impl Runtime {
                     .entry(source_package.clone())
                     .or_default()
                     .insert(target_package.clone());
+                add_semantic_edge(&mut semantic_adjacency, &source_package, &target_package, 2);
                 let boundary = boundaries
                     .entry((source_package, target_package))
                     .or_default();
@@ -259,6 +281,7 @@ impl Runtime {
                 .entry(source_package.clone())
                 .or_default()
                 .insert(target_package.clone());
+            add_semantic_edge(&mut semantic_adjacency, &source_package, &target_package, 1);
             let boundary = boundaries
                 .entry((source_package, target_package))
                 .or_default();
@@ -357,22 +380,21 @@ impl Runtime {
         let total_cycles = cycles.len();
         cycles.truncate(limit);
 
-        let mut undirected = BTreeMap::<String, BTreeSet<String>>::new();
-        for (source, targets) in &package_adjacency {
-            for target in targets {
-                undirected
-                    .entry(source.clone())
-                    .or_default()
-                    .insert(target.clone());
-                undirected
-                    .entry(target.clone())
-                    .or_default()
-                    .insert(source.clone());
-            }
-        }
-        let mut communities = connected_components(&package_names, &undirected)
+        let community_detection = detect_semantic_communities(&package_names, &semantic_adjacency);
+        let community_modularity = community_detection.modularity;
+        let community_iterations = community_detection.iterations;
+        let mut communities = community_detection
+            .communities
             .into_iter()
-            .map(|packages| json!({"packages":packages,"method":"DETERMINISTIC_WEAK_COMPONENT"}))
+            .map(|community| {
+                json!({
+                    "packages":community.packages,
+                    "method":"DETERMINISTIC_WEIGHTED_MODULARITY",
+                    "internal_weight":community.internal_weight,
+                    "cut_weight":community.cut_weight,
+                    "cohesion":community.cohesion
+                })
+            })
             .collect::<Vec<_>>();
         communities.sort_by(|left, right| {
             let left_items = left["packages"].as_array().expect("packages");
@@ -424,6 +446,12 @@ impl Runtime {
             "hotspots":hotspots,
             "cycles":cycles,
             "communities":communities,
+            "community_detection":{
+                "method":"DETERMINISTIC_WEIGHTED_MODULARITY",
+                "relation_weights":{"CALLS":4,"IMPLEMENTS":4,"IMPORTS":2,"REFERENCES":1},
+                "modularity":community_modularity,
+                "iterations":community_iterations
+            },
             "totals":{
                 "packages":total_packages,
                 "boundaries":total_boundaries,
@@ -452,7 +480,7 @@ impl Runtime {
                 "Architecture uses proven CALLS, IMPLEMENTS, unambiguous repository-local IMPORTS and conservative static REFERENCES relationships.",
                 "External imports are counted but omitted from the repository graph.",
                 "REFERENCES currently covers imported type or qualified symbol usage and omits calls and unqualified dynamic names.",
-                "Communities are deterministic weakly connected package components, not semantic clusters.",
+                "Communities use deterministic weighted modularity over proven package relationships; weights are heuristic and reported in community_detection.",
                 "Missing or unresolved relationships remain coverage gaps, not absent dependencies."
             ]
         }))
@@ -755,22 +783,152 @@ fn strongly_connected_components(
     components
 }
 
-fn connected_components(
-    nodes: &BTreeSet<String>,
-    adjacency: &BTreeMap<String, BTreeSet<String>>,
-) -> Vec<Vec<String>> {
-    let mut visited = BTreeSet::new();
-    let mut components = Vec::new();
-    for node in nodes {
-        if visited.contains(node) {
-            continue;
-        }
-        let mut component = Vec::new();
-        collect_component(node, adjacency, &mut visited, &mut component);
-        component.sort();
-        components.push(component);
+fn add_semantic_edge(
+    adjacency: &mut BTreeMap<String, BTreeMap<String, u64>>,
+    source: &str,
+    target: &str,
+    weight: u64,
+) {
+    if source == target || weight == 0 {
+        return;
     }
-    components
+    *adjacency
+        .entry(source.to_owned())
+        .or_default()
+        .entry(target.to_owned())
+        .or_default() += weight;
+    *adjacency
+        .entry(target.to_owned())
+        .or_default()
+        .entry(source.to_owned())
+        .or_default() += weight;
+}
+
+fn detect_semantic_communities(
+    nodes: &BTreeSet<String>,
+    adjacency: &BTreeMap<String, BTreeMap<String, u64>>,
+) -> CommunityDetection {
+    let degrees = nodes
+        .iter()
+        .map(|node| {
+            let degree = adjacency
+                .get(node)
+                .into_iter()
+                .flatten()
+                .map(|(_, weight)| *weight)
+                .sum::<u64>();
+            (node.clone(), degree)
+        })
+        .collect::<BTreeMap<_, _>>();
+    let total_degree = degrees.values().sum::<u64>();
+    let mut labels = nodes
+        .iter()
+        .enumerate()
+        .map(|(index, node)| (node.clone(), index))
+        .collect::<BTreeMap<_, _>>();
+    let mut totals = labels
+        .iter()
+        .map(|(node, label)| (*label, degrees[node]))
+        .collect::<BTreeMap<_, _>>();
+    let mut iterations = 0usize;
+
+    if total_degree > 0 {
+        for _ in 0..20 {
+            iterations += 1;
+            let mut moved = false;
+            for node in nodes {
+                let degree = degrees[node];
+                if degree == 0 {
+                    continue;
+                }
+                let current = labels[node];
+                *totals.get_mut(&current).expect("current community") -= degree;
+                let mut weights_by_community = BTreeMap::<usize, u64>::new();
+                for (neighbor, weight) in adjacency.get(node).into_iter().flatten() {
+                    *weights_by_community.entry(labels[neighbor]).or_default() += *weight;
+                }
+                weights_by_community.entry(current).or_default();
+
+                let score = |community: usize, internal_weight: u64| {
+                    internal_weight as f64
+                        - degree as f64 * totals.get(&community).copied().unwrap_or(0) as f64
+                            / total_degree as f64
+                };
+                let current_score = score(
+                    current,
+                    weights_by_community.get(&current).copied().unwrap_or(0),
+                );
+                let mut best = current;
+                let mut best_score = current_score;
+                for (community, internal_weight) in weights_by_community {
+                    let candidate_score = score(community, internal_weight);
+                    if candidate_score > best_score + f64::EPSILON
+                        || ((candidate_score - best_score).abs() <= f64::EPSILON
+                            && best != current
+                            && community < best)
+                    {
+                        best = community;
+                        best_score = candidate_score;
+                    }
+                }
+                labels.insert(node.clone(), best);
+                *totals.entry(best).or_default() += degree;
+                moved |= best != current;
+            }
+            if !moved {
+                break;
+            }
+        }
+    }
+
+    let mut packages_by_label = BTreeMap::<usize, Vec<String>>::new();
+    for (package, label) in &labels {
+        packages_by_label
+            .entry(*label)
+            .or_default()
+            .push(package.clone());
+    }
+    let total_edge_weight = total_degree as f64 / 2.0;
+    let mut modularity = 0.0;
+    let mut communities = Vec::new();
+    for packages in packages_by_label.values() {
+        let package_set = packages.iter().collect::<BTreeSet<_>>();
+        let degree_sum = packages.iter().map(|package| degrees[package]).sum::<u64>();
+        let mut internal_weight = 0u64;
+        let mut cut_weight = 0u64;
+        for package in packages {
+            for (neighbor, weight) in adjacency.get(package).into_iter().flatten() {
+                if package_set.contains(neighbor) {
+                    if package < neighbor {
+                        internal_weight += *weight;
+                    }
+                } else {
+                    cut_weight += *weight;
+                }
+            }
+        }
+        if total_edge_weight > 0.0 {
+            modularity += internal_weight as f64 / total_edge_weight
+                - (degree_sum as f64 / (2.0 * total_edge_weight)).powi(2);
+        }
+        let denominator = internal_weight + cut_weight;
+        let cohesion = if denominator == 0 {
+            1.0
+        } else {
+            internal_weight as f64 / denominator as f64
+        };
+        communities.push(SemanticCommunity {
+            packages: packages.clone(),
+            internal_weight,
+            cut_weight,
+            cohesion,
+        });
+    }
+    CommunityDetection {
+        communities,
+        modularity,
+        iterations,
+    }
 }
 
 fn collect_component(

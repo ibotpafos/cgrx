@@ -18,7 +18,7 @@ explicitly on each request. No embedding service, hosted index or API key.
 - Snapshot-bound refactoring candidates with hypothetical graph projections.
 - Local evidence graph explorer with current, changed and refactor-future views.
 - Snapshot-bound architecture projection with packages, proven boundaries,
-  hotspots, package cycles and deterministic communities.
+  hotspots, package cycles and deterministic weighted communities.
 - Incremental working-tree refresh, isolated repo identities and writer locks.
 - Rust, Go, TypeScript/JavaScript/TSX and Python parsing. Resolution depth varies
   by language; this does not replace a compiler or language server.
@@ -121,7 +121,7 @@ is not required by the released executable.
 | status | Snapshot, graph counts, freshness, coverage |
 | search_graph | Bounded symbol/body discovery with optional language filter |
 | get_outline | File symbols and definition spans without bodies |
-| get_architecture | Packages, proven call, implementation, local-import and static-reference boundaries, hotspots, cycles and communities |
+| get_architecture | Packages, proven call, implementation, local-import and static-reference boundaries, hotspots, cycles and weighted semantic communities |
 | trace_path | Caller/callee traversal |
 | find_usages | Proven direct or transitive incoming call/implementation sites |
 | get_code_snippet | Exact source definition |
@@ -147,8 +147,10 @@ External targets stay outside the graph, while ambiguous local targets become
 explicit coverage gaps. Every cross-package boundary carries exact source
 evidence. Results are bound to the current snapshot and report truncation,
 resolution counts and coverage gaps. General traversal remains limited to
-`CALLS` and `IMPLEMENTS`; deterministic weak components are structural groups,
-not semantic communities.
+`CALLS` and `IMPLEMENTS`. Communities optimize deterministic weighted modularity
+over proven package relationships (`CALLS`/`IMPLEMENTS` 4, `IMPORTS` 2,
+`REFERENCES` 1). Every community reports internal and cut weight plus cohesion;
+the response reports modularity, iteration count and the exact heuristic weights.
 `find_usages` resolves an exact target symbol, then returns only proven incoming
 `CALLS`/`IMPLEMENTS` edges allowed by `scope`, including callsite path/span and
 resolver class. `depth` defaults to 1 and is capped at 4; transitive rows include
@@ -217,6 +219,7 @@ cargo build --locked --release -p cgrx-cli
 python3 scripts/smoke_mcp.py target/release/cgrx
 python3 scripts/eval_relationships.py target/release/cgrx
 python3 scripts/eval_refactors.py target/release/cgrx
+python3 scripts/benchmark_architecture.py --help
 ~~~
 
 The relationship evaluator copies the public synthetic fixture into a temporary
@@ -232,6 +235,9 @@ The refactoring evaluator runs the real stdio tool over seven frozen projects,
 rejects changed snapshots and truncated results, and records exact graph-node
 identities for manual labeling. It reports response-token cost immediately;
 precision remains `null` while any candidate is `unreviewed`.
+
+The [architecture community benchmark](docs/benchmarks/architecture-communities-2026-09-07.md)
+records the pinned five-project CGRX/CBM comparison and its limits.
 
 ## License
 
