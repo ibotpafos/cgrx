@@ -24,7 +24,20 @@ export function reduce(state, action) {
       return { ...state, selectedStrategyId: action.strategyId };
     case "camera":
       return { ...state, camera: { ...action.camera } };
+    case "request":
+      return { ...state, requestGeneration: action.generation };
+    case "status": {
+      const changed = snapshotKey(state.snapshot)
+        && snapshotKey(state.snapshot) !== snapshotKey(action.snapshot);
+      return {
+        ...state,
+        snapshot: action.snapshot,
+        selectedStrategyId: changed ? null : state.selectedStrategyId,
+        freshness: changed ? "stale" : "live"
+      };
+    }
     case "graph": {
+      if (action.generation < state.requestGeneration) return state;
       const selectedNodeId = action.nodeIds.includes(state.selectedNodeId)
         ? state.selectedNodeId
         : null;
@@ -39,6 +52,71 @@ export function reduce(state, action) {
     default:
       throw new Error(`unknown state action: ${action.type}`);
   }
+}
+
+export function serializeAgentPlan(strategy) {
+  return JSON.stringify(strategy.agent_handoff, null, 2);
+}
+
+export function projectGraph(current, strategy) {
+  const nodes = new Map();
+  for (const node of current.nodes || []) nodes.set(identity(node), { ...node });
+  const addNode = (node, lane = "entrypoints") => {
+    if (!node || identity(node) === "") return;
+    const key = identity(node);
+    if (!nodes.has(key)) {
+      nodes.set(key, {
+        ...node,
+        node_id: node.node_id ?? node.id,
+        lane,
+        path: node.path || "proposed",
+        span: node.span || { start: 0, end: 0 },
+        source_hash: node.source_hash || "hypothetical",
+        status: node.status || "hypothetical"
+      });
+    }
+  };
+  for (const node of strategy.verification?.review_symbols || []) addNode(node);
+
+  const edges = (current.edges || []).map((edge) => ({ ...edge, status: "preserved" }));
+  const delta = strategy.graph_delta || {};
+  for (const edge of delta.preserve || []) {
+    addNode(edge.source, "callers");
+    addNode(edge.target, "entrypoints");
+    const source = identity(edge.source);
+    const target = identity(edge.target);
+    const duplicate = edges.some((candidate) =>
+      String(candidate.source) === source
+      && String(candidate.target) === target
+      && candidate.relation === edge.relation
+    );
+    if (!duplicate) edges.push({ ...edge, source, target, status: "preserved" });
+  }
+  for (const [collection, status] of [
+    [delta.add, "hypothetical"],
+    [delta.redirect, "hypothetical"],
+    [delta.move_to_helper, "hypothetical"],
+    [delta.remove, "remove"]
+  ]) {
+    for (const edge of collection || []) {
+      addNode(edge.source, edge.source?.status === "hypothetical" ? "entrypoints" : "entrypoints");
+      addNode(edge.target, edge.target?.status === "hypothetical" ? "entrypoints" : "callees");
+      edges.push({
+        ...edge,
+        source: identity(edge.source),
+        target: identity(edge.target),
+        confidence: status === "hypothetical" ? "hypothetical" : edge.confidence,
+        status
+      });
+    }
+  }
+  return { ...current, nodes: [...nodes.values()], edges, projection: strategy.strategy_id };
+}
+
+function identity(node) {
+  if (node == null) return "";
+  if (typeof node === "string" || typeof node === "number") return String(node);
+  return String(node.node_id ?? node.id ?? "");
 }
 
 export function snapshotKey(snapshot) {

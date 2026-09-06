@@ -1,5 +1,5 @@
 import { edgeStyle, layoutGraph } from "./layout.js";
-import { createState, reduce, snapshotKey } from "./state.js";
+import { createState, projectGraph, reduce, serializeAgentPlan, snapshotKey } from "./state.js";
 
 const NS = "http://www.w3.org/2000/svg";
 const tokenKey = `cgrx-token:${location.host}`;
@@ -13,6 +13,8 @@ let currentGraph = null;
 let currentCandidate = null;
 let currentStrategy = null;
 let requestGeneration = 0;
+let changedPaths = [];
+let panStart = null;
 
 const ids = [
   "freshness", "revision", "search-form", "search-input", "search-results", "match-count",
@@ -34,13 +36,20 @@ async function api(path) {
 
 export async function loadStatus() {
   const value = await api("/api/status");
-  const changed = snapshotKey(state.snapshot)
-    && snapshotKey(state.snapshot) !== snapshotKey(value.snapshot);
-  state = { ...state, snapshot: value.snapshot, freshness: changed ? "stale" : "live" };
+  const changed = Boolean(snapshotKey(state.snapshot)
+    && snapshotKey(state.snapshot) !== snapshotKey(value.snapshot));
+  state = reduce(state, { type: "status", snapshot: value.snapshot });
+  changedPaths = value.changed_paths || [];
   el.revision.textContent = `${value.snapshot.repo_revision.slice(0, 9)} · g${value.snapshot.graph_generation}`;
   el.freshness.textContent = changed ? "refreshing" : "live";
   el.freshness.className = `badge badge--${changed ? "stale" : "live"}`;
-  if (changed && currentGraph?.root) await loadGraph(currentGraph.root.symbol, currentGraph.root.path);
+  if (changed) {
+    currentStrategy = null;
+    currentCandidate = null;
+    el["strategy-panel"].hidden = true;
+    await loadRefactors();
+    if (currentGraph?.root) await loadGraph(currentGraph.root.symbol, currentGraph.root.path);
+  }
   return value;
 }
 
@@ -59,6 +68,7 @@ async function search(query) {
 
 async function loadGraph(symbol, path) {
   const generation = ++requestGeneration;
+  state = reduce(state, { type: "request", generation });
   setMessage("Loading verified neighborhood…");
   const value = await api(
     `/api/graph?symbol=${encodeURIComponent(symbol)}&path=${encodeURIComponent(path)}&direction=both&depth=1&node_limit=80&edge_limit=160`
@@ -73,7 +83,7 @@ async function loadGraph(symbol, path) {
   });
   el["graph-title"].textContent = value.root.symbol;
   el["graph-message"].hidden = true;
-  renderGraph(value);
+  renderMode();
 }
 
 async function loadRefactors() {
@@ -94,10 +104,15 @@ async function loadRefactors() {
 }
 
 function renderGraph(graph) {
-  const viewport = el["graph-canvas"].getBoundingClientRect();
-  const layout = layoutGraph(graph, { width: viewport.width, height: viewport.height });
   const layer = el["camera-layer"];
   layer.replaceChildren();
+  drawGraph(graph, layer);
+  applyCamera();
+}
+
+function drawGraph(graph, layer) {
+  const viewport = el["graph-canvas"].getBoundingClientRect();
+  const layout = layoutGraph(graph, { width: viewport.width, height: viewport.height });
   for (const [label, x, y] of [
     ["CALLERS", 96, 54],
     ["ENTRY POINT", 382, 54],
@@ -122,7 +137,31 @@ function renderGraph(graph) {
     if (source && target) layer.append(renderEdge(source, target, edge));
   }
   for (const node of layout.nodes) layer.append(renderNode(node));
-  applyCamera();
+}
+
+function renderMode() {
+  if (!currentGraph) return;
+  if (state.mode === "compare" && currentStrategy) {
+    const layer = el["camera-layer"];
+    layer.replaceChildren();
+    layer.append(svgText("CURRENT EVIDENCE", 34, 34, "comparison-title"));
+    layer.append(svgText("SELECTED FUTURE", 524, 34, "comparison-title"));
+    const currentPane = svg("g", { transform: "translate(0 46) scale(.5)" });
+    const futurePane = svg("g", { transform: "translate(490 46) scale(.5)" });
+    drawGraph(currentGraph, currentPane);
+    drawGraph(projectGraph(currentGraph, currentStrategy), futurePane);
+    layer.append(currentPane, futurePane);
+    applyCamera();
+    return;
+  }
+  if (state.mode === "preview" && currentStrategy) {
+    renderGraph(projectGraph(currentGraph, currentStrategy));
+    return;
+  }
+  const graph = state.mode === "changes"
+    ? { ...currentGraph, nodes: currentGraph.nodes.map((node) => ({ ...node, changed: changedPaths.includes(node.path) })) }
+    : currentGraph;
+  renderGraph(graph);
 }
 
 function renderEdge(source, target, edge) {
@@ -154,7 +193,7 @@ function renderEdge(source, target, edge) {
 function renderNode(node) {
   const group = svg("g", {
     transform: `translate(${node.x} ${node.y})`,
-    class: `node ${node.lane === "tests" ? "node--test" : ""}${state.selectedNodeId === node.node_id ? " is-selected" : ""}`,
+    class: `node ${node.lane === "tests" ? "node--test " : ""}${node.changed ? "node--changed " : ""}${state.selectedNodeId === node.node_id ? "is-selected" : ""}`,
     tabindex: "0",
     role: "button",
     "aria-label": `${node.symbol}, ${node.path}, ${node.lane}`
@@ -181,7 +220,7 @@ async function selectNode(node) {
     ["Source hash", node.source_hash],
     ["State", node.lane === "tests" ? "candidate · not run" : "current · indexed"]
   ]);
-  renderGraph(currentGraph);
+  renderMode();
   try {
     const snippet = await api(
       `/api/snippet?symbol=${encodeURIComponent(node.symbol)}&path=${encodeURIComponent(node.path)}`
@@ -238,6 +277,7 @@ function selectStrategy(strategy) {
     + `<span class="risk ${blocked ? "risk--blocked" : ""}">`
     + escapeHtml(blocked ? "blocked by gaps" : `${strategy.risk} risk · hypothetical`)
     + "</span>";
+  if (state.mode === "preview" || state.mode === "compare") renderMode();
 }
 
 function itemButton(title, subtitle, onClick) {
@@ -324,6 +364,7 @@ document.querySelectorAll("[data-mode]").forEach((button) => button.addEventList
   document.querySelectorAll("[data-mode]").forEach((candidate) => {
     candidate.classList.toggle("is-active", candidate === button);
   });
+  renderMode();
 }));
 el["zoom-in"].addEventListener("click", () => zoom(1.2));
 el["zoom-out"].addEventListener("click", () => zoom(1 / 1.2));
@@ -335,8 +376,36 @@ el["graph-canvas"].addEventListener("wheel", (event) => {
   event.preventDefault();
   zoom(event.deltaY < 0 ? 1.08 : 1 / 1.08);
 }, { passive: false });
+el["graph-canvas"].addEventListener("pointerdown", (event) => {
+  if (event.target.closest?.(".node, g[role=button]")) return;
+  panStart = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, camera: state.camera };
+  el["graph-canvas"].setPointerCapture(event.pointerId);
+});
+el["graph-canvas"].addEventListener("pointermove", (event) => {
+  if (!panStart || panStart.pointerId !== event.pointerId) return;
+  state = reduce(state, {
+    type: "camera",
+    camera: {
+      ...panStart.camera,
+      x: panStart.camera.x + event.clientX - panStart.x,
+      y: panStart.camera.y + event.clientY - panStart.y
+    }
+  });
+  applyCamera();
+});
+el["graph-canvas"].addEventListener("pointerup", () => { panStart = null; });
+el["graph-canvas"].addEventListener("keydown", (event) => {
+  const movement = { ArrowLeft: [-28, 0], ArrowRight: [28, 0], ArrowUp: [0, -28], ArrowDown: [0, 28] }[event.key];
+  if (!movement) return;
+  event.preventDefault();
+  state = reduce(state, {
+    type: "camera",
+    camera: { ...state.camera, x: state.camera.x + movement[0], y: state.camera.y + movement[1] }
+  });
+  applyCamera();
+});
 el["copy-agent"].addEventListener("click", () => {
-  if (currentStrategy) copy(JSON.stringify(currentStrategy.agent_handoff, null, 2), "Agent plan copied");
+  if (currentStrategy) copy(serializeAgentPlan(currentStrategy), "Agent plan copied");
 });
 el["copy-mcp"].addEventListener("click", () => {
   if (!currentCandidate) return;

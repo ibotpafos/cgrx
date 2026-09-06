@@ -15,7 +15,7 @@ export function layoutGraph(graph, viewport = {}) {
       return laneRank(left.lane) - laneRank(right.lane)
         || String(left.path).localeCompare(String(right.path))
         || Number(left.span?.start || 0) - Number(right.span?.start || 0)
-        || Number(left.node_id) - Number(right.node_id);
+        || identity(left).localeCompare(identity(right));
     })
     .map((node) => {
       const lane = LANE_ORDER.includes(node.lane) ? node.lane : "entrypoints";
@@ -83,4 +83,8 @@ function containerBounds(nodes) {
 
 function contentHeight(nodes) {
   return Math.max(480, ...nodes.map((node) => node.y + node.height + 48));
+}
+
+function identity(node) {
+  return String(node.node_id ?? node.id ?? "");
 }

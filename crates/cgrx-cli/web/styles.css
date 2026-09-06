@@ -81,6 +81,7 @@ button { color: inherit; }
 .node__path { fill: var(--muted); font: 10px ui-monospace, monospace; }
 .node__status { fill: var(--proven); }
 .node--test .node__status { fill: var(--test); }
+.node--changed rect { stroke: var(--gap); stroke-dasharray: 7 5; }
 .edge { fill: none; stroke-width: 1.7; vector-effect: non-scaling-stroke; }
 .edge--proven { stroke: var(--proven); }
 .edge--gap { stroke: var(--gap); stroke-dasharray: 9 7; }
@@ -88,6 +89,7 @@ button { color: inherit; }
 .edge--preserved { stroke: #758297; }
 .edge--remove { stroke: var(--danger); stroke-dasharray: 6 6; }
 .edge-label { fill: var(--text); font: 700 10px ui-monospace, monospace; paint-order: stroke; stroke: var(--canvas); stroke-width: 4px; }
+.comparison-title { fill: var(--muted); font: 700 11px ui-monospace, monospace; letter-spacing: .14em; }
 .legend { display: flex; flex-wrap: wrap; gap: 18px; min-height: 42px; align-items: center; padding: 8px 16px; border-top: 1px solid var(--line); color: var(--muted); font-size: 10px; }
 .key { display: inline-grid; place-items: center; width: 18px; height: 18px; margin-right: 4px; border: 1px solid currentColor; border-radius: 50%; font-style: normal; font: 700 10px ui-monospace, monospace; }
 .key--proven { color: var(--proven); }.key--gap { color: var(--gap); }.key--future { color: var(--future); }.key--test { color: var(--test); }
