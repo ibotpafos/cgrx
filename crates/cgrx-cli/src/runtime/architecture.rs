@@ -1,11 +1,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use cgrx_core::Scope;
+use cgrx_core::{ByteRange, ConfidenceClass, EdgeEvidence, Hash32, ResolverClass, Scope};
 use serde_json::{Value, json};
 
 use super::{
     Runtime, RuntimeError, coverage_for_scope, coverage_gap_count, coverage_gap_page,
-    definitive_stored_arcs, path_in_scope,
+    definitive_stored_arcs, go_module_for, path_in_scope, ts_config_modules,
 };
 
 #[derive(Default)]
@@ -14,6 +14,19 @@ struct PackageStats {
     symbols: usize,
     fan_in: usize,
     fan_out: usize,
+}
+
+#[derive(Default)]
+struct BoundaryStats {
+    edges: usize,
+    relations: BTreeSet<String>,
+    evidence: Vec<Value>,
+}
+
+enum ImportResolution {
+    Proven(String),
+    External,
+    UnresolvedLocal,
 }
 
 impl Runtime {
@@ -41,17 +54,28 @@ impl Runtime {
             .collect::<BTreeMap<_, _>>();
         let mut package_by_node = BTreeMap::new();
         let mut package_stats = BTreeMap::<String, PackageStats>::new();
+        for path in self
+            .stored
+            .path_hashes
+            .keys()
+            .filter(|path| supported_source_path(path) && path_in_scope(path, scope))
+        {
+            package_stats
+                .entry(package_name(path, package_depth))
+                .or_default()
+                .files
+                .insert(path.clone());
+        }
         for document in documents.values() {
             let package = package_name(&document.path, package_depth);
             package_by_node.insert(document.node_id, package.clone());
             let stats = package_stats.entry(package).or_default();
-            stats.files.insert(document.path.clone());
             stats.symbols += 1;
         }
 
         let arcs = definitive_stored_arcs(&self.stored, scope);
         let mut incoming = BTreeMap::<u64, usize>::new();
-        let mut boundaries = BTreeMap::<(String, String), Vec<_>>::new();
+        let mut boundaries = BTreeMap::<(String, String), BoundaryStats>::new();
         let mut package_adjacency = BTreeMap::<String, BTreeSet<String>>::new();
         for arc in arcs {
             *incoming.entry(arc.target).or_default() += 1;
@@ -76,10 +100,110 @@ impl Runtime {
                 .entry(source_package.clone())
                 .or_default()
                 .insert(target_package.clone());
-            boundaries
+            let boundary = boundaries
                 .entry((source_package.clone(), target_package.clone()))
-                .or_default()
-                .push(arc);
+                .or_default();
+            boundary.edges += 1;
+            boundary.relations.insert(match arc.kind {
+                cgrx_core::RelationKind::Calls => "CALLS".to_owned(),
+                cgrx_core::RelationKind::Implements => "IMPLEMENTS".to_owned(),
+            });
+            if boundary.evidence.len() < 8
+                && let Some(evidence) = arc.evidence.as_ref()
+            {
+                boundary
+                    .evidence
+                    .push(serde_json::to_value(evidence).expect("serialize edge evidence"));
+            }
+        }
+
+        let ts_files = self
+            .stored
+            .ts_files
+            .iter()
+            .filter(|(path, facts)| {
+                !facts.inventory_only
+                    && self.stored.path_hashes.get(*path) == Some(&facts.source_hash)
+            })
+            .map(|(path, facts)| (path.clone(), facts.facts.clone()))
+            .collect::<BTreeMap<_, _>>();
+        let ts_modules =
+            ts_config_modules(&self.stored.ts_files, &self.stored.ts_resolution_configs);
+        let mut proven_imports = 0usize;
+        let mut external_imports = 0usize;
+        let mut out_of_scope_imports = 0usize;
+        let mut unresolved_imports = Vec::new();
+        for import in self.stored.documents.iter().filter(|document| {
+            document.provenance == "IMPORTS" && path_in_scope(&document.path, scope)
+        }) {
+            for specifier in import_specifiers(&import.path, &import.text) {
+                let resolution = resolve_import(
+                    &import.path,
+                    &specifier,
+                    &self.stored.path_hashes,
+                    &self.stored.go_modules,
+                    &self.stored.cargo_manifests,
+                    &ts_files,
+                    &ts_modules,
+                );
+                let target_path = match resolution {
+                    ImportResolution::Proven(path) if path_in_scope(&path, scope) => path,
+                    ImportResolution::Proven(_) => {
+                        out_of_scope_imports += 1;
+                        continue;
+                    }
+                    ImportResolution::External => {
+                        external_imports += 1;
+                        continue;
+                    }
+                    ImportResolution::UnresolvedLocal => {
+                        unresolved_imports.push(json!({
+                            "code":"UNRESOLVED_LOCAL_IMPORT",
+                            "path":import.path,
+                            "span":{"start":import.span_start,"end":import.span_end}
+                        }));
+                        continue;
+                    }
+                };
+                let source_package = package_name(&import.path, package_depth);
+                let target_package = package_name(&target_path, package_depth);
+                if source_package == target_package {
+                    proven_imports += 1;
+                    continue;
+                }
+                let Some(source_stats) = package_stats.get_mut(&source_package) else {
+                    continue;
+                };
+                source_stats.fan_out += 1;
+                let Some(target_stats) = package_stats.get_mut(&target_package) else {
+                    continue;
+                };
+                target_stats.fan_in += 1;
+                package_adjacency
+                    .entry(source_package.clone())
+                    .or_default()
+                    .insert(target_package.clone());
+                let boundary = boundaries
+                    .entry((source_package, target_package))
+                    .or_default();
+                boundary.edges += 1;
+                boundary.relations.insert("IMPORTS".to_owned());
+                if boundary.evidence.len() < 8 {
+                    let evidence = EdgeEvidence {
+                        path: import.path.clone(),
+                        span: ByteRange::new(import.span_start, import.span_end),
+                        source_hash: self.stored.path_hashes[&import.path],
+                        resolver: ResolverClass::ImportExact,
+                        confidence: ConfidenceClass::Proven,
+                        assumptions: Vec::new(),
+                        counter_evidence: Vec::new(),
+                    };
+                    boundary
+                        .evidence
+                        .push(serde_json::to_value(evidence).expect("serialize import evidence"));
+                }
+                proven_imports += 1;
+            }
         }
 
         let total_packages = package_stats.len();
@@ -109,21 +233,15 @@ impl Runtime {
                 visible_package_names.contains(source) && visible_package_names.contains(target)
             })
             .take(limit)
-            .map(|((source, target), arcs)| {
-                let relations = arcs.iter().map(|arc| arc.kind).collect::<BTreeSet<_>>();
-                let evidence = arcs
-                    .iter()
-                    .filter_map(|arc| arc.evidence.as_ref())
-                    .take(8)
-                    .collect::<Vec<_>>();
+            .map(|((source, target), boundary)| {
                 json!({
                     "source":source,
                     "target":target,
-                    "edges":arcs.len(),
-                    "relations":relations,
+                    "edges":boundary.edges,
+                    "relations":boundary.relations,
                     "confidence":"PROVEN",
-                    "evidence":evidence,
-                    "evidence_truncated":arcs.len() > 8
+                    "evidence":boundary.evidence,
+                    "evidence_truncated":boundary.edges > 8
                 })
             })
             .collect::<Vec<_>>();
@@ -158,7 +276,7 @@ impl Runtime {
         let mut cycles = strongly_connected_components(&package_names, &package_adjacency)
             .into_iter()
             .filter(|component| component.len() > 1)
-            .map(|packages| json!({"packages":packages,"kind":"PACKAGE_CALL_CYCLE"}))
+            .map(|packages| json!({"packages":packages,"kind":"PACKAGE_DEPENDENCY_CYCLE"}))
             .collect::<Vec<_>>();
         cycles.sort_by_key(|cycle| cycle["packages"].to_string());
         let total_cycles = cycles.len();
@@ -195,6 +313,7 @@ impl Runtime {
 
         let coverage = coverage_for_scope(&self.stored.coverage, scope);
         let coverage_gap_count = coverage_gap_count(&coverage);
+        let unresolved_import_count = unresolved_imports.len();
         let packages_truncated = total_packages > limit;
         let boundaries_truncated = total_boundaries > boundary_values.len();
         let hotspots_truncated = total_hotspots > limit;
@@ -206,6 +325,11 @@ impl Runtime {
             || cycles_truncated
             || communities_truncated;
         let mut gaps = coverage_gap_page(&coverage, 0, 20);
+        gaps.extend(
+            unresolved_imports
+                .into_iter()
+                .take(20usize.saturating_sub(gaps.len())),
+        );
         if truncated {
             gaps.push(json!({"code":"ARCHITECTURE_RESULT_LIMIT"}));
         }
@@ -213,7 +337,7 @@ impl Runtime {
         Ok(json!({
             "snapshot":self.snapshot(),
             "package_depth":package_depth,
-            "relation_kinds":["CALLS","IMPLEMENTS"],
+            "relation_kinds":["CALLS","IMPLEMENTS","IMPORTS"],
             "packages":packages,
             "boundaries":boundary_values,
             "hotspots":hotspots,
@@ -226,13 +350,20 @@ impl Runtime {
                 "cycles":total_cycles,
                 "communities":total_communities
             },
+            "import_resolution":{
+                "proven":proven_imports,
+                "external":external_imports,
+                "out_of_scope":out_of_scope_imports,
+                "unresolved_local":unresolved_import_count
+            },
             "truncated":truncated,
-            "partial":truncated || coverage_gap_count > 0,
+            "partial":truncated || coverage_gap_count > 0 || unresolved_import_count > 0,
             "coverage_gaps":gaps,
-            "coverage_gap_count":coverage_gap_count + usize::from(truncated),
-            "coverage_gaps_truncated":coverage_gap_count > 20,
+            "coverage_gap_count":coverage_gap_count + unresolved_import_count + usize::from(truncated),
+            "coverage_gaps_truncated":coverage_gap_count + unresolved_import_count > 20,
             "limitations":[
-                "Architecture currently uses proven CALLS and IMPLEMENTS relationships.",
+                "Architecture uses proven CALLS, IMPLEMENTS and unambiguous repository-local IMPORTS relationships.",
+                "External imports are counted but omitted from the repository graph.",
                 "Communities are deterministic weakly connected package components, not semantic clusters.",
                 "Missing or unresolved relationships remain coverage gaps, not absent dependencies."
             ]
@@ -246,6 +377,248 @@ fn package_name(path: &str, depth: usize) -> String {
         return ".".to_owned();
     }
     components[..depth.min(components.len() - 1)].join("/")
+}
+
+fn supported_source_path(path: &str) -> bool {
+    matches!(
+        std::path::Path::new(path)
+            .extension()
+            .and_then(|extension| extension.to_str()),
+        Some("rs" | "go" | "ts" | "tsx" | "py")
+    )
+}
+
+fn import_specifiers(path: &str, source: &str) -> Vec<String> {
+    if path.ends_with(".py") {
+        let source = source.trim();
+        if let Some(rest) = source.strip_prefix("from ") {
+            return rest
+                .split_whitespace()
+                .next()
+                .map(|module| vec![module.to_owned()])
+                .unwrap_or_default();
+        }
+        if let Some(rest) = source.strip_prefix("import ") {
+            return rest
+                .split(',')
+                .filter_map(|item| item.split_whitespace().next())
+                .map(str::to_owned)
+                .collect();
+        }
+        return Vec::new();
+    }
+    if path.ends_with(".rs") {
+        return source
+            .trim()
+            .strip_prefix("use ")
+            .and_then(|value| value.strip_suffix(';'))
+            .map(|value| vec![value.trim().to_owned()])
+            .unwrap_or_default();
+    }
+    quoted_strings(source)
+}
+
+fn quoted_strings(source: &str) -> Vec<String> {
+    let bytes = source.as_bytes();
+    let mut values = Vec::new();
+    let mut index = 0;
+    while index < bytes.len() {
+        let quote = bytes[index];
+        if !matches!(quote, b'\'' | b'"' | b'`') {
+            index += 1;
+            continue;
+        }
+        let start = index + 1;
+        index = start;
+        while index < bytes.len() && bytes[index] != quote {
+            if bytes[index] == b'\\' {
+                index += 1;
+            }
+            index += 1;
+        }
+        if index < bytes.len() {
+            values.push(source[start..index].to_owned());
+            index += 1;
+        }
+    }
+    values
+}
+
+fn resolve_import(
+    source_path: &str,
+    specifier: &str,
+    paths: &BTreeMap<String, Hash32>,
+    go_modules: &BTreeMap<String, String>,
+    cargo_manifests: &BTreeMap<String, String>,
+    ts_files: &BTreeMap<String, cgrx_languages::ts_imports::TsFileFacts>,
+    ts_modules: &BTreeMap<(String, String), String>,
+) -> ImportResolution {
+    if source_path.ends_with(".ts") || source_path.ends_with(".tsx") {
+        let local = specifier.starts_with('.')
+            || ts_modules.contains_key(&(source_path.to_owned(), specifier.to_owned()));
+        if !local {
+            return ImportResolution::External;
+        }
+        return cgrx_languages::ts_imports::resolve_module_path(
+            ts_files,
+            source_path,
+            specifier,
+            ts_modules,
+        )
+        .map_or(ImportResolution::UnresolvedLocal, ImportResolution::Proven);
+    }
+    if source_path.ends_with(".go") {
+        let Some((module_dir, module_name)) = go_module_for(source_path, go_modules) else {
+            return ImportResolution::External;
+        };
+        let Some(suffix) = specifier
+            .strip_prefix(module_name)
+            .and_then(|value| value.strip_prefix('/'))
+        else {
+            return ImportResolution::External;
+        };
+        if module_name.is_empty()
+            || suffix
+                .split('/')
+                .any(|part| part.is_empty() || matches!(part, "." | ".."))
+        {
+            return ImportResolution::UnresolvedLocal;
+        }
+        let directory = if module_dir.is_empty() {
+            suffix.to_owned()
+        } else {
+            format!("{module_dir}/{suffix}")
+        };
+        return paths
+            .keys()
+            .find(|path| {
+                path.ends_with(".go")
+                    && std::path::Path::new(path).parent() == Some(std::path::Path::new(&directory))
+            })
+            .cloned()
+            .map_or(ImportResolution::UnresolvedLocal, ImportResolution::Proven);
+    }
+    if source_path.ends_with(".py") {
+        return resolve_python_import(source_path, specifier, paths);
+    }
+    if source_path.ends_with(".rs") {
+        return resolve_rust_import(source_path, specifier, paths, cargo_manifests);
+    }
+    ImportResolution::External
+}
+
+fn resolve_python_import(
+    source_path: &str,
+    specifier: &str,
+    paths: &BTreeMap<String, Hash32>,
+) -> ImportResolution {
+    let leading = specifier.bytes().take_while(|byte| *byte == b'.').count();
+    let module = &specifier[leading..];
+    let mut base = if leading == 0 {
+        Vec::new()
+    } else {
+        let mut parts = source_path.split('/').collect::<Vec<_>>();
+        parts.pop();
+        for _ in 1..leading {
+            if parts.pop().is_none() {
+                return ImportResolution::UnresolvedLocal;
+            }
+        }
+        parts
+    };
+    base.extend(module.split('.').filter(|part| !part.is_empty()));
+    let joined = base.join("/");
+    let candidates = [format!("{joined}.py"), format!("{joined}/__init__.py")]
+        .into_iter()
+        .filter(|path| paths.contains_key(path))
+        .collect::<Vec<_>>();
+    if let [path] = candidates.as_slice() {
+        return ImportResolution::Proven(path.clone());
+    }
+    if leading > 0
+        || module.split('.').next().is_some_and(|root| {
+            paths.contains_key(&format!("{root}.py"))
+                || paths
+                    .keys()
+                    .any(|path| path.starts_with(&format!("{root}/")))
+        })
+    {
+        ImportResolution::UnresolvedLocal
+    } else {
+        ImportResolution::External
+    }
+}
+
+fn resolve_rust_import(
+    source_path: &str,
+    specifier: &str,
+    paths: &BTreeMap<String, Hash32>,
+    cargo_manifests: &BTreeMap<String, String>,
+) -> ImportResolution {
+    if specifier.contains(['{', '}', '*']) {
+        return if specifier.starts_with("crate::")
+            || specifier.starts_with("self::")
+            || specifier.starts_with("super::")
+        {
+            ImportResolution::UnresolvedLocal
+        } else {
+            ImportResolution::External
+        };
+    }
+    let parts = specifier.split("::").collect::<Vec<_>>();
+    let Some(root) = parts.first().copied() else {
+        return ImportResolution::External;
+    };
+    if !matches!(root, "crate" | "self" | "super") {
+        return ImportResolution::External;
+    }
+    let source_parent = std::path::Path::new(source_path)
+        .parent()
+        .unwrap_or(std::path::Path::new(""));
+    let mut base = match root {
+        "crate" => {
+            let manifest = cargo_manifests
+                .keys()
+                .filter(|directory| {
+                    directory.is_empty() || std::path::Path::new(source_path).starts_with(directory)
+                })
+                .max_by_key(|directory| directory.len());
+            let Some(manifest) = manifest else {
+                return ImportResolution::UnresolvedLocal;
+            };
+            std::path::Path::new(manifest).join("src")
+        }
+        "self" => source_parent.to_path_buf(),
+        "super" => source_parent
+            .parent()
+            .unwrap_or(std::path::Path::new(""))
+            .to_path_buf(),
+        _ => unreachable!(),
+    };
+    for part in &parts[1..] {
+        if part.is_empty() || matches!(*part, "." | "..") {
+            return ImportResolution::UnresolvedLocal;
+        }
+        base.push(part);
+    }
+    let mut candidates = Vec::new();
+    for candidate_base in [base.clone(), base.parent().unwrap_or(&base).to_path_buf()] {
+        for candidate in [
+            candidate_base.with_extension("rs"),
+            candidate_base.join("mod.rs"),
+        ] {
+            let candidate = candidate.to_string_lossy().replace('\\', "/");
+            if paths.contains_key(&candidate) {
+                candidates.push(candidate);
+            }
+        }
+    }
+    candidates.sort();
+    candidates.dedup();
+    match candidates.as_slice() {
+        [path] => ImportResolution::Proven(path.clone()),
+        _ => ImportResolution::UnresolvedLocal,
+    }
 }
 
 fn strongly_connected_components(

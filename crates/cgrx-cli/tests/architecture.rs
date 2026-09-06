@@ -107,13 +107,13 @@ fn architecture_projects_proven_package_boundaries_cycles_and_hotspots() {
 
     assert_eq!(
         result["relation_kinds"],
-        serde_json::json!(["CALLS", "IMPLEMENTS"])
+        serde_json::json!(["CALLS", "IMPLEMENTS", "IMPORTS"])
     );
     assert_eq!(
         result["packages"],
         serde_json::json!([
-            {"name":"api","files":2,"symbols":2,"fan_in":1,"fan_out":1},
-            {"name":"core","files":1,"symbols":1,"fan_in":1,"fan_out":1},
+            {"name":"api","files":2,"symbols":2,"fan_in":2,"fan_out":2},
+            {"name":"core","files":1,"symbols":1,"fan_in":2,"fan_out":2},
             {"name":"shared","files":1,"symbols":1,"fan_in":0,"fan_out":0}
         ])
     );
@@ -172,6 +172,159 @@ fn architecture_projects_proven_package_boundaries_cycles_and_hotspots() {
             )
     );
     assert_eq!(bounded["truncated"], true);
+}
+
+#[test]
+fn architecture_proves_repo_local_imports_for_every_supported_language_and_refreshes() {
+    let repository = TestDirectory::new("architecture-imports-repository");
+    git(repository.path(), &["init", "-q"]);
+    git(
+        repository.path(),
+        &["config", "user.email", "test@example.invalid"],
+    );
+    git(repository.path(), &["config", "user.name", "CGRX Test"]);
+    let files = [
+        (
+            "typescript/api/main.ts",
+            "import { helper } from '../core/helper';\nimport React from 'react';\nexport function run() { return helper(); }\n",
+        ),
+        (
+            "typescript/core/helper.ts",
+            "export function helper() { return 1; }\n",
+        ),
+        (
+            "typescript/ambiguous_api/main.ts",
+            "import { thing } from '../ambiguous/thing';\nexport function run() { return thing(); }\n",
+        ),
+        (
+            "typescript/ambiguous/thing.ts",
+            "export function thing() { return 1; }\n",
+        ),
+        (
+            "typescript/ambiguous/thing/index.ts",
+            "export function thing() { return 2; }\n",
+        ),
+        (
+            "python/api/main.py",
+            "from python.core.helper import helper\nimport os\ndef run():\n    return helper()\n",
+        ),
+        ("python/core/helper.py", "def helper():\n    return 1\n"),
+        ("go.mod", "module example.com/cgrxfixture\n\ngo 1.23\n"),
+        (
+            "go_api/main.go",
+            "package go_api\nimport (\n    \"example.com/cgrxfixture/go_core\"\n    \"fmt\"\n)\nfunc Run() { go_core.Helper(); fmt.Println() }\n",
+        ),
+        ("go_core/helper.go", "package go_core\nfunc Helper() {}\n"),
+        ("Cargo.toml", "[package]\nname='fixture'\nversion='0.1.0'\n"),
+        ("src/lib.rs", "mod api; mod core;\n"),
+        (
+            "src/api/mod.rs",
+            "use crate::core::helper;\nuse serde::Serialize;\npub fn run() { helper(); }\n",
+        ),
+        ("src/core.rs", "pub fn helper() {}\n"),
+    ];
+    for (path, source) in files {
+        let path = repository.path().join(path);
+        fs::create_dir_all(path.parent().unwrap()).expect("create source parent");
+        fs::write(path, source).expect("write source");
+    }
+    git(repository.path(), &["add", "."]);
+    git(repository.path(), &["commit", "-qm", "fixture"]);
+    let state = TestDirectory::new("architecture-imports-state");
+    Runtime::index(repository.path(), state.path()).expect("index repository");
+    let mut runtime = Runtime::open(state.path()).expect("open runtime");
+
+    let result = runtime.get_architecture(&scope(), 2, 100).unwrap();
+    let imports = result["boundaries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|row| {
+            row["relations"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|kind| kind == "IMPORTS")
+        })
+        .map(|row| {
+            (
+                row["source"].as_str().unwrap(),
+                row["target"].as_str().unwrap(),
+            )
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        imports,
+        std::collections::BTreeSet::from([
+            ("go_api", "go_core"),
+            ("python/api", "python/core"),
+            ("src/api", "src"),
+            ("typescript/api", "typescript/core"),
+        ])
+    );
+    assert_eq!(result["import_resolution"]["proven"], 4);
+    assert_eq!(result["import_resolution"]["external"], 4);
+    assert_eq!(result["import_resolution"]["out_of_scope"], 0);
+    assert_eq!(result["import_resolution"]["unresolved_local"], 1);
+    assert!(
+        result["coverage_gaps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|gap| {
+                gap["code"] == "UNRESOLVED_LOCAL_IMPORT"
+                    && gap["path"] == "typescript/ambiguous_api/main.ts"
+            })
+    );
+    assert!(
+        !imports
+            .iter()
+            .any(|(source, _)| *source == "typescript/ambiguous_api")
+    );
+
+    fs::create_dir_all(repository.path().join("typescript/other")).unwrap();
+    fs::write(
+        repository.path().join("typescript/other/helper.ts"),
+        "export function helper() { return 2; }\n",
+    )
+    .unwrap();
+    fs::write(
+        repository.path().join("typescript/api/main.ts"),
+        "import { helper } from '../other/helper'; export function run() { return helper(); }\n",
+    )
+    .unwrap();
+    assert!(runtime.refresh(repository.path()).unwrap());
+    let refreshed = runtime.get_architecture(&scope(), 2, 100).unwrap();
+    assert!(
+        refreshed["boundaries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|row| {
+                row["source"] == "typescript/api"
+                    && row["target"] == "typescript/other"
+                    && row["relations"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .any(|kind| kind == "IMPORTS")
+            })
+    );
+    assert!(
+        !refreshed["boundaries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|row| {
+                row["source"] == "typescript/api"
+                    && row["target"] == "typescript/core"
+                    && row["relations"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .any(|kind| kind == "IMPORTS")
+            })
+    );
 }
 
 #[test]
