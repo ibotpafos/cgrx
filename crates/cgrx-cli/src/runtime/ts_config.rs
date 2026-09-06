@@ -339,6 +339,10 @@ impl Reader<'_> {
                 "target",
                 "lib",
                 "module",
+                "declaration",
+                "emitDecoratorMetadata",
+                "experimentalDecorators",
+                "outDir",
                 "strict",
                 "esModuleInterop",
                 "skipLibCheck",
@@ -358,7 +362,7 @@ impl Reader<'_> {
                 match key.as_str() {
                     "baseUrl" | "paths" => {}
                     "allowJs" | "resolveJsonModule" if value.is_boolean() => {}
-                    "moduleResolution" if value.as_str() == Some("bundler") => {}
+                    "moduleResolution" if matches!(value.as_str(), Some("bundler" | "node")) => {}
                     key if NEUTRAL.contains(&key) => {}
                     _ => return None,
                 }
@@ -407,7 +411,7 @@ impl Reader<'_> {
 
 pub(super) fn collect(
     root: &Path,
-    files: &BTreeMap<String, StoredTsFileFacts>,
+    candidates: &BTreeSet<String>,
     dirs: &mut TsDirectoryCache,
 ) -> (
     BTreeMap<String, TsResolutionConfig>,
@@ -423,18 +427,18 @@ pub(super) fn collect(
         witness: Witness::default(),
     };
     let mut configs = BTreeMap::new();
-    for path in ts_inventory_candidates(files)
-        .into_iter()
+    for path in candidates
+        .iter()
         .filter(|p| is_ts_resolution_config(Path::new(p)))
     {
-        reader.witness.watch(root, &path);
-        match fs::symlink_metadata(root.join(&path)) {
+        reader.witness.watch(root, path);
+        match fs::symlink_metadata(root.join(path)) {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
             _ => {}
         }
         let mut seen = BTreeSet::new();
         let mut config = TsResolutionConfig::default();
-        if let Some(options) = reader.options(&path, &mut seen) {
+        if let Some(options) = reader.options(path, &mut seen) {
             config.supported = true;
             if let Some((origin, paths)) = options.paths {
                 let base = options.base.as_deref().unwrap_or(&origin);
@@ -450,7 +454,7 @@ pub(super) fn collect(
                 }
             }
         }
-        configs.insert(path, config);
+        configs.insert(path.clone(), config);
     }
     // Every config proof includes the pass's actual config/package reads. This
     // deliberately conservative dependency superset also captures duplicates.

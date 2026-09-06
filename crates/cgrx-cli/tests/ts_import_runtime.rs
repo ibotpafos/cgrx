@@ -140,6 +140,101 @@ fn imported_alias_uses_export_identity_not_decoy_and_reopens() {
     f.runtime = Runtime::open(&f.state).unwrap();
     assert_eq!(f.targets(), ["worker.ts"]);
 }
+
+#[test]
+fn imported_constructor_parameter_property_receiver_resolves_exact_method() {
+    let mut f = Fixture::new(&[
+        (
+            "main.ts",
+            "import { ChatService } from './chat.service'; class Controller { constructor(private readonly chat: ChatService) {} caller() { this.chat.getRooms(); } }",
+        ),
+        (
+            "chat.service.ts",
+            "export class ChatService { getRooms() {} }",
+        ),
+        ("decoy.ts", "export class Decoy { getRooms() {} }"),
+    ]);
+    let trace = f.trace();
+    assert_eq!(f.targets(), ["chat.service.ts"]);
+    assert_eq!(trace["nodes"][0]["symbol"], "getRooms");
+    f.runtime = Runtime::open(&f.state).unwrap();
+    assert_eq!(f.targets(), ["chat.service.ts"]);
+}
+
+#[test]
+fn decorated_async_controller_receiver_resolves_exact_method() {
+    let f = Fixture::new(&[
+        (
+            "tsconfig.base.json",
+            r#"{"compilerOptions":{"strict":true,"resolveJsonModule":true}}"#,
+        ),
+        (
+            "tsconfig.json",
+            r#"{"extends":"./tsconfig.base.json","compilerOptions":{"declaration":true,"emitDecoratorMetadata":true,"experimentalDecorators":true,"module":"commonjs","moduleResolution":"node","outDir":"dist","target":"es2022"}}"#,
+        ),
+        (
+            "main.ts",
+            "import { Controller, Get, Req } from '@nestjs/common'; import { ChatService } from './chat.service'; import type { Request } from 'express'; @Controller('chat') export class ChatController { constructor(private readonly chat: ChatService) {} @Get('rooms') async caller(@Req() request: Request) { return this.chat.getRooms(request); } }",
+        ),
+        (
+            "chat.service.ts",
+            "export class ChatService { async getRooms(request: unknown) {} }",
+        ),
+    ]);
+    assert_eq!(f.targets(), ["chat.service.ts"]);
+    let documents = f.stored()["documents"].as_array().unwrap().clone();
+    let receiver_documents: Vec<_> = documents
+        .iter()
+        .filter(|document| {
+            document["path"] == "main.ts"
+                && document["provenance"] == "CALLS"
+                && document["text"]
+                    .as_str()
+                    .is_some_and(|text| text.contains("this.chat.getRooms"))
+        })
+        .collect();
+    assert_eq!(receiver_documents.len(), 1);
+    assert_eq!(receiver_documents[0]["qualified_name"], "getRooms");
+}
+
+#[test]
+fn mutable_or_non_property_constructor_parameters_do_not_prove_receiver() {
+    for constructor in [
+        "constructor(private chat: ChatService) {}",
+        "constructor(chat: ChatService) {}",
+        "constructor(private chat: readonly ChatService[]) {}",
+        "constructor(private readonly chat: ChatService | null) {}",
+    ] {
+        let f = Fixture::new(&[
+            (
+                "main.ts",
+                &format!(
+                    "import {{ ChatService }} from './chat.service'; class Controller {{ {constructor} caller() {{ this.chat.getRooms(); }} }}"
+                ),
+            ),
+            (
+                "chat.service.ts",
+                "export class ChatService { getRooms() {} }",
+            ),
+        ]);
+        assert!(f.targets().is_empty(), "{constructor}");
+    }
+}
+
+#[test]
+fn nested_regular_function_does_not_inherit_parameter_property_receiver() {
+    let f = Fixture::new(&[
+        (
+            "main.ts",
+            "import { ChatService } from './chat.service'; class Controller { constructor(private readonly chat: ChatService) {} caller() { function nested() { this.chat.getRooms(); } nested(); } }",
+        ),
+        (
+            "chat.service.ts",
+            "export class ChatService { getRooms() {} }",
+        ),
+    ]);
+    assert!(f.targets().iter().all(|path| path != "chat.service.ts"));
+}
 #[test]
 fn unexported_and_duplicate_imports_never_fall_back() {
     for source in [
@@ -883,4 +978,79 @@ fn gd_config_alias_real_v18_binary_state_requests_reindex() {
     f.runtime = Runtime::open(&state).unwrap();
     assert_eq!(gd_targets(&f), ["apps/CRM/utils/time.utils.ts"]);
     eprintln!("REAL_V18_BOOL_STATE_REINDEXED_TO_V20_EXACT_ALIAS");
+}
+
+#[test]
+fn exported_const_arrow_exact_identity_matrix() {
+    for worker in [
+        "export const target = () => 42;",
+        "const target = () => 42; export { target };",
+        "const actual = () => 42; export { actual as target };",
+        "export const target = async () => 42;",
+        "export const other = 1, target = () => 42;",
+        "export const target = () => 42; function shadow(){ let target; target = 0; }",
+    ] {
+        let mut f = Fixture::new(&[
+            (
+                "main.ts",
+                "import { target as invoke } from './api'; function caller(){ invoke(); }",
+            ),
+            ("api.ts", "export { target } from './worker';"),
+            ("worker.ts", worker),
+            (
+                "decoy.ts",
+                "export function invoke() {} export function target() {}",
+            ),
+        ]);
+        assert_eq!(f.targets(), ["worker.ts"], "{worker}");
+        let name = if worker.contains("actual") {
+            "actual"
+        } else {
+            "target"
+        };
+        let trace = f.trace();
+        assert_eq!(trace["nodes"][0]["symbol"], name);
+        assert_eq!(
+            trace["nodes"][0]["span"]["start"],
+            worker.find(name).unwrap()
+        );
+        f.runtime = Runtime::open(&f.state).unwrap();
+        assert_eq!(f.targets(), ["worker.ts"]);
+        fs::write(f.root.join("worker.ts"), "export let target = () => 42;").unwrap();
+        f.refresh();
+        assert!(f.targets().is_empty());
+        fs::write(f.root.join("worker.ts"), worker).unwrap();
+        f.refresh();
+        assert_eq!(f.targets(), ["worker.ts"]);
+    }
+}
+
+#[test]
+fn exported_const_arrow_unsafe_bindings_abstain() {
+    for worker in [
+        "export let target = () => 42;",
+        "export var target = () => 42;",
+        "export const target = function() { return 42; };",
+        "const target = () => 42;",
+        "export const target = () => 42; target = () => 0;",
+        "export const target = () => 42; function mutate(){ target = () => 0; }",
+        "export const target = () => 42; var target;",
+        "export const target = () => 42; if (true) { var target; }",
+        "export const { target } = { target: () => 42 };",
+        "export const target = (() => 42);",
+        "export const target = () => 42; export { target };",
+        "export const target = () => 42; function target() {}",
+        "export const target = () => 42; for (target of []) {}",
+        "export const target = () => 42; ({ target } = {});",
+    ] {
+        let f = Fixture::new(&[
+            (
+                "main.ts",
+                "import { target } from './worker'; function caller(){ target(); }",
+            ),
+            ("worker.ts", worker),
+            ("decoy.ts", "export function target() {}"),
+        ]);
+        assert!(f.targets().is_empty(), "{worker}");
+    }
 }

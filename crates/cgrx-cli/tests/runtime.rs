@@ -69,6 +69,48 @@ fn repository_with_file(label: &str, name: &str, source: &[u8]) -> TestDirectory
     repository
 }
 
+fn refactor_repository() -> TestDirectory {
+    let repository = TestDirectory::new("refactor-candidates");
+    git(repository.path(), &["init", "-q"]);
+    git(
+        repository.path(),
+        &["config", "user.email", "test@example.invalid"],
+    );
+    git(repository.path(), &["config", "user.name", "CGRX Test"]);
+    let fixtures = [
+        (
+            "similar.ts",
+            "function saveTs(value: number) {}\nfunction firstTs(input: number) { const prepared = input + 1; saveTs(prepared); return prepared; }\nfunction secondTs(value: number) { const output = value + 9; saveTs(output); return output; }\nfunction unrelatedTs(input: number) { while (input > 0) { input -= 1; } throw input; }\n",
+        ),
+        (
+            "similar.tsx",
+            "function saveTsx(value: number) {}\nfunction firstTsx(input: number) { const prepared = input + 1; saveTsx(prepared); return <div>{prepared}</div>; }\nfunction secondTsx(value: number) { const output = value + 9; saveTsx(output); return <div>{output}</div>; }\n",
+        ),
+        (
+            "similar.go",
+            "package sample\nfunc saveGo(value int) {}\nfunc firstGo(input int) int { prepared := input + 1; saveGo(prepared); return prepared }\nfunc secondGo(value int) int { output := value + 9; saveGo(output); return output }\n",
+        ),
+        (
+            "similar.py",
+            "def save_py(value):\n    pass\n\ndef first_py(input_value):\n    prepared = input_value + 1\n    save_py(prepared)\n    return prepared\n\ndef second_py(value):\n    output = value + 9\n    save_py(output)\n    return output\n",
+        ),
+        (
+            "similar.rs",
+            "fn save_rs(value: i32) {}\nfn first_rs(input: i32) -> i32 { let prepared = input + 1; save_rs(prepared); prepared }\nfn second_rs(value: i32) -> i32 { let output = value + 9; save_rs(output); output }\n",
+        ),
+        (
+            "negative.py",
+            "def tiny(value):\n    return value\n\ndef same_name(value):\n    if value:\n        save_left(value)\n        return value\n\ndef same_name(value):\n    for item in value:\n        transform(item)\n    raise RuntimeError(value)\n",
+        ),
+    ];
+    for (path, source) in fixtures {
+        fs::write(repository.path().join(path), source).expect("write refactor fixture");
+    }
+    git(repository.path(), &["add", "."]);
+    git(repository.path(), &["commit", "-qm", "fixture"]);
+    repository
+}
+
 fn orient(runtime: &Runtime, task: &str, relation_kinds: Vec<RelationKind>) -> OrientReport {
     runtime
         .orient(QueryRequest {
@@ -83,6 +125,100 @@ fn orient(runtime: &Runtime, task: &str, relation_kinds: Vec<RelationKind>) -> O
             token_budget: 800,
         })
         .expect("orient query")
+}
+
+fn calls_scope(path: &str) -> Scope {
+    Scope {
+        include: vec![path.to_owned()],
+        exclude: Vec::new(),
+        relation_kinds: vec![RelationKind::Calls],
+        max_depth: 1,
+    }
+}
+
+#[test]
+fn suggest_refactors_projects_shared_helper_for_every_supported_extension() {
+    let repository = refactor_repository();
+    let state = TestDirectory::new("refactor-candidates-state");
+    Runtime::index(repository.path(), state.path()).expect("index repository");
+    let runtime = Runtime::open(state.path()).expect("open runtime");
+
+    for (path, language, callee) in [
+        ("similar.ts", "typescript", "saveTs"),
+        ("similar.tsx", "typescript", "saveTsx"),
+        ("similar.go", "go", "saveGo"),
+        ("similar.py", "python", "save_py"),
+        ("similar.rs", "rust", "save_rs"),
+    ] {
+        let result = runtime
+            .suggest_refactors(&calls_scope(path), Some(language), 760, 20)
+            .expect("suggest refactors");
+        assert_eq!(result["total"], 1, "{path}: {result}");
+        if path == "similar.ts" {
+            assert!(
+                result["inspected_pairs"].as_u64().unwrap() > result["total"].as_u64().unwrap(),
+                "{path}: inspected pair telemetry must include rejected pairs: {result}"
+            );
+        }
+        assert_eq!(result["candidates"][0]["kind"], "extract_shared_helper");
+        assert_eq!(result["candidates"][0]["confidence"], "candidate");
+        assert_eq!(result["candidates"][0]["language"], language);
+        assert_eq!(
+            result["candidates"][0]["shared_callees"][0]["target"]["symbol"],
+            callee
+        );
+        assert_eq!(
+            result["candidates"][0]["shared_callees"][0]["confidence"],
+            "PROVEN"
+        );
+        assert_eq!(
+            result["candidates"][0]["projection"]["status"],
+            "hypothetical"
+        );
+        assert_eq!(
+            result["candidates"][0]["projection"]["remove"],
+            serde_json::json!([])
+        );
+        assert_eq!(
+            result["candidates"][0]["projection"]["add"]
+                .as_array()
+                .unwrap()
+                .len(),
+            2
+        );
+        assert_eq!(
+            result,
+            runtime
+                .suggest_refactors(&calls_scope(path), Some(language), 760, 20)
+                .expect("repeat suggestions"),
+            "{path} ordering must be deterministic"
+        );
+    }
+}
+
+#[test]
+fn suggest_refactors_rejects_invalid_arguments_and_weak_pairs() {
+    let repository = refactor_repository();
+    let state = TestDirectory::new("refactor-negative-state");
+    Runtime::index(repository.path(), state.path()).expect("index repository");
+    let runtime = Runtime::open(state.path()).expect("open runtime");
+
+    let negative = runtime
+        .suggest_refactors(&calls_scope("negative.py"), Some("python"), 760, 20)
+        .expect("scan negative fixture");
+    assert_eq!(negative["total"], 0, "{negative}");
+
+    for (language, score, limit) in [
+        (Some("java"), 760, 20),
+        (Some("rust"), 1001, 20),
+        (Some("rust"), 760, 0),
+        (Some("rust"), 760, 51),
+    ] {
+        let error = runtime
+            .suggest_refactors(&calls_scope("similar.rs"), language, score, limit)
+            .expect_err("invalid arguments fail closed");
+        assert_eq!(error.code(), "cgrx.invalid_arguments");
+    }
 }
 
 fn stored_arcs(state: &Path) -> Vec<serde_json::Value> {
@@ -1397,6 +1533,144 @@ fn caller() { target(); }
     assert_eq!(first["matches"][0]["callees"], 0);
     assert_eq!(first["total"], 2);
     assert_eq!(first["truncated"], true);
+    assert_eq!(first["matches"][0]["matched_by"], "symbol");
+}
+
+#[test]
+fn search_graph_can_search_bodies_and_filter_every_supported_language() {
+    let repository = TestDirectory::new("filtered-body-search");
+    git(repository.path(), &["init", "-q"]);
+    git(
+        repository.path(),
+        &["config", "user.email", "test@example.invalid"],
+    );
+    git(repository.path(), &["config", "user.name", "CGRX Test"]);
+    let fixtures = [
+        (
+            "feature.ts",
+            "function tsFeature() { return 'body_token_ts'; }\n",
+        ),
+        (
+            "feature.tsx",
+            "function tsxFeature() { return <div>body_token_tsx</div>; }\n",
+        ),
+        (
+            "feature.go",
+            "package sample\nfunc goFeature() string { return \"body_token_go\" }\n",
+        ),
+        (
+            "feature.py",
+            "def py_feature():\n    return 'body_token_py'\n",
+        ),
+        (
+            "feature.rs",
+            "fn rust_feature() -> &'static str { \"body_token_rs\" }\n",
+        ),
+    ];
+    for (path, source) in fixtures {
+        fs::write(repository.path().join(path), source).expect("write language fixture");
+    }
+    git(repository.path(), &["add", "."]);
+    git(repository.path(), &["commit", "-qm", "fixture"]);
+    let state = TestDirectory::new("filtered-body-search-state");
+    Runtime::index(repository.path(), state.path()).expect("index repository");
+    let runtime = Runtime::open(state.path()).expect("open runtime");
+    let scope = Scope {
+        include: vec!["**".to_owned()],
+        exclude: Vec::new(),
+        relation_kinds: vec![RelationKind::Calls],
+        max_depth: 4,
+    };
+
+    let cases = [
+        ("typescript", "body_token_ts", 2),
+        ("go", "body_token_go", 1),
+        ("python", "body_token_py", 1),
+        ("rust", "body_token_rs", 1),
+    ];
+    for (language, query, expected) in cases {
+        let result = runtime
+            .search_graph_filtered(query, &scope, 10, Some(language), true)
+            .expect("search filtered body");
+        assert_eq!(result["total"], expected, "{language}: {result}");
+        assert!(
+            result["matches"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|item| item["matched_by"] == "body"),
+            "{language}: {result}"
+        );
+    }
+
+    let names_only = runtime
+        .search_graph_filtered("body_token_rs", &scope, 10, Some("rust"), false)
+        .expect("search names only");
+    assert_eq!(names_only["total"], 0);
+    let error = runtime
+        .search_graph_filtered("anything", &scope, 10, Some("java"), true)
+        .expect_err("unsupported language fails closed");
+    assert_eq!(error.code(), "cgrx.invalid_arguments");
+}
+
+#[test]
+fn get_outline_lists_symbols_in_source_order_for_every_supported_extension() {
+    let repository = TestDirectory::new("file-outline");
+    git(repository.path(), &["init", "-q"]);
+    git(
+        repository.path(),
+        &["config", "user.email", "test@example.invalid"],
+    );
+    git(repository.path(), &["config", "user.name", "CGRX Test"]);
+    let fixtures = [
+        (
+            "outline.ts",
+            "function tsFirst() {}\nfunction tsSecond() {}\n",
+            "typescript",
+        ),
+        (
+            "outline.tsx",
+            "function tsxFirst() { return <div />; }\nfunction tsxSecond() { return <span />; }\n",
+            "typescript",
+        ),
+        (
+            "outline.go",
+            "package sample\nfunc goFirst() {}\nfunc goSecond() {}\n",
+            "go",
+        ),
+        (
+            "outline.py",
+            "def py_first():\n    pass\n\ndef py_second():\n    pass\n",
+            "python",
+        ),
+        (
+            "outline.rs",
+            "fn rust_first() {}\nfn rust_second() {}\n",
+            "rust",
+        ),
+    ];
+    for (path, source, _) in fixtures {
+        fs::write(repository.path().join(path), source).expect("write outline fixture");
+    }
+    git(repository.path(), &["add", "."]);
+    git(repository.path(), &["commit", "-qm", "fixture"]);
+    let state = TestDirectory::new("file-outline-state");
+    Runtime::index(repository.path(), state.path()).expect("index repository");
+    let runtime = Runtime::open(state.path()).expect("open runtime");
+
+    for (path, _, language) in fixtures {
+        let outline = runtime.get_outline(path, 1).expect("get file outline");
+        assert_eq!(outline["path"], path);
+        assert_eq!(outline["language"], language);
+        assert_eq!(outline["total"], 2, "{path}: {outline}");
+        assert_eq!(outline["symbols"].as_array().unwrap().len(), 1);
+        assert_eq!(outline["truncated"], true);
+    }
+
+    let error = runtime
+        .get_outline("missing.rs", 20)
+        .expect_err("missing indexed path fails closed");
+    assert_eq!(error.code(), "cgrx.path_not_indexed");
 }
 
 #[test]
@@ -1434,6 +1708,132 @@ fn top() { middle(); }
 }
 
 #[test]
+fn find_usages_returns_proven_sites_for_every_supported_extension() {
+    let repository = TestDirectory::new("find-usages-languages");
+    git(repository.path(), &["init", "-q"]);
+    git(
+        repository.path(),
+        &["config", "user.email", "test@example.invalid"],
+    );
+    git(repository.path(), &["config", "user.name", "CGRX Test"]);
+    let fixtures = [
+        (
+            "usage.ts",
+            "function tsTarget() {}\nfunction tsCaller() { tsTarget(); }\n",
+            "tsTarget",
+            "tsCaller",
+        ),
+        (
+            "usage.tsx",
+            "function tsxTarget() { return <div />; }\nfunction tsxCaller() { tsxTarget(); return <span />; }\n",
+            "tsxTarget",
+            "tsxCaller",
+        ),
+        (
+            "usage.go",
+            "package sample\nfunc goTarget() {}\nfunc goCaller() { goTarget() }\n",
+            "goTarget",
+            "goCaller",
+        ),
+        (
+            "usage.py",
+            "def py_target():\n    pass\n\ndef py_caller():\n    py_target()\n",
+            "py_target",
+            "py_caller",
+        ),
+        (
+            "usage.rs",
+            "fn rust_target() {}\nfn rust_caller() { rust_target(); }\n",
+            "rust_target",
+            "rust_caller",
+        ),
+    ];
+    for (path, source, _, _) in fixtures {
+        fs::write(repository.path().join(path), source).expect("write usage fixture");
+    }
+    git(repository.path(), &["add", "."]);
+    git(repository.path(), &["commit", "-qm", "fixture"]);
+    let state = TestDirectory::new("find-usages-languages-state");
+    Runtime::index(repository.path(), state.path()).expect("index repository");
+    let runtime = Runtime::open(state.path()).expect("open runtime");
+    let scope = Scope {
+        include: vec!["**".to_owned()],
+        exclude: Vec::new(),
+        relation_kinds: vec![RelationKind::Calls],
+        max_depth: 4,
+    };
+
+    for (path, _, target, caller) in fixtures {
+        let result = runtime
+            .find_usages(target, Some(path), &scope, 1, 20)
+            .expect("find usages");
+        assert_eq!(result["total"], 1, "{path}: {result}");
+        assert_eq!(result["usages"][0]["source"]["symbol"], caller);
+        assert_eq!(result["usages"][0]["relation"], "CALLS");
+        assert_eq!(result["usages"][0]["site"]["path"], path);
+        assert_eq!(result["usages"][0]["confidence"], "PROVEN");
+        assert!(
+            result["usages"][0]["site"]["span"]["end"].as_u64().unwrap()
+                > result["usages"][0]["site"]["span"]["start"]
+                    .as_u64()
+                    .unwrap()
+        );
+    }
+}
+
+#[test]
+fn find_usages_walks_proven_reverse_edges_to_the_requested_depth() {
+    let repository = TestDirectory::new("transitive-find-usages");
+    git(repository.path(), &["init", "-q"]);
+    git(
+        repository.path(),
+        &["config", "user.email", "test@example.invalid"],
+    );
+    git(repository.path(), &["config", "user.name", "CGRX Test"]);
+    fs::write(
+        repository.path().join("usage.rs"),
+        b"fn target() {}\nfn middle() { target(); }\nfn top() { middle(); }\n",
+    )
+    .expect("write transitive usage fixture");
+    git(repository.path(), &["add", "."]);
+    git(repository.path(), &["commit", "-qm", "fixture"]);
+    let state = TestDirectory::new("transitive-find-usages-state");
+    Runtime::index(repository.path(), state.path()).expect("index repository");
+    let runtime = Runtime::open(state.path()).expect("open runtime");
+    let scope = Scope {
+        include: vec!["**".to_owned()],
+        exclude: Vec::new(),
+        relation_kinds: vec![RelationKind::Calls],
+        max_depth: 4,
+    };
+
+    let direct = runtime
+        .find_usages("target", Some("usage.rs"), &scope, 1, 20)
+        .expect("find direct usages");
+    assert_eq!(direct["depth"], 1);
+    assert_eq!(direct["total"], 1);
+    assert_eq!(direct["usages"][0]["source"]["symbol"], "middle");
+    assert_eq!(direct["usages"][0]["via"]["symbol"], "target");
+    assert_eq!(direct["usages"][0]["hop"], 1);
+
+    let transitive = runtime
+        .find_usages("target", Some("usage.rs"), &scope, 2, 20)
+        .expect("find transitive usages");
+    assert_eq!(transitive["depth"], 2);
+    assert_eq!(transitive["total"], 2);
+    assert_eq!(transitive["usages"][1]["source"]["symbol"], "top");
+    assert_eq!(transitive["usages"][1]["via"]["symbol"], "middle");
+    assert_eq!(transitive["usages"][1]["hop"], 2);
+
+    for invalid_depth in [0, 5] {
+        let error = runtime
+            .find_usages("target", Some("usage.rs"), &scope, invalid_depth, 20)
+            .expect_err("unbounded usage depth fails closed");
+        assert_eq!(error.code(), "cgrx.invalid_arguments");
+    }
+}
+
+#[test]
 fn trace_path_requires_a_path_for_ambiguous_short_symbols() {
     let repository = TestDirectory::new("ambiguous-trace-symbol");
     git(repository.path(), &["init", "-q"]);
@@ -1464,6 +1864,14 @@ fn trace_path_requires_a_path_for_ambiguous_short_symbols() {
         .trace_path("duplicate", Some("a.rs"), "both", 2, &scope, 10)
         .expect("path disambiguates symbol");
     assert_eq!(resolved["root"]["path"], "a.rs");
+    let usage_error = runtime
+        .find_usages("duplicate", None, &scope, 1, 10)
+        .expect_err("usage lookup also fails on ambiguous symbols");
+    assert_eq!(usage_error.code(), "cgrx.ambiguous_symbol");
+    let usages = runtime
+        .find_usages("duplicate", Some("a.rs"), &scope, 1, 10)
+        .expect("path disambiguates usage lookup");
+    assert_eq!(usages["target"]["path"], "a.rs");
 }
 
 #[test]
@@ -3283,4 +3691,80 @@ fn rust_nested_alias_rejects_unproven_paths() {
             "{import} {body} {child}"
         );
     }
+}
+
+#[test]
+fn refresh_does_not_rewrite_git_index_for_metadata_only_changes() {
+    assert_refresh_preserves_git_index(false);
+}
+
+#[test]
+fn refresh_does_not_rewrite_linked_worktree_git_index() {
+    assert_refresh_preserves_git_index(true);
+}
+
+fn assert_refresh_preserves_git_index(linked: bool) {
+    let primary = fixture_repository();
+    let worktree = TestDirectory::new("readonly-refresh-linked");
+    let repository = if linked {
+        git(
+            primary.path(),
+            &[
+                "worktree",
+                "add",
+                "--quiet",
+                "--detach",
+                worktree.path().to_str().unwrap(),
+                "HEAD",
+            ],
+        );
+        &worktree
+    } else {
+        &primary
+    };
+    let state = TestDirectory::new("readonly-refresh-state");
+    Runtime::index(repository.path(), state.path()).unwrap();
+    let mut runtime = Runtime::open(state.path()).unwrap();
+    let snapshot = runtime.snapshot().clone();
+    let located = Command::new("git")
+        .args(["rev-parse", "--git-path", "index"])
+        .current_dir(repository.path())
+        .output()
+        .unwrap();
+    assert!(located.status.success());
+    let index = repository
+        .path()
+        .join(String::from_utf8(located.stdout).unwrap().trim());
+    let before = fs::read(&index).unwrap();
+    let source_path = repository.path().join("main.py");
+    let source = fs::read(&source_path).unwrap();
+    // Advance mtime deterministically without changing bytes. Git's ordinary
+    // status refresh writes this stat-cache change into its optional index.
+    let file = fs::OpenOptions::new()
+        .write(true)
+        .open(&source_path)
+        .unwrap();
+    file.set_times(fs::FileTimes::new().set_modified(SystemTime::now() + Duration::from_secs(2)))
+        .unwrap();
+    assert!(!runtime.refresh(repository.path()).unwrap());
+    assert_eq!(runtime.snapshot(), &snapshot);
+    assert_eq!(
+        fs::read(&index).unwrap(),
+        before,
+        "read-only refresh rewrote Git index"
+    );
+    assert_eq!(fs::read(&source_path).unwrap(), source);
+
+    // Disabling optional writes must not suppress actual content discovery.
+    fs::write(&source_path, b"def changed():\n    return 7\n").unwrap();
+    let lock = index.with_extension("lock");
+    fs::write(&lock, b"another Git operation owns this lock").unwrap();
+    assert!(runtime.refresh(repository.path()).unwrap());
+    assert_eq!(runtime.changed_paths(), ["main.py"]);
+    assert_eq!(fs::read(&index).unwrap(), before);
+    assert_eq!(
+        fs::read(&lock).unwrap(),
+        b"another Git operation owns this lock"
+    );
+    fs::remove_file(lock).unwrap();
 }

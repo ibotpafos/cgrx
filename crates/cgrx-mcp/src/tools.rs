@@ -39,7 +39,10 @@ pub trait ToolBackend: Send + Sync {
         query: &str,
         scope: Value,
         limit: u32,
+        language: Option<&str>,
+        include_body: bool,
     ) -> Result<Value, BackendError>;
+    fn get_outline(&mut self, path: &str, limit: u32) -> Result<Value, BackendError>;
     fn trace_path(
         &mut self,
         symbol: &str,
@@ -49,6 +52,26 @@ pub trait ToolBackend: Send + Sync {
         scope: Value,
         limit: u32,
     ) -> Result<Value, BackendError>;
+    fn find_usages(
+        &mut self,
+        symbol: &str,
+        path: Option<&str>,
+        scope: Value,
+        depth: u8,
+        limit: u32,
+    ) -> Result<Value, BackendError>;
+    fn suggest_refactors(
+        &mut self,
+        _scope: Value,
+        _language: Option<&str>,
+        _min_score: u16,
+        _limit: u32,
+    ) -> Result<Value, BackendError> {
+        Err(BackendError::new(
+            "cgrx.refactor_scan_unavailable",
+            "refactor suggestions require a managed repository backend",
+        ))
+    }
     fn get_code_snippet(&mut self, symbol: &str, path: Option<&str>)
     -> Result<Value, BackendError>;
     fn check_index_coverage(
@@ -269,7 +292,10 @@ impl Server {
             }
             "orient" => self.orient(from_value(call.arguments)?)?,
             "search_graph" => self.search_graph(from_value(call.arguments)?)?,
+            "get_outline" => self.get_outline(from_value(call.arguments)?)?,
             "trace_path" => self.trace_path(from_value(call.arguments)?)?,
+            "find_usages" => self.find_usages(from_value(call.arguments)?)?,
+            "suggest_refactors" => self.suggest_refactors(from_value(call.arguments)?)?,
             "get_code_snippet" => self.get_code_snippet(from_value(call.arguments)?)?,
             "check_index_coverage" => self.check_index_coverage(from_value(call.arguments)?)?,
             "expand" => self.expand(from_value(call.arguments)?)?,
@@ -350,7 +376,26 @@ impl Server {
             ));
         };
         backend
-            .search_graph(&arguments.query, arguments.scope, arguments.limit)
+            .search_graph(
+                &arguments.query,
+                arguments.scope,
+                arguments.limit,
+                arguments.language.as_deref(),
+                arguments.include_body,
+            )
+            .map_err(backend_error)
+    }
+
+    fn get_outline(&mut self, arguments: GetOutlineArguments) -> Result<Value, JsonRpcError> {
+        let Some(backend) = &mut self.backend else {
+            return Err(JsonRpcError::typed(
+                -32020,
+                "cgrx.index_adapter_not_connected",
+                "get_outline requires an indexed runtime backend",
+            ));
+        };
+        backend
+            .get_outline(&arguments.path, arguments.limit)
             .map_err(backend_error)
     }
 
@@ -369,6 +414,46 @@ impl Server {
                 &arguments.direction,
                 arguments.depth,
                 arguments.scope,
+                arguments.limit,
+            )
+            .map_err(backend_error)
+    }
+
+    fn find_usages(&mut self, arguments: FindUsagesArguments) -> Result<Value, JsonRpcError> {
+        let Some(backend) = &mut self.backend else {
+            return Err(JsonRpcError::typed(
+                -32020,
+                "cgrx.index_adapter_not_connected",
+                "find_usages requires an indexed runtime backend",
+            ));
+        };
+        backend
+            .find_usages(
+                &arguments.symbol,
+                arguments.path.as_deref(),
+                arguments.scope,
+                arguments.depth,
+                arguments.limit,
+            )
+            .map_err(backend_error)
+    }
+
+    fn suggest_refactors(
+        &mut self,
+        arguments: SuggestRefactorsArguments,
+    ) -> Result<Value, JsonRpcError> {
+        let Some(backend) = &mut self.backend else {
+            return Err(JsonRpcError::typed(
+                -32020,
+                "cgrx.index_adapter_not_connected",
+                "suggest_refactors requires an indexed runtime backend",
+            ));
+        };
+        backend
+            .suggest_refactors(
+                arguments.scope,
+                arguments.language.as_deref(),
+                arguments.min_score,
                 arguments.limit,
             )
             .map_err(backend_error)
@@ -473,7 +558,10 @@ fn model_visible_result(tool: &str, structured: &Value) -> Value {
         "orient" => compact_orient(structured),
         "expand" => compact_expand(structured),
         "search_graph" => compact_search(structured),
+        "get_outline" => compact_outline(structured),
         "trace_path" => compact_trace(structured),
+        "find_usages" => compact_usages(structured),
+        "suggest_refactors" => compact_refactors(structured),
         "get_code_snippet" => compact_snippet(structured),
         "check_index_coverage" => compact_coverage(structured),
         "status" => compact_status(structured),
@@ -563,6 +651,33 @@ fn compact_search(value: &Value) -> Value {
     compact
 }
 
+fn compact_outline(value: &Value) -> Value {
+    let rows: Vec<_> = value
+        .get("symbols")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .map(|item| {
+            json!([
+                item.get("symbol"),
+                item.pointer("/span/start"),
+                item.pointer("/span/end")
+            ])
+        })
+        .collect();
+    let mut compact = json!({
+        "at":snapshot_tag(value.get("snapshot")),
+        "path":value.get("path"),
+        "language":value.get("language"),
+        "cols":["symbol","start","end"],
+        "rows":rows,
+        "n":value.get("total"),
+        "gaps":value.get("coverage_gap_count"),
+    });
+    insert_more_when_true(&mut compact, value.get("truncated"));
+    compact
+}
+
 fn compact_trace(value: &Value) -> Value {
     let snapshot = value.get("snapshot");
     let mut paths = Vec::<String>::new();
@@ -600,6 +715,113 @@ fn compact_trace(value: &Value) -> Value {
     });
     insert_more_when_true(&mut compact, value.get("truncated"));
     compact
+}
+
+fn compact_usages(value: &Value) -> Value {
+    let mut paths = Vec::<String>::new();
+    let rows: Vec<_> = value
+        .get("usages")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .map(|item| {
+            let site_path = item.pointer("/site/path").and_then(Value::as_str);
+            let path_id = site_path.map(|path| {
+                paths
+                    .iter()
+                    .position(|stored| stored == path)
+                    .unwrap_or_else(|| {
+                        paths.push(path.to_owned());
+                        paths.len() - 1
+                    })
+            });
+            json!([
+                item.pointer("/source/symbol"),
+                path_id,
+                item.get("hop"),
+                item.pointer("/via/symbol"),
+                item.get("relation"),
+                item.pointer("/site/span/start"),
+                item.pointer("/site/span/end"),
+                item.get("resolver")
+            ])
+        })
+        .collect();
+    let mut compact = json!({
+        "at":snapshot_tag(value.get("snapshot")),
+        "target":value.get("target").map(compact_trace_root),
+        "paths":paths,
+        "cols":["source","path_id","hop","via","relation","site_start","site_end","resolver"],
+        "rows":rows,
+        "n":value.get("total"),
+        "gaps":value.get("coverage_gap_count")
+    });
+    insert_more_when_true(&mut compact, value.get("truncated"));
+    compact
+}
+
+fn compact_refactors(value: &Value) -> Value {
+    let mut paths = Vec::<String>::new();
+    let rows = value
+        .get("candidates")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .map(|candidate| {
+            let left = compact_refactor_symbol(candidate.get("left"), &mut paths);
+            let right = compact_refactor_symbol(candidate.get("right"), &mut paths);
+            let shared = candidate
+                .get("shared_callees")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(|callee| callee.pointer("/target/symbol"))
+                .collect::<Vec<_>>();
+            json!([
+                left,
+                right,
+                candidate.get("language"),
+                candidate.pointer("/similarity/total"),
+                shared,
+                candidate.pointer("/projection/id")
+            ])
+        })
+        .collect::<Vec<_>>();
+    let mut compact = json!({
+        "at":snapshot_tag(value.get("snapshot")),
+        "status":value.get("status"),
+        "paths":paths,
+        "cols":["left","right","language","score","shared_callees","projection_id"],
+        "rows":rows,
+        "n":value.get("total"),
+        "gaps":value.get("coverage_gap_count")
+    });
+    insert_more_when_true(&mut compact, value.get("truncated"));
+    let encoded = serde_json::to_string(&compact).expect("compact refactor result serializes");
+    let payload_tokens = Tokenizer::o200k_base()
+        .expect("bundled o200k tokenizer")
+        .count(&encoded);
+    compact
+        .as_object_mut()
+        .expect("compact result is an object")
+        .insert("payload_tokens".to_owned(), json!(payload_tokens));
+    compact
+}
+
+fn compact_refactor_symbol(value: Option<&Value>, paths: &mut Vec<String>) -> Value {
+    let Some(value) = value else {
+        return Value::Null;
+    };
+    let path_id = value.get("path").and_then(Value::as_str).map(|path| {
+        paths
+            .iter()
+            .position(|stored| stored == path)
+            .unwrap_or_else(|| {
+                paths.push(path.to_owned());
+                paths.len() - 1
+            })
+    });
+    json!([value.get("symbol"), path_id])
 }
 
 fn compact_status(value: &Value) -> Value {
@@ -724,6 +946,17 @@ struct SearchGraphArguments {
     scope: Value,
     #[serde(default = "default_graph_limit")]
     limit: u32,
+    #[serde(default)]
+    language: Option<String>,
+    #[serde(default)]
+    include_body: bool,
+}
+
+#[derive(Deserialize)]
+struct GetOutlineArguments {
+    path: String,
+    #[serde(default = "default_outline_limit")]
+    limit: u32,
 }
 
 #[derive(Deserialize)]
@@ -739,6 +972,36 @@ struct TracePathArguments {
     scope: Value,
     #[serde(default = "default_graph_limit")]
     limit: u32,
+}
+
+#[derive(Deserialize)]
+struct FindUsagesArguments {
+    symbol: String,
+    #[serde(default)]
+    path: Option<String>,
+    #[serde(default)]
+    scope: Value,
+    #[serde(default = "default_usage_depth")]
+    depth: u8,
+    #[serde(default = "default_outline_limit")]
+    limit: u32,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SuggestRefactorsArguments {
+    #[serde(default)]
+    scope: Value,
+    #[serde(default)]
+    language: Option<String>,
+    #[serde(default = "default_refactor_score")]
+    min_score: u16,
+    #[serde(default = "default_graph_limit")]
+    limit: u32,
+}
+
+const fn default_refactor_score() -> u16 {
+    760
 }
 
 #[derive(Deserialize)]
@@ -766,6 +1029,14 @@ const fn default_coverage_limit() -> usize {
 
 const fn default_graph_limit() -> u32 {
     20
+}
+
+const fn default_outline_limit() -> u32 {
+    200
+}
+
+const fn default_usage_depth() -> u8 {
+    1
 }
 
 fn default_trace_direction() -> String {
@@ -846,8 +1117,11 @@ fn model_visible_schema() -> Value {
     let mut tools = json!([
         {"name":"scan_risks","description":"Change risks; candidates only.","inputSchema":{"type":"object","properties":{"mode":{"enum":["changes"]},"limit":{"type":"integer","minimum":1,"maximum":50}}}},
         {"name":"orient","description":"Context","inputSchema":{"type":"object","required":["task","budget","mode","scope"],"properties":{"task":{"type":"string"},"budget":{"type":"integer","minimum":1},"mode":{"enum":["FAST","PRECISE","BOUNDED"]},"scope":bounded_scope.clone()}}},
-        {"name":"search_graph","description":"Symbols","inputSchema":{"type":"object","required":["query"],"properties":{"query":{"type":"string"},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":50}}}},
+        {"name":"search_graph","description":"Symbols or bodies","inputSchema":{"type":"object","required":["query"],"properties":{"query":{"type":"string"},"language":{"enum":["typescript","go","python","rust"]},"include_body":{"type":"boolean"},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":50}}}},
+        {"name":"get_outline","description":"File symbols","inputSchema":{"type":"object","required":["path"],"properties":{"path":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":500}}}},
         {"name":"trace_path","description":"Calls","inputSchema":{"type":"object","required":["symbol"],"properties":{"symbol":{"type":"string"},"path":{"type":"string"},"direction":{"enum":["callers","callees","both"]},"depth":{"type":"integer","minimum":1,"maximum":4},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":50}}}},
+        {"name":"find_usages","description":"Proven usages","inputSchema":{"type":"object","required":["symbol"],"properties":{"symbol":{"type":"string"},"path":{"type":"string"},"depth":{"type":"integer","minimum":1,"maximum":4},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":500}}}},
+        {"name":"suggest_refactors","description":"Similar code and hypothetical graph delta","inputSchema":{"type":"object","properties":{"language":{"enum":["typescript","go","python","rust"]},"min_score":{"type":"integer","minimum":0,"maximum":1000},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":50}}}},
         {"name":"get_code_snippet","description":"Source","inputSchema":{"type":"object","required":["symbol"],"properties":{"symbol":{"type":"string"},"path":{"type":"string"}}}},
         {"name":"check_index_coverage","description":"Coverage","inputSchema":{"type":"object","properties":{"paths":{"type":"array","items":{"type":"string"}},"scopes":{"type":"array","items":{"type":"string"}},"offset":{"type":"integer","minimum":0},"limit":{"type":"integer","minimum":1,"maximum":500}}}},
         {"name":"expand","description":"Expand","inputSchema":{"type":"object","required":["handle","budget"],"properties":{"handle":{"type":"string"},"budget":{"type":"integer","minimum":1}}}},
@@ -864,11 +1138,23 @@ fn model_visible_schema() -> Value {
         ),
         (
             "Search symbols",
-            "Find code symbols by query before tracing calls or reading definitions.",
+            "Find code symbols by name, or opt into body search and language filtering, before tracing calls or reading definitions.",
+        ),
+        (
+            "Outline a file",
+            "List indexed symbols and definition spans in source order without returning their bodies.",
         ),
         (
             "Trace calls",
             "Trace callers or callees of a discovered symbol; use path to resolve ambiguity.",
+        ),
+        (
+            "Find usages",
+            "List proven direct or transitive incoming call or implementation sites with hop, resolver evidence and coverage gaps.",
+        ),
+        (
+            "Suggest refactors",
+            "Find structurally similar functions and preview a snapshot-bound hypothetical extract-helper graph delta.",
         ),
         (
             "Read source",
@@ -896,7 +1182,7 @@ fn model_visible_schema() -> Value {
             json!({"readOnlyHint":false,"destructiveHint":false,"openWorldHint":false});
         tool["outputSchema"] = json!({"type":"object","additionalProperties":true});
     }
-    tools[7]["inputSchema"]["properties"]["paths_or_scope"] = path_or_scope;
+    tools[10]["inputSchema"]["properties"]["paths_or_scope"] = path_or_scope;
     tools
 }
 
@@ -926,7 +1212,7 @@ mod openai_metadata_tests {
     #[test]
     fn openai_tool_contract() {
         let tools = model_visible_schema();
-        assert_eq!(tools.as_array().unwrap().len(), 8);
+        assert_eq!(tools.as_array().unwrap().len(), 11);
         for tool in tools.as_array().unwrap() {
             assert!(tool["title"].as_str().is_some_and(|s| !s.is_empty()));
             assert!(tool["description"].as_str().is_some_and(|s| s.len() > 20));
@@ -939,6 +1225,20 @@ mod openai_metadata_tests {
         for name in scope["required"].as_array().unwrap() {
             assert!(scope["properties"][name.as_str().unwrap()]["type"].is_string());
         }
+        let search = tools
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|tool| tool["name"] == "search_graph")
+            .unwrap();
+        assert_eq!(
+            search["inputSchema"]["properties"]["include_body"]["type"],
+            "boolean"
+        );
+        assert_eq!(
+            search["inputSchema"]["properties"]["language"]["enum"],
+            json!(["typescript", "go", "python", "rust"])
+        );
         assert_eq!(
             path_or_scope_schema(&scope)["anyOf"]
                 .as_array()
@@ -946,5 +1246,44 @@ mod openai_metadata_tests {
                 .len(),
             3
         );
+    }
+
+    #[test]
+    fn compact_refactors_reports_exact_payload_tokens() {
+        let structured = json!({
+            "snapshot":{"repo_revision":"abc123","working_tree_digest":"00","graph_generation":9},
+            "status":"hypothetical",
+            "total":1,
+            "truncated":false,
+            "coverage_gap_count":0,
+            "candidates":[{
+                "language":"rust",
+                "left":{"symbol":"left","path":"src/lib.rs"},
+                "right":{"symbol":"right","path":"src/lib.rs"},
+                "similarity":{"total":900},
+                "shared_callees":[{"target":{"symbol":"save"}}],
+                "projection":{"id":"refactor1.abc","status":"hypothetical"}
+            }]
+        });
+
+        let compact = compact_refactors(&structured);
+        assert_eq!(
+            compact["cols"],
+            json!([
+                "left",
+                "right",
+                "language",
+                "score",
+                "shared_callees",
+                "projection_id"
+            ])
+        );
+        assert_eq!(compact["status"], "hypothetical");
+        let mut counted = compact.clone();
+        counted.as_object_mut().unwrap().remove("payload_tokens");
+        let expected = Tokenizer::o200k_base()
+            .unwrap()
+            .count(&serde_json::to_string(&counted).unwrap());
+        assert_eq!(compact["payload_tokens"], expected);
     }
 }

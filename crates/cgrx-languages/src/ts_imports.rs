@@ -13,9 +13,25 @@ pub struct TsFileFacts {
     /// Old facts without sites fail closed in classify_call.
     #[serde(default)]
     pub sites: Vec<ImportSiteFact>,
+    #[serde(default)]
+    pub receiver_calls: Vec<ReceiverCall>,
+    #[serde(default)]
+    pub classes: BTreeMap<String, Vec<ClassFact>>,
     pub exports: BTreeMap<String, Vec<Export>>,
     pub declarations: BTreeMap<String, Vec<[usize; 2]>>,
     pub valid: bool,
+}
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReceiverCall {
+    pub caller: [usize; 2],
+    pub call: [usize; 2],
+    pub method: String,
+    pub receiver_import: Import,
+}
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ClassFact {
+    pub name: [usize; 2],
+    pub methods: BTreeMap<String, Vec<[usize; 2]>>,
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Import {
@@ -69,6 +85,35 @@ pub struct ClassifiedImportSite {
     /// Enclosing callable name span; None for top-level/anonymous contexts.
     pub caller: Option<[usize; 2]>,
     pub classification: ImportClassification,
+}
+
+pub fn classify_receiver_call_with_modules(
+    files: &BTreeMap<String, TsFileFacts>,
+    path: &str,
+    call: [usize; 2],
+    modules: &BTreeMap<(String, String), String>,
+) -> ClassifiedImportSite {
+    let mut result = ClassifiedImportSite {
+        call,
+        caller: None,
+        classification: ImportClassification::Rejected,
+    };
+    let Some(file) = files.get(path).filter(|file| file.valid) else {
+        return result;
+    };
+    let calls: Vec<_> = file
+        .receiver_calls
+        .iter()
+        .filter(|candidate| candidate.call == call)
+        .collect();
+    let [site] = calls.as_slice() else {
+        return result;
+    };
+    result.caller = Some(site.caller);
+    result.classification = resolve_receiver_call(files, path, site, modules)
+        .map(ImportClassification::Exact)
+        .unwrap_or(ImportClassification::Rejected);
+    result
 }
 /// Classify a FULL call-expression span, never just a name or start offset.
 /// Missing/old/invalid facts and unknown spans are Rejected, not NotImport.
@@ -148,6 +193,165 @@ fn visit(node: Node<'_>, f: &mut impl FnMut(Node<'_>)) {
     for child in node.named_children(&mut cursor) {
         visit(child, f);
     }
+}
+
+fn belongs_to_method(node: Node<'_>, method: Node<'_>) -> bool {
+    let mut current = node.parent();
+    while let Some(parent) = current {
+        if parent.id() == method.id() {
+            return true;
+        }
+        if matches!(
+            parent.kind(),
+            "class_declaration"
+                | "abstract_class_declaration"
+                | "method_definition"
+                | "function_declaration"
+                | "function_expression"
+        ) {
+            return false;
+        }
+        current = parent.parent();
+    }
+    false
+}
+
+fn collect_receiver_facts(root: Node<'_>, source: &[u8], facts: &mut TsFileFacts) {
+    visit(root, &mut |class| {
+        if !matches!(
+            class.kind(),
+            "class_declaration" | "abstract_class_declaration"
+        ) {
+            return;
+        }
+        let Some(class_name) = class.child_by_field_name("name") else {
+            return;
+        };
+        let Some(body) = class.child_by_field_name("body") else {
+            return;
+        };
+        let mut methods = BTreeMap::<String, Vec<[usize; 2]>>::new();
+        let mut receivers = BTreeMap::<String, Vec<Import>>::new();
+        let mut cursor = body.walk();
+        let definitions: Vec<_> = body
+            .named_children(&mut cursor)
+            .filter(|node| node.kind() == "method_definition")
+            .collect();
+        for method in &definitions {
+            let Some(name) = method.child_by_field_name("name") else {
+                continue;
+            };
+            let method_name = text(name, source);
+            if method_name != "constructor" {
+                methods.entry(method_name).or_default().push(span(name));
+                continue;
+            }
+            let Some(parameters) = method.child_by_field_name("parameters") else {
+                continue;
+            };
+            let mut parameter_cursor = parameters.walk();
+            for parameter in parameters.named_children(&mut parameter_cursor) {
+                if !matches!(
+                    parameter.kind(),
+                    "required_parameter" | "optional_parameter"
+                ) || !token(parameter, "accessibility_modifier")
+                    || !token(parameter, "readonly")
+                {
+                    continue;
+                }
+                let Some(name) = parameter
+                    .child_by_field_name("name")
+                    .or_else(|| parameter.child_by_field_name("pattern"))
+                    .filter(|node| node.kind() == "identifier")
+                else {
+                    continue;
+                };
+                let Some(annotation) = parameter.child_by_field_name("type") else {
+                    continue;
+                };
+                let mut type_cursor = annotation.walk();
+                let types: Vec<_> = annotation.named_children(&mut type_cursor).collect();
+                let [type_name] = types.as_slice() else {
+                    continue;
+                };
+                if type_name.kind() != "type_identifier" {
+                    continue;
+                }
+                let type_name = text(*type_name, source);
+                if facts.declarations.contains_key(&type_name) {
+                    continue;
+                }
+                let imports: Vec<_> = facts
+                    .imports
+                    .iter()
+                    .filter(|import| import.local == type_name && !import.imported.is_empty())
+                    .cloned()
+                    .collect();
+                if let [import] = imports.as_slice() {
+                    receivers
+                        .entry(text(name, source))
+                        .or_default()
+                        .push(import.clone());
+                }
+            }
+        }
+        facts
+            .classes
+            .entry(text(class_name, source))
+            .or_default()
+            .push(ClassFact {
+                name: span(class_name),
+                methods,
+            });
+        for method in definitions {
+            let Some(caller) = method.child_by_field_name("name") else {
+                continue;
+            };
+            visit(method, &mut |call| {
+                if call.kind() != "call_expression" {
+                    return;
+                }
+                if !belongs_to_method(call, method) {
+                    return;
+                }
+                let Some(function) = call
+                    .child_by_field_name("function")
+                    .filter(|node| node.kind() == "member_expression")
+                else {
+                    return;
+                };
+                let Some(method_name) = function.child_by_field_name("property") else {
+                    return;
+                };
+                let Some(receiver_expression) = function
+                    .child_by_field_name("object")
+                    .filter(|node| node.kind() == "member_expression")
+                else {
+                    return;
+                };
+                let Some(object) = receiver_expression.child_by_field_name("object") else {
+                    return;
+                };
+                let Some(receiver) = receiver_expression.child_by_field_name("property") else {
+                    return;
+                };
+                if object.kind() != "this" {
+                    return;
+                }
+                let receiver_name = text(receiver, source);
+                let Some([receiver_import]) = receivers.get(&receiver_name).map(Vec::as_slice)
+                else {
+                    return;
+                };
+                facts.receiver_calls.push(ReceiverCall {
+                    caller: span(caller),
+                    call: span(call),
+                    method: text(method_name, source),
+                    receiver_import: receiver_import.clone(),
+                });
+            });
+        }
+    });
 }
 impl TsFileFacts {
     pub fn parse(path: &str, source: &[u8]) -> Self {
@@ -246,8 +450,27 @@ impl TsFileFacts {
                         if let Some(name) = variable.child_by_field_name("name") {
                             let mut names = Vec::new();
                             super::binding_names(name, source, &mut names);
+                            let target = if super::const_arrow(variable, source).is_some() {
+                                span(name)
+                            } else {
+                                [0, 0]
+                            };
                             for name in names {
-                                facts.declarations.entry(name).or_default().push([0, 0]);
+                                facts
+                                    .declarations
+                                    .entry(name.clone())
+                                    .or_default()
+                                    .push(target);
+                                if item.kind() == "export_statement"
+                                    && !token(item, "default")
+                                    && !token(item, "type")
+                                {
+                                    facts
+                                        .exports
+                                        .entry(name.clone())
+                                        .or_default()
+                                        .push(Export::Local(name));
+                                }
                             }
                         }
                     }
@@ -314,15 +537,19 @@ impl TsFileFacts {
                     .push(export);
             });
         }
+        collect_receiver_facts(root, source, &mut facts);
         let context = super::LexicalContext::with_import_proof(root, source, true);
         // Hoisted var declarations may collide from inside nested blocks.
-        // Reuse the lexical collector's unique function-binding verdict.
+        // Reuse the lexical collector's unique function/const-arrow verdict.
+        // An arrow must have the same exact declaration span; collisions clear
+        // that proof, and the write ledger below still invalidates reassignment.
         for (name, declarations) in &mut facts.declarations {
-            if !context.scopes[0]
-                .bindings
-                .get(name)
-                .is_some_and(|b| b.syntax_function)
-            {
+            if !context.scopes[0].bindings.get(name).is_some_and(|b| {
+                b.syntax_function
+                    || b.target.is_some_and(|target| {
+                        declarations.as_slice() == [[target.start, target.end]]
+                    })
+            }) {
                 declarations.push([0, 0]);
             }
         }
@@ -525,6 +752,92 @@ fn resolve_call_with_modules(
         target,
         dependencies,
     })
+}
+
+fn resolve_receiver_call(
+    files: &BTreeMap<String, TsFileFacts>,
+    path: &str,
+    call: &ReceiverCall,
+    modules: &BTreeMap<(String, String), String>,
+) -> Option<ResolvedImport> {
+    let target = module_path(files, path, &call.receiver_import.module, modules)?;
+    let mut dependencies = vec![path.to_owned()];
+    let (target_path, class_name) = resolve_export_binding(
+        files,
+        &target,
+        &call.receiver_import.imported,
+        &mut BTreeSet::new(),
+        &mut dependencies,
+        0,
+        modules,
+    )?;
+    let target_file = files.get(&target_path)?;
+    if !target_file.valid {
+        return None;
+    }
+    let [class] = target_file.classes.get(&class_name)?.as_slice() else {
+        return None;
+    };
+    let [method] = class.methods.get(&call.method)?.as_slice() else {
+        return None;
+    };
+    Some(ResolvedImport {
+        path: target_path,
+        target: *method,
+        dependencies,
+    })
+}
+
+fn resolve_export_binding(
+    files: &BTreeMap<String, TsFileFacts>,
+    path: &str,
+    name: &str,
+    seen: &mut BTreeSet<(String, String)>,
+    dependencies: &mut Vec<String>,
+    depth: usize,
+    modules: &BTreeMap<(String, String), String>,
+) -> Option<(String, String)> {
+    if depth >= 8 || !seen.insert((path.to_owned(), name.to_owned())) {
+        return None;
+    }
+    let file = files.get(path)?;
+    if !file.valid {
+        return None;
+    }
+    dependencies.push(path.to_owned());
+    let [export] = file.exports.get(name)?.as_slice() else {
+        return None;
+    };
+    let (module, imported) = match export {
+        Export::Local(local) => {
+            let imports: Vec<_> = file
+                .imports
+                .iter()
+                .filter(|item| &item.local == local)
+                .collect();
+            if imports.is_empty() {
+                return Some((path.to_owned(), local.clone()));
+            }
+            let [import] = imports.as_slice() else {
+                return None;
+            };
+            (&import.module, &import.imported)
+        }
+        Export::From { module, imported } => (module, imported),
+    };
+    if module.is_empty() || imported.is_empty() {
+        return None;
+    }
+    let next = module_path(files, path, module, modules)?;
+    resolve_export_binding(
+        files,
+        &next,
+        imported,
+        seen,
+        dependencies,
+        depth + 1,
+        modules,
+    )
 }
 
 fn resolve_export(

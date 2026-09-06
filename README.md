@@ -15,6 +15,7 @@ explicitly on each request. No embedding service, hosted index or API key.
 - Task-sized context with token budgets and follow-up retrieval handles.
 - Coverage reporting: unresolved relationships remain unknown, not absent.
 - Candidate relationship-risk detection for working-tree changes.
+- Snapshot-bound refactoring candidates with hypothetical graph projections.
 - Incremental working-tree refresh, isolated repo identities and writer locks.
 - Rust, Go, TypeScript/JavaScript/TSX and Python parsing. Resolution depth varies
   by language; this does not replace a compiler or language server.
@@ -22,7 +23,7 @@ explicitly on each request. No embedding service, hosted index or API key.
 ## Install with one command
 
 ~~~sh
-curl -fsSL https://raw.githubusercontent.com/ibotpafos/cgrx/v0.1.0-alpha.3/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/ibotpafos/cgrx/v0.1.0-alpha.4/install.sh | sh
 ~~~
 
 Installs to `$HOME/.local/bin/cgrx`, without sudo. Apple Silicon macOS downloads
@@ -43,7 +44,7 @@ Native Windows is not supported.
 ~~~sh
 git clone https://github.com/ibotpafos/cgrx.git
 cd cgrx
-git checkout v0.1.0-alpha.3
+git checkout v0.1.0-alpha.4
 cargo install --locked --path crates/cgrx-cli
 ~~~
 
@@ -75,13 +76,40 @@ updates, uninstalling and troubleshooting.
 | Tool | Purpose |
 | --- | --- |
 | status | Snapshot, graph counts, freshness, coverage |
-| search_graph | Bounded symbol discovery |
+| search_graph | Bounded symbol/body discovery with optional language filter |
+| get_outline | File symbols and definition spans without bodies |
 | trace_path | Caller/callee traversal |
+| find_usages | Proven direct or transitive incoming call/implementation sites |
 | get_code_snippet | Exact source definition |
 | check_index_coverage | Recorded gaps for paths/scopes |
 | orient | Budgeted task context |
 | expand | Follow-up context using a returned handle |
 | scan_risks | Candidate relationship risks, not confirmed defects |
+| suggest_refactors | Similar callable bodies and a hypothetical extract-helper graph delta |
+
+`search_graph` searches symbol names by default. Set `include_body: true` to
+also locate a term inside symbol bodies, and use `language` (`typescript`, `go`,
+`python`, or `rust`) to keep mixed-repository results focused. TypeScript covers
+both `.ts` and `.tsx`. Every match reports `matched_by` as `symbol` or `body`.
+Use `get_outline` with a repository-relative source path to inspect its symbols
+in source order without paying for function bodies; `limit` defaults to 200 and
+is capped at 500.
+`find_usages` resolves an exact target symbol, then returns only proven incoming
+`CALLS`/`IMPLEMENTS` edges allowed by `scope`, including callsite path/span and
+resolver class. `depth` defaults to 1 and is capped at 4; transitive rows include
+`hop` and the immediate `via` target so every step remains inspectable. It fails
+on ambiguous symbols unless `path` disambiguates them.
+
+`suggest_refactors` compares callable bodies within one supported language and
+returns review candidates for extracting a shared helper. Each response is tied
+to the current revision, working-tree digest and graph generation; the managed
+runtime refreshes changed source before analysis. Existing entry points are
+preserved, projected edges are marked `hypothetical`, and no source or stored
+graph is changed. Empty or partial results apply only to the requested scope,
+threshold and reported budgets and coverage gaps.
+
+See [the Trace MCP reference comparison](docs/reference-trace-mcp.md) for the
+evidence behind this search slice and the capabilities that remain separate.
 
 ## Maturity and privacy
 
@@ -95,6 +123,11 @@ Module-self imports `use crate::worker::{self as api}` and
 Aliases with nested suffixes (`api::inner::target()`), function aliases
 and reexport chains are not covered by this Rust alias proof.
 
+Development builds resolve named imports and bounded named reexports to direct
+module-level `const` arrow functions as well as free-function declarations.
+Mutable bindings, duplicate declarations and binding writes remain unresolved;
+this proves target identity, not runtime initialization order.
+
 Development builds resolve bounded TypeScript named imports through `baseUrl`
 and single-target `paths` mappings, including `@/*` and dotted basenames such as
 `time.utils`. Relative JSON `extends` and explicitly declared workspace-package
@@ -104,7 +137,7 @@ symlinks and competing installed config packages do not become guessed edges.
 This is not a full TypeScript compiler resolver: JSONC, overlapping mappings,
 fallback arrays, unsupported compiler options and committed-HEAD-only inherited
 aliases can remain unresolved. Installed workspace-package links currently also
-cause abstention. Extraction revision 20 requires rebuilding older indexes;
+cause abstention. Extraction revision 21 requires rebuilding older indexes;
 managed startup recognizes revision-18 config records and requests reindexing.
 
 External dependencies, reexports, custom module paths, macros and dynamic
@@ -126,6 +159,7 @@ cargo test --locked --workspace
 cargo build --locked --release -p cgrx-cli
 python3 scripts/smoke_mcp.py target/release/cgrx
 python3 scripts/eval_relationships.py target/release/cgrx
+python3 scripts/eval_refactors.py target/release/cgrx
 ~~~
 
 The relationship evaluator copies the public synthetic fixture into a temporary
@@ -136,6 +170,11 @@ package/module competitors and a private Rust target. A changed resolver must
 keep the default 1.0 precision and recall thresholds; extend the fixture when
 adding a new relationship shape. Truncated traces fail instead of producing
 incomplete "exact" metrics.
+
+The refactoring evaluator runs the real stdio tool over seven frozen projects,
+rejects changed snapshots and truncated results, and records exact graph-node
+identities for manual labeling. It reports response-token cost immediately;
+precision remains `null` while any candidate is `unreviewed`.
 
 ## License
 
