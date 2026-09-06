@@ -175,6 +175,86 @@ fn architecture_projects_proven_package_boundaries_cycles_and_hotspots() {
 }
 
 #[test]
+fn architecture_finds_deterministic_weighted_semantic_communities() {
+    let repository = TestDirectory::new("architecture-semantic-communities-repository");
+    git(repository.path(), &["init", "-q"]);
+    git(
+        repository.path(),
+        &["config", "user.email", "test@example.invalid"],
+    );
+    git(repository.path(), &["config", "user.name", "CGRX Test"]);
+    let files = [
+        (
+            "api/main.ts",
+            "import { coreA, coreB, coreC } from '../core/main';\nexport function api() { coreA(); coreB(); coreC(); }\n",
+        ),
+        (
+            "core/main.ts",
+            "import { api } from '../api/main';\nimport type { StorageModel } from '../storage/model';\nexport function coreA() { api(); }\nexport function coreB() { api(); }\nexport function coreC() { api(); }\nexport type Bridge = StorageModel;\n",
+        ),
+        (
+            "storage/model.ts",
+            "import { workerA, workerB, workerC } from '../worker/main';\nexport interface StorageModel { id: string }\nexport function storage() { workerA(); workerB(); workerC(); }\n",
+        ),
+        (
+            "worker/main.ts",
+            "import { storage } from '../storage/model';\nexport function workerA() { storage(); }\nexport function workerB() { storage(); }\nexport function workerC() { storage(); }\n",
+        ),
+    ];
+    for (path, source) in files {
+        let path = repository.path().join(path);
+        fs::create_dir_all(path.parent().unwrap()).expect("create source parent");
+        fs::write(path, source).expect("write source");
+    }
+    git(repository.path(), &["add", "."]);
+    git(repository.path(), &["commit", "-qm", "fixture"]);
+    let state = TestDirectory::new("architecture-semantic-communities-state");
+    Runtime::index(repository.path(), state.path()).expect("index repository");
+    let runtime = Runtime::open(state.path()).expect("open runtime");
+
+    let result = runtime.get_architecture(&scope(), 1, 20).unwrap();
+    let communities = result["communities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|community| community["packages"].clone())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        communities,
+        vec![
+            serde_json::json!(["api", "core"]),
+            serde_json::json!(["storage", "worker"]),
+        ]
+    );
+    assert_eq!(
+        result["community_detection"]["method"],
+        "DETERMINISTIC_WEIGHTED_MODULARITY"
+    );
+    assert!(
+        result["community_detection"]["modularity"]
+            .as_f64()
+            .is_some_and(|value| value > 0.0)
+    );
+    assert!(
+        result["community_detection"]["iterations"]
+            .as_u64()
+            .is_some_and(|value| value > 0)
+    );
+    assert_eq!(result["communities"][0]["internal_weight"], 28);
+    assert_eq!(result["communities"][0]["cut_weight"], 3);
+    assert!(
+        result["communities"][0]["cohesion"]
+            .as_f64()
+            .is_some_and(|value| value > 0.8)
+    );
+    assert_eq!(
+        result,
+        runtime.get_architecture(&scope(), 1, 20).unwrap(),
+        "community detection must be byte-stable for the same snapshot"
+    );
+}
+
+#[test]
 fn architecture_proves_repo_local_imports_for_every_supported_language_and_refreshes() {
     let repository = TestDirectory::new("architecture-imports-repository");
     git(repository.path(), &["init", "-q"]);
