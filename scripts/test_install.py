@@ -19,7 +19,7 @@ class InstallerTests(unittest.TestCase):
         self.bin = self.root/'tools'; self.bin.mkdir()
         self.dest = self.root/'install space'
         self.release = self.root/'release'; self.release.mkdir()
-        self.asset = 'cgrx-v0.1.0-alpha.4-aarch64-apple-darwin.tar.gz'
+        self.asset = 'cgrx-v0.1.0-alpha.6-aarch64-apple-darwin.tar.gz'
         self.archive(BINARY)
         self.stub('uname', 'if [ "$1" = -s ]; then echo "${TEST_OS:-Darwin}"; else echo arm64; fi')
         self.stub('curl', '''out=''; url=''
@@ -62,7 +62,7 @@ root=''; while [ "$#" -gt 0 ]; do case "$1" in --root) root=$2; shift 2;; *) shi
 mkdir -p "$root/bin"; cp "$TEST_RELEASE/source-binary" "$root/bin/cgrx"; chmod +x "$root/bin/cgrx"''')
         (self.release/'source-binary').write_bytes(BINARY)
         r=self.run_install(TEST_OS='Linux'); self.assertEqual(r.returncode,0,r.stderr)
-        args=(self.root/'cargo-args').read_text(); self.assertIn('--locked\n',args); self.assertIn('--tag\nv0.1.0-alpha.4\n',args); self.assertIn('+1.89.0\n',args)
+        args=(self.root/'cargo-args').read_text(); self.assertIn('--locked\n',args); self.assertIn('--tag\nv0.1.0-alpha.6\n',args); self.assertIn('+1.89.0\n',args)
     def test_existing_lock_preserves_old(self):
         self.dest.mkdir(); (self.dest/'.cgrx-install.lock').mkdir(); (self.dest/'cgrx').write_text('OLD')
         r=self.run_install(); self.assertNotEqual(r.returncode,0); self.assertEqual((self.dest/'cgrx').read_text(),'OLD'); self.assertTrue((self.dest/'.cgrx-install.lock').is_dir())

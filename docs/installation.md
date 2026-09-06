@@ -6,7 +6,7 @@
 ## Одной командой
 
 ~~~sh
-curl -fsSL https://raw.githubusercontent.com/ibotpafos/cgrx/v0.1.0-alpha.4/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/ibotpafos/cgrx/v0.1.0-alpha.6/install.sh | sh
 ~~~
 
 Путь: `$HOME/.local/bin/cgrx`. Установщик не использует sudo и не меняет
@@ -19,7 +19,7 @@ SHA-256 проверяет соответствие опубликованном
 Свой каталог или принудительная сборка:
 
 ~~~sh
-curl -fsSL https://raw.githubusercontent.com/ibotpafos/cgrx/v0.1.0-alpha.4/install.sh | CGRX_INSTALL_DIR="$HOME/tools/bin" sh -s -- --source
+curl -fsSL https://raw.githubusercontent.com/ibotpafos/cgrx/v0.1.0-alpha.6/install.sh | CGRX_INSTALL_DIR="$HOME/tools/bin" sh -s -- --source
 ~~~
 
 Повтор команды обновляет бинарник; прежняя версия сохраняется рядом в
@@ -46,7 +46,7 @@ curl -fsSL https://raw.githubusercontent.com/ibotpafos/cgrx/v0.1.0-alpha.4/insta
 ~~~sh
 git clone https://github.com/ibotpafos/cgrx.git
 cd cgrx
-git checkout v0.1.0-alpha.4
+git checkout v0.1.0-alpha.6
 cargo install --locked --path crates/cgrx-cli
 ~~~
 
@@ -58,13 +58,13 @@ Cargo скачивает зависимости при установке; са�
 
 ## Готовый бинарник: macOS Apple Silicon
 
-Из [релиза](https://github.com/ibotpafos/cgrx/releases/tag/v0.1.0-alpha.4)
-скачайте cgrx-v0.1.0-alpha.4-aarch64-apple-darwin.tar.gz и SHA256SUMS.
+Из [релиза](https://github.com/ibotpafos/cgrx/releases/tag/v0.1.0-alpha.6)
+скачайте cgrx-v0.1.0-alpha.6-aarch64-apple-darwin.tar.gz и SHA256SUMS.
 В каталоге со скачанными файлами:
 
 ~~~sh
 shasum -a 256 -c SHA256SUMS
-tar -xzf cgrx-v0.1.0-alpha.4-aarch64-apple-darwin.tar.gz
+tar -xzf cgrx-v0.1.0-alpha.6-aarch64-apple-darwin.tar.gz
 mkdir -p "$HOME/.local/bin"
 install -m 755 cgrx "$HOME/.local/bin/cgrx"
 ~~~
@@ -160,7 +160,7 @@ python3 scripts/smoke_mcp.py "$HOME/.cargo/bin/cgrx"
 перезапустите MCP-клиенты. При ручной замене сохраните старый бинарник для отката.
 Изменения формата индекса обнаруживаются движком.
 
-В alpha.4 используется extraction revision 23. При возврате к старому бинарнику
+В alpha.6 используется extraction revision 23. При возврате к старому бинарнику
 старый движок может отклонить уже обновлённый индекс. Сначала закройте все
 MCP-соединения, использующие репозиторий. В корне каждого затронутого Git worktree
 сохраните только производный индекс в отдельном каталоге:
