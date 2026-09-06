@@ -134,7 +134,10 @@ never count as negative proof.
 
 The analysis belongs in a dedicated runtime module. MCP registration, compact
 response shaping and schema metadata stay in the existing tool adapter. The
-core stored graph format does not change in the first slice.
+compact response reports `payload_tokens`, counted by the bundled o200k
+tokenizer before the telemetry field is added, so corpus evaluation uses the
+same tokenizer as CGRX. The core stored graph format does not change in the
+first slice.
 
 ## Failure and uncertainty handling
 
@@ -145,8 +148,9 @@ core stored graph format does not change in the first slice.
 - A candidate never uses `proven` confidence; only its cited current edges can
   be proven.
 - No projected node or edge is persisted in the index.
-- Supplying or expanding a projection against another snapshot fails stale
-  rather than silently reusing the previous graph.
+- Projection ids include the snapshot identity. A projection from an older
+  snapshot is never emitted as current after refresh; callers compare the
+  response snapshot before acting on it.
 - Empty results mean no candidate crossed the configured threshold within the
   inspected scope. They do not prove the repository has no duplication.
 
@@ -163,9 +167,10 @@ existing limits.
 
 A watcher test edits one participating implementation without restarting the
 server and verifies that the working-tree digest changes, old projection ids
-are rejected, and the next `suggest_refactors` call reflects the refreshed
-nodes and edges. Add, delete, rename and committed-HEAD transitions use the same
-managed refresh path and receive bounded integration coverage.
+differ from the refreshed result, and the next `suggest_refactors` call
+reflects the refreshed nodes and edges. Add, delete, rename and committed-HEAD
+transitions use the same managed refresh path and receive bounded integration
+coverage.
 
 The seven-project frozen corpus provides a labeled review sample. For every
 project, reviewers record useful, false-positive or uncertain. The first
