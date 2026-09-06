@@ -7,7 +7,7 @@ explicitly on each request. No embedding service, hosted index or API key.
 
 [Русская инструкция](docs/installation.md) ·
 [Releases](https://github.com/ibotpafos/cgrx/releases) ·
-[Agent guide](docs/agent-usage.md) · [Contributing](CONTRIBUTING.md)
+[Agent skill](docs/agent-usage.md) · [Contributing](CONTRIBUTING.md)
 
 ## Features
 
@@ -34,6 +34,18 @@ and verifies the release archive; Linux and Intel macOS build the pinned tag
 (requires rustup with Rust 1.89.0, Git and a C compiler). Existing binaries are
 backed up before replacement. MCP initialization is checked before activation.
 Client configurations and shell profiles are left unchanged.
+
+Install the reusable agent workflow once:
+
+~~~sh
+"$HOME/.local/bin/cgrx" skill install
+~~~
+
+This writes the `cgrx-code-discovery` skill to
+`$HOME/.agents/skills`. If an older managed CGRX instruction block exists in
+`$HOME/.codex/AGENTS.md`, the command backs up that file and removes only that
+block. Codex discovers the skill automatically; restart it only if the skill
+does not appear.
 
 Override the destination with `CGRX_INSTALL_DIR=/absolute/path` on the `sh` side
 of the pipeline; use `sh -s -- --source` to force a source build.
@@ -151,6 +163,11 @@ resolution counts and coverage gaps. General traversal remains limited to
 over proven package relationships (`CALLS`/`IMPLEMENTS` 4, `IMPORTS` 2,
 `REFERENCES` 1). Every community reports internal and cut weight plus cohesion;
 the response reports modularity, iteration count and the exact heuristic weights.
+The same response also clusters proven `CALLS`/`IMPLEMENTS` at symbol granularity.
+Each bounded symbol cluster includes a stable label, representative symbols with
+paths and weighted degree, binding packages, edge types and cohesion. Symbols
+without a proven internal edge remain visible in `unclustered_symbols` instead
+of being assigned speculatively.
 `find_usages` resolves an exact target symbol, then returns only proven incoming
 `CALLS`/`IMPLEMENTS` edges allowed by `scope`, including callsite path/span and
 resolver class. `depth` defaults to 1 and is capped at 4; transitive rows include

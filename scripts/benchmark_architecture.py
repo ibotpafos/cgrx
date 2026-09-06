@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import subprocess
 import time
+from statistics import median
 
 
 def benchmark(binary: Path, label: str, repo: Path, depth: int, limit: int) -> dict:
@@ -70,6 +71,7 @@ def benchmark(binary: Path, label: str, repo: Path, depth: int, limit: int) -> d
         "model_visible_bytes": len(visible.encode()),
         "totals": architecture["totals"],
         "community_detection": architecture["community_detection"],
+        "symbol_community_detection": architecture["symbol_community_detection"],
         "partial": architecture["partial"],
         "truncated": architecture["truncated"],
         "coverage_gap_count": architecture["coverage_gap_count"],
@@ -88,14 +90,17 @@ def main() -> None:
     )
     parser.add_argument("--package-depth", type=int, default=2)
     parser.add_argument("--limit", type=int, default=100)
+    parser.add_argument("--repeat", type=int, default=1)
     args = parser.parse_args()
+    if args.repeat < 1:
+        parser.error("--repeat must be at least 1")
     binary = args.binary.resolve()
     rows = []
     for value in args.repo:
         label, separator, path = value.partition("=")
         if not separator or not label or not path:
             parser.error(f"invalid --repo {value!r}; expected LABEL=PATH")
-        rows.append(
+        samples = [
             benchmark(
                 binary,
                 label,
@@ -103,13 +108,23 @@ def main() -> None:
                 args.package_depth,
                 args.limit,
             )
-        )
+            for _ in range(args.repeat)
+        ]
+        stable = [{key: value for key, value in row.items() if key != "elapsed_ms"} for row in samples]
+        if any(row != stable[0] for row in stable[1:]):
+            raise RuntimeError(f"non-deterministic architecture result for {label}")
+        row = samples[-1]
+        elapsed_samples = [sample["elapsed_ms"] for sample in samples]
+        row["elapsed_ms"] = round(median(elapsed_samples), 1)
+        row["elapsed_ms_samples"] = elapsed_samples
+        rows.append(row)
     print(
         json.dumps(
             {
                 "schema_version": 1,
                 "package_depth": args.package_depth,
                 "limit": args.limit,
+                "repeat": args.repeat,
                 "results": rows,
             },
             indent=2,

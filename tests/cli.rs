@@ -156,6 +156,85 @@ fn schema_count_is_machine_readable_and_under_two_thousand_tokens() {
 }
 
 #[test]
+fn skill_install_creates_user_skill_and_removes_legacy_agent_block() {
+    let home = TestDirectory::new("skill-home");
+    let codex = home.path().join(".codex");
+    fs::create_dir_all(&codex).expect("create Codex config directory");
+    let agents = codex.join("AGENTS.md");
+    fs::write(
+        &agents,
+        concat!(
+            "# Existing rule\n\n",
+            "<!-- cgrx-agent:start -->\n",
+            "legacy CGRX workflow\n",
+            "<!-- cgrx-agent:end -->\n\n",
+            "# Preserved rule\n",
+        ),
+    )
+    .expect("write legacy agent rules");
+    let malformed_skill = home.path().join(".agents/skills/cgrx-code-discovery");
+    fs::create_dir_all(malformed_skill.parent().unwrap()).expect("create skills directory");
+    fs::write(&malformed_skill, "stale file").expect("write malformed skill target");
+
+    let first = cli()
+        .args(["skill", "install"])
+        .env("HOME", home.path())
+        .output()
+        .expect("skill install executes");
+    assert!(
+        first.status.success(),
+        "{}",
+        String::from_utf8_lossy(&first.stderr)
+    );
+
+    let skill = home
+        .path()
+        .join(".agents/skills/cgrx-code-discovery/SKILL.md");
+    let instructions = fs::read_to_string(&skill).expect("installed SKILL.md");
+    assert!(instructions.starts_with("---\nname: cgrx-code-discovery\n"));
+    assert!(instructions.contains("check_index_coverage"));
+    assert!(
+        skill
+            .parent()
+            .unwrap()
+            .join("references/change-verification.md")
+            .is_file()
+    );
+    assert!(
+        skill
+            .parent()
+            .unwrap()
+            .join("references/budgeted-context.md")
+            .is_file()
+    );
+    assert!(skill.parent().unwrap().join("agents/openai.yaml").is_file());
+
+    let remaining = fs::read_to_string(&agents).expect("migrated agent rules");
+    assert!(remaining.contains("# Existing rule"));
+    assert!(remaining.contains("# Preserved rule"));
+    assert!(!remaining.contains("cgrx-agent"));
+    assert!(!remaining.contains("legacy CGRX workflow"));
+    let backup = fs::read_to_string(codex.join("AGENTS.md.cgrx-backup"))
+        .expect("pre-migration agent rules are backed up");
+    assert!(backup.contains("legacy CGRX workflow"));
+
+    let second = cli()
+        .args(["skill", "install"])
+        .env("HOME", home.path())
+        .output()
+        .expect("repeat skill install executes");
+    assert!(second.status.success());
+    assert_eq!(
+        fs::read_to_string(&skill).expect("skill remains readable"),
+        instructions
+    );
+    assert_eq!(
+        fs::read_to_string(&agents).expect("agent rules remain readable"),
+        remaining
+    );
+}
+
+#[test]
 fn usage_report_aggregates_cold_warm_metadata_without_leaking_payloads() {
     let directory = TestDirectory::new("usage-report");
     let log = directory.path().join("usage.jsonl");

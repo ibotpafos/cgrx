@@ -6,22 +6,22 @@ communities and function-level communities are interchangeable.
 
 ## CGRX candidate
 
-Command contract: release binary, a fresh MCP process, `scope="**"`,
-`package_depth=2`, `limit=100`. Times include process startup and lazy repository
-loading. Every result was partial because the real repositories contain recorded
-coverage gaps; truncated results reached at least one response limit.
+Command contract: release binary, a fresh MCP process per sample, `scope="**"`,
+`package_depth=2`, `limit=100`, three repeats. The table uses median wall time
+including process startup and repository loading. Every result was partial
+because the real repositories contain recorded coverage gaps; truncated results
+reached at least one response limit.
 
-| Project | Revision | Packages | Communities | Modularity | Iterations | Initial / warm ms | Visible bytes |
-| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| CGRX | `5599c846` | 12 | 3 | 0.0327 | 3 | 812.4 / 171.0 | 8,664 |
-| General Digits | `9d77eb9b` | 28 | 21 | 0.2343 | 3 | 7,999.7 / 2,461.7 | 10,756 |
-| VEX | `da5cd1a2` | 52 | 16 | 0.1818 | 4 | 4,028.1 / 1,871.0 | 21,953 |
-| Vocal School | `8613b9fc` | 3 | 3 | 0.0000 | 0 | 828.8 / 458.6 | 7,518 |
-| Pyramid Agent | `dbca43c5` | 5 | 3 | 0.0000 | 2 | 929.5 / 693.2 | 7,261 |
+| Project | Revision | Package groups / Q | Symbol groups / Q | Unclustered symbols | Median ms | Visible bytes |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| CGRX | `99df2d61` | 3 / 0.0325 | 226 / 0.7904 | 877 | 297.3 | 11,926 |
+| General Digits | `9d77eb9b` | 21 / 0.2343 | 2,367 / 0.8436 | 10,330 | 2,849.8 | 14,008 |
+| VEX | `da5cd1a2` | 16 / 0.1818 | 2,492 / 0.7348 | 4,649 | 3,420.7 | 25,198 |
+| Vocal School | `8613b9fc` | 3 / 0.0000 | 187 / 0.7339 | 511 | 497.5 | 10,027 |
+| Pyramid Agent | `dbca43c5` | 3 / 0.0000 | 287 / 0.6868 | 1,191 | 852.8 | 10,441 |
 
-The initial column is the first lazy load in a multi-repository MCP process. The
-warm column is a repeat with existing index state and a fresh MCP process. These
-are observed wall-clock samples, not latency percentiles.
+`Q` is modularity. The three latency samples are retained in the benchmark JSON;
+the command fails when any non-latency result changes between repeats.
 
 The zero-edge Vocal School package projection correctly stays as three singleton
 communities. Pyramid's zero modularity shows that its two observed boundaries do
@@ -33,6 +33,7 @@ Reproduce the CGRX side with:
 ```bash
 python3 scripts/benchmark_architecture.py \
   --binary target/release/cgrx \
+  --repeat 3 \
   --repo cgrx=/Volumes/D/Projects/cgrx-opensource \
   --repo gd=/Volumes/D/Projects/gd-main \
   --repo vex=/Volumes/D/Projects/vpn-main \
@@ -48,11 +49,13 @@ Leiden clusters for each project. Those clusters operate on the call/import grap
 at symbol granularity and include representative top nodes and cohesion. Warm
 observed response times were 85–710 ms and responses were 1,238–1,910 characters.
 
-CGRX now matches the useful quality signals at package granularity: deterministic
-weighted clustering, cohesion, internal/cut weights, modularity, exact relation
-weights and snapshot binding. CBM remains stronger for function-level cluster
-labels and representative symbols. CGRX remains stronger in this response for
-exact boundary evidence and explicit partial/truncation state.
+CGRX now covers the same response ingredients at package and symbol granularity:
+weighted communities, cohesion, representative symbols, binding packages and
+edge types. It additionally reports internal/cut weights, total modularity,
+unclustered symbols, exact boundary evidence and explicit partial/truncation
+state. CBM uses Leiden and includes import edges in its symbol graph; CGRX uses a
+deterministic local modularity pass over proven `CALLS`/`IMPLEMENTS`. Their raw
+cluster counts and scores are therefore not interchangeable accuracy metrics.
 
 ## Trace comparison
 

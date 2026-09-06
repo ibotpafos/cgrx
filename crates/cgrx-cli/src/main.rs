@@ -1,4 +1,5 @@
 mod multi_repo;
+mod skill;
 mod visualize;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -29,7 +30,7 @@ fn main() {
 fn run(args: Vec<String>) -> Result<(), String> {
     let Some(command) = args.first().map(String::as_str) else {
         return Err(
-            "expected init, index, serve, visualize, orient, expand, status, schema, usage-report, or bench"
+            "expected init, index, serve, visualize, orient, expand, status, schema, skill, usage-report, or bench"
                 .to_owned(),
         );
     };
@@ -63,6 +64,7 @@ fn run(args: Vec<String>) -> Result<(), String> {
             invoke_managed("status", status_arguments(&args[1..]), Path::new(root))?;
         }
         "schema" => schema(&args[1..])?,
+        "skill" => skill::run(&args[1..])?,
         "usage-report" => usage_report(&args[1..])?,
         "bench" => println!("{}", json!({"status":"DELEGATED_TO_BENCH_HARNESS"})),
         other => return Err(format!("unknown command {other}")),

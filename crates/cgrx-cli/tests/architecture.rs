@@ -175,6 +175,48 @@ fn architecture_projects_proven_package_boundaries_cycles_and_hotspots() {
 }
 
 #[test]
+fn architecture_exposes_bounded_symbol_communities_with_representatives() {
+    let (_repository, _state, runtime) = architecture_runtime();
+
+    let result = runtime.get_architecture(&scope(), 1, 20).unwrap();
+    assert_eq!(
+        result["symbol_community_detection"]["method"],
+        "DETERMINISTIC_WEIGHTED_MODULARITY"
+    );
+    assert_eq!(
+        result["symbol_community_detection"]["unclustered_symbols"],
+        1
+    );
+    assert_eq!(result["totals"]["symbol_communities"], 1);
+    assert_eq!(result["symbol_communities"][0]["members"], 3);
+    assert_eq!(
+        result["symbol_communities"][0]["edge_types"],
+        serde_json::json!(["CALLS"])
+    );
+    assert_eq!(
+        result["symbol_communities"][0]["packages"],
+        serde_json::json!(["api", "core"])
+    );
+    let representatives = result["symbol_communities"][0]["top_nodes"]
+        .as_array()
+        .unwrap();
+    assert_eq!(representatives.len(), 3);
+    assert!(representatives.iter().all(|node| {
+        node["node_id"].is_u64()
+            && node["symbol"].is_string()
+            && node["path"].is_string()
+            && node["weighted_degree"]
+                .as_u64()
+                .is_some_and(|degree| degree > 0)
+    }));
+    assert_eq!(
+        result,
+        runtime.get_architecture(&scope(), 1, 20).unwrap(),
+        "symbol communities must be byte-stable for the same snapshot"
+    );
+}
+
+#[test]
 fn architecture_finds_deterministic_weighted_semantic_communities() {
     let repository = TestDirectory::new("architecture-semantic-communities-repository");
     git(repository.path(), &["init", "-q"]);
