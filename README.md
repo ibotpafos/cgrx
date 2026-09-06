@@ -16,6 +16,7 @@ explicitly on each request. No embedding service, hosted index or API key.
 - Coverage reporting: unresolved relationships remain unknown, not absent.
 - Candidate relationship-risk detection for working-tree changes.
 - Snapshot-bound refactoring candidates with hypothetical graph projections.
+- Local evidence graph explorer with current, changed and refactor-future views.
 - Incremental working-tree refresh, isolated repo identities and writer locks.
 - Rust, Go, TypeScript/JavaScript/TSX and Python parsing. Resolution depth varies
   by language; this does not replace a compiler or language server.
@@ -23,7 +24,7 @@ explicitly on each request. No embedding service, hosted index or API key.
 ## Install with one command
 
 ~~~sh
-curl -fsSL https://raw.githubusercontent.com/ibotpafos/cgrx/v0.1.0-alpha.4/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/ibotpafos/cgrx/v0.1.0-alpha.6/install.sh | sh
 ~~~
 
 Installs to `$HOME/.local/bin/cgrx`, without sudo. Apple Silicon macOS downloads
@@ -44,7 +45,7 @@ Native Windows is not supported.
 ~~~sh
 git clone https://github.com/ibotpafos/cgrx.git
 cd cgrx
-git checkout v0.1.0-alpha.4
+git checkout v0.1.0-alpha.6
 cargo install --locked --path crates/cgrx-cli
 ~~~
 
@@ -70,6 +71,44 @@ include the absolute Git worktree root in **repo**. Example status arguments:
 CGRX writes its managed index under Git metadata, not into source files.
 See [installation](docs/installation.md) for OpenCode, binary installation,
 updates, uninstalling and troubleshooting.
+
+## Explore the graph locally
+
+Start the read-only explorer for any Git worktree:
+
+~~~sh
+cgrx visualize --repo /absolute/path/to/repository
+~~~
+
+CGRX selects an available loopback port and opens the browser. Use `--port
+4317` for a fixed port or `--no-open` to print the URL without opening it. The
+server binds only to `127.0.0.1`, gives the browser a random process-local
+capability, accepts only GET and HEAD, and never sends graph or source data to
+an external service.
+
+The default graph is a bounded neighborhood arranged as callers → selected
+entry point → callees, with candidate tests below. Current proven edges, known
+coverage gaps, hypothetical refactor edges, conditional removals and not-run
+tests have separate colors, line patterns and text marks. Search and the
+evidence inspector remain available without pointer-only interaction. Dragging
+a node pins it, arrow keys pan the canvas, and Reset restores the deterministic
+layout.
+
+The workspace has four modes:
+
+- **Current** shows only indexed evidence from the active snapshot.
+- **Changes** marks nodes from changed source paths.
+- **Preview** overlays one selected refactor strategy.
+- **Compare** shows current and selected future graphs with one synchronized
+  camera.
+
+Every refactor candidate exposes preserve-entry-points, canonical-entry-point
+and consolidate paths. A path that could remove an entry point is marked
+`blocked_by_gaps` whenever coverage, dispatch, truncation or public-surface
+uncertainty remains. **Copy agent plan** copies the exact structured
+`agent_handoff` returned by `suggest_refactors`; the agent must revalidate the
+snapshot before editing. Node.js is used only for frontend contract tests and
+is not required by the released executable.
 
 ## MCP tools
 
@@ -101,11 +140,13 @@ resolver class. `depth` defaults to 1 and is capped at 4; transitive rows includ
 on ambiguous symbols unless `path` disambiguates them.
 
 `suggest_refactors` compares callable bodies within one supported language and
-returns review candidates for extracting a shared helper. Each response is tied
+returns review candidates for extracting a shared helper. Each candidate also
+contains three deterministic strategy paths and a compact structured agent
+handoff. Each response is tied
 to the current revision, working-tree digest and graph generation; the managed
 runtime refreshes changed source before analysis. Existing entry points are
-preserved, projected edges are marked `hypothetical`, and no source or stored
-graph is changed. Empty or partial results apply only to the requested scope,
+preserved, projected edges are marked `hypothetical`, blocked removals retain
+their gaps, and no source or stored graph is changed. Empty or partial results apply only to the requested scope,
 threshold and reported budgets and coverage gaps.
 
 See [the Trace MCP reference comparison](docs/reference-trace-mcp.md) for the

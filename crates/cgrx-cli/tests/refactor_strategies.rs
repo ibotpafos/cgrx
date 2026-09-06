@@ -50,7 +50,7 @@ fn git(root: &Path, args: &[&str]) {
     );
 }
 
-fn runtime() -> (TestDirectory, TestDirectory, Runtime) {
+fn runtime_with_dynamic_gap(dynamic_gap: bool) -> (TestDirectory, TestDirectory, Runtime) {
     let repository = TestDirectory::new("refactor-strategy-repository");
     git(repository.path(), &["init", "-q"]);
     git(
@@ -58,11 +58,11 @@ fn runtime() -> (TestDirectory, TestDirectory, Runtime) {
         &["config", "user.email", "test@example.invalid"],
     );
     git(repository.path(), &["config", "user.name", "CGRX Test"]);
-    fs::write(
-        repository.path().join("service.ts"),
-        "function save(value: number) {}\nfunction first(input: number) { const prepared = input + 1; save(prepared); return prepared; }\nfunction second(value: number) { const output = value + 9; save(output); return output; }\nfunction dynamic(callback: () => number) { return callback(); }\n",
-    )
-    .expect("write fixture");
+    let mut fixture = "function save(value: number) {}\nfunction first(input: number) { const prepared = input + 1; save(prepared); return prepared; }\nfunction second(value: number) { const output = value + 9; save(output); return output; }\nfunction useSecond() { return second(1); }\n".to_owned();
+    if dynamic_gap {
+        fixture.push_str("function dynamic(callback: () => number) { return callback(); }\n");
+    }
+    fs::write(repository.path().join("service.ts"), fixture).expect("write fixture");
     git(repository.path(), &["add", "."]);
     git(repository.path(), &["commit", "-qm", "fixture"]);
 
@@ -70,6 +70,21 @@ fn runtime() -> (TestDirectory, TestDirectory, Runtime) {
     Runtime::index(repository.path(), state.path()).expect("index repository");
     let runtime = Runtime::open(state.path()).expect("open runtime");
     (repository, state, runtime)
+}
+
+fn runtime() -> (TestDirectory, TestDirectory, Runtime) {
+    runtime_with_dynamic_gap(true)
+}
+
+fn matching_candidate(result: &serde_json::Value) -> &serde_json::Value {
+    result["candidates"]
+        .as_array()
+        .expect("candidate array")
+        .iter()
+        .find(|candidate| {
+            candidate["left"]["symbol"] == "first" && candidate["right"]["symbol"] == "second"
+        })
+        .expect("first/second candidate")
 }
 
 #[test]
@@ -202,4 +217,83 @@ fn positive_candidate_has_three_snapshot_bound_strategies() {
             "{strategy}"
         );
     }
+}
+
+#[test]
+fn strategies_encode_distinct_future_graphs() {
+    let (_repository, _state, runtime) = runtime();
+    let scope = Scope {
+        include: vec!["service.ts".to_owned()],
+        exclude: Vec::new(),
+        relation_kinds: vec![RelationKind::Calls],
+        max_depth: 1,
+    };
+    let result = runtime
+        .suggest_refactors(&scope, Some("typescript"), 760, 20)
+        .expect("suggest refactors");
+    let candidate = matching_candidate(&result);
+    let strategies = candidate["strategies"].as_array().expect("strategies");
+
+    assert!(
+        strategies[0]["graph_delta"]["add"]
+            .as_array()
+            .is_some_and(|edges| !edges.is_empty())
+    );
+    assert_eq!(
+        strategies[0]["graph_delta"]["redirect"],
+        serde_json::json!([])
+    );
+    assert_eq!(
+        strategies[1]["graph_delta"]["add"][0]["source"],
+        candidate["right"]
+    );
+    assert_eq!(
+        strategies[1]["graph_delta"]["add"][0]["target"],
+        candidate["left"]
+    );
+    assert!(
+        strategies[1]["graph_delta"]["redirect"]
+            .as_array()
+            .is_some_and(|edges| !edges.is_empty())
+    );
+    assert_eq!(
+        strategies[1]["graph_delta"]["move_to_helper"],
+        serde_json::json!([])
+    );
+    assert_eq!(strategies[2]["graph_delta"]["add"], serde_json::json!([]));
+    assert!(
+        strategies[2]["graph_delta"]["redirect"]
+            .as_array()
+            .is_some_and(|edges| !edges.is_empty())
+    );
+    assert_eq!(
+        strategies[2]["graph_delta"]["remove"],
+        serde_json::json!([]),
+        "gaps keep removal blocked"
+    );
+}
+
+#[test]
+fn consolidation_removes_duplicate_only_without_coverage_gaps() {
+    let (_repository, _state, runtime) = runtime_with_dynamic_gap(false);
+    let result = runtime
+        .suggest_refactors(
+            &Scope {
+                include: vec!["service.ts".to_owned()],
+                exclude: Vec::new(),
+                relation_kinds: vec![RelationKind::Calls],
+                max_depth: 1,
+            },
+            Some("typescript"),
+            760,
+            20,
+        )
+        .expect("suggest refactors");
+    let candidate = matching_candidate(&result);
+    let consolidate = &candidate["strategies"][2];
+    assert_eq!(consolidate["status"], "hypothetical");
+    assert_eq!(
+        consolidate["graph_delta"]["remove"],
+        serde_json::json!([candidate["right"].clone()])
+    );
 }

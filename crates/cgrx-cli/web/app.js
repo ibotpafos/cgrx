@@ -1,5 +1,5 @@
 import { edgeStyle, layoutGraph } from "./layout.js";
-import { createState, projectGraph, reduce, serializeAgentPlan, snapshotKey } from "./state.js";
+import { createState, projectGraph, reduce, serializeAgentPlan, snapshotKey, summarizeBoundedResult } from "./state.js";
 
 const NS = "http://www.w3.org/2000/svg";
 const tokenKey = `cgrx-token:${location.host}`;
@@ -91,12 +91,20 @@ async function loadGraph(symbol, path) {
 async function loadRefactors() {
   try {
     const value = await api("/api/refactors?scope=**&min_score=760&limit=8");
-    el["candidate-count"].textContent = value.total;
-    el["refactor-list"].replaceChildren(...value.candidates.map((candidate) => itemButton(
+    const summary = summarizeBoundedResult(value);
+    el["candidate-count"].textContent = summary.count;
+    const children = value.candidates.map((candidate) => itemButton(
       `${candidate.left.symbol} ↔ ${candidate.right.symbol}`,
       `${candidate.language} · score ${candidate.similarity.total}`,
       () => selectCandidate(candidate)
-    )));
+    ));
+    if (summary.note) {
+      const note = document.createElement("p");
+      note.className = "quiet bounded-note";
+      note.textContent = summary.note;
+      children.push(note);
+    }
+    el["refactor-list"].replaceChildren(...children);
     if (!value.candidates.length) {
       el["refactor-list"].innerHTML = '<p class="quiet">No candidate crossed the current threshold.</p>';
     }
@@ -195,7 +203,7 @@ function renderEdge(source, target, edge) {
 function renderNode(node) {
   const group = svg("g", {
     transform: `translate(${node.x} ${node.y})`,
-    class: `node ${node.lane === "tests" ? "node--test " : ""}${node.changed ? "node--changed " : ""}${node.pinned ? "node--pinned " : ""}${state.selectedNodeId === node.node_id ? "is-selected" : ""}`,
+    class: `node ${node.lane === "tests" ? "node--test " : ""}${node.changed ? "node--changed " : ""}${node.status === "remove" ? "node--remove " : ""}${node.pinned ? "node--pinned " : ""}${state.selectedNodeId === node.node_id ? "is-selected" : ""}`,
     tabindex: "0",
     role: "button",
     "aria-label": `${node.symbol}, ${node.path}, ${node.lane}`
@@ -210,6 +218,7 @@ function renderNode(node) {
   group.addEventListener("click", select);
   group.addEventListener("keydown", activate(select));
   group.addEventListener("pointerdown", (event) => {
+    if (state.mode === "compare") return;
     event.stopPropagation();
     nodeDrag = {
       key: String(node.node_id ?? node.id),

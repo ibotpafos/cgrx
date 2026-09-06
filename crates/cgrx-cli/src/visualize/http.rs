@@ -1,6 +1,4 @@
 use std::io::{Read, Write};
-use std::net::TcpStream;
-use std::time::Duration;
 
 use serde_json::json;
 
@@ -15,13 +13,7 @@ pub(super) struct HttpRequest {
 }
 
 impl HttpRequest {
-    pub(super) fn read(stream: &mut TcpStream) -> Result<Self, HttpResponse> {
-        stream
-            .set_read_timeout(Some(Duration::from_secs(3)))
-            .map_err(|error| HttpResponse::json_error(500, "cgrx.io", &error.to_string()))?;
-        stream
-            .set_write_timeout(Some(Duration::from_secs(3)))
-            .map_err(|error| HttpResponse::json_error(500, "cgrx.io", &error.to_string()))?;
+    pub(super) fn read(stream: &mut impl Read) -> Result<Self, HttpResponse> {
         let mut bytes = Vec::new();
         let mut chunk = [0_u8; 1024];
         loop {
@@ -210,7 +202,7 @@ impl HttpResponse {
         self
     }
 
-    pub(super) fn write(self, stream: &mut TcpStream) -> Result<(), String> {
+    pub(super) fn write(self, stream: &mut impl Write) -> Result<(), String> {
         let reason = match self.status {
             200 => "OK",
             400 => "Bad Request",

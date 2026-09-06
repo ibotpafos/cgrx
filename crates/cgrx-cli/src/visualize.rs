@@ -7,6 +7,7 @@ use std::io::{Read, Write};
 use std::net::{Ipv4Addr, TcpListener};
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
+use std::time::Duration;
 
 use cgrx_cli::{GraphDirection, GraphViewRequest, Runtime, RuntimeError};
 use cgrx_core::{RelationKind, Scope};
@@ -42,6 +43,12 @@ pub(super) fn run(args: &[String]) -> Result<(), String> {
     };
     for connection in listener.incoming() {
         let mut connection = connection.map_err(|error| error.to_string())?;
+        connection
+            .set_read_timeout(Some(Duration::from_secs(3)))
+            .map_err(|error| error.to_string())?;
+        connection
+            .set_write_timeout(Some(Duration::from_secs(3)))
+            .map_err(|error| error.to_string())?;
         let response = match HttpRequest::read(&mut connection) {
             Ok(request) => server.handle(&request),
             Err(response) => response,

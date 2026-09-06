@@ -18,17 +18,20 @@ fn read(root: &Path, relative: &str) -> String {
         .unwrap_or_else(|error| panic!("{relative} must be readable: {error}"))
 }
 
-fn assert_source_tree_is_offline(directory: &Path, forbidden_apis: &[&str]) {
+fn assert_source_tree_is_offline(root: &Path, directory: &Path, forbidden_apis: &[&str]) {
     for entry in
         fs::read_dir(directory).unwrap_or_else(|error| panic!("{}: {error}", directory.display()))
     {
         let path = entry.expect("source entry must be readable").path();
         if path.is_dir() {
-            assert_source_tree_is_offline(&path, forbidden_apis);
+            assert_source_tree_is_offline(root, &path, forbidden_apis);
         } else if path.extension().and_then(|value| value.to_str()) == Some("rs") {
             let source = fs::read_to_string(&path)
                 .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
             for api in forbidden_apis {
+                if path == root.join("crates/cgrx-cli/src/visualize.rs") && *api == "std::net" {
+                    continue;
+                }
                 assert!(
                     !source.contains(api),
                     "{} uses forbidden network API {api}",
@@ -80,6 +83,20 @@ fn production_workspace_defaults_to_network_denied() {
         "ureq::",
     ];
 
+    let visualizer = read(&root, "crates/cgrx-cli/src/visualize.rs");
+    assert!(visualizer.contains("TcpListener::bind((Ipv4Addr::LOCALHOST"));
+    for forbidden_outbound in [
+        "TcpStream::connect",
+        "UdpSocket",
+        "ToSocketAddrs",
+        "lookup_host",
+    ] {
+        assert!(
+            !visualizer.contains(forbidden_outbound),
+            "loopback visualizer uses outbound network API {forbidden_outbound}"
+        );
+    }
+
     let workspace_manifest = read(&root, "Cargo.toml");
     for dependency in forbidden_manifest_dependencies {
         assert!(
@@ -104,6 +121,6 @@ fn production_workspace_defaults_to_network_denied() {
             );
         }
 
-        assert_source_tree_is_offline(&crate_dir.join("src"), &forbidden_source_apis);
+        assert_source_tree_is_offline(&root, &crate_dir.join("src"), &forbidden_source_apis);
     }
 }

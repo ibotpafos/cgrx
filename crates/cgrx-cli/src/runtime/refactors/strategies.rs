@@ -9,8 +9,8 @@ pub(super) fn derive(
 ) -> Vec<Value> {
     let projection = &candidate["projection"];
     let preserve = projection["preserve"].clone();
-    let add = projection["add"].clone();
-    let move_to_helper = projection["move_to_helper"].clone();
+    let helper_add = projection["add"].clone();
+    let helper_moves = projection["move_to_helper"].clone();
     let helper = projection["helper"].clone();
     let left_node = candidate["left"].clone();
     let right_node = candidate["right"].clone();
@@ -26,21 +26,49 @@ pub(super) fn derive(
         let strategy_id = strategy_id(snapshot, projection, policy);
         let destructive = policy != "preserve_entrypoints";
         let blocked = destructive && (partial || !coverage_gaps.is_empty());
-        let (summary, redirect, remove) = match policy {
+        let redirected_callers = redirect_callers(&preserve, &right_node, &left_node);
+        let compatibility_edge = json!([{
+            "relation":"CALLS",
+            "source":right_node,
+            "target":left_node,
+            "confidence":"hypothetical"
+        }]);
+        let (summary, add, redirect, move_to_helper, remove, edit_obligations) = match policy {
             "preserve_entrypoints" => (
                 "Extract a shared helper and preserve both entry points.",
+                helper_add.clone(),
                 json!([]),
                 json!([]),
+                helper_moves.clone(),
+                json!([
+                    {"action":"inspect","target":left_node},
+                    {"action":"inspect","target":right_node},
+                    {"action":"introduce_helper","target":helper}
+                ]),
             ),
             "canonical_entrypoint" => (
                 "Redirect proven internal callers to one canonical entry point and retain compatibility.",
+                compatibility_edge,
+                redirected_callers.clone(),
                 json!([]),
                 json!([]),
+                json!([
+                    {"action":"inspect","target":left_node},
+                    {"action":"redirect_proven_callers","target":left_node},
+                    {"action":"retain_compatibility_wrapper","target":right_node}
+                ]),
             ),
             _ => (
                 "Consolidate the duplicate only after every removal precondition is verified.",
                 json!([]),
+                redirected_callers,
                 json!([]),
+                if blocked { json!([]) } else { json!([right_node]) },
+                json!([
+                    {"action":"inspect","target":left_node},
+                    {"action":"redirect_proven_callers","target":left_node},
+                    {"action":"remove_duplicate_when_unblocked","target":right_node}
+                ]),
             ),
         };
         json!({
@@ -66,11 +94,7 @@ pub(super) fn derive(
                 "move_to_helper":move_to_helper,
                 "remove":remove
             },
-            "edit_obligations":[
-                {"action":"inspect","target":left_node},
-                {"action":"inspect","target":right_node},
-                {"action":"introduce_helper","target":helper}
-            ],
+            "edit_obligations":edit_obligations,
             "verification":{
                 "review_symbols":review_symbols,
                 "candidate_tests":[],
@@ -98,6 +122,28 @@ pub(super) fn derive(
         })
     })
     .collect()
+}
+
+fn redirect_callers(preserve: &Value, duplicate: &Value, canonical: &Value) -> Value {
+    let duplicate_id = duplicate["node_id"].as_u64();
+    Value::Array(
+        preserve
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|edge| edge["target"]["node_id"].as_u64() == duplicate_id)
+            .map(|edge| {
+                json!({
+                    "relation":edge["relation"],
+                    "source":edge["source"],
+                    "from":duplicate,
+                    "target":canonical,
+                    "confidence":"hypothetical",
+                    "evidence":edge["evidence"]
+                })
+            })
+            .collect(),
+    )
 }
 
 fn strategy_id(snapshot: &RepoSnapshot, projection: &Value, policy: &str) -> String {

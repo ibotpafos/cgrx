@@ -1,6 +1,6 @@
 # CGRX Evidence Graph Explorer Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Ship a local graph explorer that visualizes current evidence and three snapshot-bound refactor futures, while returning the identical structured plan to coding agents through `suggest_refactors`.
 
@@ -31,7 +31,7 @@
 - Modify: `crates/cgrx-cli/src/runtime/refactors.rs`
 - Test: `crates/cgrx-cli/tests/refactor_strategies.rs`
 
-- [ ] **Step 1: Add a failing positive contract test**
+- [x] **Step 1: Add a failing positive contract test**
 
 Create a two-function TypeScript fixture with a shared callee. Call `Runtime::suggest_refactors` and assert that the first candidate has exactly these policies in order:
 
@@ -54,7 +54,7 @@ CARGO_TARGET_DIR=target-ibo-289 cargo test -p cgrx-cli --test refactor_strategie
 
 Expected: FAIL because `strategies` is absent.
 
-- [ ] **Step 2: Implement typed strategy derivation**
+- [x] **Step 2: Implement typed strategy derivation**
 
 Move projection-policy construction into `runtime/refactors/strategies.rs`. Define private serializable structs or deterministic `Value` builders for:
 
@@ -79,7 +79,7 @@ pub(super) fn derive_strategies(
 
 Derive every `strategy_id` from the full snapshot identity, candidate identity, and policy using the existing canonical hash utilities. Preserve entry points is recommended and low risk. Canonical entry point redirects only proven internal callers and retains a wrapper when removal is uncertain. Consolidate may contain a removal only when all explicit preconditions pass.
 
-- [ ] **Step 3: Add blocked-removal tests**
+- [x] **Step 3: Add blocked-removal tests**
 
 Cover each blocker independently: partial result, truncated evidence, dynamic dispatch gap, parser/stale gap, and unknown external/public surface. Assert `status == "blocked_by_gaps"`, non-empty `blocking_gaps`, and an empty `graph_delta.remove`.
 
@@ -91,7 +91,7 @@ CARGO_TARGET_DIR=target-ibo-289 cargo test -p cgrx-cli --test refactor_strategie
 
 Expected: PASS.
 
-- [ ] **Step 4: Add stability and payload tests**
+- [x] **Step 4: Add stability and payload tests**
 
 Assert deterministic ordering, stable ids for the same snapshot, changed ids after a source edit, no source body in `agent_handoff`, and identical graph delta references between the legacy `projection` and recommended strategy.
 
@@ -103,7 +103,7 @@ CARGO_TARGET_DIR=target-ibo-289 cargo test -p cgrx-cli refactor
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit the strategy slice**
+- [x] **Step 5: Commit the strategy slice**
 
 ```bash
 git add crates/cgrx-cli/src/runtime/refactors.rs crates/cgrx-cli/src/runtime/refactors/strategies.rs crates/cgrx-cli/tests/refactor_strategies.rs
@@ -119,7 +119,7 @@ git commit -m "feat: add refactor strategy paths"
 - Modify: `crates/cgrx-cli/src/runtime.rs`
 - Test: `crates/cgrx-cli/tests/graph_view.rs`
 
-- [ ] **Step 1: Write a failing focused-view test**
+- [x] **Step 1: Write a failing focused-view test**
 
 Index a fixture with two callers, one selected function, two callees, and one related test. Call:
 
@@ -145,7 +145,7 @@ CARGO_TARGET_DIR=target-ibo-289 cargo test -p cgrx-cli --test graph_view focused
 
 Expected: FAIL because the API does not exist.
 
-- [ ] **Step 2: Implement the public request types and runtime method**
+- [x] **Step 2: Implement the public request types and runtime method**
 
 Export from `cgrx_cli`:
 
@@ -165,11 +165,11 @@ pub struct GraphViewRequest {
 
 Implement `Runtime::graph_view(request) -> Result<Value, RuntimeError>` from stored syntax documents and definitive arcs. Resolve ambiguity exactly like `trace_path`. Sort by lane, path, span, node id. Include source identity and evidence metadata, but no source body. Attach file/module container ids without inventing semantic relationships.
 
-- [ ] **Step 3: Enforce bounds and uncertainty**
+- [x] **Step 3: Enforce bounds and uncertainty**
 
 Reject depth outside `1..=4`, node limits outside `1..=500`, and edge limits outside `1..=500`. When a frontier or result cap is hit, set `partial=true`, return uncapped totals where known, and add typed budget gaps. Do not infer missing edges from graph absence.
 
-- [ ] **Step 4: Cover every supported language pack**
+- [x] **Step 4: Cover every supported language pack**
 
 Add deterministic fixtures for TypeScript/TSX, Go, Python, and Rust. Verify current relation fields and symbol identity. Add negative tests for ambiguous symbols, missing symbols, out-of-scope paths, parser gaps, and a capped graph.
 
@@ -181,7 +181,7 @@ CARGO_TARGET_DIR=target-ibo-289 cargo test -p cgrx-cli --test graph_view
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit the graph-view slice**
+- [x] **Step 5: Commit the graph-view slice**
 
 ```bash
 git add crates/cgrx-cli/src/runtime.rs crates/cgrx-cli/src/runtime/graph_view.rs crates/cgrx-cli/tests/graph_view.rs
@@ -199,7 +199,7 @@ git commit -m "feat: add bounded evidence graph views"
 - Modify: `crates/cgrx-cli/src/main.rs`
 - Test: `crates/cgrx-cli/tests/visualize_http.rs`
 
-- [ ] **Step 1: Add failing CLI and authorization tests**
+- [x] **Step 1: Add failing CLI and authorization tests**
 
 Spawn `cgrx visualize --root <fixture> --port 0 --no-open`, read one structured startup line, and assert it contains loopback origin plus a URL-fragment token. Exercise:
 
@@ -219,17 +219,17 @@ CARGO_TARGET_DIR=target-ibo-289 cargo test -p cgrx-cli --test visualize_http sta
 
 Expected: FAIL because `visualize` is unknown.
 
-- [ ] **Step 2: Parse the CLI command**
+- [x] **Step 2: Parse the CLI command**
 
 Add `visualize` to command help and dispatch. Accept `--root`, `--port 0..=65535`, and `--no-open`. Canonicalize the repository through the existing managed-runtime path before binding. Reject extra positional arguments and non-loopback bind configuration.
 
-- [ ] **Step 3: Implement a bounded standard-library HTTP loop**
+- [x] **Step 3: Implement a bounded standard-library HTTP loop**
 
 Use `TcpListener::bind((Ipv4Addr::LOCALHOST, port))`. Read at most 8 KiB of request headers, set read/write timeouts, process one request per connection, and close it. Accept GET and HEAD only. Percent-decode query values with strict malformed-escape rejection. Return JSON errors with CGRX codes and omit response bodies for HEAD.
 
 Generate 32 random bytes from the operating system random source and hex-encode them. Fail closed if secure randomness is unavailable. Open `http://127.0.0.1:<port>/#token=<hex>` with `open` on macOS or `xdg-open` on Linux unless `--no-open` is set. Never log the token separately or include it in telemetry.
 
-- [ ] **Step 4: Route read-only APIs**
+- [x] **Step 4: Route read-only APIs**
 
 Implement:
 
@@ -243,7 +243,7 @@ Implement:
 
 Before each API call, refresh the managed runtime through the same state/revision path used by the MCP backend. Return `snapshot`, typed errors, bounded data, `partial`, and gaps. Require `X-CGRX-Token` for every `/api/` path.
 
-- [ ] **Step 5: Complete HTTP boundary tests**
+- [x] **Step 5: Complete HTTP boundary tests**
 
 Test malformed query encoding, missing arguments, invalid bounds, path traversal, ambiguous symbols, HEAD behavior, asset MIME types, CSP, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, and `Cache-Control: no-store`. Verify the listener address is always loopback.
 
@@ -255,7 +255,7 @@ CARGO_TARGET_DIR=target-ibo-289 cargo test -p cgrx-cli --test visualize_http
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit the server slice**
+- [x] **Step 6: Commit the server slice**
 
 ```bash
 git add crates/cgrx-cli/src/main.rs crates/cgrx-cli/src/visualize.rs crates/cgrx-cli/src/visualize crates/cgrx-cli/tests/visualize_http.rs
@@ -277,7 +277,7 @@ git commit -m "feat: serve the local graph explorer"
 - Create: `package.json`
 - Modify: `crates/cgrx-cli/src/visualize/assets.rs`
 
-- [ ] **Step 1: Create failing Node.js 26 layout tests**
+- [x] **Step 1: Create failing Node.js 26 layout tests**
 
 Use `node:test` and `node:assert/strict`. Cover stable lane positions, file-container grouping, preserved coordinates for the same identity, bounded viewport fitting, and the four edge styles:
 
@@ -296,19 +296,19 @@ npm test
 
 Expected: FAIL because modules are absent.
 
-- [ ] **Step 2: Implement pure layout and state modules**
+- [x] **Step 2: Implement pure layout and state modules**
 
 `layout.js` must accept graph JSON and return deterministic SVG coordinates sorted by lane/path/span/id. `state.js` must own mode, selected identity, strategy id, camera, freshness, and request generation. A changed snapshot must clear hypothetical overlays and abort or ignore older responses.
 
-- [ ] **Step 3: Build the accessible application shell**
+- [x] **Step 3: Build the accessible application shell**
 
 Create a three-part layout: repository/search header, SVG graph canvas, and evidence inspector. Add Current, Changes, Refactor Preview, and Compare modes. Render text labels, shape markers, keyboard focus, accessible node/edge names, pan, zoom, drag, pin, reset, and responsive narrow-screen panels.
 
-- [ ] **Step 4: Render evidence without overstating certainty**
+- [x] **Step 4: Render evidence without overstating certainty**
 
 Show path, symbol, span, source hash, resolver, confidence, snapshot, assumptions, counter-evidence, and coverage gaps. Fetch snippets only after explicit node selection. Mark every candidate test `not run`; never style it as passed. Surface truncation and stale data visibly.
 
-- [ ] **Step 5: Embed and serve frontend assets**
+- [x] **Step 5: Embed and serve frontend assets**
 
 Use `include_str!` in `visualize/assets.rs` for all five assets. Serve fixed paths only; do not map request paths to the filesystem. Keep scripts as ES modules and CSP-compatible without inline script or style.
 
@@ -322,7 +322,7 @@ CARGO_TARGET_DIR=target-ibo-289 cargo test -p cgrx-cli --test visualize_http ser
 
 Expected: Node reports `v26.x`; all tests PASS.
 
-- [ ] **Step 6: Commit the frontend slice**
+- [x] **Step 6: Commit the frontend slice**
 
 ```bash
 git add package.json crates/cgrx-cli/web crates/cgrx-cli/src/visualize/assets.rs
@@ -341,7 +341,7 @@ git commit -m "feat: add the SVG graph explorer"
 - Modify: `crates/cgrx-cli/tests/visualize_http.rs`
 - Test: `crates/cgrx-cli/tests/visualize_refresh.rs`
 
-- [ ] **Step 1: Add failing stale-projection and copy tests**
+- [x] **Step 1: Add failing stale-projection and copy tests**
 
 Assert that a snapshot change clears `strategy_id`, ignores an older graph response, preserves the selected node only if the identity still exists, and serializes Copy agent plan as the exact `agent_handoff` object returned by `/api/refactors`.
 
@@ -353,19 +353,19 @@ npm test
 
 Expected: FAIL until live state transitions are connected.
 
-- [ ] **Step 2: Connect candidate and strategy navigation**
+- [x] **Step 2: Connect candidate and strategy navigation**
 
 Load top refactor candidates on the landing view. Selecting a candidate must display all three strategy tabs in server order. Overlay only the selected `graph_delta`, with removals and redirects conditional on strategy status. Compare mode uses synchronized view transforms while retaining separate current/future semantics.
 
-- [ ] **Step 3: Implement copy actions**
+- [x] **Step 3: Implement copy actions**
 
 Copy agent plan writes canonical pretty JSON for `agent_handoff`. Copy MCP call writes a valid `suggest_refactors` argument object containing the current scope/language/min-score/limit and the snapshot used to choose the candidate as a revalidation constraint. Announce copy success through an ARIA live region.
 
-- [ ] **Step 4: Implement compact live refresh**
+- [x] **Step 4: Implement compact live refresh**
 
 Poll `/api/status` only. On revision, digest, or graph-generation change, mark the old view stale, clear projections, refetch current selection, and restore camera/selection when identity survives. Do not poll snippets or whole graphs in the background.
 
-- [ ] **Step 5: Verify refresh against a real managed fixture**
+- [x] **Step 5: Verify refresh against a real managed fixture**
 
 Start the server once, fetch a strategy, edit a participating source file, and poll status until the digest changes. Assert the next refactor response has different strategy ids and the prior strategy is absent. Repeat for add, delete, and rename transitions within bounded fixtures.
 
@@ -378,7 +378,7 @@ npm test
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit the connected workflow**
+- [x] **Step 6: Commit the connected workflow**
 
 ```bash
 git add crates/cgrx-cli/web crates/cgrx-cli/tests/visualize_http.rs crates/cgrx-cli/tests/visualize_refresh.rs
@@ -395,15 +395,15 @@ git commit -m "feat: connect refactor previews and agent handoff"
 - Modify: `docs/superpowers/specs/2026-09-06-evidence-graph-explorer-design.md`
 - Modify: `docs/superpowers/plans/2026-09-06-evidence-graph-explorer.md`
 
-- [ ] **Step 1: Add user and agent documentation**
+- [x] **Step 1: Add user and agent documentation**
 
 Document `cgrx visualize --root <repo>`, fixed/automatic ports, `--no-open`, the four modes, evidence legend, progressive bounds, strategy meanings, `blocked_by_gaps`, copy actions, Node runtime boundary, privacy, and failure behavior. Change design status from proposed to implemented only after verification passes.
 
-- [ ] **Step 2: Add Node.js 26 CI validation**
+- [x] **Step 2: Add Node.js 26 CI validation**
 
 Pin the frontend job/setup action to Node 26 and run `npm test`. Keep existing Linux and macOS Rust jobs. Do not introduce a frontend dependency install step beyond the package script because the browser code has no external packages.
 
-- [ ] **Step 3: Run focused and workspace verification**
+- [x] **Step 3: Run focused and workspace verification**
 
 ```bash
 cargo fmt --all -- --check
@@ -416,7 +416,7 @@ CARGO_TARGET_DIR=target-ibo-289 cargo build --release -p cgrx-cli
 
 Expected: Node is `v26.x`; every command exits 0.
 
-- [ ] **Step 4: Run contract and budget gates**
+- [x] **Step 4: Run contract and budget gates**
 
 ```bash
 CARGO_TARGET_DIR=target-ibo-289 cargo run -q -p cgrx-cli -- schema --json
@@ -426,21 +426,21 @@ CARGO_TARGET_DIR=target-ibo-289 cargo test -p cgrx-cli --test visualize_http
 
 Assert 11 MCP tools, schema cost at or below 2,000 tokens, no mutation endpoint, successful stdio MCP initialize/tools-list/status smoke, and no source/query/token fields in usage telemetry.
 
-- [ ] **Step 5: Inspect the browser on desktop and narrow layouts**
+- [x] **Step 5: Inspect the browser on desktop and narrow layouts**
 
 Launch the release binary against the CGRX repository with an automatic port. Verify search, semantic lanes, node and edge inspector, Current/Changes/Refactor Preview/Compare, all three strategies, blocked removals, pan/zoom/reset, keyboard navigation, copy payloads, stale refresh, and narrow layout. Record screenshots or concise observed evidence without treating the visual check as compiler/test proof.
 
-- [ ] **Step 6: Verify implementation coverage and risk candidates**
+- [x] **Step 6: Verify implementation coverage and risk candidates**
 
 Run CGRX `status`, structural search/trace/snippet, `check_index_coverage` for every changed Rust source path, and `scan_risks(mode=changes)`. Validate each risk candidate against exact source and test/compiler output. Record remaining graph gaps as uncertainty, not repository bugs.
 
-- [ ] **Step 7: Commit docs and CI**
+- [x] **Step 7: Commit docs and CI**
 
 ```bash
 git add README.md .github/workflows/ci.yml docs/superpowers/specs/2026-09-06-evidence-graph-explorer-design.md docs/superpowers/plans/2026-09-06-evidence-graph-explorer.md
 git commit -m "docs: document the evidence graph explorer"
 ```
 
-- [ ] **Step 8: Prepare review and release evidence**
+- [x] **Step 8: Prepare review and release evidence**
 
 Push the branch, open a PR linked to IBO-289, wait for Linux/macOS CI, and update the issue with commits, verification, screenshots, and remaining release gates. After merge, create the next prerelease tag, install the exact merged artifact behind the existing reversible launcher, smoke the installed binary and visualizer, and retain the previous launcher as rollback.

@@ -58,6 +58,19 @@ export function serializeAgentPlan(strategy) {
   return JSON.stringify(strategy.agent_handoff, null, 2);
 }
 
+export function summarizeBoundedResult(value) {
+  const shown = value.candidates?.length || 0;
+  const partial = Boolean(value.partial);
+  const count = `${value.total > shown ? `${shown}/${value.total}` : value.total}${partial ? " · partial" : ""}`;
+  const gaps = value.coverage_gap_count || 0;
+  return {
+    count,
+    note: partial
+      ? `Bounded result · ${gaps} coverage gaps. Destructive paths stay blocked.`
+      : ""
+  };
+}
+
 export function projectGraph(current, strategy) {
   const nodes = new Map();
   for (const node of current.nodes || []) nodes.set(identity(node), { ...node });
@@ -95,8 +108,7 @@ export function projectGraph(current, strategy) {
   for (const [collection, status] of [
     [delta.add, "hypothetical"],
     [delta.redirect, "hypothetical"],
-    [delta.move_to_helper, "hypothetical"],
-    [delta.remove, "remove"]
+    [delta.move_to_helper, "hypothetical"]
   ]) {
     for (const edge of collection || []) {
       addNode(edge.source, edge.source?.status === "hypothetical" ? "entrypoints" : "entrypoints");
@@ -109,6 +121,11 @@ export function projectGraph(current, strategy) {
         status
       });
     }
+  }
+  for (const removed of delta.remove || []) {
+    addNode(removed);
+    const key = identity(removed);
+    nodes.set(key, { ...nodes.get(key), status: "remove" });
   }
   return { ...current, nodes: [...nodes.values()], edges, projection: strategy.strategy_id };
 }

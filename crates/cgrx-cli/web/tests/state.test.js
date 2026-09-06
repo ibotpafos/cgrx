@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { createState, projectGraph, reduce, serializeAgentPlan } from "../state.js";
+import { createState, projectGraph, reduce, serializeAgentPlan, summarizeBoundedResult } from "../state.js";
 
 const snapshot = {
   repo_revision: "a".repeat(40),
@@ -74,4 +74,31 @@ test("agent copy is the exact canonical handoff object", () => {
   const serialized = serializeAgentPlan({ agent_handoff: handoff });
   assert.equal(serialized, JSON.stringify(handoff, null, 2));
   assert.deepEqual(JSON.parse(serialized), handoff);
+});
+
+test("bounded refactor results expose shown count and coverage limits", () => {
+  assert.deepEqual(summarizeBoundedResult({
+    total: 680,
+    candidates: Array(8).fill({}),
+    partial: true,
+    coverage_gap_count: 2351
+  }), {
+    count: "8/680 · partial",
+    note: "Bounded result · 2351 coverage gaps. Destructive paths stay blocked."
+  });
+  assert.deepEqual(summarizeBoundedResult({ total: 1, candidates: [{}], partial: false }), {
+    count: "1",
+    note: ""
+  });
+});
+
+test("projectGraph marks removed symbols as future removals", () => {
+  const duplicate = { node_id: 2, symbol: "second", path: "service.ts", lane: "entrypoints" };
+  const projected = projectGraph({ nodes: [duplicate], edges: [] }, {
+    strategy_id: "strategy1.consolidate",
+    graph_delta: { preserve: [], add: [], redirect: [], move_to_helper: [], remove: [duplicate] },
+    verification: { review_symbols: [duplicate] }
+  });
+  assert.equal(projected.nodes[0].status, "remove");
+  assert.equal(projected.edges.length, 0);
 });

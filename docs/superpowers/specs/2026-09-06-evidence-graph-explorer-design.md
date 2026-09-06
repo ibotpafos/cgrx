@@ -2,7 +2,7 @@
 
 Date: 2026-09-06
 Issue: IBO-289
-Status: proposed for user review
+Status: approved, implemented, and release-verified on `feat/ibo-289-graph-explorer`
 
 ## Outcome
 
@@ -286,4 +286,3 @@ tokens, Linux/macOS CI, installed-launcher smoke, and a documented rollback.
 - persistent UI annotations or decision memory;
 - claiming compile, test, or behavioral coverage before those checks run;
 - language-specific abstraction generation without a later evidence contract.
-

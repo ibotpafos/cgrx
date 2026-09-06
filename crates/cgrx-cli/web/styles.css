@@ -83,6 +83,8 @@ button { color: inherit; }
 .node__status { fill: var(--proven); }
 .node--test .node__status { fill: var(--test); }
 .node--changed rect { stroke: var(--gap); stroke-dasharray: 7 5; }
+.node--remove rect { stroke: var(--danger); stroke-dasharray: 6 5; opacity: .62; }
+.node--remove .node__title { text-decoration: line-through; fill: var(--danger); }
 .edge { fill: none; stroke-width: 1.7; vector-effect: non-scaling-stroke; }
 .edge--proven { stroke: var(--proven); }
 .edge--gap { stroke: var(--gap); stroke-dasharray: 9 7; }
