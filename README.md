@@ -121,7 +121,7 @@ is not required by the released executable.
 | status | Snapshot, graph counts, freshness, coverage |
 | search_graph | Bounded symbol/body discovery with optional language filter |
 | get_outline | File symbols and definition spans without bodies |
-| get_architecture | Packages, proven call, implementation and local-import boundaries, hotspots, cycles and communities |
+| get_architecture | Packages, proven call, implementation, local-import and static-reference boundaries, hotspots, cycles and communities |
 | trace_path | Caller/callee traversal |
 | find_usages | Proven direct or transitive incoming call/implementation sites |
 | get_code_snippet | Exact source definition |
@@ -140,9 +140,11 @@ in source order without paying for function bodies; `limit` defaults to 200 and
 is capped at 500.
 `get_architecture` groups source files and symbols by the first `package_depth`
 path components. It aggregates proven `CALLS` and `IMPLEMENTS` relationships
-plus unambiguous repository-local `IMPORTS` for Rust, Go, Python and
-TypeScript/TSX. External imports stay outside the graph; ambiguous local imports
-become explicit coverage gaps. Every cross-package boundary carries exact source
+plus unambiguous repository-local `IMPORTS` and conservative static `REFERENCES`
+for Rust, Go, Python and TypeScript/TSX. References require an actual imported
+type or qualified symbol usage; calls and unqualified dynamic names are omitted.
+External targets stay outside the graph, while ambiguous local targets become
+explicit coverage gaps. Every cross-package boundary carries exact source
 evidence. Results are bound to the current snapshot and report truncation,
 resolution counts and coverage gaps. General traversal remains limited to
 `CALLS` and `IMPLEMENTS`; deterministic weak components are structural groups,

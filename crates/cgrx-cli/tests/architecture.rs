@@ -107,7 +107,7 @@ fn architecture_projects_proven_package_boundaries_cycles_and_hotspots() {
 
     assert_eq!(
         result["relation_kinds"],
-        serde_json::json!(["CALLS", "IMPLEMENTS", "IMPORTS"])
+        serde_json::json!(["CALLS", "IMPLEMENTS", "IMPORTS", "REFERENCES"])
     );
     assert_eq!(
         result["packages"],
@@ -323,6 +323,165 @@ fn architecture_proves_repo_local_imports_for_every_supported_language_and_refre
                         .unwrap()
                         .iter()
                         .any(|kind| kind == "IMPORTS")
+            })
+    );
+}
+
+#[test]
+fn architecture_proves_used_local_references_for_every_supported_language() {
+    let repository = TestDirectory::new("architecture-references-repository");
+    git(repository.path(), &["init", "-q"]);
+    git(
+        repository.path(),
+        &["config", "user.email", "test@example.invalid"],
+    );
+    git(repository.path(), &["config", "user.name", "CGRX Test"]);
+    let files = [
+        (
+            "typescript/api/main.ts",
+            "import type { Model } from '../model';\nimport type { External } from 'external';\nexport type LocalAlias = Model;\nexport type ExternalAlias = External;\n",
+        ),
+        (
+            "typescript/model/index.ts",
+            "export interface Model { id: number }\n",
+        ),
+        (
+            "typescript/ambiguous_api/main.ts",
+            "import { Thing } from '../ambiguous/thing';\nexport type Alias = Thing;\n",
+        ),
+        (
+            "typescript/ambiguous/thing.ts",
+            "export interface Thing { id: number }\n",
+        ),
+        (
+            "typescript/ambiguous/thing/index.ts",
+            "export interface Thing { id: string }\n",
+        ),
+        ("go.mod", "module example.com/cgrxfixture\n\ngo 1.23\n"),
+        (
+            "go_api/main.go",
+            "package go_api\nimport (\n    \"example.com/cgrxfixture/go_model\"\n    \"fmt\"\n)\ntype Local struct { Value go_model.Model }\ntype External struct { Value fmt.Stringer }\n",
+        ),
+        (
+            "go_model/model.go",
+            "package go_model\ntype Model struct{}\n",
+        ),
+        (
+            "python/api/main.py",
+            "import python.model as model\nimport os\ndef local(value: model.Model):\n    return value\ndef external(value: os.PathLike):\n    return value\n",
+        ),
+        ("python/model.py", "class Model:\n    pass\n"),
+        ("Cargo.toml", "[package]\nname='fixture'\nversion='0.1.0'\n"),
+        ("src/lib.rs", "pub mod api;\npub mod model;\n"),
+        (
+            "src/api/mod.rs",
+            "pub type Local = crate::model::Model;\npub fn external<T: serde::Serialize>(value: T) -> T { value }\n",
+        ),
+        ("src/model/mod.rs", "pub struct Model;\n"),
+    ];
+    for (path, source) in files {
+        let path = repository.path().join(path);
+        fs::create_dir_all(path.parent().unwrap()).expect("create source parent");
+        fs::write(path, source).expect("write source");
+    }
+    git(repository.path(), &["add", "."]);
+    git(repository.path(), &["commit", "-qm", "fixture"]);
+    let state = TestDirectory::new("architecture-references-state");
+    Runtime::index(repository.path(), state.path()).expect("index repository");
+    let mut runtime = Runtime::open(state.path()).expect("open runtime");
+
+    let result = runtime.get_architecture(&scope(), 2, 100).unwrap();
+    let references = result["boundaries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|row| {
+            row["relations"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|kind| kind == "REFERENCES")
+        })
+        .map(|row| {
+            (
+                row["source"].as_str().unwrap(),
+                row["target"].as_str().unwrap(),
+            )
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        references,
+        std::collections::BTreeSet::from([
+            ("go_api", "go_model"),
+            ("python/api", "python"),
+            ("src/api", "src/model"),
+            ("typescript/api", "typescript/model"),
+        ])
+    );
+    assert_eq!(result["reference_resolution"]["proven"], 4);
+    assert_eq!(result["reference_resolution"]["external"], 4);
+    assert_eq!(result["reference_resolution"]["unresolved_local"], 1);
+    assert!(
+        result["coverage_gaps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|gap| {
+                gap["code"] == "UNRESOLVED_LOCAL_REFERENCE"
+                    && gap["path"] == "typescript/ambiguous_api/main.ts"
+            })
+    );
+    assert!(
+        !references
+            .iter()
+            .any(|(source, _)| *source == "typescript/ambiguous_api")
+    );
+    assert_eq!(
+        result["relation_kinds"],
+        serde_json::json!(["CALLS", "IMPLEMENTS", "IMPORTS", "REFERENCES"])
+    );
+
+    fs::create_dir_all(repository.path().join("typescript/other")).unwrap();
+    fs::write(
+        repository.path().join("typescript/other/index.ts"),
+        "export interface Model { name: string }\n",
+    )
+    .unwrap();
+    fs::write(
+        repository.path().join("typescript/api/main.ts"),
+        "import { Model } from '../other';\nexport type LocalAlias = Model;\n",
+    )
+    .unwrap();
+    assert!(runtime.refresh(repository.path()).unwrap());
+    let refreshed = runtime.get_architecture(&scope(), 2, 100).unwrap();
+    assert!(
+        refreshed["boundaries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|row| {
+                row["source"] == "typescript/api"
+                    && row["target"] == "typescript/other"
+                    && row["relations"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .any(|kind| kind == "REFERENCES")
+            })
+    );
+    assert!(
+        !refreshed["boundaries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|row| {
+                row["source"] == "typescript/api"
+                    && row["target"] == "typescript/model"
+                    && row["relations"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .any(|kind| kind == "REFERENCES")
             })
     );
 }

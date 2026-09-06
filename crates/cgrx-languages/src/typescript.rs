@@ -45,6 +45,7 @@ impl LanguagePack for TypeScript {
             .parse(source, None)
             .ok_or(ExtractError::ParseFailed)?;
         let context = LexicalContext::new(tree.root_node(), source);
+        let reference_imports = type_reference_imports(tree.root_node(), source);
         let mut extraction = Extraction::default();
         walk_with(
             tree.root_node(),
@@ -52,6 +53,26 @@ impl LanguagePack for TypeScript {
             &mut extraction,
             false,
             &mut |node, source, extraction| {
+                if node.kind() == "type_identifier"
+                    && !has_ancestor(node, "import_statement")
+                    && let Some(module) = reference_imports.get(&text(node, source))
+                {
+                    extraction.edges.push(Edge {
+                        relation: RelationKind::References,
+                        target: module.clone(),
+                        span: Span::from(node),
+                        context_span: evidence_span(
+                            node,
+                            &[
+                                "type_alias_declaration",
+                                "required_parameter",
+                                "optional_parameter",
+                                "function_declaration",
+                            ],
+                        ),
+                        provenance: Provenance::Syntax,
+                    });
+                }
                 if const_arrow(node, source).is_some() && !node.has_error() {
                     symbol(node, source, extraction);
                     extraction
@@ -144,6 +165,73 @@ impl LanguagePack for TypeScript {
             }
             _ => {}
         }
+    }
+}
+
+fn type_reference_imports(root: Node<'_>, source: &[u8]) -> BTreeMap<String, String> {
+    let mut imports = BTreeMap::<String, Vec<String>>::new();
+    let mut cursor = root.walk();
+    for item in root.named_children(&mut cursor) {
+        if item.kind() != "import_statement" {
+            continue;
+        }
+        let Some(module) = item
+            .child_by_field_name("source")
+            .and_then(|node| string_literal(node, source))
+        else {
+            continue;
+        };
+        visit(item, &mut |node| {
+            if node.kind() != "import_specifier" {
+                return;
+            }
+            let Some(local) = node
+                .child_by_field_name("alias")
+                .or_else(|| node.child_by_field_name("name"))
+            else {
+                return;
+            };
+            imports
+                .entry(text(local, source))
+                .or_default()
+                .push(module.clone());
+        });
+    }
+
+    let mut shadows = BTreeSet::new();
+    visit(root, &mut |node| {
+        if matches!(
+            node.kind(),
+            "class_declaration"
+                | "interface_declaration"
+                | "type_alias_declaration"
+                | "enum_declaration"
+                | "type_parameter"
+        ) && let Some(name) = node.child_by_field_name("name")
+        {
+            shadows.insert(text(name, source));
+        }
+    });
+    imports
+        .into_iter()
+        .filter_map(|(local, modules)| {
+            (!shadows.contains(&local) && modules.len() == 1)
+                .then(|| (local, modules.into_iter().next().unwrap()))
+        })
+        .collect()
+}
+
+fn string_literal(node: Node<'_>, source: &[u8]) -> Option<String> {
+    let value = text(node, source);
+    let value = value.get(1..value.len().checked_sub(1)?)?;
+    (!value.is_empty() && !value.contains(['\\', '?', '#'])).then(|| value.to_owned())
+}
+
+fn visit(node: Node<'_>, apply: &mut impl FnMut(Node<'_>)) {
+    apply(node);
+    let mut cursor = node.walk();
+    for child in node.named_children(&mut cursor) {
+        visit(child, apply);
     }
 }
 

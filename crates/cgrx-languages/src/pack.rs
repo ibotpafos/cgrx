@@ -23,6 +23,7 @@ impl From<Node<'_>> for Span {
 pub enum RelationKind {
     Calls,
     Imports,
+    References,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -133,6 +134,7 @@ impl Extraction {
                 match edge.relation {
                     RelationKind::Calls => b"calls",
                     RelationKind::Imports => b"imports",
+                    RelationKind::References => b"references",
                 },
                 &edge.target,
                 edge.span,

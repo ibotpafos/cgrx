@@ -34,6 +34,20 @@ impl LanguagePack for Rust {
                 context_span: Span::from(node),
                 provenance: Provenance::Syntax,
             }),
+            "scoped_identifier" | "scoped_type_identifier"
+                if outermost_scoped_reference(node) && !direct_call_function(node) =>
+            {
+                extraction.edges.push(Edge {
+                    relation: RelationKind::References,
+                    target: text(node, source),
+                    span: Span::from(node),
+                    context_span: evidence_span(
+                        node,
+                        &["type_item", "function_item", "field_declaration"],
+                    ),
+                    provenance: Provenance::Syntax,
+                });
+            }
             "call_expression" => {
                 let Some(function) = node.child_by_field_name("function") else {
                     return;
@@ -60,6 +74,24 @@ impl LanguagePack for Rust {
             _ => {}
         }
     }
+}
+
+fn outermost_scoped_reference(node: Node<'_>) -> bool {
+    !node.parent().is_some_and(|parent| {
+        matches!(
+            parent.kind(),
+            "scoped_identifier" | "scoped_type_identifier"
+        )
+    })
+}
+
+fn direct_call_function(node: Node<'_>) -> bool {
+    node.parent().is_some_and(|parent| {
+        parent.kind() == "call_expression"
+            && parent
+                .child_by_field_name("function")
+                .is_some_and(|function| function.id() == node.id())
+    })
 }
 
 fn static_call_target<'tree>(

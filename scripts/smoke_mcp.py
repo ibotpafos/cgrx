@@ -74,8 +74,11 @@ with tempfile.TemporaryDirectory(prefix="cgrx-smoke-") as directory:
     architecture = responses[7]["result"]["structuredContent"]
     assert architecture["packages"][0]["name"] == ".", responses[7]
     assert architecture["packages"][0]["symbols"] == 5, responses[7]
-    assert architecture["relation_kinds"] == ["CALLS", "IMPLEMENTS", "IMPORTS"], responses[7]
+    assert architecture["relation_kinds"] == ["CALLS", "IMPLEMENTS", "IMPORTS", "REFERENCES"], responses[7]
     assert architecture["import_resolution"] == {
+        "proven": 0, "external": 0, "out_of_scope": 0, "unresolved_local": 0
+    }, responses[7]
+    assert architecture["reference_resolution"] == {
         "proven": 0, "external": 0, "out_of_scope": 0, "unresolved_local": 0
     }, responses[7]
     assert set(architecture["snapshot"]) == {"repo_revision", "working_tree_digest", "graph_generation"}, responses[7]

@@ -82,6 +82,24 @@ fn classify_go(
             context_span: Span::from(node),
             provenance: Provenance::Syntax,
         }),
+        "selector_expression" | "qualified_type" if !is_direct_call_function(node) => {
+            if let Some(provenance) = import_qualified_reference(node, source, context)
+                && let Provenance::GoImport { import_path, .. } = provenance
+            {
+                extraction.edges.push(Edge {
+                    relation: RelationKind::References,
+                    target: String::from_utf8_lossy(&source[import_path.start..import_path.end])
+                        .trim_matches(['"', '`'])
+                        .to_owned(),
+                    span: Span::from(node),
+                    context_span: evidence_span(
+                        node,
+                        &["field_declaration", "parameter_declaration", "type_spec"],
+                    ),
+                    provenance,
+                });
+            }
+        }
         "call_expression" => {
             let Some(function) = node.child_by_field_name("function") else {
                 return;
@@ -151,6 +169,15 @@ fn classify_go(
     }
 }
 
+fn is_direct_call_function(node: Node<'_>) -> bool {
+    node.parent().is_some_and(|parent| {
+        parent.kind() == "call_expression"
+            && parent
+                .child_by_field_name("function")
+                .is_some_and(|function| function.id() == node.id())
+    })
+}
+
 fn import_qualified_selector(
     function: Node<'_>,
     source: &[u8],
@@ -159,13 +186,28 @@ fn import_qualified_selector(
     if function.kind() != "selector_expression" {
         return None;
     }
-    let operand = function.child_by_field_name("operand")?;
-    if operand.kind() != "identifier" {
+    let qualifier = text(function.child_by_field_name("operand")?, source);
+    let provenance = import_qualified_reference(function, source, context)?;
+    let field = function.child_by_field_name("field")?;
+    Some((format!("{qualifier}.{}", text(field, source)), provenance))
+}
+
+fn import_qualified_reference(
+    reference: Node<'_>,
+    source: &[u8],
+    context: &GoContext<'_>,
+) -> Option<Provenance> {
+    let qualifier_node = match reference.kind() {
+        "selector_expression" => reference.child_by_field_name("operand")?,
+        "qualified_type" => reference.child_by_field_name("package")?,
+        _ => return None,
+    };
+    if !matches!(qualifier_node.kind(), "identifier" | "package_identifier") {
         return None;
     }
-    let qualifier = text(operand, source);
+    let qualifier = text(qualifier_node, source);
     // A receiver/local binding may hide an import with the same spelling.
-    let mut ancestor = function.parent();
+    let mut ancestor = reference.parent();
     while let Some(node) = ancestor {
         if matches!(
             node.kind(),
@@ -183,14 +225,10 @@ fn import_qualified_selector(
     if paths.len() != 1 {
         return None;
     }
-    let field = function.child_by_field_name("field")?;
-    Some((
-        format!("{qualifier}.{}", text(field, source)),
-        Provenance::GoImport {
-            import_path: paths[0].0,
-            explicit_alias: paths[0].1,
-        },
-    ))
+    Some(Provenance::GoImport {
+        import_path: paths[0].0,
+        explicit_alias: paths[0].1,
+    })
 }
 
 fn root(mut node: Node<'_>) -> Node<'_> {
