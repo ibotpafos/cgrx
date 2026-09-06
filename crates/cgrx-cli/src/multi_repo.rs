@@ -1,5 +1,6 @@
 //! One MCP namespace with explicit, isolated local-worktree routing.
 use super::{RuntimeMcpBackend, managed_state_path, open_managed_runtime};
+use cgrx_capsule::Tokenizer;
 use cgrx_core::{Hash32, RepoSnapshot};
 use cgrx_mcp::{JsonRpcError, JsonRpcRequest, JsonRpcResponse, Server, model_visible_schema_json};
 use serde_json::{Value, json};
@@ -263,6 +264,7 @@ impl Router {
                         && let Ok(mut compact) = serde_json::from_str::<Value>(text)
                     {
                         decorate(&mut compact, &root, entry);
+                        refresh_payload_tokens(&mut compact);
                         item["text"] = json!(compact.to_string());
                     }
                 }
@@ -270,6 +272,20 @@ impl Router {
         }
         Ok(response)
     }
+}
+
+fn refresh_payload_tokens(value: &mut Value) {
+    let Some(object) = value.as_object_mut() else {
+        return;
+    };
+    if object.remove("payload_tokens").is_none() {
+        return;
+    }
+    let encoded = serde_json::to_string(value).expect("decorated compact result serializes");
+    let tokens = Tokenizer::o200k_base()
+        .expect("bundled o200k tokenizer")
+        .count(&encoded);
+    value["payload_tokens"] = json!(tokens);
 }
 
 impl Entry {

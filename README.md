@@ -15,6 +15,7 @@ explicitly on each request. No embedding service, hosted index or API key.
 - Task-sized context with token budgets and follow-up retrieval handles.
 - Coverage reporting: unresolved relationships remain unknown, not absent.
 - Candidate relationship-risk detection for working-tree changes.
+- Snapshot-bound refactoring candidates with hypothetical graph projections.
 - Incremental working-tree refresh, isolated repo identities and writer locks.
 - Rust, Go, TypeScript/JavaScript/TSX and Python parsing. Resolution depth varies
   by language; this does not replace a compiler or language server.
@@ -84,6 +85,7 @@ updates, uninstalling and troubleshooting.
 | orient | Budgeted task context |
 | expand | Follow-up context using a returned handle |
 | scan_risks | Candidate relationship risks, not confirmed defects |
+| suggest_refactors | Similar callable bodies and a hypothetical extract-helper graph delta |
 
 `search_graph` searches symbol names by default. Set `include_body: true` to
 also locate a term inside symbol bodies, and use `language` (`typescript`, `go`,
@@ -97,6 +99,14 @@ is capped at 500.
 resolver class. `depth` defaults to 1 and is capped at 4; transitive rows include
 `hop` and the immediate `via` target so every step remains inspectable. It fails
 on ambiguous symbols unless `path` disambiguates them.
+
+`suggest_refactors` compares callable bodies within one supported language and
+returns review candidates for extracting a shared helper. Each response is tied
+to the current revision, working-tree digest and graph generation; the managed
+runtime refreshes changed source before analysis. Existing entry points are
+preserved, projected edges are marked `hypothetical`, and no source or stored
+graph is changed. Empty or partial results apply only to the requested scope,
+threshold and reported budgets and coverage gaps.
 
 See [the Trace MCP reference comparison](docs/reference-trace-mcp.md) for the
 evidence behind this search slice and the capabilities that remain separate.
@@ -149,6 +159,7 @@ cargo test --locked --workspace
 cargo build --locked --release -p cgrx-cli
 python3 scripts/smoke_mcp.py target/release/cgrx
 python3 scripts/eval_relationships.py target/release/cgrx
+python3 scripts/eval_refactors.py target/release/cgrx
 ~~~
 
 The relationship evaluator copies the public synthetic fixture into a temporary
@@ -159,6 +170,11 @@ package/module competitors and a private Rust target. A changed resolver must
 keep the default 1.0 precision and recall thresholds; extend the fixture when
 adding a new relationship shape. Truncated traces fail instead of producing
 incomplete "exact" metrics.
+
+The refactoring evaluator runs the real stdio tool over seven frozen projects,
+rejects changed snapshots and truncated results, and records exact graph-node
+identities for manual labeling. It reports response-token cost immediately;
+precision remains `null` while any candidate is `unreviewed`.
 
 ## License
 

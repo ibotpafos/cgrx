@@ -85,7 +85,9 @@ recomputes candidates and projections from the refreshed graph.
 
 ## Candidate discovery
 
-Only current `SYNTAX` documents with non-empty, bounded bodies participate.
+Only current callable `SYNTAX` documents with non-empty, bounded bodies
+participate. Rust and Go declarations require a function body; TypeScript
+container declarations and non-callable Python declarations are excluded.
 Candidates are compared within the same language pack. TypeScript and TSX share
 one pack. Generated, excluded, stale, parser-partial and out-of-scope paths are
 reported or skipped through existing coverage rules.

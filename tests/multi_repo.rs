@@ -1,3 +1,4 @@
+use cgrx_capsule::Tokenizer;
 use serde_json::{Value, json};
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
@@ -134,7 +135,7 @@ fn multi_repo_lazy_schema_and_notifications() {
     );
     let r = m.rpc("tools/list", json!({}));
     let ts = r["result"]["tools"].as_array().unwrap();
-    assert_eq!(ts.len(), 10);
+    assert_eq!(ts.len(), 11);
     for t in ts {
         assert!(
             t["inputSchema"]["required"]
@@ -144,6 +145,33 @@ fn multi_repo_lazy_schema_and_notifications() {
         );
     }
     assert!(!d.0.join(".git").exists());
+}
+
+#[test]
+fn multi_repo_refactor_payload_tokens_cover_decorated_response() {
+    let d = Dir::new();
+    let repo = d.repo(
+        "refactors",
+        "fn save(value: i32) {}\nfn first(input: i32) -> i32 { let prepared = input + 1; save(prepared); prepared }\nfn second(value: i32) -> i32 { let output = value + 9; save(output); output }\n",
+    );
+    let mut m = Mcp::new(&d.0, "1", &d.0.join("log"));
+    let response = m.tool(
+        "suggest_refactors",
+        json!({"repo":repo,"scope":"main.rs","language":"rust"}),
+    );
+    assert!(response.get("result").is_some(), "{response}");
+    let mut visible: Value = serde_json::from_str(
+        response["result"]["content"][0]["text"]
+            .as_str()
+            .expect("visible text"),
+    )
+    .expect("visible JSON");
+    let reported = visible["payload_tokens"].as_u64().unwrap();
+    visible.as_object_mut().unwrap().remove("payload_tokens");
+    let expected = Tokenizer::o200k_base()
+        .unwrap()
+        .count(&serde_json::to_string(&visible).unwrap());
+    assert_eq!(reported, u64::from(expected));
 }
 #[test]
 fn multi_repo_invalid_flags() {

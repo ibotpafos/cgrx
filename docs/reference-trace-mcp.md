@@ -31,6 +31,12 @@ Usage-site tests cover direct calls in all five extensions, a two-hop reverse
 impact chain, and relation-aware deduplication between `CALLS` and `IMPLEMENTS`
 evidence.
 
+Trace's graph and quality-gate ideas also informed `suggest_refactors`. CGRX
+uses its already-live graph to combine normalized callable-body similarity with
+definitive outgoing relationships, then shows a snapshot-bound hypothetical
+extract-helper delta. It preserves both entry points, never writes source, and
+keeps candidates separate from proven graph facts.
+
 ## Transfer matrix
 
 The comparison below separates useful product patterns from headline feature
@@ -43,9 +49,9 @@ existing contracts before adding another always-visible tool.
 | --- | --- | --- |
 | Outline → exact symbol → impact workflow | `get_outline`, `get_code_snippet`, `find_usages` | Adopted; reverse impact now supports 1–4 proven hops. |
 | PR context benchmark with pinned SHAs and exact tokenizer counts | Frozen seven-project corpus exists, but current outline metric is bytes and does not measure review quality | Next measurement priority: reproduce both context arms with tokenizer counts and report truncation separately. |
-| Per-tool response-cost table and build-stamped results | MCP schema has a strict budget and compact rows; response cost is not yet measured per tool | Add a real stdio response-token benchmark before changing encodings or defaults. |
+| Per-tool response-cost table and build-stamped results | MCP schema has a strict budget; `suggest_refactors` reports tokenizer-counted compact payload cost | Extend the same measurement to every tool before changing encodings or defaults. |
 | Per-shape output encoding | Compact tabular model-visible rows already coexist with full structured JSON | Keep tool-specific shaping; do not adopt TOON globally because Trace measured regressions for nested rows. |
-| Minimal/standard/full tool presets | CGRX exposes 10 focused tools with a model-visible schema budget below 2,000 tokens | Keep the small default surface; add a preset only when optional tools justify its fixed cost. |
+| Minimal/standard/full tool presets | CGRX exposes 11 focused tools with a model-visible schema budget below 2,000 tokens | Keep the small default surface; add a preset only when optional tools justify its fixed cost. |
 | Budgeted context bundles and project maps | `orient` + revision-bound `expand` already return bounded task context | Evaluate recall and round trips against Trace's benchmark shape before adding aliases. |
 | Framework-aware routes, ORM links, DI, and tests | CGRX currently proves compiler-checked `CALLS`/`IMPLEMENTS` for TypeScript/TSX, Go, Python, and Rust | Build framework packs only with frozen positive/negative relation fixtures; do not count symbol-only extraction as relationship support. |
 | Calibrated quality gates | `scan_risks` returns candidates, evidence, candidate tests, and explicit gaps | Defer merge-blocking scores until thresholds are calibrated on labeled changes and false positives. |
@@ -54,10 +60,31 @@ existing contracts before adding another always-visible tool.
 | Multi-project daemon LRU/TTL and measured RSS attribution | Current work targets explicit repo-scoped runtimes | Measure resident cost per loaded project before introducing a daemon cache or eviction policy. |
 | Automated client hooks and prompt rewrites | Repository instructions already route discovery through CGRX | Do not patch client prompts from the core binary; keep setup changes explicit and reversible. |
 
-The immediate order is: response-token benchmark, PR context benchmark, then
-framework-aware edges chosen from the real seven-project corpus. Decision memory,
-quality gates, and daemon lifecycle follow only after their accuracy and resource
-budgets can be tested independently.
+The next measurement priorities are the PR context benchmark, response cost for
+the remaining tools, and manual review of the refactoring inventory. Framework
+edges, decision memory, quality gates, and daemon lifecycle follow only after
+their accuracy and resource budgets can be tested independently.
+
+## Seven-project refactoring inventory
+
+The release stdio server scanned seven frozen repositories with
+`min_score=760` and `limit=50`. It returned 37 callable pairs in deterministic
+repeated runs: 13 in Pyramid, 2 in itsdangerous, 1 in blinker, 1 in Vocal
+School, 20 in CGRX, and none in GD or VEX. The compact model-visible responses
+cost 2,506 o200k tokens in aggregate.
+
+All 37 rows remain `unreviewed`, so measured precision is intentionally `null`.
+Every project also reported at least one existing index coverage gap; the
+inventory therefore records `partial_projects=7` and does not treat zero results
+as proof that a repository has no duplication. The callable filter excludes
+container declarations and Rust/Go prototypes without bodies; exact path,
+symbol, node id and span keep overloaded or same-name methods distinct.
+
+Reproduce with:
+
+```sh
+python3 scripts/eval_refactors.py target/release/cgrx
+```
 
 ## Seven-project outline measurement
 

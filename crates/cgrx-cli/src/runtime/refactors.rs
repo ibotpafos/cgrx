@@ -182,6 +182,34 @@ fn is_structural_keyword(value: &str) -> bool {
     )
 }
 
+fn is_callable_candidate(language: &str, source: &str) -> bool {
+    let tokens = normalized_tokens(source);
+    match language {
+        "rust" => has_block_after_keyword(&tokens, "fn"),
+        "go" => has_block_after_keyword(&tokens, "func"),
+        "python" => tokens.iter().any(|token| token == "def"),
+        "typescript" => {
+            let declares_container = tokens
+                .iter()
+                .any(|token| matches!(token.as_str(), "class" | "enum" | "interface" | "type"));
+            tokens.iter().any(|token| token == "function")
+                || source.contains("=>")
+                || (!declares_container && source.contains('(') && source.contains('{'))
+        }
+        _ => false,
+    }
+}
+
+fn has_block_after_keyword(tokens: &[String], keyword: &str) -> bool {
+    tokens.iter().enumerate().any(|(index, token)| {
+        token == keyword
+            && tokens[index + 1..]
+                .iter()
+                .take_while(|token| token.as_str() != ";")
+                .any(|token| token == "{")
+    })
+}
+
 fn fingerprint_text(source: &str) -> RefactorFingerprint {
     let normalized = normalized_tokens(source);
     let shingles = normalized
@@ -280,8 +308,9 @@ impl Runtime {
             })
             .filter_map(|document| {
                 let document_language = pack_for_path(Path::new(&document.path))?.id();
-                (language.is_none_or(|expected| expected == document_language))
-                    .then_some((document, document_language))
+                (language.is_none_or(|expected| expected == document_language)
+                    && is_callable_candidate(document_language, &document.search_text))
+                .then_some((document, document_language))
             })
             .collect::<Vec<_>>();
         selected.sort_by_key(|(document, _)| {
@@ -622,8 +651,8 @@ fn projection_id(
 #[cfg(test)]
 mod tests {
     use super::{
-        Similarity, fingerprint_text, jaccard, normalized_tokens, rank_similarity,
-        reserve_evidence, similarity,
+        Similarity, fingerprint_text, is_callable_candidate, jaccard, normalized_tokens,
+        rank_similarity, reserve_evidence, similarity,
     };
 
     #[test]
@@ -683,5 +712,28 @@ mod tests {
         };
 
         assert!(rank_similarity(higher_total) > rank_similarity(lower_total));
+    }
+
+    #[test]
+    fn non_callable_declarations_are_not_refactor_candidates() {
+        for (language, source) in [
+            ("rust", "struct Entry { value: usize }"),
+            ("rust", "trait Entry { fn run(); }"),
+            ("go", "type Entry struct { Value int }"),
+            ("python", "class Entry:\n    pass"),
+            ("typescript", "interface Entry { value: number }"),
+            ("typescript", "@sealed class Entry { run() {} }"),
+        ] {
+            assert!(!is_callable_candidate(language, source), "{language}");
+        }
+        for (language, source) in [
+            ("rust", "fn run() {}"),
+            ("go", "func run() {}"),
+            ("python", "async def run():\n    pass"),
+            ("typescript", "constructor() {}"),
+            ("typescript", "const run = () => 1"),
+        ] {
+            assert!(is_callable_candidate(language, source), "{language}");
+        }
     }
 }

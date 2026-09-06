@@ -325,25 +325,25 @@ git commit -m "test: verify live refactor projections"
 - Consumes: release stdio `suggest_refactors` and the seven repositories in `contracts/real_tasks_v1.json`.
 - Produces: reproducible candidate inventory with response tokens and explicit review labels.
 
-- [ ] **Step 1: Add failing evaluator integrity tests**
+- [x] **Step 1: Add failing evaluator integrity tests**
 
 Test duplicate ids, unsafe paths, missing repositories, snapshot mismatch, truncation, unknown labels and malformed candidate rows. Accepted labels are `useful | false_positive | uncertain | unreviewed`.
 
-- [ ] **Step 2: Run evaluator tests and verify failure**
+- [x] **Step 2: Run evaluator tests and verify failure**
 
 Run: `python3 -m unittest scripts/test_eval_refactors.py`
 
 Expected: import or validation failure because the evaluator does not exist.
 
-- [ ] **Step 3: Implement the evaluator**
+- [x] **Step 3: Implement the evaluator**
 
 For each frozen repository, invoke the release MCP server with `min_score=760` and `limit=50`. Write deterministic JSON with project count, candidate count, reviewed count, label counts, the server-reported `payload_tokens`, nullable precision and rows. Do not calculate precision while any row is unreviewed; fail on truncation or snapshot mismatch.
 
-- [ ] **Step 4: Add contract and documentation**
+- [x] **Step 4: Add contract and documentation**
 
 Check in seven canonical repo ids/scopes with initial labels `unreviewed`. Document candidate semantics, hypothetical status, live refresh and absence of automatic edits. Add the tool to the README table without claiming measured usefulness.
 
-- [ ] **Step 5: Run evaluator and docs checks**
+- [x] **Step 5: Run evaluator and docs checks**
 
 ```sh
 python3 -m unittest scripts/test_eval_refactors.py
@@ -353,7 +353,7 @@ git diff --check
 
 Expected: PASS with seven projects and precision `null` until manual labels exist.
 
-- [ ] **Step 6: Commit evaluator and docs**
+- [x] **Step 6: Commit evaluator and docs**
 
 ```sh
 git add scripts/eval_refactors.py scripts/test_eval_refactors.py contracts/refactor_candidates_v1.json README.md docs/reference-trace-mcp.md
