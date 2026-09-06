@@ -62,7 +62,7 @@ fn git(root: &Path, args: &[&str]) {
 
 fn start_server() -> (TestDirectory, Server) {
     let repository = TestDirectory::new("visualizer-repository");
-    git(repository.path(), &["init", "-q"]);
+    git(repository.path(), &["init", "-q", "-b", "main"]);
     git(
         repository.path(),
         &["config", "user.email", "test@example.invalid"],
@@ -75,6 +75,23 @@ fn start_server() -> (TestDirectory, Server) {
     .expect("write source");
     git(repository.path(), &["add", "."]);
     git(repository.path(), &["commit", "-qm", "fixture"]);
+    git(repository.path(), &["checkout", "-qb", "feature"]);
+    fs::write(repository.path().join("feature.rs"), "fn feature() {}\n")
+        .expect("write feature source");
+    git(repository.path(), &["add", "."]);
+    git(repository.path(), &["commit", "-qm", "feature commit"]);
+    git(repository.path(), &["checkout", "-q", "main"]);
+    fs::write(
+        repository.path().join("main_only.rs"),
+        "fn main_only() {}\n",
+    )
+    .expect("write main source");
+    git(repository.path(), &["add", "."]);
+    git(repository.path(), &["commit", "-qm", "main commit"]);
+    git(
+        repository.path(),
+        &["merge", "-q", "--no-ff", "feature", "-m", "merge feature"],
+    );
 
     let mut child = Command::new(env!("CARGO_BIN_EXE_cgrx"))
         .args(["visualize", "--root"])
@@ -156,6 +173,7 @@ fn read_only_api_routes_share_the_current_snapshot() {
         "/api/refactors?scope=**&language=rust&min_score=760&limit=8",
         "/api/architecture?scope=**&package_depth=1&limit=20",
         "/api/snippet?symbol=selected&path=main.rs",
+        "/api/git-history?limit=200",
     ];
     let mut snapshots = Vec::new();
     for path in paths {
@@ -166,6 +184,43 @@ fn read_only_api_routes_share_the_current_snapshot() {
         snapshots.push(value["snapshot"].clone());
     }
     assert!(snapshots.windows(2).all(|pair| pair[0] == pair[1]));
+}
+
+#[test]
+fn serves_bounded_git_history_in_web_git_graph_protocol_shape() {
+    let (_repository, server) = start_server();
+    let response = request(&server, "GET", "/api/git-history?limit=10", true);
+    assert!(response.starts_with("HTTP/1.1 200"), "{response}");
+    let body = response.split_once("\r\n\r\n").expect("HTTP body").1;
+    let value: serde_json::Value = serde_json::from_str(body).expect("JSON response");
+    let commit = &value["commits"][0];
+    assert_eq!(commit["message"], "merge feature");
+    assert_eq!(commit["kind"], "commit");
+    assert_eq!(commit["oid"].as_str().expect("oid").len(), 40);
+    assert!(commit["parents"].is_array());
+    assert_eq!(commit["parents"].as_array().expect("parents").len(), 2);
+    assert_eq!(commit["author"]["name"], "CGRX Test");
+    assert_eq!(value["head"], commit["oid"]);
+    assert_eq!(value["hasMore"], false);
+    assert!(
+        value["refs"]
+            .as_array()
+            .is_some_and(|refs| !refs.is_empty())
+    );
+
+    let bounded = request(&server, "GET", "/api/git-history?limit=1", true);
+    let bounded_body = bounded.split_once("\r\n\r\n").expect("HTTP body").1;
+    let bounded_value: serde_json::Value =
+        serde_json::from_str(bounded_body).expect("JSON response");
+    assert_eq!(
+        bounded_value["commits"].as_array().expect("commits").len(),
+        1
+    );
+    assert_eq!(bounded_value["hasMore"], true);
+
+    let invalid = request(&server, "GET", "/api/git-history?limit=501", true);
+    assert!(invalid.starts_with("HTTP/1.1 400"), "{invalid}");
+    assert!(invalid.contains("cgrx.invalid_arguments"), "{invalid}");
 }
 
 #[test]
@@ -207,6 +262,16 @@ fn serves_embedded_assets_with_security_headers() {
         ("/assets/styles.css", "text/css", "--surface"),
         ("/assets/layout.js", "text/javascript", "layoutGraph"),
         ("/assets/state.js", "text/javascript", "createState"),
+        (
+            "/assets/git-history.js",
+            "text/javascript",
+            "pageForGitGraph",
+        ),
+        (
+            "/assets/vendor/web-git-graph.js",
+            "text/javascript",
+            "web-git-graph",
+        ),
         ("/assets/app.js", "text/javascript", "loadStatus"),
     ] {
         let response = request(&server, "GET", path, false);

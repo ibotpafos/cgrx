@@ -19,8 +19,8 @@ test("state keeps selection and camera for the same graph identity", () => {
   assert.equal(state.requestGeneration, 2);
 });
 
-test("state exposes current architecture changes preview and compare modes", () => {
-  for (const mode of ["current", "architecture", "changes", "preview", "compare"]) {
+test("state exposes code and Git history modes", () => {
+  for (const mode of ["current", "architecture", "changes", "preview", "compare", "history"]) {
     assert.equal(reduce(createState(snapshot), { type: "mode", mode }).mode, mode);
   }
   assert.throws(() => reduce(createState(snapshot), { type: "mode", mode: "unknown" }));

@@ -52,6 +52,7 @@
           <button data-mode="changes">Changes</button>
           <button data-mode="preview">Preview</button>
           <button data-mode="compare">Compare</button>
+          <button data-mode="history">Git history</button>
         </div>
         <div class="view-actions">
           <button id="zoom-out" aria-label="Zoom out">−</button>
@@ -68,6 +69,9 @@
           <desc id="graph-description">A focused code graph arranged from callers through selected entry points to callees, with tests below.</desc>
           <g id="camera-layer"></g>
         </svg>
+      </div>
+      <div id="git-history-panel" class="git-history-panel" hidden>
+        <web-git-graph id="git-history" aria-label="Git commit history"></web-git-graph>
       </div>
       <footer class="legend" aria-label="Evidence legend">
         <span><i class="key key--proven">✓</i> proven now</span>

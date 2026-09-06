@@ -24,7 +24,13 @@ jobs:
       - name: Verify Node.js 26
         run: node --version | grep -E '^v26\.'
       - name: Graph explorer frontend contracts
-        run: npm test
+        run: |
+          npm ci
+          npm run typecheck:web
+          npm run build:web-vendor
+          git diff --exit-code -- crates/cgrx-cli/web/vendor/
+          npm run verify:web-csp
+          npm test
       - name: Installer offline contracts
         run: python3 -m unittest discover -s scripts -p test_install.py
       - name: Corpus schema and supported-language matrix
