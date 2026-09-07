@@ -5,7 +5,9 @@ mod refactors;
 mod risks;
 mod ts_config;
 pub use graph_view::{GraphDirection, GraphViewRequest};
-pub use observations::{ImportRuntimeEvidenceReport, RuntimeEvidenceFormat};
+pub use observations::{
+    ImportRuntimeEvidenceReport, RuntimeEvidenceFormat, RuntimeInsight, RuntimeInsightsReport,
+};
 pub use risks::RiskBaseline;
 use ts_config::TsResolutionConfig;
 

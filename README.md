@@ -120,6 +120,7 @@ discarded.
 cgrx observe import --root /absolute/path/to/repository \
   --input traces.json --format auto --json
 cgrx observe status --root /absolute/path/to/repository --json
+cgrx observe insights --root /absolute/path/to/repository --limit 20 --json
 cgrx observe prune --root /absolute/path/to/repository \
   --before-unix-nanos 1788738444000000000 --dry-run --json
 ~~~
@@ -128,6 +129,11 @@ Use `--input -` for stdin. Pruning requires exactly one of `--dry-run` or
 `--apply`. Imports fail closed when their exact Git revision or source hashes do
 not match the active graph generation. Runtime evidence is stored separately
 from static arcs and does not change normal static traversal results.
+
+`observe insights` deterministically ranks observed hot paths, static/runtime
+divergence and caller blast radius. Every row includes the formula inputs,
+signals, `refactor_priority`, and `next_action`; it uses no LLM, prompt,
+embedding model, model weights, or external AI API.
 
 The workspace has six modes:
 

@@ -76,7 +76,7 @@ fn run(args: Vec<String>) -> Result<(), String> {
 
 fn observe(args: &[String]) -> Result<(), String> {
     let Some(action) = args.first().map(String::as_str) else {
-        return Err("observe requires import, status, or prune".to_owned());
+        return Err("observe requires import, status, insights, or prune".to_owned());
     };
     let rest = &args[1..];
     if !rest.iter().any(|argument| argument == "--json") {
@@ -121,6 +121,25 @@ fn observe(args: &[String]) -> Result<(), String> {
                         optional_flag(rest, "--revision"),
                         optional_flag(rest, "--environment"),
                     )
+                    .map_err(|error| error.to_string())?,
+            )
+            .map_err(|error| error.to_string())?
+        }
+        "insights" => {
+            validate_flags(rest, &["--root", "--limit", "--json"])?;
+            let limit = optional_flag(rest, "--limit")
+                .unwrap_or("20")
+                .parse::<usize>()
+                .map_err(|_| "observe insights limit must be an integer".to_owned())?;
+            let scope = Scope {
+                include: Vec::new(),
+                exclude: Vec::new(),
+                relation_kinds: vec![RelationKind::Calls],
+                max_depth: 4,
+            };
+            serde_json::to_value(
+                runtime
+                    .runtime_insights(&scope, limit)
                     .map_err(|error| error.to_string())?,
             )
             .map_err(|error| error.to_string())?

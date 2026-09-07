@@ -97,6 +97,21 @@ fn observe_import_status_and_prune_are_machine_readable() {
 
     let (code, stdout, _) = invoke(
         &fixture.0,
+        &["observe", "insights", "--limit", "10", "--json"],
+        b"",
+    );
+    assert_eq!(code, 0);
+    let insights: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(insights["llm_used"], false);
+    assert_eq!(insights["algorithm"], "runtime_priority_v1");
+    assert!(
+        insights["rows"]
+            .as_array()
+            .is_some_and(|rows| !rows.is_empty())
+    );
+
+    let (code, stdout, _) = invoke(
+        &fixture.0,
         &[
             "observe",
             "prune",

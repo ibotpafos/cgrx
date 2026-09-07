@@ -30,6 +30,34 @@ pub struct ImportRuntimeEvidenceReport {
     pub gaps: Vec<ObservationGap>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct RuntimeInsight {
+    pub node_id: u64,
+    pub symbol: String,
+    pub path: String,
+    pub observed_count: u64,
+    pub observed_callers: usize,
+    pub observed_callees: usize,
+    pub static_callers: usize,
+    pub static_callees: usize,
+    pub divergent_edges: usize,
+    pub runtime_blast_radius: usize,
+    pub refactor_priority: u16,
+    pub signals: Vec<String>,
+    pub next_action: String,
+    pub formula: Value,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct RuntimeInsightsReport {
+    pub snapshot: cgrx_core::RepoSnapshot,
+    pub rows: Vec<RuntimeInsight>,
+    pub total: usize,
+    pub truncated: bool,
+    pub algorithm: &'static str,
+    pub llm_used: bool,
+}
+
 #[derive(Deserialize)]
 struct NdjsonObservation {
     schema: String,
@@ -181,6 +209,9 @@ impl Runtime {
     }
 
     pub fn runtime_evidence_status(&self) -> Result<ObservationStatus, RuntimeError> {
+        if self.load_current_observations()?.is_none() {
+            return Ok(ObservationStatus::default());
+        }
         ObservationStore::open(&self.state_root)
             .and_then(|store| store.status(Some(&self.stored.snapshot.repo_revision)))
             .map_err(|error| RuntimeError::new("cgrx.runtime_evidence_store", error.to_string()))
@@ -194,6 +225,144 @@ impl Runtime {
         ObservationStore::open(&self.state_root)
             .and_then(|store| store.prune_before(before_unix_nanos, dry_run))
             .map_err(|error| RuntimeError::new("cgrx.runtime_evidence_store", error.to_string()))
+    }
+
+    pub fn runtime_insights(
+        &self,
+        scope: &Scope,
+        limit: usize,
+    ) -> Result<RuntimeInsightsReport, RuntimeError> {
+        if !(1..=100).contains(&limit) {
+            return Err(RuntimeError::new(
+                "cgrx.invalid_arguments",
+                "runtime insight limit must be 1..100",
+            ));
+        }
+        let mut scoped = ScopedQuery::new(&self.stored, scope, path_in_scope);
+        let documents = self
+            .stored
+            .documents
+            .iter()
+            .filter(|document| {
+                document.provenance == "SYNTAX" && scoped.contains_path(&document.path)
+            })
+            .map(|document| (document.node_id, document))
+            .collect::<BTreeMap<_, _>>();
+        let static_edges = scoped
+            .definitive_arcs(&self.stored)
+            .into_iter()
+            .map(|arc| (arc.source, arc.target))
+            .collect::<BTreeSet<_>>();
+        let snapshot = self.load_current_observations()?;
+        let observed_edges = snapshot.map_or_else(Vec::new, |snapshot| snapshot.edges);
+        let mut rows = Vec::new();
+        for (&node_id, document) in &documents {
+            let incoming = observed_edges
+                .iter()
+                .filter(|edge| edge.target == node_id)
+                .collect::<Vec<_>>();
+            let outgoing = observed_edges
+                .iter()
+                .filter(|edge| edge.source == node_id)
+                .collect::<Vec<_>>();
+            if incoming.is_empty() && outgoing.is_empty() {
+                continue;
+            }
+            let observed_count = incoming
+                .iter()
+                .chain(&outgoing)
+                .fold(0_u64, |sum, edge| sum.saturating_add(edge.count));
+            let static_callers = static_edges
+                .iter()
+                .filter(|(_, target)| *target == node_id)
+                .count();
+            let static_callees = static_edges
+                .iter()
+                .filter(|(source, _)| *source == node_id)
+                .count();
+            let divergent_edges = incoming
+                .iter()
+                .chain(&outgoing)
+                .filter(|edge| !static_edges.contains(&(edge.source, edge.target)))
+                .count();
+            let runtime_blast_radius = caller_blast_radius(node_id, &static_edges, &documents, 4);
+            let count_score = observed_count.min(100).saturating_mul(4) as usize;
+            let divergence_score = divergent_edges.saturating_mul(120);
+            let blast_score = runtime_blast_radius.saturating_mul(30);
+            let static_fan_score = static_callers
+                .saturating_add(static_callees)
+                .saturating_mul(10);
+            let priority = count_score
+                .saturating_add(divergence_score)
+                .saturating_add(blast_score)
+                .saturating_add(static_fan_score)
+                .min(1000) as u16;
+            let mut signals = Vec::new();
+            if observed_count >= 10 {
+                signals.push("dynamic_hot_path".to_owned());
+            }
+            if divergent_edges > 0 {
+                signals.push("static_runtime_divergence".to_owned());
+            }
+            if runtime_blast_radius >= 3 {
+                signals.push("high_runtime_blast_radius".to_owned());
+            }
+            if priority >= 300 {
+                signals.push("refactor_priority".to_owned());
+            }
+            let next_action = if divergent_edges > 0 {
+                "inspect_dynamic_dispatch"
+            } else if observed_count >= 10 && runtime_blast_radius >= 3 {
+                "protect_with_targeted_tests"
+            } else if observed_count >= 10 {
+                "profile_hot_path"
+            } else if priority >= 300 {
+                "review_refactor_candidate"
+            } else {
+                "observe_more_runtime_paths"
+            };
+            rows.push(RuntimeInsight {
+                node_id,
+                symbol: document.qualified_name.clone(),
+                path: document.path.clone(),
+                observed_count,
+                observed_callers: incoming.len(),
+                observed_callees: outgoing.len(),
+                static_callers,
+                static_callees,
+                divergent_edges,
+                runtime_blast_radius,
+                refactor_priority: priority,
+                signals,
+                next_action: next_action.to_owned(),
+                formula: json!({
+                    "version":"runtime_priority_v1",
+                    "count_score":count_score,
+                    "divergence_score":divergence_score,
+                    "blast_radius_score":blast_score,
+                    "static_fan_score":static_fan_score,
+                    "cap":1000,
+                }),
+            });
+        }
+        rows.sort_by_key(|row| {
+            (
+                std::cmp::Reverse(row.refactor_priority),
+                row.path.clone(),
+                row.symbol.clone(),
+                row.node_id,
+            )
+        });
+        let total = rows.len();
+        rows.truncate(limit);
+        Ok(RuntimeInsightsReport {
+            snapshot: self.stored.snapshot.clone(),
+            rows,
+            total,
+            truncated: total > limit,
+            algorithm: "runtime_priority_v1",
+            llm_used: false,
+        })
     }
 
     pub fn find_usages_with_evidence(
@@ -274,9 +443,7 @@ impl Runtime {
             .map(|document| (document.node_id, document))
             .collect();
         let root = unique_root(by_id.values().copied(), symbol, path)?;
-        let observed = ObservationStore::open(&self.state_root)
-            .and_then(|store| store.load(&self.stored.snapshot.repo_revision))
-            .map_err(|error| RuntimeError::new("cgrx.runtime_evidence_store", error.to_string()))?;
+        let observed = self.load_current_observations()?;
 
         let mut edges = BTreeMap::<(u64, u64), EdgeMetadata>::new();
         if evidence == EvidenceSelector::All {
@@ -459,6 +626,15 @@ impl Runtime {
         Ok(classify_candidates(candidates, ResolutionKind::UniqueName)
             .unwrap_or(Resolution::Missing))
     }
+
+    fn load_current_observations(
+        &self,
+    ) -> Result<Option<cgrx_store::ObservationSnapshot>, RuntimeError> {
+        let snapshot = ObservationStore::open(&self.state_root)
+            .and_then(|store| store.load(&self.stored.snapshot.repo_revision))
+            .map_err(|error| RuntimeError::new("cgrx.runtime_evidence_store", error.to_string()))?;
+        Ok(snapshot.filter(|snapshot| snapshot.snapshot == self.stored.snapshot))
+    }
 }
 
 #[derive(Clone, Copy, Default)]
@@ -501,6 +677,34 @@ fn runtime_gap(code: &str, endpoint: &RuntimeEndpoint) -> ObservationGap {
         endpoint: endpoint.clone(),
         candidates: Vec::new(),
     }
+}
+
+fn caller_blast_radius(
+    root: u64,
+    edges: &BTreeSet<(u64, u64)>,
+    documents: &BTreeMap<u64, &StoredDocument>,
+    depth: u8,
+) -> usize {
+    let mut visited = BTreeSet::from([root]);
+    let mut frontier = vec![root];
+    for _ in 0..depth {
+        let mut next = Vec::new();
+        for target in &frontier {
+            for (source, _) in edges
+                .iter()
+                .filter(|(_, edge_target)| edge_target == target)
+            {
+                if documents.contains_key(source) && visited.insert(*source) {
+                    next.push(*source);
+                }
+            }
+        }
+        if next.is_empty() {
+            break;
+        }
+        frontier = next;
+    }
+    visited.len().saturating_sub(1)
 }
 
 fn unique_root<'a>(

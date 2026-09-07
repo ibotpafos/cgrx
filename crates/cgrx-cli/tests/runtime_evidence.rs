@@ -298,6 +298,71 @@ fn otlp_parent_child_import_discards_sensitive_payloads_and_raw_ids() {
     }
 }
 
+#[test]
+fn deterministic_runtime_insights_explain_priority_without_an_llm() {
+    let (repository, state, revision) = fixture();
+    let runtime = Runtime::open(state.path()).unwrap();
+    let input = serde_json::json!({
+        "schema":"cgrx.runtime.v1", "repo_revision":revision, "environment":"test",
+        "observed_at_unix_nanos":"42", "count":20,
+        "caller":{"function":"tsCaller","file":"calls.ts","line":2},
+        "callee":{"function":"rust_target","file":"calls.rs","line":1}
+    })
+    .to_string();
+    runtime
+        .import_runtime_evidence(
+            repository.path(),
+            input.as_bytes(),
+            RuntimeEvidenceFormat::Ndjson,
+            None,
+            None,
+        )
+        .unwrap();
+    let report = runtime.runtime_insights(&scope(), 10).unwrap();
+    assert!(!report.llm_used);
+    assert_eq!(report.algorithm, "runtime_priority_v1");
+    let target = report
+        .rows
+        .iter()
+        .find(|row| row.symbol == "rust_target" && row.path == "calls.rs")
+        .unwrap();
+    assert_eq!(target.observed_count, 20);
+    assert_eq!(target.divergent_edges, 1);
+    assert!(target.signals.contains(&"dynamic_hot_path".to_owned()));
+    assert!(
+        target
+            .signals
+            .contains(&"static_runtime_divergence".to_owned())
+    );
+    assert_eq!(target.next_action, "inspect_dynamic_dispatch");
+    assert_eq!(target.formula["version"], "runtime_priority_v1");
+    assert_eq!(target.refactor_priority, 240);
+}
+
+#[test]
+fn changed_graph_snapshot_never_reuses_stale_runtime_ranking() {
+    let (repository, state, revision) = fixture();
+    let mut runtime = Runtime::open(state.path()).unwrap();
+    runtime
+        .import_runtime_evidence(
+            repository.path(),
+            &ndjson(&revision),
+            RuntimeEvidenceFormat::Ndjson,
+            None,
+            None,
+        )
+        .unwrap();
+    fs::write(
+        repository.path().join("calls.rs"),
+        "fn rust_target() {}\nfn rust_caller() { rust_target(); }\n\n",
+    )
+    .unwrap();
+    assert!(runtime.refresh(repository.path()).unwrap());
+    let report = runtime.runtime_insights(&scope(), 10).unwrap();
+    assert_eq!(report.total, 0);
+    assert_eq!(runtime.runtime_evidence_status().unwrap().edges, 0);
+}
+
 fn collect_bytes(path: &Path, output: &mut Vec<u8>) {
     for entry in fs::read_dir(path).unwrap() {
         let path = entry.unwrap().path();
