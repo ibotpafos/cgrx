@@ -52,6 +52,16 @@ pub enum Provenance {
         field_type: Span,
         target: Span,
     },
+    /// Local binding assigned exactly once from a direct constructor call.
+    /// Runtime resolution proves the constructor result and method receiver
+    /// types match before this becomes a graph edge.
+    GoLocalConstructor {
+        package: Span,
+        caller: Span,
+        binding: Span,
+        constructor: Span,
+        target: Span,
+    },
     /// Same-file lexical binding, with exact target and enclosing caller names.
     TsLexical {
         target: Span,
@@ -156,6 +166,24 @@ impl Extraction {
                     (b"go_field_name", field),
                     (b"go_field_type", field_type),
                     (b"go_field_target", target),
+                ] {
+                    update(&mut hasher, kind, "", span);
+                }
+            }
+            if let Provenance::GoLocalConstructor {
+                package,
+                caller,
+                binding,
+                constructor,
+                target,
+            } = edge.provenance
+            {
+                for (kind, span) in [
+                    (b"go_local_package".as_slice(), package),
+                    (b"go_local_caller", caller),
+                    (b"go_local_binding", binding),
+                    (b"go_local_constructor", constructor),
+                    (b"go_local_target", target),
                 ] {
                     update(&mut hasher, kind, "", span);
                 }

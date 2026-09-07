@@ -99,6 +99,78 @@ fn extraction(source: &str) -> cgrx_languages::Extraction {
         .extract(path, source.as_bytes())
         .unwrap()
 }
+
+fn trace_named(runtime: &Runtime, symbol: &str, path: &str) -> Value {
+    runtime
+        .trace_path(
+            symbol,
+            Some(path),
+            "callees",
+            1,
+            &Scope {
+                include: vec![],
+                exclude: vec![],
+                relation_kinds: vec![RelationKind::Calls],
+                max_depth: 1,
+            },
+            20,
+        )
+        .unwrap()
+}
+
+#[test]
+fn constructor_bound_local_receiver_resolves_across_go_files() {
+    let fixture = Fixture::new(
+        "package graph\nfunc TestAddNode() { engine := NewEngine(); engine.AddNode() }",
+    );
+    fs::write(
+        fixture.root().join("engine.go"),
+        "package graph\ntype Engine struct{}\nfunc NewEngine() *Engine { return &Engine{} }\nfunc (e *Engine) AddNode() {}\n",
+    )
+    .unwrap();
+    let mut runtime = fixture.runtime();
+    assert!(runtime.refresh(&fixture.root()).unwrap());
+    let result = trace_named(&runtime, "TestAddNode", "main.go");
+    assert_eq!(result["total"], 2, "{result}");
+    assert!(
+        result["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|node| { node["path"] == "engine.go" && node["symbol"] == "AddNode" })
+    );
+}
+
+#[test]
+fn constructor_result_type_must_match_the_method_receiver() {
+    let fixture =
+        Fixture::new("package graph\nfunc Caller() { engine := NewEngine(); engine.AddNode() }");
+    fs::write(
+        fixture.root().join("engine.go"),
+        "package graph\ntype Engine struct{}\ntype Other struct{}\nfunc NewEngine() *Other { return &Other{} }\nfunc (e *Engine) AddNode() {}\n",
+    )
+    .unwrap();
+    let mut runtime = fixture.runtime();
+    assert!(runtime.refresh(&fixture.root()).unwrap());
+    let result = trace_named(&runtime, "Caller", "main.go");
+    assert!(
+        !result["nodes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|node| node["symbol"] == "AddNode"),
+        "{result}"
+    );
+    assert!(
+        runtime
+            .check_index_coverage(&["main.go".to_owned()], &[], 0, 20)
+            .unwrap()["paths"][0]["gaps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|gap| gap["code"] == "DYNAMIC_DISPATCH")
+    );
+}
 #[test]
 fn explicit_embedded_methods_have_exact_target_and_callsite() {
     for case in cases().into_iter().filter(|c| c["positive"] == true) {
