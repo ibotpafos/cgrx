@@ -54,8 +54,19 @@ impl LanguagePack for Java {
 }
 
 #[derive(Default)]
+struct ClassInfo {
+    concrete: bool,
+    has_super: bool,
+    subclassed: bool,
+}
+
+#[derive(Default)]
 struct JavaFacts {
     methods: BTreeMap<String, usize>,
+    method_owners: BTreeMap<String, Vec<String>>,
+    classes: BTreeMap<String, ClassInfo>,
+    super_names: BTreeSet<String>,
+    bindings: BTreeMap<String, Vec<String>>,
     imported_types: BTreeMap<String, Vec<String>>,
     local_types: BTreeSet<String>,
     static_imports: BTreeSet<String>,
@@ -78,7 +89,72 @@ impl JavaFacts {
             if node.kind() == "method_declaration"
                 && let Some(name) = node.child_by_field_name("name")
             {
-                *facts.methods.entry(text(name, source)).or_default() += 1;
+                let target = text(name, source);
+                *facts.methods.entry(target.clone()).or_default() += 1;
+                if let Some(owner) = enclosing_type_name(node, source) {
+                    let owners = facts.method_owners.entry(target).or_default();
+                    if !owners.contains(&owner) {
+                        owners.push(owner);
+                    }
+                }
+            }
+            if matches!(
+                node.kind(),
+                "class_declaration"
+                    | "interface_declaration"
+                    | "enum_declaration"
+                    | "record_declaration"
+            ) && let Some(name) = node.child_by_field_name("name")
+            {
+                let class_name = text(name, source);
+                let entry = facts.classes.entry(class_name).or_default();
+                entry.concrete = node.kind() == "class_declaration";
+                if node.kind() == "class_declaration" {
+                    if let Some(superclass) = node.child_by_field_name("superclass") {
+                        entry.has_super = true;
+                        let mut cursor = superclass.walk();
+                        let inner = superclass
+                            .named_children(&mut cursor)
+                            .next()
+                            .map(|child| text(child, source))
+                            .unwrap_or_else(|| text(superclass, source));
+                        facts.super_names.insert(simple_type_name(&inner));
+                    }
+                    if node.child_by_field_name("interfaces").is_some() {
+                        entry.has_super = true;
+                    }
+                }
+            }
+            if matches!(
+                node.kind(),
+                "field_declaration" | "local_variable_declaration"
+            ) && let Some(ty) = node.child_by_field_name("type")
+            {
+                let declared = simple_type_name(&text(ty, source));
+                let mut cursor = node.walk();
+                for child in node.named_children(&mut cursor) {
+                    if child.kind() == "variable_declarator"
+                        && let Some(name) = child.child_by_field_name("name")
+                    {
+                        facts
+                            .bindings
+                            .entry(text(name, source))
+                            .or_default()
+                            .push(declared.clone());
+                    }
+                }
+            }
+            if node.kind() == "formal_parameter"
+                && let (Some(ty), Some(name)) = (
+                    node.child_by_field_name("type"),
+                    node.child_by_field_name("name"),
+                )
+            {
+                facts
+                    .bindings
+                    .entry(text(name, source))
+                    .or_default()
+                    .push(simple_type_name(&text(ty, source)));
             }
             if node.kind() == "import_declaration" {
                 let value = text(node, source);
@@ -110,6 +186,11 @@ impl JavaFacts {
                 }
             }
         });
+        for name in &facts.super_names {
+            if let Some(info) = facts.classes.get_mut(name) {
+                info.subclassed = true;
+            }
+        }
         facts
     }
 }
@@ -163,7 +244,9 @@ fn classify(node: Node<'_>, source: &[u8], extraction: &mut Extraction, facts: &
                 && facts.methods.get(&target) == Some(&1)
                 && !facts.static_imports.contains(&target)
                 && enclosing_concrete_class_without_inheritance(node);
-            if direct {
+            let receiver = node.child_by_field_name("object").is_some()
+                && receiver_target(node, source, facts).as_deref() == Some(target.as_str());
+            if direct || receiver {
                 extraction.edges.push(Edge {
                     relation: RelationKind::Calls,
                     target,
@@ -204,6 +287,96 @@ fn enclosing_concrete_class_without_inheritance(mut node: Node<'_>) -> bool {
         node = parent;
     }
     false
+}
+
+/// Prove `receiver.method()` when the receiver has one statically declared
+/// local type: `this`, a singly-typed local/parameter/field name, or
+/// `this.field`. The type must be a concrete class defined in this file with
+/// no superclass, no interfaces, no local subclasses and no overloads of the
+/// target method. Imported types, unbound names and chains remain gaps.
+fn receiver_target(node: Node<'_>, source: &[u8], facts: &JavaFacts) -> Option<String> {
+    let name = node.child_by_field_name("name")?;
+    let target = text(name, source);
+    if facts.static_imports.contains(&target) {
+        return None;
+    }
+    let object = node.child_by_field_name("object")?;
+    let class_name = match object.kind() {
+        "this" => enclosing_type_name(node, source)
+            .filter(|owner| facts.classes.get(owner).is_some_and(|info| info.concrete))?,
+        "identifier" => single_binding(&text(object, source), facts)?,
+        "field_access" => {
+            let operand = object.child_by_field_name("object")?;
+            if operand.kind() != "this" {
+                return None;
+            }
+            single_binding(&text(object.child_by_field_name("field")?, source), facts)?
+        }
+        _ => return None,
+    };
+    let info = facts.classes.get(&class_name)?;
+    if !info.concrete || info.has_super || info.subclassed {
+        return None;
+    }
+    if facts.methods.get(&target) != Some(&1) {
+        return None;
+    }
+    match facts.method_owners.get(&target) {
+        Some(owners) if owners.as_slice() == [class_name] => Some(target),
+        _ => None,
+    }
+}
+
+/// Innermost enclosing type name for methods, or the enclosing concrete
+/// class name for `this` receivers. Interfaces, enums and records qualify as
+/// owners for bookkeeping but never as `this` targets.
+fn enclosing_type_name(mut node: Node<'_>, source: &[u8]) -> Option<String> {
+    while let Some(parent) = node.parent() {
+        if matches!(
+            parent.kind(),
+            "class_declaration"
+                | "interface_declaration"
+                | "enum_declaration"
+                | "record_declaration"
+        ) && let Some(name) = parent.child_by_field_name("name")
+        {
+            return Some(text(name, source));
+        }
+        node = parent;
+    }
+    None
+}
+
+/// Single declared type for a variable name, or `None` when the name is
+/// undeclared, shadowed by a method, or declared with two distinct types.
+fn single_binding(name: &str, facts: &JavaFacts) -> Option<String> {
+    if facts.methods.contains_key(name) {
+        return None;
+    }
+    let mut distinct: Vec<&String> = vec![];
+    for declared in facts.bindings.get(name)? {
+        if !distinct.contains(&declared) {
+            distinct.push(declared);
+        }
+    }
+    let [single] = distinct.as_slice() else {
+        return None;
+    };
+    Some((*single).clone())
+}
+
+/// Reduce a declared type to its simple name: generics, qualification and
+/// array suffixes cannot change which local class is named.
+fn simple_type_name(declared: &str) -> String {
+    let without_generics = declared.split('<').next().unwrap_or_default();
+    without_generics
+        .rsplit('.')
+        .next()
+        .unwrap_or_default()
+        .trim()
+        .trim_end_matches("[]")
+        .trim()
+        .to_owned()
 }
 
 fn has_ancestor(mut node: Node<'_>, kind: &str) -> bool {

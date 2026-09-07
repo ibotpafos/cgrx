@@ -285,8 +285,12 @@ threshold and reported budgets and coverage gaps.
 Java (`.java`) uses a grammar-backed parser for classes, interfaces, enums,
 records, constructors, methods and imports. CGRX proves an unqualified method
 call only when the target is unique in the file, belongs to a concrete class
-without inheritance, and is not shadowed by a static import. Receiver calls,
-overloads, inherited calls and constructors remain explicit dispatch gaps. This
+without inheritance, and is not shadowed by a static import. The same proof
+covers `this` receivers and singly-typed local, parameter and field receivers
+(including `this.field`) when the declared type is a concrete class defined in
+the same file with no superclass, no interfaces, no local subclasses and no
+overloads of the target. Foreign or unbound receivers, overloads, inherited
+calls and constructors remain explicit dispatch gaps. This
 conservative slice participates in graph traversal, usages, runtime overlays,
 refactor futures and the visualizer without an LSP or model runtime.
 

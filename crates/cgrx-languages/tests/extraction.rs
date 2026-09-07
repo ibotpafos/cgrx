@@ -222,6 +222,104 @@ fn java_overloads_inheritance_and_static_imports_fail_closed() {
 }
 
 #[test]
+fn java_this_and_typed_receivers_resolve_to_the_defining_class() {
+    let source = r#"final class Engine {
+    int add() { return this.bump(); }
+    int bump() { return 1; }
+    int run() { Engine engine = new Engine(); return engine.add(); }
+    int viaParam(Engine engine) { return engine.add(); }
+}
+"#;
+    let extraction = pack_for_path(Path::new("Engine.java"))
+        .unwrap()
+        .extract(Path::new("Engine.java"), source.as_bytes())
+        .unwrap();
+    let mut calls: Vec<&str> = extraction
+        .edges
+        .iter()
+        .filter(|edge| edge.relation == RelationKind::Calls)
+        .map(|edge| edge.target.as_str())
+        .collect();
+    calls.sort_unstable();
+    assert_eq!(calls, ["add", "add", "bump"]);
+    assert!(
+        !extraction.unresolved.is_empty()
+            && extraction
+                .unresolved
+                .iter()
+                .all(|gap| { gap.kind == UnresolvedKind::Dispatch && gap.text == "new Engine()" }),
+        "{:?}",
+        extraction.unresolved
+    );
+}
+
+#[test]
+fn java_this_field_receivers_resolve() {
+    let source = r#"final class Service {
+    Engine engine = new Engine();
+    int run() { return this.engine.add(); }
+}
+final class Engine {
+    int add() { return 1; }
+}
+"#;
+    let extraction = pack_for_path(Path::new("Service.java"))
+        .unwrap()
+        .extract(Path::new("Service.java"), source.as_bytes())
+        .unwrap();
+    let calls: Vec<&str> = extraction
+        .edges
+        .iter()
+        .filter(|edge| edge.relation == RelationKind::Calls)
+        .map(|edge| edge.target.as_str())
+        .collect();
+    assert_eq!(calls, ["add"]);
+}
+
+#[test]
+fn java_receiver_resolution_fails_closed() {
+    for source in [
+        // Subclass in the same file can override the method.
+        "class Engine { int add(){return 1;} int run(){ Engine e = new Engine(); return e.add(); } } class Turbo extends Engine {}",
+        // Overloads keep the target ambiguous.
+        "class Engine { int add(){return 1;} int add(int x){return x;} int run(){ Engine e = new Engine(); return e.add(); } }",
+        // The method is defined in another class, not the declared type.
+        "class Engine { int run(){ Other o = new Other(); return o.add(); } } class Other { } class Holder { int add(){return 1;} }",
+        // Imported types are not proven.
+        "import app.Engine; class Service { int run(Engine e){ return e.add(); } }",
+        // Unbound receivers stay gaps.
+        "class Engine { int add(){return 1;} int run(){ return helper().add(); } int helper(){ return 1; } }",
+        // Chained receivers stay gaps.
+        "class Engine { int add(){return 1;} int run(){ return this.helper().add(); } int helper(){ return 1; } }",
+        // Interface targets stay gaps.
+        "interface Engine { int add(); } class Service { int run(Engine e){ return e.add(); } }",
+        // Static imports shadow the method name.
+        "import static tools.Helpers.add; class Engine { int add(){return 1;} int run(){ Engine e = new Engine(); return e.add(); } }",
+        // One name declared with two distinct types stays ambiguous.
+        "class Engine { int add(){return 1;} int first(){ Engine e = new Engine(); return e.add(); } int second(Other e){ return 0; } } class Other { }",
+    ] {
+        let extraction = pack_for_path(Path::new("Service.java"))
+            .unwrap()
+            .extract(Path::new("Service.java"), source.as_bytes())
+            .unwrap();
+        assert!(
+            !extraction
+                .edges
+                .iter()
+                .any(|edge| edge.relation == RelationKind::Calls && edge.target == "add"),
+            "{source}"
+        );
+        assert!(
+            extraction
+                .unresolved
+                .iter()
+                .any(|gap| gap.kind == UnresolvedKind::Dispatch),
+            "{source}"
+        );
+    }
+}
+
+#[test]
 fn java_imported_type_references_are_exact_and_local_types_shadow_them() {
     let source = b"import app.model.Model; final class Service { Model load(Model value) { return value; } }";
     let extraction = pack_for_path(Path::new("Service.java"))
