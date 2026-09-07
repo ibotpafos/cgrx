@@ -47,6 +47,7 @@ jobs:
       - run: python3 scripts/eval_change_missions.py target/release/cgrx
       - run: python3 scripts/eval_change_quality_gates.py target/release/cgrx
       - run: python3 scripts/eval_repository_quality_gates.py target/release/cgrx
+      - run: python3 scripts/eval_mistake_ledger.py target/release/cgrx --warn-only
       - name: Relationship evaluator integrity and real MCP fanout
         run: CGRX_EVAL_BINARY=target/release/cgrx python3 -m unittest discover -s scripts -p test_eval_relationships.py
       - name: Refactor evaluator integrity
