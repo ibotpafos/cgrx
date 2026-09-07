@@ -9,7 +9,7 @@ use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
-use cgrx_cli::{GraphDirection, GraphViewRequest, Runtime, RuntimeError};
+use cgrx_cli::{GraphDirection, GraphViewRequest, RiskBaseline, Runtime, RuntimeError};
 use cgrx_core::{EvidenceSelector, RelationKind, Scope};
 use serde_json::json;
 
@@ -41,10 +41,12 @@ pub(super) fn run(args: &[String]) -> Result<(), String> {
         open_browser(&url)?;
     }
 
+    let risk_baseline = runtime.risk_baseline();
     let mut server = Visualizer {
         root,
         state,
         runtime,
+        risk_baseline,
         token,
     };
     for connection in listener.incoming() {
@@ -110,6 +112,7 @@ struct Visualizer {
     root: PathBuf,
     state: PathBuf,
     runtime: Runtime,
+    risk_baseline: RiskBaseline,
     token: String,
 }
 
@@ -153,6 +156,7 @@ impl Visualizer {
             "/api/graph" => self.api_result(self.graph(request)),
             "/api/architecture" => self.api_result(self.architecture(request)),
             "/api/refactors" => self.api_result(self.refactors(request)),
+            "/api/change-plan" => self.api_result(self.change_plan(request)),
             "/api/snippet" => self.api_result(self.snippet(request)),
             "/api/git-history" => self.api_result(self.git_history(request)),
             "/api/git-commit" => self.api_result(self.git_commit(request)),
@@ -258,6 +262,14 @@ impl Visualizer {
             request.query("language").filter(|value| !value.is_empty()),
             number(request, "min_score", 760)?,
             number(request, "limit", 8)?,
+        )
+    }
+
+    fn change_plan(&self, request: &HttpRequest) -> Result<serde_json::Value, RuntimeError> {
+        self.runtime.scan_risks(
+            &self.risk_baseline,
+            &self.root,
+            number(request, "limit", 20)?,
         )
     }
 
@@ -615,6 +627,7 @@ impl Visualizer {
                 Runtime::index_committed_head(&self.root, &self.state)
                     .map_err(|error| error.to_string())?;
                 self.runtime = Runtime::open(&self.state).map_err(|error| error.to_string())?;
+                self.risk_baseline = self.runtime.risk_baseline();
                 self.runtime
                     .refresh(&self.root)
                     .map_err(|error| error.to_string())?;

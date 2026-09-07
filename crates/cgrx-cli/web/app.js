@@ -2,7 +2,7 @@ import { edgeStyle, layoutGraph } from "./layout.js";
 import "./vendor/web-git-graph.js";
 import { CgrxGitGraphProvider } from "./git-history.js";
 import { graphEvidenceQuery, runtimeAgentHandoff, runtimeEdgePresentation } from "./runtime-evidence.js";
-import { architectureAgentHandoff, createState, projectArchitecture, projectArchitectureFuture, projectGraph, reduce, serializeAgentPlan, snapshotKey, summarizeBoundedResult } from "./state.js";
+import { architectureAgentHandoff, createState, projectArchitecture, projectArchitectureFuture, projectChangeMissions, projectGraph, reduce, serializeAgentPlan, serializeChangeMissionHandoff, snapshotKey, summarizeBoundedResult } from "./state.js";
 
 const NS = "http://www.w3.org/2000/svg";
 const tokenKey = `cgrx-token:${location.host}`;
@@ -19,16 +19,16 @@ let currentCandidate = null;
 let currentStrategy = null;
 let historyConnected = false;
 let requestGeneration = 0;
-let changedPaths = [];
 let panStart = null;
 let nodeDrag = null;
 let pinnedPositions = {};
 let evidenceMode = "static";
 let runtimeStatus = null;
+let currentChangeMissions = null;
 
 const ids = [
   "freshness", "revision", "search-form", "search-input", "search-results", "match-count",
-  "refactor-list", "candidate-count", "runtime-list", "runtime-count", "architecture-future-list", "architecture-future-count", "graph-title", "graph-message", "graph-canvas",
+  "refactor-list", "candidate-count", "runtime-list", "runtime-count", "architecture-future-list", "architecture-future-count", "mission-list", "mission-count", "mission-panel", "mission-summary", "mission-dag", "copy-mission-agent", "graph-title", "graph-message", "graph-canvas",
   "graph-svg", "camera-layer", "git-history-panel", "git-history", "inspector-content", "selection-kind", "strategy-panel", "strategy-tabs",
   "strategy-detail", "copy-agent", "copy-mcp", "copy-runtime-agent", "runtime-environment", "announcer", "zoom-in", "zoom-out", "reset-view"
 ];
@@ -50,7 +50,6 @@ export async function loadStatus() {
   const changed = Boolean(snapshotKey(state.snapshot)
     && snapshotKey(state.snapshot) !== snapshotKey(value.snapshot));
   state = reduce(state, { type: "status", snapshot: value.snapshot });
-  changedPaths = value.changed_paths || [];
   el.revision.textContent = `${value.snapshot.repo_revision.slice(0, 9)} · g${value.snapshot.graph_generation}`;
   el.freshness.textContent = changed ? "refreshing" : "live";
   el.freshness.className = `badge badge--${changed ? "stale" : "live"}`;
@@ -59,12 +58,56 @@ export async function loadStatus() {
     currentCandidate = null;
     currentArchitectureIssue = null;
     el["strategy-panel"].hidden = true;
-    await loadRefactors();
+    await loadChangeMissions();
     await loadArchitecture();
+    await loadRefactors();
     if (historyConnected) el["git-history"].refresh();
     if (currentGraph?.root) await loadGraph(currentGraph.root.symbol, currentGraph.root.path);
   }
   return value;
+}
+
+async function loadChangeMissions() {
+  try {
+    const value = await api("/api/change-plan?limit=20");
+    currentChangeMissions = projectChangeMissions(value);
+    const totals = currentChangeMissions.totals;
+    el["mission-count"].textContent = `${totals.missions}${currentChangeMissions.partial ? " · partial" : ""}`;
+    if (!currentChangeMissions.missions.length) {
+      el["mission-list"].innerHTML = '<p class="quiet">No source changes. The plan will appear as files change.</p>';
+    } else {
+      el["mission-list"].replaceChildren(...currentChangeMissions.missions.slice(0, 12).map((mission) => itemButton(
+        mission.title,
+        `group ${mission.parallel_group + 1} · ${mission.kind.replaceAll("_", " ")}${mission.blocked_by_gaps ? " · blocked" : ""}`,
+        () => selectMission(mission)
+      )));
+    }
+    if (state.mode === "changes") renderMode();
+    return value;
+  } catch (error) {
+    currentChangeMissions = null;
+    el["mission-list"].innerHTML = `<p class="error">${escapeHtml(error.message)}</p>`;
+    if (state.mode === "changes") setMessage(error.message);
+    return null;
+  }
+}
+
+function selectMission(mission) {
+  activateMode("changes");
+  el["selection-kind"].textContent = "mission";
+  el["inspector-content"].innerHTML = facts([
+    ["Mission", mission.mission_id],
+    ["Kind", mission.kind],
+    ["Parallel group", mission.parallel_group + 1],
+    ["Depends on", mission.depends_on?.join(", ") || "none"],
+    ["Change paths", mission.change_paths?.join(", ") || "none"],
+    ["Review paths", mission.review_paths?.join(", ") || "none"],
+    ["Evidence", mission.evidenceCount],
+    ["Candidate tests", mission.testCount],
+    ["Coverage", mission.blocked_by_gaps ? "blocked by gaps" : "ready for review"],
+    ["Steps", mission.steps?.join(" → ") || "inspect"]
+  ]);
+  document.querySelector(`[data-mission-id="${CSS.escape(mission.mission_id)}"]`)?.scrollIntoView({ block: "nearest", inline: "center" });
 }
 
 async function search(query) {
@@ -217,13 +260,19 @@ function drawGraph(graph, layer) {
 
 function renderMode() {
   const history = state.mode === "history";
-  el["graph-canvas"].hidden = history;
+  const missions = state.mode === "changes";
+  el["graph-canvas"].hidden = history || missions;
   el["git-history-panel"].hidden = !history;
-  document.querySelector(".view-actions").hidden = history;
-  document.querySelector(".legend").hidden = history;
+  el["mission-panel"].hidden = !missions;
+  document.querySelector(".view-actions").hidden = history || missions;
+  document.querySelector(".legend").hidden = history || missions;
   if (history) {
     el["graph-title"].textContent = "Git history";
     el["graph-message"].hidden = true;
+    return;
+  }
+  if (missions) {
+    renderChangeMissions();
     return;
   }
   if (state.mode === "architecture") {
@@ -260,10 +309,39 @@ function renderMode() {
     renderGraph(projectGraph(currentGraph, currentStrategy));
     return;
   }
-  const graph = state.mode === "changes"
-    ? { ...currentGraph, nodes: currentGraph.nodes.map((node) => ({ ...node, changed: changedPaths.includes(node.path) })) }
-    : currentGraph;
-  renderGraph(graph);
+  renderGraph(currentGraph);
+}
+
+function renderChangeMissions() {
+  if (!currentChangeMissions) {
+    setMessage("Loading change missions…");
+    return;
+  }
+  el["graph-title"].textContent = "Change missions";
+  el["graph-message"].hidden = true;
+  const totals = currentChangeMissions.totals;
+  el["mission-summary"].textContent = `${totals.missions} missions · ${totals.parallel_groups} sequential groups · ${totals.blocked} blocked by coverage gaps`;
+  el["mission-dag"].replaceChildren(...currentChangeMissions.groups.map((group) => {
+    const column = document.createElement("section");
+    column.className = "mission-group";
+    const heading = document.createElement("h2");
+    heading.textContent = `Group ${group.index + 1}`;
+    const note = document.createElement("p");
+    note.textContent = group.missions.length > 1 ? `${group.missions.length} missions can run in parallel` : "Run after dependencies";
+    column.append(heading, note, ...group.missions.map((mission) => {
+      const card = document.createElement("button");
+      card.type = "button";
+      card.className = `mission-card${mission.blocked_by_gaps ? " mission-card--blocked" : ""}`;
+      card.dataset.missionId = mission.mission_id;
+      const readiness = mission.blocked_by_gaps
+        ? "blocked · inspect gaps"
+        : (mission.depends_on?.length ? `after ${mission.depends_on.length}` : "ready");
+      card.innerHTML = `<span class="mission-card__kind">${escapeHtml(mission.kind.replaceAll("_", " "))}</span><strong>${escapeHtml(shorten(mission.title, 38))}</strong><small>${mission.evidenceCount} evidence · ${mission.testCount} tests</small><small>${readiness}</small>`;
+      card.addEventListener("click", () => selectMission(mission));
+      return card;
+    }));
+    return column;
+  }));
 }
 
 function renderEdge(source, target, edge) {
@@ -621,6 +699,9 @@ el["copy-mcp"].addEventListener("click", () => {
 el["copy-runtime-agent"].addEventListener("click", () => {
   if (currentGraph) copy(runtimeAgentHandoff(currentGraph, runtimeStatus?.insights?.rows || []), "Runtime agent context copied");
 });
+el["copy-mission-agent"].addEventListener("click", () => {
+  if (currentChangeMissions?.agent_handoff) copy(serializeChangeMissionHandoff(currentChangeMissions), "Change mission handoff copied");
+});
 
 async function copy(value, announcement) {
   await navigator.clipboard.writeText(value);
@@ -637,11 +718,13 @@ function graphPoint(event) {
   };
 }
 
-Promise.all([loadStatus(), loadRefactors(), loadArchitecture(), loadRuntimeIntelligence()]).catch((error) => {
-  el.freshness.textContent = "offline";
-  el.freshness.className = "badge badge--stale";
-  setMessage(error.message);
-});
+loadStatus()
+  .then(() => Promise.all([loadChangeMissions(), loadRuntimeIntelligence(), loadArchitecture(), loadRefactors()]))
+  .catch((error) => {
+    el.freshness.textContent = "offline";
+    el.freshness.className = "badge badge--stale";
+    setMessage(error.message);
+  });
 setInterval(() => loadStatus().catch(() => {
   el.freshness.textContent = "offline";
   el.freshness.className = "badge badge--stale";

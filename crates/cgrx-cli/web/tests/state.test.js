@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { architectureAgentHandoff, createState, projectArchitecture, projectArchitectureFuture, projectGraph, reduce, serializeAgentPlan, summarizeBoundedResult } from "../state.js";
+import { architectureAgentHandoff, createState, projectArchitecture, projectArchitectureFuture, projectChangeMissions, projectGraph, reduce, serializeAgentPlan, serializeChangeMissionHandoff, summarizeBoundedResult } from "../state.js";
 
 const snapshot = {
   repo_revision: "a".repeat(40),
@@ -204,4 +204,25 @@ test("projectGraph marks removed symbols as future removals", () => {
   });
   assert.equal(projected.nodes[0].status, "remove");
   assert.equal(projected.edges.length, 0);
+});
+
+test("change missions preserve execution groups, dependencies, blockers and exact handoff", () => {
+  const handoff = { schema_version: "cgrx.agent.change-missions.v1", llm_used: false, missions: [{ mission_id: "m1" }] };
+  const projection = projectChangeMissions({ change_plan: {
+    snapshot,
+    missions: [
+      { mission_id: "m1", kind: "review_changed_path", parallel_group: 0, change_paths: ["a.ts"], review_paths: ["a.ts"], finding_indexes: [], impact_indexes: [], related_test_indexes: [0], depends_on: [], blocked_by_gaps: false },
+      { mission_id: "m2", kind: "changed_dependency", parallel_group: 1, change_paths: ["b.ts"], review_paths: ["a.ts"], finding_indexes: [], impact_indexes: [0], related_test_indexes: [], depends_on: ["m1"], blocked_by_gaps: true }
+    ],
+    execution_order: [["m1"], ["m2"]],
+    totals: { missions: 2, parallel_groups: 2, blocked: 1 },
+    partial: true,
+    agent_handoff: handoff
+  }});
+  assert.deepEqual(projection.groups.map((group) => group.missions.map((mission) => mission.mission_id)), [["m1"], ["m2"]]);
+  assert.deepEqual(projection.dependencies, [{ source: "m1", target: "m2" }]);
+  assert.equal(projection.missions[0].testCount, 1);
+  assert.equal(projection.missions[1].evidenceCount, 1);
+  assert.equal(projection.missions[1].blocked_by_gaps, true);
+  assert.deepEqual(JSON.parse(serializeChangeMissionHandoff(projection)), handoff);
 });

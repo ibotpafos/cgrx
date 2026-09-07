@@ -42,6 +42,10 @@
         <div class="section-title"><h2 id="architecture-futures-title">Architecture futures</h2><span id="architecture-future-count">0</span></div>
         <div id="architecture-future-list" class="item-list"><p class="quiet">Planning bounded graph futures…</p></div>
       </section>
+      <section class="rail__section" aria-labelledby="change-missions-title">
+        <div class="section-title"><h2 id="change-missions-title">Change missions</h2><span id="mission-count">0</span></div>
+        <div id="mission-list" class="item-list"><p class="quiet">Planning changes from the working tree…</p></div>
+      </section>
       <section class="rail__section rail__section--grow" aria-labelledby="refactors-title">
         <div class="section-title"><h2 id="refactors-title">Refactor paths</h2><span id="candidate-count">0</span></div>
         <div id="refactor-list" class="item-list"><p class="quiet">Scanning bounded candidates…</p></div>
@@ -85,6 +89,13 @@
           <desc id="graph-description">A focused code graph arranged from callers through selected entry points to callees, with tests below.</desc>
           <g id="camera-layer"></g>
         </svg>
+      </div>
+      <div id="mission-panel" class="mission-panel" hidden aria-label="Change mission execution graph">
+        <div class="mission-panel__header">
+          <div><p class="eyebrow">Deterministic execution DAG</p><p id="mission-summary" class="quiet"></p></div>
+          <button id="copy-mission-agent" class="mission-copy">Copy agent handoff</button>
+        </div>
+        <div id="mission-dag" class="mission-dag"></div>
       </div>
       <div id="git-history-panel" class="git-history-panel" hidden>
         <web-git-graph id="git-history" aria-label="Git commit history"></web-git-graph>

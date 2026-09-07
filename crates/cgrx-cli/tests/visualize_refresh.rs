@@ -152,6 +152,21 @@ fn source_change_refreshes_snapshot_and_strategy_identity_without_restart() {
         .as_str()
         .expect("refreshed strategy");
     assert_ne!(first_id, refreshed_id);
+    let change_plan = request(&server, "/api/change-plan?limit=20");
+    assert_eq!(
+        change_plan["change_plan"]["algorithm"],
+        "change_missions_v1"
+    );
+    assert_eq!(change_plan["change_plan"]["llm_used"], false);
+    assert_eq!(change_plan["change_plan"]["totals"]["missions"], 1);
+    assert_eq!(
+        change_plan["change_plan"]["missions"][0]["change_paths"][0],
+        "service.ts"
+    );
+    assert_eq!(
+        change_plan["change_plan"]["agent_handoff"]["snapshot"],
+        refreshed["snapshot"]
+    );
 
     let refreshed_digest = refreshed["snapshot"]["working_tree_digest"].clone();
     let extra = repository.0.join("extra.ts");
