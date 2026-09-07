@@ -51,11 +51,11 @@ existing contracts before adding another always-visible tool.
 | PR context benchmark with pinned SHAs and exact tokenizer counts | Frozen seven-project corpus exists, but current outline metric is bytes and does not measure review quality | Next measurement priority: reproduce both context arms with tokenizer counts and report truncation separately. |
 | Per-tool response-cost table and build-stamped results | MCP schema has a strict budget; `suggest_refactors` reports tokenizer-counted compact payload cost | Extend the same measurement to every tool before changing encodings or defaults. |
 | Per-shape output encoding | Compact tabular model-visible rows already coexist with full structured JSON | Keep tool-specific shaping; do not adopt TOON globally because Trace measured regressions for nested rows. |
-| Minimal/standard/full tool presets | CGRX exposes 12 focused tools with a model-visible schema budget below 2,000 tokens | Keep the small default surface; add a preset only when optional tools justify its fixed cost. |
+| Minimal/standard/full tool presets | CGRX exposes 14 focused tools rather than a framework-dependent catalog | Keep the small default surface; add a preset only when optional tools justify its fixed cost. |
 | Budgeted context bundles and project maps | `orient` + revision-bound `expand` return bounded task context; `get_architecture` adds packages, proven boundaries, hotspots, package cycles, package communities and symbol communities | Architecture now reports deterministic weighted-modularity clusters at package and symbol granularity, including representative symbols, binding packages, edge types, modularity, cohesion and unclustered counts. |
 | Read-only history drill-down | The graph explorer embeds a Git lane view | Commit bodies and changed-file metadata now load on demand; selecting a file requests only its bounded patch. History, file count and patch bytes have independent limits. |
 | Framework-aware routes, ORM links, DI, and tests | CGRX proves conservative `CALLS` for TypeScript/TSX, Go, Java, Python, and Rust, with deeper language-specific proof where available | Build framework packs only with frozen positive/negative relation fixtures; do not count symbol-only extraction as relationship support. |
-| Calibrated quality gates | `scan_risks` returns candidates, evidence, candidate tests, per-impact test-reach states, and explicit gaps | A proven call path is kept separate from heuristic test identity, behavioral coverage and execution status; defer merge-blocking scores until thresholds are calibrated on labeled changes and false positives. |
+| Calibrated quality gates | `check_change_gates` evaluates warning findings, blocked missions, unverified impacts and graph coverage with explicit thresholds and `PASS` / `WARN` / `FAIL` / `INCONCLUSIVE` results | Adopted for working-tree changes. Unlike Trace's documented gate, missing coverage is a first-class rule and partial evidence can never become a clean pass. Broader complexity and repository-health gates remain separate work. |
 | Agent task decomposition | `scan_risks` groups findings, impacts and candidate tests into snapshot-bound Change Missions, derives path-conflict dependencies and exposes deterministic parallel batches | Adopted as a model-free execution DAG. Coverage gaps block only affected missions, and the exact handoff stays in the compact response. |
 | Decision memory with confidence, provenance, temporal validity, and privacy tags | Outside the current code-index contract | Reuse those data-quality rules if memory is added; keep reconstructible code out of durable memory. |
 | Local session analytics and opt-in tracing | No exported source/query telemetry in the current core | Add local latency/error/response-size metrics first; any exporter must remain opt-in and metadata-only. Trace documents its anonymous daily usage ping as a separate subsystem, so that policy must not be inferred from the tracing switch. |
@@ -66,7 +66,7 @@ existing contracts before adding another always-visible tool.
 
 The next measurement priorities are the PR context benchmark, response cost for
 the remaining tools, and manual review of the refactoring inventory. Framework
-edges, decision memory, quality gates, and daemon lifecycle follow only after
+edges, decision memory, broader repository-health gates, and daemon lifecycle follow only after
 their accuracy and resource budgets can be tested independently.
 
 ## Seven-project refactoring inventory

@@ -162,6 +162,16 @@ impact and candidate-test indexes plus a reproducible agent handoff with
 keeps the handoff while omitting duplicated proof bodies. See the
 [end-to-end benchmark](docs/benchmarks/change-missions-2026-09-07.md).
 
+`check_change_gates` evaluates that evidence as a conservative, configurable
+quality gate. Warning findings, blocked missions and coverage gaps are error
+rules by default; unverified impacts are warnings. The result distinguishes
+`PASS`, `WARN`, `FAIL` and `INCONCLUSIVE`, so missing graph evidence can never
+be reported as a clean pass. `fail_on=error|warning|none` controls whether the
+reported state would block an agent or CI policy. Thresholds are explicit call
+arguments, the response carries exact rule inputs and evidence indexes, and
+the algorithm `change_quality_gate_v1` reports `llm_used=false`.
+See the [four-case contract benchmark](docs/benchmarks/change-quality-gates-2026-09-07.md).
+
 The explorer's **Changes** mode renders that same plan as an execution DAG.
 Columns are sequential groups, cards within a column can run in parallel, and
 each card exposes its paths, evidence indexes, candidate tests, dependencies
@@ -183,7 +193,7 @@ sets `llm_used=false` and requires snapshot revalidation before edits.
 - **Current** shows only indexed evidence from the active snapshot.
 - **Architecture** aggregates the same proven relationships into packages and
   exposes fan-in, fan-out, file and symbol counts in the inspector.
-- **Changes** marks nodes from changed source paths.
+- **Changes** renders the current Change Missions execution DAG.
 - **Preview** overlays one selected refactor strategy.
 - **Compare** shows current and selected future graphs with one synchronized
   camera.
@@ -216,6 +226,7 @@ is not required by the released executable.
 | orient | Budgeted task context |
 | expand | Follow-up context using a returned handle |
 | scan_risks | Candidate relationship risks, tests and deterministic parallel Change Missions |
+| check_change_gates | Conservative change gate with explicit pass, warning, failure and inconclusive states |
 | suggest_refactors | Similar callable bodies and a hypothetical extract-helper graph delta |
 
 `search_graph` searches symbol names by default. Set `include_body: true` to

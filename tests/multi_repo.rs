@@ -135,7 +135,7 @@ fn multi_repo_lazy_schema_and_notifications() {
     );
     let r = m.rpc("tools/list", json!({}));
     let ts = r["result"]["tools"].as_array().unwrap();
-    assert_eq!(ts.len(), 13);
+    assert_eq!(ts.len(), 14);
     for t in ts {
         assert!(
             t["inputSchema"]["required"]
@@ -507,6 +507,20 @@ fn risk_scan_impact_and_negative_cases_are_not_bugs() {
         &m.tool("scan_risks", json!({"repo":a,"limit":0})),
         "cgrx.invalid_arguments",
     );
+    error(
+        &m.tool(
+            "check_change_gates",
+            json!({"repo":a,"fail_on":"sometimes"}),
+        ),
+        "cgrx.invalid_arguments",
+    );
+    error(
+        &m.tool(
+            "check_change_gates",
+            json!({"repo":a,"max_coverage_gaps":10001}),
+        ),
+        "cgrx.invalid_arguments",
+    );
 }
 #[test]
 fn risk_scan_parser_gaps_and_other_repos_stay_separate() {
@@ -765,5 +779,37 @@ fn risk_verification_plan_visible_over_mcp_and_repo_isolated() {
     assert_eq!(
         unchanged["result"]["structuredContent"]["verification_plan"]["related_tests"],
         json!([])
+    );
+}
+
+#[test]
+fn change_quality_gate_is_snapshot_bound_model_free_and_policy_aware() {
+    let d = Dir::new();
+    let source = "fn target() -> u32 { 1 }\nfn caller() { target(); }\n";
+    let a = d.repo("a", source);
+    let mut m = Mcp::new(&d.0, "2", &d.0.join("log"));
+    fs::write(a.join("main.rs"), source.replace("{ 1 }", "{ 2 }")).unwrap();
+    let response = m.tool(
+        "check_change_gates",
+        json!({"repo":a,"fail_on":"error","limit":20}),
+    );
+    let result = &response["result"]["structuredContent"];
+    let visible: Value =
+        serde_json::from_str(response["result"]["content"][0]["text"].as_str().unwrap()).unwrap();
+    assert_eq!(result["algorithm"], "change_quality_gate_v1", "{response}");
+    assert_eq!(result["llm_used"], false);
+    assert_eq!(result["verdict"], "WARN");
+    assert_eq!(result["would_block"], false);
+    assert_eq!(result["agent_handoff"]["impact_indexes"], json!([0]));
+    assert_eq!(visible["agent_handoff"], result["agent_handoff"]);
+
+    let strict = m.tool(
+        "check_change_gates",
+        json!({"repo":a,"fail_on":"warning","limit":20}),
+    );
+    assert_eq!(strict["result"]["structuredContent"]["would_block"], true);
+    assert_eq!(
+        strict["result"]["structuredContent"]["snapshot"],
+        result["snapshot"]
     );
 }
