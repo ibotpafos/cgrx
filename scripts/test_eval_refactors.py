@@ -74,6 +74,24 @@ def response(revision=REVISION, *, truncated=False):
                 },
                 "similarity": {"total": 900},
                 "projection": {"id": "refactor1.abc", "status": "hypothetical"},
+                "strategies": [
+                    {
+                        "policy": policy,
+                        "recommended": index == 0,
+                        "counterfactual": {
+                            "algorithm": "counterfactual_refactor_v1",
+                            "score": 900 - index * 100,
+                            "rank": index + 1,
+                            "llm_used": False,
+                            "reasons": ["structural_duplication_reduction"],
+                            "formula": {"inputs": {}},
+                            "predicted_graph": {},
+                        },
+                    }
+                    for index, policy in enumerate(
+                        ["preserve_entrypoints", "canonical_entrypoint", "consolidate"]
+                    )
+                ],
             }
         ],
     }
@@ -99,6 +117,8 @@ class ContractIntegrityTests(unittest.TestCase):
         self.assertIsNone(report["precision"])
         self.assertEqual(report["payload_tokens"], 120)
         self.assertEqual(report["rows"][0]["left"]["node_id"], 1)
+        self.assertEqual(report["planner"]["validated_futures"], 3)
+        self.assertFalse(report["planner"]["llm_used"])
 
     def test_duplicate_project_and_candidate_ids_are_rejected(self):
         document = contract()
@@ -148,6 +168,17 @@ class ContractIntegrityTests(unittest.TestCase):
         malformed = response()
         del malformed["result"]["structuredContent"]["candidates"][0]["left"]
         with self.assertRaisesRegex(ValueError, "malformed candidate row"):
+            build_report(contract(), [malformed])
+
+    def test_planner_contract_rejects_ranking_and_model_drift(self):
+        malformed = response()
+        malformed["result"]["structuredContent"]["candidates"][0]["strategies"][1]["counterfactual"]["score"] = 950
+        with self.assertRaisesRegex(ValueError, "score-ranked"):
+            build_report(contract(), [malformed])
+
+        malformed = response()
+        malformed["result"]["structuredContent"]["candidates"][0]["strategies"][0]["counterfactual"]["llm_used"] = True
+        with self.assertRaisesRegex(ValueError, "model-free"):
             build_report(contract(), [malformed])
 
 

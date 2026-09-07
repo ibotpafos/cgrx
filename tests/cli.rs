@@ -693,7 +693,11 @@ fn serve_state_returns_refactor_candidates_and_compact_projection_rows() {
             "language",
             "score",
             "shared_callees",
-            "projection_id"
+            "projection_id",
+            "recommended_policy",
+            "counterfactual_score",
+            "reason_codes",
+            "strategy_id"
         ])
     );
     assert!(visible["payload_tokens"].as_u64().is_some());

@@ -5,7 +5,7 @@ use std::process::Command;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use cgrx_cli::Runtime;
+use cgrx_cli::{Runtime, RuntimeEvidenceFormat};
 use cgrx_core::{RelationKind, Scope};
 
 static SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -290,10 +290,93 @@ fn consolidation_removes_duplicate_only_without_coverage_gaps() {
         )
         .expect("suggest refactors");
     let candidate = matching_candidate(&result);
-    let consolidate = &candidate["strategies"][2];
+    let consolidate = candidate["strategies"]
+        .as_array()
+        .expect("strategies")
+        .iter()
+        .find(|strategy| strategy["policy"] == "consolidate")
+        .expect("consolidation strategy");
     assert_eq!(consolidate["status"], "hypothetical");
     assert_eq!(
         consolidate["graph_delta"]["remove"],
         serde_json::json!([candidate["right"].clone()])
+    );
+}
+
+#[test]
+fn counterfactual_planner_ranks_futures_from_runtime_cost_without_an_llm() {
+    let (repository, _state, runtime) = runtime_with_dynamic_gap(false);
+    let revision = runtime.snapshot().repo_revision.clone();
+    let trace = format!(
+        "{{\"schema\":\"cgrx.runtime.v1\",\"repo_revision\":\"{revision}\",\"environment\":\"prod\",\"observed_at_unix_nanos\":1000000000,\"count\":100,\"caller\":{{\"function\":\"useSecond\",\"file\":\"service.ts\"}},\"callee\":{{\"function\":\"second\",\"file\":\"service.ts\"}}}}\n"
+    );
+    runtime
+        .import_runtime_evidence(
+            repository.path(),
+            trace.as_bytes(),
+            RuntimeEvidenceFormat::Ndjson,
+            None,
+            None,
+        )
+        .expect("import runtime evidence");
+    let result = runtime
+        .suggest_refactors(
+            &Scope {
+                include: vec!["service.ts".to_owned()],
+                exclude: Vec::new(),
+                relation_kinds: vec![RelationKind::Calls],
+                max_depth: 1,
+            },
+            Some("typescript"),
+            760,
+            20,
+        )
+        .expect("rank refactor futures");
+    let candidate = matching_candidate(&result);
+    assert_eq!(
+        candidate["runtime_profile"]["duplicate_incoming_count"],
+        100
+    );
+    let strategies = candidate["strategies"].as_array().expect("strategies");
+    assert_eq!(strategies[0]["policy"], "preserve_entrypoints");
+    assert_eq!(strategies[0]["recommended"], true);
+    assert_eq!(strategies[0]["counterfactual"]["rank"], 1);
+    assert_eq!(
+        strategies[0]["counterfactual"]["algorithm"],
+        "counterfactual_refactor_v1"
+    );
+    assert_eq!(strategies[0]["counterfactual"]["llm_used"], false);
+    assert_eq!(
+        strategies[0]["agent_handoff"]["decision"]["llm_used"],
+        false
+    );
+    assert!(
+        strategies[0]["counterfactual"]["score"].as_u64().unwrap()
+            > strategies[2]["counterfactual"]["score"].as_u64().unwrap()
+    );
+}
+
+#[test]
+fn counterfactual_planner_is_byte_stable_and_can_choose_consolidation() {
+    let (_repository, _state, runtime) = runtime_with_dynamic_gap(false);
+    let scope = Scope {
+        include: vec!["service.ts".to_owned()],
+        exclude: Vec::new(),
+        relation_kinds: vec![RelationKind::Calls],
+        max_depth: 1,
+    };
+    let first = runtime
+        .suggest_refactors(&scope, Some("typescript"), 760, 20)
+        .unwrap();
+    let second = runtime
+        .suggest_refactors(&scope, Some("typescript"), 760, 20)
+        .unwrap();
+    assert_eq!(first, second);
+    let candidate = matching_candidate(&first);
+    assert_eq!(candidate["strategies"][0]["policy"], "consolidate");
+    assert_eq!(candidate["strategies"][0]["counterfactual"]["rank"], 1);
+    assert_eq!(
+        candidate["strategies"][0]["counterfactual"]["predicted_graph"]["nodes_removed"],
+        1
     );
 }

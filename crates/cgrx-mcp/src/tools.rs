@@ -1056,13 +1056,25 @@ fn compact_refactors(value: &Value) -> Value {
                 .flatten()
                 .filter_map(|callee| callee.pointer("/target/symbol"))
                 .collect::<Vec<_>>();
+            let recommended = candidate
+                .get("strategies")
+                .and_then(Value::as_array)
+                .and_then(|strategies| {
+                    strategies
+                        .iter()
+                        .find(|strategy| strategy["recommended"] == true)
+                });
             json!([
                 left,
                 right,
                 candidate.get("language"),
                 candidate.pointer("/similarity/total"),
                 shared,
-                candidate.pointer("/projection/id")
+                candidate.pointer("/projection/id"),
+                recommended.and_then(|strategy| strategy.get("policy")),
+                recommended.and_then(|strategy| strategy.pointer("/counterfactual/score")),
+                recommended.and_then(|strategy| strategy.pointer("/counterfactual/reasons")),
+                recommended.and_then(|strategy| strategy.get("strategy_id"))
             ])
         })
         .collect::<Vec<_>>();
@@ -1070,7 +1082,7 @@ fn compact_refactors(value: &Value) -> Value {
         "at":snapshot_tag(value.get("snapshot")),
         "status":value.get("status"),
         "paths":paths,
-        "cols":["left","right","language","score","shared_callees","projection_id"],
+        "cols":["left","right","language","score","shared_callees","projection_id","recommended_policy","counterfactual_score","reason_codes","strategy_id"],
         "rows":rows,
         "n":value.get("total"),
         "gaps":value.get("coverage_gap_count")
@@ -1629,7 +1641,13 @@ mod openai_metadata_tests {
                 "right":{"symbol":"right","path":"src/lib.rs"},
                 "similarity":{"total":900},
                 "shared_callees":[{"target":{"symbol":"save"}}],
-                "projection":{"id":"refactor1.abc","status":"hypothetical"}
+                "projection":{"id":"refactor1.abc","status":"hypothetical"},
+                "strategies":[{
+                    "strategy_id":"strategy1.best",
+                    "policy":"consolidate",
+                    "recommended":true,
+                    "counterfactual":{"score":812,"reasons":["structural_duplication_reduction"]}
+                }]
             }]
         });
 
@@ -1642,10 +1660,17 @@ mod openai_metadata_tests {
                 "language",
                 "score",
                 "shared_callees",
-                "projection_id"
+                "projection_id",
+                "recommended_policy",
+                "counterfactual_score",
+                "reason_codes",
+                "strategy_id"
             ])
         );
         assert_eq!(compact["status"], "hypothetical");
+        assert_eq!(compact["rows"][0][6], "consolidate");
+        assert_eq!(compact["rows"][0][7], 812);
+        assert_eq!(compact["rows"][0][9], "strategy1.best");
         let mut counted = compact.clone();
         counted.as_object_mut().unwrap().remove("payload_tokens");
         let expected = Tokenizer::o200k_base()

@@ -426,7 +426,7 @@
     },
     {
       "id": "cgrx",
-      "repo": "/Volumes/D/Projects/cgrx-opensource",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/.worktrees/benchmark-e55018497074",
       "revision": "e55018497074c40ea89cd3c1a6d2f357806a4a5b",
       "scope": "crates/cgrx-cli/src/**",
       "candidates": [
