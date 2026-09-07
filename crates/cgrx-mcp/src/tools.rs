@@ -658,6 +658,7 @@ impl Server {
 
 fn model_visible_result(tool: &str, structured: &Value) -> Value {
     match tool {
+        "scan_risks" => compact_risks(structured),
         "orient" => compact_orient(structured),
         "ingest_runtime_evidence" => compact_runtime_import(structured),
         "expand" => compact_expand(structured),
@@ -672,6 +673,82 @@ fn model_visible_result(tool: &str, structured: &Value) -> Value {
         "status" => compact_status(structured),
         _ => structured.clone(),
     }
+}
+
+fn compact_risks(value: &Value) -> Value {
+    let findings = value
+        .get("findings")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .map(|item| {
+            json!([
+                item.get("rule"),
+                item.get("path"),
+                item.get("line"),
+                item.get("caller"),
+                item.pointer("/removed_target/path"),
+                item.pointer("/removed_target/symbol")
+            ])
+        })
+        .collect::<Vec<_>>();
+    let impacts = value
+        .get("impacts")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .map(|item| {
+            json!([
+                item.pointer("/caller/path"),
+                item.pointer("/caller/symbol"),
+                item.pointer("/changed_target/path"),
+                item.pointer("/changed_target/symbol"),
+                item.get("line")
+            ])
+        })
+        .collect::<Vec<_>>();
+    let tests = value
+        .pointer("/verification_plan/related_tests")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .map(|item| {
+            json!([
+                item.get("path"),
+                item.get("symbol"),
+                item.get("line"),
+                item.get("impact_index"),
+                item.pointer("/reach/call_depth"),
+                item.get("execution_status")
+            ])
+        })
+        .collect::<Vec<_>>();
+    json!({
+        "at":snapshot_tag(value.get("snapshot")),
+        "base":value.get("base_revision"),
+        "finding_cols":["rule","path","line","caller","removed_path","removed_symbol"],
+        "findings":findings,
+        "impact_cols":["caller_path","caller","target_path","target","line"],
+        "impacts":impacts,
+        "verification_plan":{
+            "test_cols":["path","symbol","line","impact","depth","status"],
+            "tests":tests,
+            "discovery":value.pointer("/verification_plan/test_discovery"),
+            "complete_suite":value.pointer("/verification_plan/complete_test_suite"),
+            "execution_status":value.pointer("/verification_plan/execution_status"),
+            "truncated":value.pointer("/verification_plan/truncated")
+        },
+        "change_plan":{
+            "algorithm":value.pointer("/change_plan/algorithm"),
+            "llm_used":value.pointer("/change_plan/llm_used"),
+            "totals":value.pointer("/change_plan/totals"),
+            "execution_order":value.pointer("/change_plan/execution_order"),
+            "agent_handoff":value.pointer("/change_plan/agent_handoff")
+        },
+        "partial":value.get("partial"),
+        "gaps":value.get("coverage_gap_count"),
+        "more_gaps":value.get("coverage_gaps_truncated")
+    })
 }
 
 fn compact_runtime_import(value: &Value) -> Value {
@@ -1487,7 +1564,7 @@ fn model_visible_schema() -> Value {
     let bounded_scope = bounded_scope_schema();
     let path_or_scope = path_or_scope_schema(&bounded_scope);
     let mut tools = json!([
-        {"name":"scan_risks","description":"Change risks and bounded verification plan with related-test candidates; no tests executed.","inputSchema":{"type":"object","properties":{"mode":{"enum":["changes"]},"limit":{"type":"integer","minimum":1,"maximum":50}}}},
+        {"name":"scan_risks","description":"Change risks, candidate tests and deterministic parallel agent missions; no tests or LLM executed.","inputSchema":{"type":"object","properties":{"mode":{"enum":["changes"]},"limit":{"type":"integer","minimum":1,"maximum":50}}}},
         {"name":"ingest_runtime_evidence","description":"Import revision-pinned runtime call evidence from a local file.","inputSchema":{"type":"object","required":["input_path"],"properties":{"input_path":{"type":"string"},"format":{"enum":["auto","ndjson","otlp-json"],"default":"auto"},"revision":{"type":"string"},"environment":{"type":"string"}}}},
         {"name":"orient","description":"Context","inputSchema":{"type":"object","required":["task","budget","mode","scope"],"properties":{"task":{"type":"string"},"budget":{"type":"integer","minimum":1},"mode":{"enum":["FAST","PRECISE","BOUNDED"]},"scope":bounded_scope.clone()}}},
         {"name":"search_graph","description":"Symbols or bodies","inputSchema":{"type":"object","required":["query"],"properties":{"query":{"type":"string"},"language":{"enum":["typescript","go","java","python","rust"]},"include_body":{"type":"boolean"},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":50}}}},
@@ -1504,7 +1581,7 @@ fn model_visible_schema() -> Value {
     let metadata = [
         (
             "Scan change risks",
-            "Find possible broken calls in working-tree changes versus HEAD; verify candidates and coverage.",
+            "Find possible broken calls, candidate tests and deterministic parallel agent missions for working-tree changes versus HEAD.",
         ),
         (
             "Import runtime evidence",
@@ -1643,6 +1720,47 @@ mod openai_metadata_tests {
                 .unwrap()
                 .len(),
             3
+        );
+    }
+
+    #[test]
+    fn compact_risks_keeps_exact_agent_handoff_without_duplicate_proofs() {
+        let handoff = json!({
+            "schema_version":"cgrx.agent.change-missions.v1",
+            "llm_used":false,
+            "missions":[{"mission_id":"change-mission.abc","impact_indexes":[0]}]
+        });
+        let structured = json!({
+            "snapshot":{"repo_revision":"abc123","working_tree_digest":"00","graph_generation":9},
+            "base_revision":"abc123",
+            "findings":[],
+            "impacts":[{
+                "caller":{"path":"caller.rs","symbol":"caller"},
+                "changed_target":{"path":"target.rs","symbol":"target"},
+                "line":3,
+                "current_edge":{"large_proof":"x".repeat(2048)}
+            }],
+            "verification_plan":{
+                "related_tests":[{"path":"tests.rs","symbol":"test_target","line":8,
+                    "impact_index":0,"reach":{"call_depth":2},"execution_status":"not_run",
+                    "call_chain":[{"large_proof":"x".repeat(2048)}]}],
+                "test_discovery":"candidates_found","complete_test_suite":false,
+                "execution_status":"not_run","truncated":false
+            },
+            "change_plan":{
+                "algorithm":"change_missions_v1","llm_used":false,
+                "totals":{"missions":1,"parallel_groups":1,"blocked":0},
+                "execution_order":[["change-mission.abc"]],"agent_handoff":handoff
+            },
+            "partial":false,"coverage_gap_count":0,"coverage_gaps_truncated":false
+        });
+        let compact = compact_risks(&structured);
+        assert_eq!(compact["change_plan"]["agent_handoff"], handoff);
+        assert_eq!(compact["change_plan"]["llm_used"], false);
+        assert_eq!(compact["verification_plan"]["tests"][0][1], "test_target");
+        assert!(
+            serde_json::to_vec(&compact).unwrap().len()
+                < serde_json::to_vec(&structured).unwrap().len() / 2
         );
     }
 

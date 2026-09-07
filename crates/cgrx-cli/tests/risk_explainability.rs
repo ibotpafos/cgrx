@@ -171,6 +171,96 @@ fn verification_plan_selects_two_hop_test_with_proofs_not_execution() {
     assert_eq!(p["test_reach"][0]["max_call_depth"], 2);
     assert_eq!(p["test_reach"][0]["behavioral_coverage"], "unknown");
     assert_eq!(f.scan(20), r);
+    let plan = &r["change_plan"];
+    assert_eq!(plan["algorithm"], "change_missions_v1");
+    assert_eq!(plan["llm_used"], false);
+    assert_eq!(plan["status"], "candidate_plan");
+    assert_eq!(plan["missions"].as_array().unwrap().len(), 1, "{r}");
+    let mission = &plan["missions"][0];
+    assert_eq!(mission["kind"], "changed_dependency");
+    assert_eq!(mission["impact_indexes"], json!([0]));
+    assert_eq!(mission["related_test_indexes"], json!([0]));
+    assert_eq!(mission["parallel_group"], 0);
+    assert_eq!(mission["blocked_by_gaps"], false);
+    assert_eq!(mission["steps"][0]["action"], "inspect_changed_target");
+    assert_eq!(mission["steps"][1]["action"], "review_proven_callers");
+    assert_eq!(mission["steps"][2]["action"], "run_candidate_tests");
+    assert_eq!(
+        plan["agent_handoff"]["schema_version"],
+        "cgrx.agent.change-missions.v1"
+    );
+    assert_eq!(plan["agent_handoff"]["llm_used"], false);
+    assert_eq!(plan["agent_handoff"]["snapshot"], r["snapshot"]);
+}
+
+#[test]
+fn change_missions_group_impacts_and_parallelize_disjoint_paths_deterministically() {
+    let a = "def target_a():\n    return 1\ndef caller_a():\n    return target_a()\ndef test_a():\n    caller_a()\n";
+    let b = "def target_b():\n    return 1\ndef caller_b():\n    return target_b()\ndef test_b():\n    caller_b()\n";
+    let mut f = Fixture::with_files(&[("a.py", a), ("b.py", b)]);
+    fs::write(f.root.join("a.py"), a.replacen("return 1", "return 2", 1)).unwrap();
+    fs::write(f.root.join("b.py"), b.replacen("return 1", "return 3", 1)).unwrap();
+    f.runtime.refresh(&f.root).unwrap();
+    let result = f.scan(20);
+    let plan = &result["change_plan"];
+    assert_eq!(plan["totals"]["missions"], 2, "{result}");
+    assert_eq!(plan["totals"]["parallel_groups"], 1, "{result}");
+    assert_eq!(plan["execution_order"][0].as_array().unwrap().len(), 2);
+    assert!(
+        plan["missions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|mission| mission["parallel_group"] == 0
+                && mission["depends_on"] == json!([])
+                && mission["blocked_by_gaps"] == false),
+        "{result}"
+    );
+    assert_eq!(f.scan(20), result);
+}
+
+#[test]
+fn change_mission_groups_multiple_callers_of_one_target() {
+    let source = "fn target() -> u32 { 1 }\nfn caller_a() { target(); }\nfn caller_b() { target(); }\nfn test_a() { caller_a(); }\nfn test_b() { caller_b(); }\n";
+    let mut f = Fixture::with_source(source);
+    f.change(&source.replace("{ 1 }", "{ 2 }"));
+    let result = f.scan(20);
+    let missions = result["change_plan"]["missions"].as_array().unwrap();
+    assert_eq!(result["impacts"].as_array().unwrap().len(), 2, "{result}");
+    assert_eq!(missions.len(), 1, "{result}");
+    assert_eq!(missions[0]["impact_indexes"], json!([0, 1]));
+    assert_eq!(missions[0]["related_test_indexes"], json!([0, 1]));
+}
+
+#[test]
+fn change_mission_keeps_path_specific_coverage_blockers_and_review_only_changes() {
+    let mut f = Fixture::with_source(DYNAMIC_NEIGHBOR);
+    f.change(&DYNAMIC_NEIGHBOR.replace("{ 1 }", "{ 2 }"));
+    let result = f.scan(20);
+    let missions = result["change_plan"]["missions"].as_array().unwrap();
+    assert_eq!(missions.len(), 1, "{result}");
+    assert_eq!(missions[0]["blocked_by_gaps"], true);
+    assert!(
+        missions[0]["blocking_gaps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|gap| gap["path"] == "main.rs" && gap["code"] == "DYNAMIC_DISPATCH")
+    );
+
+    let mut review_only = Fixture::with_source("fn untouched() {}\n");
+    review_only.change("fn newly_added() {}\n");
+    let result = review_only.scan(20);
+    assert_eq!(result["impacts"], json!([]));
+    assert_eq!(result["findings"], json!([]));
+    assert_eq!(
+        result["change_plan"]["missions"][0]["kind"],
+        "review_changed_path"
+    );
+    assert_eq!(
+        result["change_plan"]["missions"][0]["change_paths"],
+        json!(["main.rs"])
+    );
 }
 
 #[test]
@@ -253,6 +343,13 @@ fn verification_plan_test_reach_covers_every_supported_language() {
             "{ 2 }",
             "test_feature",
         ),
+        (
+            "FeatureTest.java",
+            "final class FeatureTest { int target() { return 1; } void verifiesFeature() { target(); } }\n",
+            "return 1",
+            "return 2",
+            "verifiesFeature",
+        ),
     ];
     for (path, source, needle, replacement, expected_symbol) in cases {
         let mut f = Fixture::with_files(&[(path, source)]);
@@ -325,6 +422,18 @@ fn verification_plan_removal_routes_to_finding_review_without_test_claim() {
     assert_eq!(r["verification_plan"]["review_findings"], json!([0]));
     assert_eq!(r["verification_plan"]["related_tests"], json!([]));
     assert_eq!(r["verification_plan"]["review_changed_paths"], true);
+    assert_eq!(
+        r["change_plan"]["missions"][0]["kind"],
+        "retained_call_candidate"
+    );
+    assert_eq!(
+        r["change_plan"]["missions"][0]["finding_indexes"],
+        json!([0])
+    );
+    assert_eq!(
+        r["change_plan"]["missions"][0]["steps"][0]["action"],
+        "inspect_retained_call"
+    );
 }
 
 #[test]

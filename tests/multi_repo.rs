@@ -751,7 +751,15 @@ fn risk_verification_plan_visible_over_mcp_and_repo_isolated() {
         result["verification_plan"]["related_tests"][0]["symbol"], "test_feature",
         "{response}"
     );
-    assert_eq!(visible["verification_plan"], result["verification_plan"]);
+    assert_eq!(
+        visible["verification_plan"]["tests"][0][1],
+        result["verification_plan"]["related_tests"][0]["symbol"]
+    );
+    assert_eq!(
+        visible["change_plan"]["agent_handoff"],
+        result["change_plan"]["agent_handoff"]
+    );
+    assert_eq!(visible["change_plan"]["llm_used"], false);
     assert_eq!(result["verification_plan"]["execution_status"], "not_run");
     let unchanged = risks(&mut m, &b);
     assert_eq!(
