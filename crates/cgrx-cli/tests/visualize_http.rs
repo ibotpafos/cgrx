@@ -372,10 +372,14 @@ fn http_boundary_rejects_malformed_and_traversal_requests() {
 fn serves_embedded_assets_with_security_headers() {
     let (_repository, server) = start_server();
     for (path, content_type, marker) in [
-        ("/", "text/html", "CGRX Evidence Graph"),
+        ("/", "text/html", "architecture-future-list"),
         ("/assets/styles.css", "text/css", "--surface"),
         ("/assets/layout.js", "text/javascript", "layoutGraph"),
-        ("/assets/state.js", "text/javascript", "createState"),
+        (
+            "/assets/state.js",
+            "text/javascript",
+            "projectArchitectureFuture",
+        ),
         (
             "/assets/git-history.js",
             "text/javascript",
@@ -386,7 +390,7 @@ fn serves_embedded_assets_with_security_headers() {
             "text/javascript",
             "web-git-graph",
         ),
-        ("/assets/app.js", "text/javascript", "loadStatus"),
+        ("/assets/app.js", "text/javascript", "loadArchitecture"),
     ] {
         let response = request(&server, "GET", path, false);
         assert!(response.starts_with("HTTP/1.1 200"), "{path}: {response}");

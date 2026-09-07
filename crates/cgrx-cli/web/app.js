@@ -2,7 +2,7 @@ import { edgeStyle, layoutGraph } from "./layout.js";
 import "./vendor/web-git-graph.js";
 import { CgrxGitGraphProvider } from "./git-history.js";
 import { graphEvidenceQuery, runtimeAgentHandoff, runtimeEdgePresentation } from "./runtime-evidence.js";
-import { createState, projectArchitecture, projectGraph, reduce, serializeAgentPlan, snapshotKey, summarizeBoundedResult } from "./state.js";
+import { architectureAgentHandoff, createState, projectArchitecture, projectArchitectureFuture, projectGraph, reduce, serializeAgentPlan, snapshotKey, summarizeBoundedResult } from "./state.js";
 
 const NS = "http://www.w3.org/2000/svg";
 const tokenKey = `cgrx-token:${location.host}`;
@@ -14,6 +14,7 @@ if (location.hash) history.replaceState(null, "", `${location.pathname}${locatio
 let state = createState();
 let currentGraph = null;
 let currentArchitecture = null;
+let currentArchitectureIssue = null;
 let currentCandidate = null;
 let currentStrategy = null;
 let historyConnected = false;
@@ -27,7 +28,7 @@ let runtimeStatus = null;
 
 const ids = [
   "freshness", "revision", "search-form", "search-input", "search-results", "match-count",
-  "refactor-list", "candidate-count", "runtime-list", "runtime-count", "graph-title", "graph-message", "graph-canvas",
+  "refactor-list", "candidate-count", "runtime-list", "runtime-count", "architecture-future-list", "architecture-future-count", "graph-title", "graph-message", "graph-canvas",
   "graph-svg", "camera-layer", "git-history-panel", "git-history", "inspector-content", "selection-kind", "strategy-panel", "strategy-tabs",
   "strategy-detail", "copy-agent", "copy-mcp", "copy-runtime-agent", "runtime-environment", "announcer", "zoom-in", "zoom-out", "reset-view"
 ];
@@ -56,6 +57,7 @@ export async function loadStatus() {
   if (changed) {
     currentStrategy = null;
     currentCandidate = null;
+    currentArchitectureIssue = null;
     el["strategy-panel"].hidden = true;
     await loadRefactors();
     await loadArchitecture();
@@ -145,6 +147,23 @@ async function loadRuntimeIntelligence() {
 async function loadArchitecture() {
   const value = await api("/api/architecture?scope=**&package_depth=2&limit=50");
   currentArchitecture = projectArchitecture(value);
+  const issues = value.architecture_plan?.issues || [];
+  const visibleIssueCount = Math.min(12, issues.length);
+  el["architecture-future-count"].textContent = `${visibleIssueCount}${issues.length > visibleIssueCount ? `/${issues.length}` : ""}${value.partial ? " · partial" : ""}`;
+  if (!issues.length) {
+    el["architecture-future-list"].innerHTML = '<p class="quiet">No cycle or high fan-in future is available in this scope.</p>';
+  } else {
+    el["architecture-future-list"].replaceChildren(...issues.slice(0, 12).map((issue) => {
+      const winner = issue.strategies.find((strategy) => strategy.recommended) || issue.strategies[0];
+      const title = issue.kind === "PACKAGE_DEPENDENCY_CYCLE"
+        ? (issue.packages || []).join(" ↔ ")
+        : `${issue.symbol?.symbol || "hotspot"} · ${shorten(issue.symbol?.path || "unknown path", 25)}`;
+      const evidence = issue.kind === "PACKAGE_DEPENDENCY_CYCLE"
+        ? `${issue.selected_boundary?.edges || 0} boundary edges`
+        : `${issue.symbol?.fan_in || 0} proven callers`;
+      return itemButton(title, `${winner.policy.replaceAll("_", " ")} · ${evidence}`, () => selectArchitectureIssue(issue));
+    }));
+  }
   if (state.mode === "architecture") renderMode();
   return value;
 }
@@ -212,9 +231,14 @@ function renderMode() {
       setMessage("Loading architecture projection…");
       return;
     }
-    el["graph-title"].textContent = "Architecture";
+    const graph = currentArchitectureIssue && currentStrategy
+      ? projectArchitectureFuture(currentArchitecture, currentArchitectureIssue, currentStrategy)
+      : currentArchitecture;
+    el["graph-title"].textContent = currentArchitectureIssue && currentStrategy
+      ? `Architecture · ${currentStrategy.policy.replaceAll("_", " ")}`
+      : "Architecture";
     el["graph-message"].hidden = true;
-    renderGraph(currentArchitecture);
+    renderGraph(graph);
     return;
   }
   if (!currentGraph) return;
@@ -274,7 +298,7 @@ function renderEdge(source, target, edge) {
 function renderNode(node) {
   const group = svg("g", {
     transform: `translate(${node.x} ${node.y})`,
-    class: `node ${node.lane === "tests" ? "node--test " : ""}${node.changed ? "node--changed " : ""}${node.status === "remove" ? "node--remove " : ""}${node.pinned ? "node--pinned " : ""}${state.selectedNodeId === node.node_id ? "is-selected" : ""}`,
+    class: `node ${node.lane === "tests" ? "node--test " : ""}${node.changed ? "node--changed " : ""}${node.status === "hypothetical" ? "node--future " : ""}${node.status === "remove" ? "node--remove " : ""}${node.pinned ? "node--pinned " : ""}${state.selectedNodeId === node.node_id ? "is-selected" : ""}`,
     tabindex: "0",
     role: "button",
     "aria-label": `${node.symbol}, ${node.path}, ${node.lane}`
@@ -308,7 +332,7 @@ async function selectNode(node) {
     ["Path", node.path],
     ["Span", `${node.span.start}–${node.span.end}`],
     ["Source hash", node.source_hash],
-    ["State", node.lane === "tests" ? "candidate · not run" : "current · indexed"],
+    ["State", node.status === "hypothetical" ? "hypothetical future" : node.lane === "tests" ? "candidate · not run" : "current · indexed"],
     ...(node.kind === "package" ? [
       ["Files", node.files], ["Symbols", node.symbols], ["Fan in", node.fan_in],
       ["Fan out", node.fan_out], ["Cycle", node.cycle ? "candidate package cycle" : "none detected"]
@@ -345,6 +369,7 @@ function inspectEdge(edge, source, target) {
 
 function selectCandidate(candidate) {
   currentCandidate = candidate;
+  currentArchitectureIssue = null;
   el["strategy-panel"].hidden = false;
   el["strategy-tabs"].replaceChildren(...candidate.strategies.map((strategy) => {
     const button = document.createElement("button");
@@ -358,22 +383,51 @@ function selectCandidate(candidate) {
   loadGraph(candidate.left.symbol, candidate.left.path);
 }
 
+function selectArchitectureIssue(issue) {
+  currentCandidate = null;
+  currentArchitectureIssue = issue;
+  el["strategy-panel"].hidden = false;
+  el["strategy-tabs"].replaceChildren(...issue.strategies.map((strategy) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.role = "tab";
+    button.textContent = strategy.policy.replaceAll("_", " ");
+    button.addEventListener("click", () => selectStrategy(strategy));
+    return button;
+  }));
+  selectStrategy(issue.strategies[0]);
+  activateMode("architecture");
+}
+
 function selectStrategy(strategy) {
-  currentStrategy = strategy;
+  currentStrategy = currentArchitectureIssue
+    ? { ...strategy, agent_handoff: architectureAgentHandoff(state.snapshot, currentArchitectureIssue, strategy) }
+    : strategy;
   state = reduce(state, { type: "strategy", strategyId: strategy.strategy_id });
+  const strategies = currentArchitectureIssue?.strategies || currentCandidate?.strategies || [];
   [...el["strategy-tabs"].children].forEach((button, index) => {
     button.setAttribute(
       "aria-selected",
-      String(currentCandidate.strategies[index].strategy_id === strategy.strategy_id)
+      String(strategies[index].strategy_id === strategy.strategy_id)
     );
   });
   const blocked = strategy.status === "blocked_by_gaps";
+  const summary = strategy.summary
+    || `${(strategy.counterfactual?.reasons || []).map((reason) => reason.replaceAll("_", " ")).join(" · ")} · graph ${JSON.stringify(strategy.predicted_graph || {})}`;
   el["strategy-detail"].innerHTML =
-    `<p class="strategy-summary">${escapeHtml(strategy.summary)}</p>`
+    `<p class="strategy-summary">${escapeHtml(summary)}</p>`
     + `<span class="risk ${blocked ? "risk--blocked" : ""}">`
-    + escapeHtml(blocked ? "blocked by gaps" : `${strategy.risk} risk · hypothetical`)
+    + escapeHtml(blocked ? "blocked by gaps" : `${strategy.counterfactual?.score ?? strategy.risk} · hypothetical`)
     + "</span>";
-  if (state.mode === "preview" || state.mode === "compare") renderMode();
+  if (state.mode === "preview" || state.mode === "compare" || state.mode === "architecture") renderMode();
+}
+
+function activateMode(mode) {
+  state = reduce(state, { type: "mode", mode });
+  document.querySelectorAll("[data-mode]").forEach((button) => {
+    button.classList.toggle("is-active", button.dataset.mode === mode);
+  });
+  renderMode();
 }
 
 function itemButton(title, subtitle, onClick) {
@@ -456,11 +510,7 @@ el["search-form"].addEventListener("submit", (event) => {
   });
 });
 document.querySelectorAll("[data-mode]").forEach((button) => button.addEventListener("click", () => {
-  state = reduce(state, { type: "mode", mode: button.dataset.mode });
-  document.querySelectorAll("[data-mode]").forEach((candidate) => {
-    candidate.classList.toggle("is-active", candidate === button);
-  });
-  renderMode();
+  activateMode(button.dataset.mode);
   if (state.mode === "architecture" && !currentArchitecture) {
     loadArchitecture().catch((error) => setMessage(error.message));
   }
@@ -546,6 +596,16 @@ el["copy-agent"].addEventListener("click", () => {
   if (currentStrategy) copy(serializeAgentPlan(currentStrategy), "Agent plan copied");
 });
 el["copy-mcp"].addEventListener("click", () => {
+  if (currentArchitectureIssue) {
+    copy(JSON.stringify({
+      tool: "get_architecture",
+      arguments: { scope: "**", package_depth: 2, limit: 50 },
+      selected_issue_id: currentArchitectureIssue.issue_id,
+      selected_strategy_id: currentStrategy?.strategy_id,
+      revalidate_snapshot: state.snapshot
+    }, null, 2), "Architecture MCP call copied");
+    return;
+  }
   if (!currentCandidate) return;
   copy(JSON.stringify({
     tool: "suggest_refactors",

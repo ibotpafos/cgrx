@@ -108,6 +108,14 @@ evidence inspector remain available without pointer-only interaction. Dragging
 a node pins it, arrow keys pan the canvas, and Reset restores the deterministic
 layout.
 
+The Architecture futures rail turns package cycles and high-fan-in hotspots
+from `get_architecture` into three selectable graph projections. Each strategy
+keeps proven evidence visible, draws its hypothetical nodes and edges
+separately, shows the exact score and coverage blockers, and copies the same
+snapshot-bound, model-free handoff that an agent can execute and revalidate.
+Changing the source snapshot clears the selection instead of presenting a
+stale future as current.
+
 ## Add observed runtime calls
 
 CGRX can fuse revision-pinned runtime calls with its static graph. It accepts
