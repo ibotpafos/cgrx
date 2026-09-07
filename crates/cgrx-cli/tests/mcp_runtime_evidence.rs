@@ -92,7 +92,7 @@ fn multi_repo_mcp_imports_and_traces_observed_calls_without_inline_payloads() {
         .collect::<Vec<_>>();
     assert_eq!(
         responses[1]["result"]["tools"].as_array().unwrap().len(),
-        14
+        15
     );
     let ingest = responses[2].pointer("/result/structuredContent").unwrap();
     assert_eq!(ingest["accepted"], 1);

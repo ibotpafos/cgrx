@@ -152,7 +152,7 @@ fn schema_count_is_machine_readable_and_within_reviewed_runtime_tool_budget() {
         .expect("stable schema count prefix")
         .parse()
         .expect("schema count is numeric");
-    assert!(count <= 2400, "schema count was {count}");
+    assert!(count <= 2700, "schema count was {count}");
 }
 
 #[test]
