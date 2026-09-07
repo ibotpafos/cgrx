@@ -1,13 +1,13 @@
 #!/bin/sh
 # CGRX user-local installer. No sudo, shell profile edits, or client config edits.
 set -eu
-version=${CGRX_VERSION:-v0.1.0-alpha.6}
+version=${CGRX_VERSION:-v0.1.0-alpha.7}
 dest=${CGRX_INSTALL_DIR:-"$HOME/.local/bin"}
 source_install=0
 for arg in "$@"; do
     case "$arg" in
         --source) source_install=1 ;;
-        --help) printf '%s\n' 'Usage: sh install.sh [--source]' 'CGRX_VERSION=v0.1.0-alpha.6 CGRX_INSTALL_DIR=$HOME/.local/bin'; exit 0 ;;
+        --help) printf '%s\n' 'Usage: sh install.sh [--source]' 'CGRX_VERSION=v0.1.0-alpha.7 CGRX_INSTALL_DIR=$HOME/.local/bin'; exit 0 ;;
         *) echo "Unknown option: $arg" >&2; exit 2 ;;
     esac
 done
