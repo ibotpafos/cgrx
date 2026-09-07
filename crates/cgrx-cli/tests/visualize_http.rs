@@ -170,6 +170,7 @@ fn starts_on_loopback_and_requires_capability() {
 fn read_only_api_routes_share_the_current_snapshot() {
     let (_repository, server) = start_server();
     let paths = [
+        "/api/runtime-status",
         "/api/search?q=selected&scope=**&limit=8",
         "/api/graph?symbol=selected&path=main.rs&direction=both&depth=1&node_limit=80&edge_limit=160",
         "/api/refactors?scope=**&language=rust&min_score=760&limit=8",
@@ -186,6 +187,32 @@ fn read_only_api_routes_share_the_current_snapshot() {
         snapshots.push(value["snapshot"].clone());
     }
     assert!(snapshots.windows(2).all(|pair| pair[0] == pair[1]));
+}
+
+#[test]
+fn serves_runtime_overlay_asset_and_validates_evidence_selector() {
+    let (_repository, server) = start_server();
+    let asset = request(&server, "GET", "/assets/runtime-evidence.js", false);
+    assert!(asset.starts_with("HTTP/1.1 200"), "{asset}");
+    assert!(asset.contains("text/javascript"), "{asset}");
+
+    let observed = request(
+        &server,
+        "GET",
+        "/api/graph?symbol=selected&path=main.rs&direction=both&depth=1&node_limit=80&edge_limit=160&evidence=observed",
+        true,
+    );
+    assert!(observed.starts_with("HTTP/1.1 200"), "{observed}");
+    assert!(observed.contains("\"evidence\":\"observed\""), "{observed}");
+
+    let invalid = request(
+        &server,
+        "GET",
+        "/api/graph?symbol=selected&path=main.rs&evidence=magic",
+        true,
+    );
+    assert!(invalid.starts_with("HTTP/1.1 400"), "{invalid}");
+    assert!(invalid.contains("cgrx.invalid_arguments"), "{invalid}");
 }
 
 #[test]

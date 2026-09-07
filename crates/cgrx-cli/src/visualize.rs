@@ -10,7 +10,7 @@ use std::process::Command;
 use std::time::Duration;
 
 use cgrx_cli::{GraphDirection, GraphViewRequest, Runtime, RuntimeError};
-use cgrx_core::{RelationKind, Scope};
+use cgrx_core::{EvidenceSelector, RelationKind, Scope};
 use serde_json::json;
 
 use self::http::{HttpRequest, HttpResponse};
@@ -144,9 +144,11 @@ impl Visualizer {
             "/assets/layout.js" => HttpResponse::javascript(assets::LAYOUT),
             "/assets/state.js" => HttpResponse::javascript(assets::STATE),
             "/assets/git-history.js" => HttpResponse::javascript(assets::GIT_HISTORY),
+            "/assets/runtime-evidence.js" => HttpResponse::javascript(assets::RUNTIME_EVIDENCE),
             "/assets/vendor/web-git-graph.js" => HttpResponse::javascript(assets::WEB_GIT_GRAPH),
             "/assets/app.js" => HttpResponse::javascript(assets::APP),
             "/api/status" => self.status(),
+            "/api/runtime-status" => self.api_result(self.runtime_status()),
             "/api/search" => self.api_result(self.search(request)),
             "/api/graph" => self.api_result(self.graph(request)),
             "/api/architecture" => self.api_result(self.architecture(request)),
@@ -203,15 +205,51 @@ impl Visualizer {
             }
         };
         let depth = number::<u8>(request, "depth", 1)?;
-        self.runtime.graph_view(GraphViewRequest {
-            symbol: required(request, "symbol")?.to_owned(),
-            path: optional_path(request)?.map(str::to_owned),
-            direction,
-            depth,
-            scope: scope(request, depth),
-            node_limit: number(request, "node_limit", 80)?,
-            edge_limit: number(request, "edge_limit", 160)?,
-        })
+        let evidence = match request.query("evidence").unwrap_or("static") {
+            "static" => EvidenceSelector::Static,
+            "observed" => EvidenceSelector::Observed,
+            "all" => EvidenceSelector::All,
+            _ => {
+                return Err(RuntimeError::public(
+                    "cgrx.invalid_arguments",
+                    "evidence must be static, observed, or all",
+                ));
+            }
+        };
+        let environments = request
+            .queries("environment")
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        self.runtime.graph_view_with_evidence(
+            GraphViewRequest {
+                symbol: required(request, "symbol")?.to_owned(),
+                path: optional_path(request)?.map(str::to_owned),
+                direction,
+                depth,
+                scope: scope(request, depth),
+                node_limit: number(request, "node_limit", 80)?,
+                edge_limit: number(request, "edge_limit", 160)?,
+            },
+            evidence,
+            &environments,
+        )
+    }
+
+    fn runtime_status(&self) -> Result<serde_json::Value, RuntimeError> {
+        let status = self.runtime.runtime_evidence_status()?;
+        let environments = self.runtime.runtime_evidence_environments()?;
+        let insights = self.runtime.runtime_insights(
+            &Scope {
+                include: vec!["**".to_owned()],
+                exclude: Vec::new(),
+                relation_kinds: vec![RelationKind::Calls, RelationKind::Implements],
+                max_depth: 4,
+            },
+            20,
+        )?;
+        Ok(
+            json!({"snapshot":self.runtime.snapshot(),"status":status,"environments":environments,"insights":insights}),
+        )
     }
 
     fn refactors(&self, request: &HttpRequest) -> Result<serde_json::Value, RuntimeError> {

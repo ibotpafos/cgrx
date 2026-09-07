@@ -137,6 +137,15 @@ embedding model, model weights, or external AI API.
 
 The workspace has six modes:
 
+The evidence switch independently selects **Static**, **Runtime**, or
+**Combined** traversal. Runtime edges are dashed, their logarithmic width is
+bounded by observed call count, and their opacity decays with age but never
+below 0.35. The Runtime intelligence list ranks hot paths, divergence and blast
+radius with the same `runtime_priority_v1` formula exposed to CLI agents. Copy
+runtime agent context exports the pinned snapshot, visible observed edges,
+filters, unresolved/ambiguous counts and deterministic insights; the handoff
+sets `llm_used=false` and requires snapshot revalidation before edits.
+
 - **Current** shows only indexed evidence from the active snapshot.
 - **Architecture** aggregates the same proven relationships into packages and
   exposes fan-in, fan-out, file and symbol counts in the inspector.

@@ -34,6 +34,10 @@
         <div class="section-title"><h2 id="results-title">Matches</h2><span id="match-count">0</span></div>
         <div id="search-results" class="item-list"><p class="quiet">Search by intent or symbol.</p></div>
       </section>
+      <section class="rail__section" aria-labelledby="runtime-title">
+        <div class="section-title"><h2 id="runtime-title">Runtime intelligence</h2><span id="runtime-count">0</span></div>
+        <div id="runtime-list" class="item-list"><p class="quiet">Waiting for revision-pinned traces…</p></div>
+      </section>
       <section class="rail__section rail__section--grow" aria-labelledby="refactors-title">
         <div class="section-title"><h2 id="refactors-title">Refactor paths</h2><span id="candidate-count">0</span></div>
         <div id="refactor-list" class="item-list"><p class="quiet">Scanning bounded candidates…</p></div>
@@ -54,6 +58,14 @@
           <button data-mode="compare">Compare</button>
           <button data-mode="history">Git history</button>
         </div>
+        <div class="evidence-switch" role="group" aria-label="Evidence layer">
+          <button class="is-active" data-evidence="static">Static</button>
+          <button data-evidence="observed">Runtime</button>
+          <button data-evidence="all">Combined</button>
+        </div>
+        <label class="environment-filter" for="runtime-environment">Environment
+          <select id="runtime-environment"><option value="">All</option></select>
+        </label>
         <div class="view-actions">
           <button id="zoom-out" aria-label="Zoom out">−</button>
           <button id="reset-view">Reset</button>
@@ -78,6 +90,8 @@
         <span><i class="key key--gap">?</i> unresolved gap</span>
         <span><i class="key key--future">+</i> proposed future</span>
         <span><i class="key key--test">T</i> candidate test · not run</span>
+        <span><i class="key key--runtime">●</i> observed runtime · width=count · opacity=age</span>
+        <button id="copy-runtime-agent" class="legend__action">Copy runtime agent context</button>
       </footer>
     </section>
 

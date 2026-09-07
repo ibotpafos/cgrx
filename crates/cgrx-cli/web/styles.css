@@ -42,7 +42,7 @@ button { color: inherit; }
 .search__row { display: grid; grid-template-columns: 1fr 38px; border: 1px solid var(--line-strong); border-radius: 9px; overflow: hidden; background: #0d1219; }
 .search input { min-width: 0; border: 0; outline: 0; padding: 10px 11px; color: var(--text); background: transparent; }
 .search__row:focus-within { border-color: var(--focus); box-shadow: 0 0 0 2px rgb(105 216 255 / .12); }
-.search button, .view-actions button, .mode-switch button, .copy-actions button { border: 0; background: transparent; cursor: pointer; }
+.search button, .view-actions button, .mode-switch button, .evidence-switch button, .copy-actions button { border: 0; background: transparent; cursor: pointer; }
 .search button { border-left: 1px solid var(--line); color: var(--focus); }
 .rail__section { min-height: 90px; }
 .rail__section--grow { flex: 1; }
@@ -61,11 +61,13 @@ button { color: inherit; }
 .stage__toolbar { display: flex; align-items: center; gap: 20px; min-height: 74px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
 .stage__toolbar > div:first-child { min-width: 165px; margin-right: auto; }
 .stage__toolbar h1 { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 16px; }
-.mode-switch, .view-actions { display: flex; padding: 3px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); }
+.mode-switch, .evidence-switch, .view-actions { display: flex; padding: 3px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); }
+.environment-filter { display: grid; gap: 3px; color: var(--muted); font: 9px ui-monospace, monospace; text-transform: uppercase; }
+.environment-filter select { max-width: 120px; border: 1px solid var(--line); border-radius: 6px; padding: 5px; background: var(--surface); color: var(--text); }
 .view-actions[hidden], .legend[hidden] { display: none; }
-.mode-switch button, .view-actions button { min-height: 32px; padding: 0 10px; border-radius: 6px; color: var(--muted); font-size: 11px; }
+.mode-switch button, .evidence-switch button, .view-actions button { min-height: 32px; padding: 0 10px; border-radius: 6px; color: var(--muted); font-size: 11px; }
 .mode-switch button:hover, .mode-switch button:focus-visible, .view-actions button:hover, .view-actions button:focus-visible { color: var(--text); outline: 1px solid var(--focus); }
-.mode-switch button.is-active { color: var(--text); background: var(--surface-raised); box-shadow: inset 0 -2px var(--focus); }
+.mode-switch button.is-active, .evidence-switch button.is-active { color: var(--text); background: var(--surface-raised); box-shadow: inset 0 -2px var(--focus); }
 .graph-canvas { min-height: 0; overflow: hidden; outline: none; touch-action: none; }
 .git-history-panel { position: relative; min-height: 0; padding: 10px 12px; overflow: hidden; background: var(--canvas); }
 .git-history-panel[hidden] { display: none; }
@@ -95,11 +97,13 @@ button { color: inherit; }
 .edge--hypothetical { stroke: var(--future); stroke-dasharray: 3 7; }
 .edge--preserved { stroke: #758297; }
 .edge--remove { stroke: var(--danger); stroke-dasharray: 6 6; }
+.edge--observed { stroke: var(--focus); }
 .edge-label { fill: var(--text); font: 700 10px ui-monospace, monospace; paint-order: stroke; stroke: var(--canvas); stroke-width: 4px; }
 .comparison-title { fill: var(--muted); font: 700 11px ui-monospace, monospace; letter-spacing: .14em; }
 .legend { display: flex; flex-wrap: wrap; gap: 18px; min-height: 42px; align-items: center; padding: 8px 16px; border-top: 1px solid var(--line); color: var(--muted); font-size: 10px; }
 .key { display: inline-grid; place-items: center; width: 18px; height: 18px; margin-right: 4px; border: 1px solid currentColor; border-radius: 50%; font-style: normal; font: 700 10px ui-monospace, monospace; }
-.key--proven { color: var(--proven); }.key--gap { color: var(--gap); }.key--future { color: var(--future); }.key--test { color: var(--test); }
+.key--proven { color: var(--proven); }.key--gap { color: var(--gap); }.key--future { color: var(--future); }.key--test { color: var(--test); }.key--runtime { color: var(--focus); }
+.legend__action { margin-left: auto; border: 1px solid var(--line); border-radius: 6px; padding: 6px 9px; background: var(--surface); color: var(--text); cursor: pointer; font-size: 10px; }
 .inspector__content { border-top: 1px solid var(--line); padding-top: 14px; }
 .fact { margin-bottom: 13px; }
 .fact dt { margin-bottom: 4px; color: var(--muted); font: 700 9px ui-monospace, monospace; letter-spacing: .1em; text-transform: uppercase; }

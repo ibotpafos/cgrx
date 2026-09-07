@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build:web-vendor": "esbuild crates/cgrx-cli/web/vendor-entry.ts --bundle --format=esm --minify --legal-comments=none --outfile=crates/cgrx-cli/web/vendor/web-git-graph.js && esbuild crates/cgrx-cli/web/git-history.ts --bundle --format=esm --minify --legal-comments=none --outfile=crates/cgrx-cli/web/vendor/git-history.js",
+    "build:web-vendor": "esbuild crates/cgrx-cli/web/vendor-entry.ts --bundle --format=esm --minify --legal-comments=none --outfile=crates/cgrx-cli/web/vendor/web-git-graph.js && esbuild crates/cgrx-cli/web/git-history.ts --bundle --format=esm --minify --legal-comments=none --outfile=crates/cgrx-cli/web/vendor/git-history.js && esbuild crates/cgrx-cli/web/runtime-evidence.ts --bundle --format=esm --minify --legal-comments=none --outfile=crates/cgrx-cli/web/vendor/runtime-evidence.js",
     "typecheck:web": "tsc --noEmit",
     "verify:web-csp": "node scripts/verify_web_git_graph_csp.mjs",
     "test": "node --test crates/cgrx-cli/web/tests/*.test.js"

@@ -1,6 +1,7 @@
 import { edgeStyle, layoutGraph } from "./layout.js";
 import "./vendor/web-git-graph.js";
 import { CgrxGitGraphProvider } from "./git-history.js";
+import { graphEvidenceQuery, runtimeAgentHandoff, runtimeEdgePresentation } from "./runtime-evidence.js";
 import { createState, projectArchitecture, projectGraph, reduce, serializeAgentPlan, snapshotKey, summarizeBoundedResult } from "./state.js";
 
 const NS = "http://www.w3.org/2000/svg";
@@ -21,12 +22,14 @@ let changedPaths = [];
 let panStart = null;
 let nodeDrag = null;
 let pinnedPositions = {};
+let evidenceMode = "static";
+let runtimeStatus = null;
 
 const ids = [
   "freshness", "revision", "search-form", "search-input", "search-results", "match-count",
-  "refactor-list", "candidate-count", "graph-title", "graph-message", "graph-canvas",
+  "refactor-list", "candidate-count", "runtime-list", "runtime-count", "graph-title", "graph-message", "graph-canvas",
   "graph-svg", "camera-layer", "git-history-panel", "git-history", "inspector-content", "selection-kind", "strategy-panel", "strategy-tabs",
-  "strategy-detail", "copy-agent", "copy-mcp", "announcer", "zoom-in", "zoom-out", "reset-view"
+  "strategy-detail", "copy-agent", "copy-mcp", "copy-runtime-agent", "runtime-environment", "announcer", "zoom-in", "zoom-out", "reset-view"
 ];
 const el = Object.fromEntries(ids.map((id) => [id, document.getElementById(id)]));
 
@@ -80,7 +83,7 @@ async function loadGraph(symbol, path) {
   state = reduce(state, { type: "request", generation });
   setMessage("Loading verified neighborhood…");
   const value = await api(
-    `/api/graph?symbol=${encodeURIComponent(symbol)}&path=${encodeURIComponent(path)}&direction=both&depth=1&node_limit=80&edge_limit=160`
+    `/api/graph?symbol=${encodeURIComponent(symbol)}&path=${encodeURIComponent(path)}&direction=both&depth=1&node_limit=80&edge_limit=160&${graphEvidenceQuery(evidenceMode, el["runtime-environment"].value ? [el["runtime-environment"].value] : [])}`
   );
   if (generation !== requestGeneration) return;
   currentGraph = value;
@@ -118,6 +121,25 @@ async function loadRefactors() {
   } catch (error) {
     el["refactor-list"].innerHTML = `<p class="error">${escapeHtml(error.message)}</p>`;
   }
+}
+
+async function loadRuntimeIntelligence() {
+  runtimeStatus = await api("/api/runtime-status");
+  const selectedEnvironment = el["runtime-environment"].value;
+  el["runtime-environment"].replaceChildren(new Option("All", ""), ...(runtimeStatus.environments || []).map((environment) => new Option(environment, environment)));
+  if ((runtimeStatus.environments || []).includes(selectedEnvironment)) el["runtime-environment"].value = selectedEnvironment;
+  const rows = runtimeStatus.insights?.rows || [];
+  el["runtime-count"].textContent = rows.length ? `${rows.length}/${runtimeStatus.insights.total}` : "0";
+  if (!rows.length) {
+    el["runtime-list"].innerHTML = '<p class="quiet">Import a trace to rank hot paths, divergence and blast radius.</p>';
+    return runtimeStatus;
+  }
+  el["runtime-list"].replaceChildren(...rows.map((row) => itemButton(
+    row.symbol,
+    `priority ${row.refactor_priority} · ${row.observed_count} calls · ${row.next_action.replaceAll("_", " ")}`,
+    () => loadGraph(row.symbol, row.path)
+  )));
+  return runtimeStatus;
 }
 
 async function loadArchitecture() {
@@ -232,13 +254,16 @@ function renderEdge(source, target, edge) {
   const ty = target.y + target.height / 2;
   const middle = (sx + tx) / 2;
   const style = edgeStyle(edge);
+  const runtimeStyle = runtimeEdgePresentation(edge);
   group.append(
     svg("path", {
       d: `M ${sx} ${sy} H ${middle} V ${ty} H ${tx}`,
       class: style.className,
-      "stroke-dasharray": style.dash
+      "stroke-dasharray": runtimeStyle?.dash || style.dash,
+      "stroke-width": runtimeStyle?.width || 1.7,
+      opacity: runtimeStyle?.opacity || 1
     }),
-    svgText(style.marker, middle + 5, ty - 6, "edge-label")
+    svgText(runtimeStyle?.marker || style.marker, middle + 5, ty - 6, "edge-label")
   );
   const inspect = () => inspectEdge(edge, source, target);
   group.addEventListener("click", inspect);
@@ -314,6 +339,7 @@ function inspectEdge(edge, source, target) {
     ["Resolver", evidence.resolver || "indexed"],
     ["Evidence site", evidence.path ? `${evidence.path}:${evidence.span?.start ?? "?"}` : "hypothetical"],
     ["Source hash", evidence.source_hash || "not applicable"]
+    ,...[edge.count ? [["Observed calls", edge.count], ["Environments", (edge.environments || []).join(", ")], ["Last seen", edge.last_seen_unix_nanos]] : []]
   ]);
 }
 
@@ -440,6 +466,14 @@ document.querySelectorAll("[data-mode]").forEach((button) => button.addEventList
   }
   if (state.mode === "history") connectGitHistory();
 }));
+document.querySelectorAll("[data-evidence]").forEach((button) => button.addEventListener("click", () => {
+  evidenceMode = button.dataset.evidence;
+  document.querySelectorAll("[data-evidence]").forEach((candidate) => candidate.classList.toggle("is-active", candidate === button));
+  if (currentGraph?.root) loadGraph(currentGraph.root.symbol, currentGraph.root.path).catch((error) => setMessage(error.message));
+}));
+el["runtime-environment"].addEventListener("change", () => {
+  if (currentGraph?.root) loadGraph(currentGraph.root.symbol, currentGraph.root.path).catch((error) => setMessage(error.message));
+});
 el["git-history"].addEventListener("gitgraph-commit-select", (event) => {
   const commit = event.detail.commit;
   const refs = (el["git-history"].data?.refs || []).filter((ref) => ref.target === commit.oid).map((ref) => ref.name);
@@ -524,6 +558,9 @@ el["copy-mcp"].addEventListener("click", () => {
     revalidate_snapshot: state.snapshot
   }, null, 2), "MCP call copied");
 });
+el["copy-runtime-agent"].addEventListener("click", () => {
+  if (currentGraph) copy(runtimeAgentHandoff(currentGraph, runtimeStatus?.insights?.rows || []), "Runtime agent context copied");
+});
 
 async function copy(value, announcement) {
   await navigator.clipboard.writeText(value);
@@ -540,7 +577,7 @@ function graphPoint(event) {
   };
 }
 
-Promise.all([loadStatus(), loadRefactors(), loadArchitecture()]).catch((error) => {
+Promise.all([loadStatus(), loadRefactors(), loadArchitecture(), loadRuntimeIntelligence()]).catch((error) => {
   el.freshness.textContent = "offline";
   el.freshness.className = "badge badge--stale";
   setMessage(error.message);
