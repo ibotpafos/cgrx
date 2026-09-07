@@ -411,6 +411,72 @@ impl Server {
                     ],
                 )
             }
+            "check_repository_gates" => {
+                #[derive(Deserialize)]
+                #[serde(deny_unknown_fields)]
+                struct Args {
+                    #[serde(default)]
+                    scope: Value,
+                    #[serde(default = "default_package_depth")]
+                    package_depth: u8,
+                    #[serde(default)]
+                    fail_on: Option<String>,
+                    #[serde(default)]
+                    max_package_cycles: Option<usize>,
+                    #[serde(default)]
+                    max_package_fan_out: Option<usize>,
+                    #[serde(default)]
+                    max_symbol_fan_in: Option<usize>,
+                    #[serde(default)]
+                    max_unresolved_local_dependencies: Option<usize>,
+                    #[serde(default)]
+                    max_coverage_gaps: Option<usize>,
+                }
+                let args: Args = from_value(call.arguments)?;
+                let fail_on = args.fail_on.as_deref().unwrap_or("error");
+                if !(1..=4).contains(&args.package_depth)
+                    || !matches!(fail_on, "error" | "warning" | "none")
+                    || [
+                        args.max_package_cycles,
+                        args.max_package_fan_out,
+                        args.max_symbol_fan_in,
+                        args.max_unresolved_local_dependencies,
+                        args.max_coverage_gaps,
+                    ]
+                    .into_iter()
+                    .flatten()
+                    .any(|threshold| threshold > 10_000)
+                {
+                    return Err(JsonRpcError::typed(
+                        -32602,
+                        "cgrx.invalid_arguments",
+                        "package_depth must be 1..4; fail_on must be error, warning, or none; thresholds must be 0..10000",
+                    ));
+                }
+                let architecture = self
+                    .backend
+                    .as_mut()
+                    .ok_or_else(|| {
+                        JsonRpcError::typed(
+                            -32602,
+                            "cgrx.architecture_unavailable",
+                            "managed repository required",
+                        )
+                    })?
+                    .get_architecture(args.scope, args.package_depth, 100)
+                    .map_err(backend_error)?;
+                evaluate_repository_gates(
+                    &architecture,
+                    fail_on,
+                    [
+                        args.max_package_cycles.unwrap_or(0),
+                        args.max_package_fan_out.unwrap_or(20),
+                        args.max_symbol_fan_in.unwrap_or(50),
+                        args.max_unresolved_local_dependencies.unwrap_or(0),
+                        args.max_coverage_gaps.unwrap_or(0),
+                    ],
+                )
+            }
             "orient" => self.orient(from_value(call.arguments)?)?,
             "ingest_runtime_evidence" => {
                 self.ingest_runtime_evidence(from_value(call.arguments)?)?
@@ -721,6 +787,7 @@ fn model_visible_result(tool: &str, structured: &Value) -> Value {
     match tool {
         "scan_risks" => compact_risks(structured),
         "check_change_gates" => compact_change_gates(structured),
+        "check_repository_gates" => compact_repository_gates(structured),
         "orient" => compact_orient(structured),
         "ingest_runtime_evidence" => compact_runtime_import(structured),
         "expand" => compact_expand(structured),
@@ -863,6 +930,145 @@ fn compact_change_gates(value: &Value) -> Value {
         "partial":value.get("partial"),
         "gaps":value.get("coverage_gap_count"),
         "agent_handoff":value.get("agent_handoff")
+    })
+}
+
+fn evaluate_repository_gates(architecture: &Value, fail_on: &str, thresholds: [usize; 5]) -> Value {
+    let package_cycles = architecture
+        .pointer("/totals/cycles")
+        .and_then(Value::as_u64)
+        .unwrap_or(0) as usize;
+    let max_package_fan_out = architecture
+        .get("packages")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|package| package.get("fan_out").and_then(Value::as_u64))
+        .max()
+        .unwrap_or(0) as usize;
+    let max_symbol_fan_in = architecture
+        .get("hotspots")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|hotspot| hotspot.get("fan_in").and_then(Value::as_u64))
+        .max()
+        .unwrap_or(0) as usize;
+    let unresolved_local_dependencies = [
+        "/import_resolution/unresolved_local",
+        "/reference_resolution/unresolved_local",
+    ]
+    .into_iter()
+    .filter_map(|pointer| architecture.pointer(pointer).and_then(Value::as_u64))
+    .sum::<u64>() as usize;
+    let coverage_gaps = architecture
+        .get("coverage_gap_count")
+        .and_then(Value::as_u64)
+        .unwrap_or(0) as usize;
+    let specs = [
+        ("max_package_cycles", package_cycles, thresholds[0], "error"),
+        (
+            "max_package_fan_out",
+            max_package_fan_out,
+            thresholds[1],
+            "warning",
+        ),
+        (
+            "max_symbol_fan_in",
+            max_symbol_fan_in,
+            thresholds[2],
+            "warning",
+        ),
+        (
+            "max_unresolved_local_dependencies",
+            unresolved_local_dependencies,
+            thresholds[3],
+            "error",
+        ),
+        ("max_coverage_gaps", coverage_gaps, thresholds[4], "error"),
+    ];
+    let rules = specs
+        .iter()
+        .map(|(rule, value, threshold, severity)| {
+            json!({
+                "rule":rule,"value":value,"threshold":threshold,"severity":severity,
+                "status":if value > threshold {"breached"} else {"passed"}
+            })
+        })
+        .collect::<Vec<_>>();
+    let errors = rules
+        .iter()
+        .filter(|rule| rule["status"] == "breached" && rule["severity"] == "error")
+        .count();
+    let warnings = rules
+        .iter()
+        .filter(|rule| rule["status"] == "breached" && rule["severity"] == "warning")
+        .count();
+    let partial = architecture
+        .get("partial")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    let verdict = if errors > 0 {
+        "FAIL"
+    } else if partial {
+        "INCONCLUSIVE"
+    } else if warnings > 0 {
+        "WARN"
+    } else {
+        "PASS"
+    };
+    let would_block = match fail_on {
+        "none" => false,
+        "warning" => errors > 0 || warnings > 0 || partial,
+        _ => errors > 0 || partial,
+    };
+    let failed_rules = rules
+        .iter()
+        .filter(|rule| rule["status"] == "breached")
+        .map(|rule| rule["rule"].clone())
+        .collect::<Vec<_>>();
+    let cycle_count = architecture
+        .get("cycles")
+        .and_then(Value::as_array)
+        .map_or(0, Vec::len);
+    json!({
+        "snapshot":architecture.get("snapshot"),
+        "algorithm":"repository_quality_gate_v1",
+        "llm_used":false,
+        "verdict":verdict,"would_block":would_block,"fail_on":fail_on,
+        "rules":rules,"totals":{"errors":errors,"warnings":warnings},
+        "partial":partial,
+        "coverage_gaps":architecture.get("coverage_gaps"),
+        "coverage_gap_count":coverage_gaps,
+        "architecture_totals":architecture.get("totals"),
+        "agent_handoff":{
+            "schema_version":"cgrx.agent.repository-quality-gate.v1",
+            "algorithm":"repository_quality_gate_v1","llm_used":false,
+            "snapshot":architecture.get("snapshot"),"verdict":verdict,
+            "would_block":would_block,"failed_rules":failed_rules,
+            "cycle_indexes":(0..cycle_count).collect::<Vec<_>>(),
+            "architecture_plan":architecture.get("architecture_plan"),
+            "requirements":[
+                "Revalidate the snapshot and gate policy before acting.",
+                "Inspect referenced cycles, hotspots, unresolved dependencies, and coverage gaps.",
+                "Treat observed maxima as lower bounds whenever architecture evidence is partial."
+            ]
+        },
+        "limitations":[
+            "The gate evaluates proven repository-local architecture and does not claim whole-program correctness.",
+            "Package fan-out and symbol fan-in are graph metrics, not cyclomatic complexity.",
+            "INCONCLUSIVE is distinct from PASS and remains blocking unless fail_on is none."
+        ]
+    })
+}
+
+fn compact_repository_gates(value: &Value) -> Value {
+    json!({
+        "at":snapshot_tag(value.get("snapshot")),"algorithm":value.get("algorithm"),
+        "llm_used":value.get("llm_used"),"verdict":value.get("verdict"),
+        "would_block":value.get("would_block"),"fail_on":value.get("fail_on"),
+        "rules":value.get("rules"),"partial":value.get("partial"),
+        "gaps":value.get("coverage_gap_count"),"agent_handoff":value.get("agent_handoff")
     })
 }
 
@@ -1757,6 +1963,7 @@ fn model_visible_schema() -> Value {
     let mut tools = json!([
         {"name":"scan_risks","description":"Change risks, candidate tests and deterministic parallel agent missions; no tests or LLM executed.","inputSchema":{"type":"object","properties":{"mode":{"enum":["changes"]},"limit":{"type":"integer","minimum":1,"maximum":50}}}},
         {"name":"check_change_gates","description":"Snapshot-bound conservative change gate over findings, impacts, missions and graph coverage; no tests or LLM executed.","inputSchema":{"type":"object","properties":{"limit":{"type":"integer","minimum":1,"maximum":50},"fail_on":{"enum":["error","warning","none"],"default":"error"},"max_warning_findings":{"type":"integer","minimum":0,"maximum":10000,"default":0},"max_blocked_missions":{"type":"integer","minimum":0,"maximum":10000,"default":0},"max_coverage_gaps":{"type":"integer","minimum":0,"maximum":10000,"default":0},"max_unverified_impacts":{"type":"integer","minimum":0,"maximum":10000,"default":0}}}},
+        {"name":"check_repository_gates","description":"Snapshot-bound architecture gate over package cycles, graph coupling, unresolved local dependencies and coverage; no LLM executed.","inputSchema":{"type":"object","properties":{"scope":path_or_scope.clone(),"package_depth":{"type":"integer","minimum":1,"maximum":4,"default":2},"fail_on":{"enum":["error","warning","none"],"default":"error"},"max_package_cycles":{"type":"integer","minimum":0,"maximum":10000,"default":0},"max_package_fan_out":{"type":"integer","minimum":0,"maximum":10000,"default":20},"max_symbol_fan_in":{"type":"integer","minimum":0,"maximum":10000,"default":50},"max_unresolved_local_dependencies":{"type":"integer","minimum":0,"maximum":10000,"default":0},"max_coverage_gaps":{"type":"integer","minimum":0,"maximum":10000,"default":0}}}},
         {"name":"ingest_runtime_evidence","description":"Import revision-pinned runtime call evidence from a local file.","inputSchema":{"type":"object","required":["input_path"],"properties":{"input_path":{"type":"string"},"format":{"enum":["auto","ndjson","otlp-json"],"default":"auto"},"revision":{"type":"string"},"environment":{"type":"string"}}}},
         {"name":"orient","description":"Context","inputSchema":{"type":"object","required":["task","budget","mode","scope"],"properties":{"task":{"type":"string"},"budget":{"type":"integer","minimum":1},"mode":{"enum":["FAST","PRECISE","BOUNDED"]},"scope":bounded_scope.clone()}}},
         {"name":"search_graph","description":"Symbols or bodies","inputSchema":{"type":"object","required":["query"],"properties":{"query":{"type":"string"},"language":{"enum":["typescript","go","java","python","rust"]},"include_body":{"type":"boolean"},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":50}}}},
@@ -1778,6 +1985,10 @@ fn model_visible_schema() -> Value {
         (
             "Check change quality gates",
             "Evaluate snapshot-bound change findings, mission blockers and graph coverage with explicit pass, warning, fail or inconclusive semantics.",
+        ),
+        (
+            "Check repository quality gates",
+            "Evaluate proven repository architecture with explicit cycle, coupling, unresolved-dependency and coverage policies.",
         ),
         (
             "Import runtime evidence",
@@ -1837,7 +2048,7 @@ fn model_visible_schema() -> Value {
             json!({"readOnlyHint":false,"destructiveHint":false,"openWorldHint":false});
         tool["outputSchema"] = json!({"type":"object","additionalProperties":true});
     }
-    tools[13]["inputSchema"]["properties"]["paths_or_scope"] = path_or_scope;
+    tools[14]["inputSchema"]["properties"]["paths_or_scope"] = path_or_scope;
     tools
 }
 
@@ -1867,7 +2078,7 @@ mod openai_metadata_tests {
     #[test]
     fn openai_tool_contract() {
         let tools = model_visible_schema();
-        assert_eq!(tools.as_array().unwrap().len(), 14);
+        assert_eq!(tools.as_array().unwrap().len(), 15);
         for tool in tools.as_array().unwrap() {
             assert!(tool["title"].as_str().is_some_and(|s| !s.is_empty()));
             assert!(tool["description"].as_str().is_some_and(|s| s.len() > 20));
@@ -1959,6 +2170,37 @@ mod openai_metadata_tests {
         assert_eq!(failed["verdict"], "FAIL");
         assert_eq!(failed["would_block"], true);
         assert_eq!(failed["agent_handoff"]["finding_indexes"], json!([0]));
+    }
+
+    #[test]
+    fn repository_gate_separates_architecture_failures_warnings_and_uncertainty() {
+        let architecture = json!({
+            "snapshot":{"repo_revision":"abc","working_tree_digest":"00","graph_generation":1},
+            "packages":[{"fan_out":3}],"hotspots":[{"fan_in":8}],
+            "cycles":[{"packages":["a","b"]}],"totals":{"cycles":1},
+            "import_resolution":{"unresolved_local":0},
+            "reference_resolution":{"unresolved_local":0},
+            "coverage_gap_count":0,"coverage_gaps":[],"partial":false,
+            "architecture_plan":{"algorithm":"architecture_futures_v1"}
+        });
+        let failed = evaluate_repository_gates(&architecture, "error", [0, 20, 50, 0, 0]);
+        assert_eq!(failed["verdict"], "FAIL");
+        assert_eq!(failed["would_block"], true);
+        assert_eq!(failed["agent_handoff"]["cycle_indexes"], json!([0]));
+
+        let warning = evaluate_repository_gates(&architecture, "error", [1, 2, 50, 0, 0]);
+        assert_eq!(warning["verdict"], "WARN");
+        assert_eq!(warning["would_block"], false);
+        assert_eq!(
+            evaluate_repository_gates(&architecture, "warning", [1, 2, 50, 0, 0])["would_block"],
+            true
+        );
+
+        let mut partial = architecture;
+        partial["partial"] = true.into();
+        let inconclusive = evaluate_repository_gates(&partial, "error", [1, 3, 8, 0, 0]);
+        assert_eq!(inconclusive["verdict"], "INCONCLUSIVE");
+        assert_eq!(inconclusive["would_block"], true);
     }
 
     #[test]

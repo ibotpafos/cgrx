@@ -172,6 +172,17 @@ arguments, the response carries exact rule inputs and evidence indexes, and
 the algorithm `change_quality_gate_v1` reports `llm_used=false`.
 See the [four-case contract benchmark](docs/benchmarks/change-quality-gates-2026-09-07.md).
 
+`check_repository_gates` applies the same explicit policy model to the current
+architecture snapshot. It checks package cycles, maximum package fan-out,
+maximum symbol fan-in, unresolved repository-local dependencies and graph
+coverage. Defaults fail proven cycles, unresolved local dependencies and
+coverage gaps; unusually coupled packages or symbols are warnings. Partial or
+truncated architecture evidence produces `INCONCLUSIVE` unless an observed
+error rule already proves `FAIL`. The response embeds the model-free
+`architecture_futures_v1` plan so an agent can move from a failed gate to
+ranked graph repair strategies without another broad query. See the
+[repository gate benchmark](docs/benchmarks/repository-quality-gates-2026-09-07.md).
+
 The explorer's **Changes** mode renders that same plan as an execution DAG.
 Columns are sequential groups, cards within a column can run in parallel, and
 each card exposes its paths, evidence indexes, candidate tests, dependencies
@@ -227,6 +238,7 @@ is not required by the released executable.
 | expand | Follow-up context using a returned handle |
 | scan_risks | Candidate relationship risks, tests and deterministic parallel Change Missions |
 | check_change_gates | Conservative change gate with explicit pass, warning, failure and inconclusive states |
+| check_repository_gates | Architecture gate for cycles, coupling, unresolved local dependencies and graph coverage |
 | suggest_refactors | Similar callable bodies and a hypothetical extract-helper graph delta |
 
 `search_graph` searches symbol names by default. Set `include_body: true` to

@@ -135,7 +135,7 @@ fn multi_repo_lazy_schema_and_notifications() {
     );
     let r = m.rpc("tools/list", json!({}));
     let ts = r["result"]["tools"].as_array().unwrap();
-    assert_eq!(ts.len(), 14);
+    assert_eq!(ts.len(), 15);
     for t in ts {
         assert!(
             t["inputSchema"]["required"]
@@ -811,5 +811,46 @@ fn change_quality_gate_is_snapshot_bound_model_free_and_policy_aware() {
     assert_eq!(
         strict["result"]["structuredContent"]["snapshot"],
         result["snapshot"]
+    );
+}
+
+#[test]
+fn repository_quality_gate_reuses_proven_architecture_and_warning_policy() {
+    let d = Dir::new();
+    let a = d.repo("a", "fn target() {}\nfn caller() { target(); }\n");
+    let mut m = Mcp::new(&d.0, "2", &d.0.join("log"));
+    let response = m.tool(
+        "check_repository_gates",
+        json!({"repo":a,"fail_on":"error","max_symbol_fan_in":0}),
+    );
+    let result = &response["result"]["structuredContent"];
+    let visible: Value =
+        serde_json::from_str(response["result"]["content"][0]["text"].as_str().unwrap()).unwrap();
+    assert_eq!(
+        result["algorithm"], "repository_quality_gate_v1",
+        "{response}"
+    );
+    assert_eq!(result["llm_used"], false);
+    assert_eq!(result["verdict"], "WARN");
+    assert_eq!(result["would_block"], false);
+    assert_eq!(result["partial"], false);
+    assert_eq!(visible["agent_handoff"], result["agent_handoff"]);
+
+    let strict = m.tool(
+        "check_repository_gates",
+        json!({"repo":a,"fail_on":"warning","max_symbol_fan_in":0}),
+    );
+    assert_eq!(strict["result"]["structuredContent"]["would_block"], true);
+    assert_eq!(
+        strict["result"]["structuredContent"]["snapshot"],
+        result["snapshot"]
+    );
+
+    error(
+        &m.tool(
+            "check_repository_gates",
+            json!({"repo":a,"package_depth":0}),
+        ),
+        "cgrx.invalid_arguments",
     );
 }

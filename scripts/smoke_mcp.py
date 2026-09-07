@@ -44,15 +44,18 @@ with tempfile.TemporaryDirectory(prefix="cgrx-smoke-") as directory:
         {"jsonrpc": "2.0", "id": 8, "method": "tools/call", "params": {
             "name": "get_architecture", "arguments": {"repo": directory,
             "scope": "**", "package_depth": 1, "limit": 20}}},
+        {"jsonrpc": "2.0", "id": 9, "method": "tools/call", "params": {
+            "name": "check_repository_gates", "arguments": {"repo": directory,
+            "scope": "**", "package_depth": 1}}},
     ]
     result = subprocess.run([binary, "serve", "--multi-repo"],
                             input="".join(json.dumps(f) + "\n" for f in frames),
                             text=True, capture_output=True, timeout=60)
     assert result.returncode == 0, result.stderr
     responses = [json.loads(line) for line in result.stdout.splitlines()]
-    assert len(responses) == 8, responses
+    assert len(responses) == 9, responses
     assert all("error" not in r for r in responses), responses
-    assert len(responses[1]["result"]["tools"]) == 14, responses[1]
+    assert len(responses[1]["result"]["tools"]) == 15, responses[1]
     nodes = responses[2]["result"]["structuredContent"]["nodes"]
     assert len(nodes) == 1 and nodes[0]["symbol"] == "caller", responses[2]
     matches = responses[3]["result"]["structuredContent"]["matches"]
@@ -86,4 +89,7 @@ with tempfile.TemporaryDirectory(prefix="cgrx-smoke-") as directory:
     assert architecture["totals"]["symbol_communities"] >= 1, responses[7]
     assert architecture["symbol_communities"][0]["top_nodes"], responses[7]
     assert set(architecture["snapshot"]) == {"repo_revision", "working_tree_digest", "graph_generation"}, responses[7]
-print("MCP_SMOKE=PASS; TOOLS=14; CALLER=caller; BODY_SEARCH=target; OUTLINE=5; USAGES=1; REFACTORS=1; ARCHITECTURE=1")
+    repository_gate = responses[8]["result"]["structuredContent"]
+    assert repository_gate["verdict"] == "PASS", responses[8]
+    assert repository_gate["would_block"] is False and repository_gate["llm_used"] is False, responses[8]
+print("MCP_SMOKE=PASS; TOOLS=15; CALLER=caller; BODY_SEARCH=target; OUTLINE=5; USAGES=1; REFACTORS=1; ARCHITECTURE=1")
