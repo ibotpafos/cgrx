@@ -11,8 +11,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
-const TOOLS: [&str; 12] = [
+const TOOLS: [&str; 13] = [
     "scan_risks",
+    "ingest_runtime_evidence",
     "orient",
     "expand",
     "status",

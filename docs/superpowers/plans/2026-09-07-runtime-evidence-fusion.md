@@ -340,20 +340,20 @@ git commit -m "feat: import runtime evidence from the CLI"
 - Extends: `trace_path`, `find_usages`, `scan_risks`, `suggest_refactors`, and `orient` with optional `evidence`.
 - Extends: `status` with compact runtime observation counts.
 
-- [ ] **Step 1: Write tool schema and routing tests**
+- [x] **Step 1: Write tool schema and routing tests**
 
 Assert thirteen tools, a bounded `ingest_runtime_evidence` schema, `evidence`
 enum values, required absolute `repo`, cross-repo isolation, and no inline trace
 body property. Measure `model_visible_schema_json()` and set a reviewed maximum
 equal to the current token count plus the measured ingestion schema cost.
 
-- [ ] **Step 2: Verify schema tests fail**
+- [x] **Step 2: Verify schema tests fail**
 
 Run: `cargo test -p cgrx-mcp && cargo test -p cgrx-cli --test mcp_runtime_evidence`
 
 Expected: tool count and missing ingestion method fail.
 
-- [ ] **Step 3: Add backend methods and dispatch**
+- [x] **Step 3: Add backend methods and dispatch**
 
 ```rust
 fn ingest_runtime_evidence(
@@ -374,7 +374,7 @@ Parse with `EvidenceSelector`; invalid values fail before backend access. Add
 runtime fields only for `observed`/`all` calls or nonzero status counts. Preserve
 the exact serialized static response fixtures.
 
-- [ ] **Step 5: Run MCP tests and smoke**
+- [x] **Step 5: Run MCP tests and smoke**
 
 Run: `cargo test -p cgrx-mcp && cargo test -p cgrx-cli --test mcp_runtime_evidence && cargo build -p cgrx-cli && python3 scripts/smoke_mcp.py target/debug/cgrx`
 

@@ -1,5 +1,8 @@
 use cgrx_capsule::{ObligationId, QbecV1, RccV1, ResidualObligation, Tokenizer, verify_hashes};
-use cgrx_core::{CapsuleStatus, Hash32, Mode, QueryRequest, RepoSnapshot, Scope, canonical_hash};
+use cgrx_core::{
+    CapsuleStatus, EvidenceSelector, Hash32, Mode, QueryRequest, RepoSnapshot, Scope,
+    canonical_hash,
+};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::fs::{self, OpenOptions};
@@ -24,6 +27,18 @@ struct UsageLog {
 }
 
 pub trait ToolBackend: Send + Sync {
+    fn ingest_runtime_evidence(
+        &mut self,
+        _input_path: &str,
+        _format: &str,
+        _revision: Option<&str>,
+        _environment: Option<&str>,
+    ) -> Result<Value, BackendError> {
+        Err(BackendError::new(
+            "cgrx.runtime_evidence_unavailable",
+            "runtime evidence import requires a managed repository backend",
+        ))
+    }
     fn scan_risks(&mut self, _mode: &str, _limit: usize) -> Result<Value, BackendError> {
         Err(BackendError::new(
             "cgrx.risk_scan_unavailable",
@@ -58,6 +73,26 @@ pub trait ToolBackend: Send + Sync {
         scope: Value,
         limit: u32,
     ) -> Result<Value, BackendError>;
+    #[allow(clippy::too_many_arguments)]
+    fn trace_path_with_evidence(
+        &mut self,
+        symbol: &str,
+        path: Option<&str>,
+        direction: &str,
+        depth: u8,
+        scope: Value,
+        limit: u32,
+        evidence: EvidenceSelector,
+    ) -> Result<Value, BackendError> {
+        if evidence == EvidenceSelector::Static {
+            self.trace_path(symbol, path, direction, depth, scope, limit)
+        } else {
+            Err(BackendError::new(
+                "cgrx.runtime_evidence_unavailable",
+                "runtime evidence requires a managed repository backend",
+            ))
+        }
+    }
     fn find_usages(
         &mut self,
         symbol: &str,
@@ -66,6 +101,25 @@ pub trait ToolBackend: Send + Sync {
         depth: u8,
         limit: u32,
     ) -> Result<Value, BackendError>;
+    #[allow(clippy::too_many_arguments)]
+    fn find_usages_with_evidence(
+        &mut self,
+        symbol: &str,
+        path: Option<&str>,
+        scope: Value,
+        depth: u8,
+        limit: u32,
+        evidence: EvidenceSelector,
+    ) -> Result<Value, BackendError> {
+        if evidence == EvidenceSelector::Static {
+            self.find_usages(symbol, path, scope, depth, limit)
+        } else {
+            Err(BackendError::new(
+                "cgrx.runtime_evidence_unavailable",
+                "runtime evidence requires a managed repository backend",
+            ))
+        }
+    }
     fn suggest_refactors(
         &mut self,
         _scope: Value,
@@ -297,6 +351,9 @@ impl Server {
                     .map_err(backend_error)?
             }
             "orient" => self.orient(from_value(call.arguments)?)?,
+            "ingest_runtime_evidence" => {
+                self.ingest_runtime_evidence(from_value(call.arguments)?)?
+            }
             "search_graph" => self.search_graph(from_value(call.arguments)?)?,
             "get_outline" => self.get_outline(from_value(call.arguments)?)?,
             "get_architecture" => self.get_architecture(from_value(call.arguments)?)?,
@@ -393,6 +450,27 @@ impl Server {
             .map_err(backend_error)
     }
 
+    fn ingest_runtime_evidence(
+        &mut self,
+        arguments: IngestRuntimeEvidenceArguments,
+    ) -> Result<Value, JsonRpcError> {
+        let Some(backend) = &mut self.backend else {
+            return Err(JsonRpcError::typed(
+                -32020,
+                "cgrx.runtime_evidence_unavailable",
+                "runtime evidence import requires an indexed runtime backend",
+            ));
+        };
+        backend
+            .ingest_runtime_evidence(
+                &arguments.input_path,
+                &arguments.format,
+                arguments.revision.as_deref(),
+                arguments.environment.as_deref(),
+            )
+            .map_err(backend_error)
+    }
+
     fn get_outline(&mut self, arguments: GetOutlineArguments) -> Result<Value, JsonRpcError> {
         let Some(backend) = &mut self.backend else {
             return Err(JsonRpcError::typed(
@@ -431,13 +509,14 @@ impl Server {
             ));
         };
         backend
-            .trace_path(
+            .trace_path_with_evidence(
                 &arguments.symbol,
                 arguments.path.as_deref(),
                 &arguments.direction,
                 arguments.depth,
                 arguments.scope,
                 arguments.limit,
+                arguments.evidence,
             )
             .map_err(backend_error)
     }
@@ -451,12 +530,13 @@ impl Server {
             ));
         };
         backend
-            .find_usages(
+            .find_usages_with_evidence(
                 &arguments.symbol,
                 arguments.path.as_deref(),
                 arguments.scope,
                 arguments.depth,
                 arguments.limit,
+                arguments.evidence,
             )
             .map_err(backend_error)
     }
@@ -579,6 +659,7 @@ impl Server {
 fn model_visible_result(tool: &str, structured: &Value) -> Value {
     match tool {
         "orient" => compact_orient(structured),
+        "ingest_runtime_evidence" => compact_runtime_import(structured),
         "expand" => compact_expand(structured),
         "search_graph" => compact_search(structured),
         "get_outline" => compact_outline(structured),
@@ -591,6 +672,18 @@ fn model_visible_result(tool: &str, structured: &Value) -> Value {
         "status" => compact_status(structured),
         _ => structured.clone(),
     }
+}
+
+fn compact_runtime_import(value: &Value) -> Value {
+    json!({
+        "accepted":value.get("accepted"),
+        "ambiguous":value.get("ambiguous"),
+        "unresolved":value.get("unresolved"),
+        "duplicate":value.get("duplicate"),
+        "edges":value.get("edges"),
+        "warnings":value.get("warnings"),
+        "gaps":value.get("gaps").and_then(Value::as_array).into_iter().flatten().take(12).collect::<Vec<_>>()
+    })
 }
 
 fn compact_orient(value: &Value) -> Value {
@@ -825,6 +918,7 @@ fn compact_architecture(value: &Value) -> Value {
 
 fn compact_trace(value: &Value) -> Value {
     let snapshot = value.get("snapshot");
+    let include_evidence = value.get("evidence").is_some();
     let mut paths = Vec::<String>::new();
     let rows: Vec<_> = value
         .get("nodes")
@@ -841,12 +935,19 @@ fn compact_trace(value: &Value) -> Value {
                         paths.len() - 1
                     })
             });
-            json!([
-                item.get("symbol"),
-                path_id,
-                item.get("hop"),
-                item.get("direction"),
-            ])
+            let mut row = vec![
+                item.get("symbol").cloned().unwrap_or(Value::Null),
+                json!(path_id),
+                item.get("hop").cloned().unwrap_or(Value::Null),
+                item.get("direction").cloned().unwrap_or(Value::Null),
+            ];
+            if include_evidence {
+                row.extend([
+                    item.get("evidence").cloned().unwrap_or(Value::Null),
+                    item.get("count").cloned().unwrap_or(Value::Null),
+                ]);
+            }
+            json!(row)
         })
         .collect();
     let mut compact = json!({
@@ -858,11 +959,16 @@ fn compact_trace(value: &Value) -> Value {
         "n": value.get("total"),
         "gaps": value.get("coverage_gap_count"),
     });
+    if include_evidence {
+        compact["cols"] = json!(["symbol", "path_id", "hop", "direction", "evidence", "count"]);
+        compact["evidence"] = value["evidence"].clone();
+    }
     insert_more_when_true(&mut compact, value.get("truncated"));
     compact
 }
 
 fn compact_usages(value: &Value) -> Value {
+    let include_evidence = value.get("evidence").is_some();
     let mut paths = Vec::<String>::new();
     let rows: Vec<_> = value
         .get("usages")
@@ -880,16 +986,29 @@ fn compact_usages(value: &Value) -> Value {
                         paths.len() - 1
                     })
             });
-            json!([
-                item.pointer("/source/symbol"),
-                path_id,
-                item.get("hop"),
-                item.pointer("/via/symbol"),
-                item.get("relation"),
-                item.pointer("/site/span/start"),
-                item.pointer("/site/span/end"),
-                item.get("resolver")
-            ])
+            let mut row = vec![
+                item.pointer("/source/symbol")
+                    .cloned()
+                    .unwrap_or(Value::Null),
+                json!(path_id),
+                item.get("hop").cloned().unwrap_or(Value::Null),
+                item.pointer("/via/symbol").cloned().unwrap_or(Value::Null),
+                item.get("relation").cloned().unwrap_or(Value::Null),
+                item.pointer("/site/span/start")
+                    .cloned()
+                    .unwrap_or(Value::Null),
+                item.pointer("/site/span/end")
+                    .cloned()
+                    .unwrap_or(Value::Null),
+                item.get("resolver").cloned().unwrap_or(Value::Null),
+            ];
+            if include_evidence {
+                row.extend([
+                    item.get("evidence").cloned().unwrap_or(Value::Null),
+                    item.get("count").cloned().unwrap_or(Value::Null),
+                ]);
+            }
+            json!(row)
         })
         .collect();
     let mut compact = json!({
@@ -901,6 +1020,21 @@ fn compact_usages(value: &Value) -> Value {
         "n":value.get("total"),
         "gaps":value.get("coverage_gap_count")
     });
+    if include_evidence {
+        compact["cols"] = json!([
+            "source",
+            "path_id",
+            "hop",
+            "via",
+            "relation",
+            "site_start",
+            "site_end",
+            "resolver",
+            "evidence",
+            "count"
+        ]);
+        compact["evidence"] = value["evidence"].clone();
+    }
     insert_more_when_true(&mut compact, value.get("truncated"));
     compact
 }
@@ -1098,6 +1232,22 @@ struct SearchGraphArguments {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct IngestRuntimeEvidenceArguments {
+    input_path: String,
+    #[serde(default = "default_runtime_format")]
+    format: String,
+    #[serde(default)]
+    revision: Option<String>,
+    #[serde(default)]
+    environment: Option<String>,
+}
+
+fn default_runtime_format() -> String {
+    "auto".to_owned()
+}
+
+#[derive(Deserialize)]
 struct GetOutlineArguments {
     path: String,
     #[serde(default = "default_outline_limit")]
@@ -1135,6 +1285,8 @@ struct TracePathArguments {
     scope: Value,
     #[serde(default = "default_graph_limit")]
     limit: u32,
+    #[serde(default)]
+    evidence: EvidenceSelector,
 }
 
 #[derive(Deserialize)]
@@ -1148,6 +1300,8 @@ struct FindUsagesArguments {
     depth: u8,
     #[serde(default = "default_outline_limit")]
     limit: u32,
+    #[serde(default)]
+    evidence: EvidenceSelector,
 }
 
 #[derive(Deserialize)]
@@ -1279,12 +1433,13 @@ fn model_visible_schema() -> Value {
     let path_or_scope = path_or_scope_schema(&bounded_scope);
     let mut tools = json!([
         {"name":"scan_risks","description":"Change risks and bounded verification plan with related-test candidates; no tests executed.","inputSchema":{"type":"object","properties":{"mode":{"enum":["changes"]},"limit":{"type":"integer","minimum":1,"maximum":50}}}},
+        {"name":"ingest_runtime_evidence","description":"Import revision-pinned runtime call evidence from a local file.","inputSchema":{"type":"object","required":["input_path"],"properties":{"input_path":{"type":"string"},"format":{"enum":["auto","ndjson","otlp-json"],"default":"auto"},"revision":{"type":"string"},"environment":{"type":"string"}}}},
         {"name":"orient","description":"Context","inputSchema":{"type":"object","required":["task","budget","mode","scope"],"properties":{"task":{"type":"string"},"budget":{"type":"integer","minimum":1},"mode":{"enum":["FAST","PRECISE","BOUNDED"]},"scope":bounded_scope.clone()}}},
         {"name":"search_graph","description":"Symbols or bodies","inputSchema":{"type":"object","required":["query"],"properties":{"query":{"type":"string"},"language":{"enum":["typescript","go","python","rust"]},"include_body":{"type":"boolean"},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":50}}}},
         {"name":"get_outline","description":"File symbols","inputSchema":{"type":"object","required":["path"],"properties":{"path":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":500}}}},
         {"name":"get_architecture","description":"Packages, proven boundaries, hotspots, cycles and package/symbol communities","inputSchema":{"type":"object","properties":{"scope":path_or_scope.clone(),"package_depth":{"type":"integer","minimum":1,"maximum":4},"limit":{"type":"integer","minimum":1,"maximum":100}}}},
-        {"name":"trace_path","description":"Calls","inputSchema":{"type":"object","required":["symbol"],"properties":{"symbol":{"type":"string"},"path":{"type":"string"},"direction":{"enum":["callers","callees","both"]},"depth":{"type":"integer","minimum":1,"maximum":4},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":50}}}},
-        {"name":"find_usages","description":"Proven usages","inputSchema":{"type":"object","required":["symbol"],"properties":{"symbol":{"type":"string"},"path":{"type":"string"},"depth":{"type":"integer","minimum":1,"maximum":4},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":500}}}},
+        {"name":"trace_path","description":"Calls","inputSchema":{"type":"object","required":["symbol"],"properties":{"symbol":{"type":"string"},"path":{"type":"string"},"direction":{"enum":["callers","callees","both"]},"depth":{"type":"integer","minimum":1,"maximum":4},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":50},"evidence":{"enum":["static","observed","all"],"default":"static"}}}},
+        {"name":"find_usages","description":"Proven usages","inputSchema":{"type":"object","required":["symbol"],"properties":{"symbol":{"type":"string"},"path":{"type":"string"},"depth":{"type":"integer","minimum":1,"maximum":4},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":500},"evidence":{"enum":["static","observed","all"],"default":"static"}}}},
         {"name":"suggest_refactors","description":"Similar code and hypothetical graph delta","inputSchema":{"type":"object","properties":{"language":{"enum":["typescript","go","python","rust"]},"min_score":{"type":"integer","minimum":0,"maximum":1000},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":50}}}},
         {"name":"get_code_snippet","description":"Source","inputSchema":{"type":"object","required":["symbol"],"properties":{"symbol":{"type":"string"},"path":{"type":"string"}}}},
         {"name":"check_index_coverage","description":"Coverage","inputSchema":{"type":"object","properties":{"paths":{"type":"array","items":{"type":"string"}},"scopes":{"type":"array","items":{"type":"string"}},"offset":{"type":"integer","minimum":0},"limit":{"type":"integer","minimum":1,"maximum":500}}}},
@@ -1295,6 +1450,10 @@ fn model_visible_schema() -> Value {
         (
             "Scan change risks",
             "Find possible broken calls in working-tree changes versus HEAD; verify candidates and coverage.",
+        ),
+        (
+            "Import runtime evidence",
+            "Import bounded OTLP/JSON or CGRX NDJSON from an approved local path without accepting inline trace bodies.",
         ),
         (
             "Orient on a task",
@@ -1350,7 +1509,7 @@ fn model_visible_schema() -> Value {
             json!({"readOnlyHint":false,"destructiveHint":false,"openWorldHint":false});
         tool["outputSchema"] = json!({"type":"object","additionalProperties":true});
     }
-    tools[11]["inputSchema"]["properties"]["paths_or_scope"] = path_or_scope;
+    tools[12]["inputSchema"]["properties"]["paths_or_scope"] = path_or_scope;
     tools
 }
 
@@ -1380,7 +1539,7 @@ mod openai_metadata_tests {
     #[test]
     fn openai_tool_contract() {
         let tools = model_visible_schema();
-        assert_eq!(tools.as_array().unwrap().len(), 12);
+        assert_eq!(tools.as_array().unwrap().len(), 13);
         for tool in tools.as_array().unwrap() {
             assert!(tool["title"].as_str().is_some_and(|s| !s.is_empty()));
             assert!(tool["description"].as_str().is_some_and(|s| s.len() > 20));
@@ -1407,6 +1566,22 @@ mod openai_metadata_tests {
             search["inputSchema"]["properties"]["language"]["enum"],
             json!(["typescript", "go", "python", "rust"])
         );
+        for name in ["trace_path", "find_usages"] {
+            let tool = tools
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|tool| tool["name"] == name)
+                .unwrap();
+            assert_eq!(
+                tool["inputSchema"]["properties"]["evidence"]["enum"],
+                json!(["static", "observed", "all"])
+            );
+            assert_eq!(
+                tool["inputSchema"]["properties"]["evidence"]["default"],
+                "static"
+            );
+        }
         assert_eq!(
             path_or_scope_schema(&scope)["anyOf"]
                 .as_array()
@@ -1414,6 +1589,30 @@ mod openai_metadata_tests {
                 .len(),
             3
         );
+    }
+
+    #[test]
+    fn compact_trace_adds_runtime_columns_only_for_evidence_aware_results() {
+        let base = json!({
+            "snapshot":{"repo_revision":"abc123","working_tree_digest":"00","graph_generation":9},
+            "root":{"symbol":"target","path":"main.rs","span":{"start":0,"end":10}},
+            "nodes":[{"symbol":"caller","path":"main.rs","hop":1,"direction":"callers","evidence":"observed","count":7}],
+            "total":1,"truncated":false,"coverage_gap_count":0
+        });
+        let static_result = compact_trace(&base);
+        assert_eq!(
+            static_result["cols"],
+            json!(["symbol", "path_id", "hop", "direction"])
+        );
+        let mut observed = base;
+        observed["evidence"] = json!("observed");
+        let observed_result = compact_trace(&observed);
+        assert_eq!(
+            observed_result["cols"],
+            json!(["symbol", "path_id", "hop", "direction", "evidence", "count"])
+        );
+        assert_eq!(observed_result["rows"][0][4], "observed");
+        assert_eq!(observed_result["rows"][0][5], 7);
     }
 
     #[test]

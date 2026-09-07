@@ -205,15 +205,38 @@ impl Runtime {
         limit: usize,
         evidence: EvidenceSelector,
     ) -> Result<Value, RuntimeError> {
-        self.trace_path_with_evidence(
-            symbol,
-            path,
-            "callers",
-            depth,
-            scope,
-            limit.min(50),
-            evidence,
-        )
+        if evidence == EvidenceSelector::Static {
+            return self.find_usages(symbol, path, scope, depth, limit);
+        }
+        if limit > 50 {
+            return Err(RuntimeError::new(
+                "cgrx.invalid_arguments",
+                "evidence-aware find_usages limit must be 1..50",
+            ));
+        }
+        let trace =
+            self.trace_path_with_evidence(symbol, path, "callers", depth, scope, limit, evidence)?;
+        let usages = trace["nodes"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .map(|node| json!({
+                "source":{"node_id":node["node_id"],"symbol":node["symbol"],"path":node["path"]},
+                "site":{"path":node["path"],"span":node["span"]},
+                "hop":node["hop"],
+                "relation":"CALLS",
+                "evidence":node["evidence"],
+                "count":node["count"],
+            }))
+            .collect::<Vec<_>>();
+        Ok(json!({
+            "snapshot":trace["snapshot"],
+            "root":trace["root"],
+            "evidence":evidence,
+            "usages":usages,
+            "total":trace["total"],
+            "truncated":trace["truncated"],
+        }))
     }
 
     #[allow(clippy::too_many_arguments)]
