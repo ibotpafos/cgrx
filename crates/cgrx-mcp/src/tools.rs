@@ -745,6 +745,7 @@ fn compact_search(value: &Value) -> Value {
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
+        .take(12)
         .map(|item| {
             json!([
                 item.get("symbol"),
@@ -890,6 +891,32 @@ fn compact_architecture(value: &Value) -> Value {
             ])
         })
         .collect::<Vec<_>>();
+    let architecture_futures = value
+        .pointer("/architecture_plan/issues")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .take(6)
+        .filter_map(|issue| {
+            let winner = issue
+                .get("strategies")?
+                .as_array()?
+                .iter()
+                .find(|strategy| strategy["recommended"] == true)?;
+            Some(json!({
+                "issue_id":issue.get("issue_id"),
+                "kind":issue.get("kind"),
+                "packages":issue.get("packages"),
+                "selected_boundary":issue.get("selected_boundary"),
+                "policy":winner.get("policy"),
+                "score":winner.pointer("/counterfactual/score"),
+                "reasons":winner.pointer("/counterfactual/reasons"),
+                "strategy_id":winner.get("strategy_id"),
+                "predicted_graph":winner.get("predicted_graph"),
+                "agent_handoff":issue.get("agent_handoff")
+            }))
+        })
+        .collect::<Vec<_>>();
     let mut compact = json!({
         "at":snapshot_tag(value.get("snapshot")),
         "relation_kinds":value.get("relation_kinds"),
@@ -906,6 +933,14 @@ fn compact_architecture(value: &Value) -> Value {
         "symbol_community_cols":["label","members","cohesion","packages","edge_types","representative_path","top_symbols"],
         "symbol_communities":symbol_communities,
         "symbol_community_detection":value.get("symbol_community_detection"),
+        "architecture_futures":architecture_futures,
+        "architecture_planner":{
+            "algorithm":value.pointer("/architecture_plan/algorithm"),
+            "llm_used":value.pointer("/architecture_plan/llm_used"),
+            "totals":value.pointer("/architecture_plan/totals"),
+            "shown":architecture_futures.len(),
+            "more":value.pointer("/architecture_plan/totals/issues").and_then(Value::as_u64).is_some_and(|total| total > architecture_futures.len() as u64)
+        },
         "totals":value.get("totals"),
         "import_resolution":value.get("import_resolution"),
         "reference_resolution":value.get("reference_resolution"),
@@ -913,6 +948,14 @@ fn compact_architecture(value: &Value) -> Value {
         "partial":value.get("partial")
     });
     insert_more_when_true(&mut compact, value.get("truncated"));
+    let encoded = serde_json::to_string(&compact).expect("compact architecture serializes");
+    let payload_tokens = Tokenizer::o200k_base()
+        .expect("bundled o200k tokenizer")
+        .count(&encoded);
+    compact
+        .as_object_mut()
+        .expect("compact architecture is an object")
+        .insert("payload_tokens".to_owned(), json!(payload_tokens));
     compact
 }
 
@@ -1449,7 +1492,7 @@ fn model_visible_schema() -> Value {
         {"name":"orient","description":"Context","inputSchema":{"type":"object","required":["task","budget","mode","scope"],"properties":{"task":{"type":"string"},"budget":{"type":"integer","minimum":1},"mode":{"enum":["FAST","PRECISE","BOUNDED"]},"scope":bounded_scope.clone()}}},
         {"name":"search_graph","description":"Symbols or bodies","inputSchema":{"type":"object","required":["query"],"properties":{"query":{"type":"string"},"language":{"enum":["typescript","go","python","rust"]},"include_body":{"type":"boolean"},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":50}}}},
         {"name":"get_outline","description":"File symbols","inputSchema":{"type":"object","required":["path"],"properties":{"path":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":500}}}},
-        {"name":"get_architecture","description":"Packages, proven boundaries, hotspots, cycles and package/symbol communities","inputSchema":{"type":"object","properties":{"scope":path_or_scope.clone(),"package_depth":{"type":"integer","minimum":1,"maximum":4},"limit":{"type":"integer","minimum":1,"maximum":100}}}},
+        {"name":"get_architecture","description":"Packages, proven boundaries, communities and model-free ranked graph futures for cycles and hotspots","inputSchema":{"type":"object","properties":{"scope":path_or_scope.clone(),"package_depth":{"type":"integer","minimum":1,"maximum":4},"limit":{"type":"integer","minimum":1,"maximum":100}}}},
         {"name":"trace_path","description":"Calls","inputSchema":{"type":"object","required":["symbol"],"properties":{"symbol":{"type":"string"},"path":{"type":"string"},"direction":{"enum":["callers","callees","both"]},"depth":{"type":"integer","minimum":1,"maximum":4},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":50},"evidence":{"enum":["static","observed","all"],"default":"static"}}}},
         {"name":"find_usages","description":"Proven usages","inputSchema":{"type":"object","required":["symbol"],"properties":{"symbol":{"type":"string"},"path":{"type":"string"},"depth":{"type":"integer","minimum":1,"maximum":4},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":500},"evidence":{"enum":["static","observed","all"],"default":"static"}}}},
         {"name":"suggest_refactors","description":"Similar code and hypothetical graph delta","inputSchema":{"type":"object","properties":{"language":{"enum":["typescript","go","python","rust"]},"min_score":{"type":"integer","minimum":0,"maximum":1000},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":50}}}},
@@ -1717,6 +1760,12 @@ mod openai_metadata_tests {
             "community_detection":{"method":"DETERMINISTIC_WEIGHTED_MODULARITY","relation_weights":{"CALLS":4,"IMPLEMENTS":4,"IMPORTS":2,"REFERENCES":1},"modularity":0.25,"iterations":2},
             "symbol_communities":symbol_communities,
             "symbol_community_detection":{"method":"DETERMINISTIC_WEIGHTED_MODULARITY","relation_weights":{"CALLS":4,"IMPLEMENTS":4},"modularity":0.25,"iterations":2,"unclustered_symbols":1},
+            "architecture_plan":{"algorithm":"architecture_futures_v1","llm_used":false,"totals":{"issues":1,"future_graphs":3},"issues":[{
+                "issue_id":"architecture-issue1.abc","kind":"PACKAGE_DEPENDENCY_CYCLE","packages":["api","core"],
+                "selected_boundary":{"source":"api","target":"core","edges":2,"relations":["CALLS"]},
+                "strategies":[{"strategy_id":"architecture-strategy1.best","policy":"invert_dependency","recommended":true,"counterfactual":{"score":820,"reasons":["package_cycle_detected"]},"predicted_graph":{"cycles_removed":1}}],
+                "agent_handoff":{"schema_version":"cgrx.agent.architecture-future.v1","strategy_id":"architecture-strategy1.best","llm_used":false}
+            }]},
             "totals":{"packages":2,"boundaries":1,"hotspots":1,"cycles":1,"communities":1,"symbol_communities":13},
             "import_resolution":{"proven":1,"external":2,"out_of_scope":0,"unresolved_local":0},
             "reference_resolution":{"proven":2,"external":1,"out_of_scope":0,"unresolved_local":0},
@@ -1750,10 +1799,26 @@ mod openai_metadata_tests {
         assert_eq!(compact["symbol_communities"][0][5], "core/store_0.ts");
         assert_eq!(compact["symbol_communities"][0][6][0], "save_0");
         assert_eq!(compact["totals"]["symbol_communities"], 13);
+        assert_eq!(compact["architecture_planner"]["llm_used"], false);
+        assert_eq!(
+            compact["architecture_futures"][0]["policy"],
+            "invert_dependency"
+        );
+        assert_eq!(compact["architecture_futures"][0]["score"], 820);
+        assert_eq!(
+            compact["architecture_futures"][0]["agent_handoff"]["llm_used"],
+            false
+        );
         assert_eq!(
             compact["symbol_community_detection"]["unclustered_symbols"],
             1
         );
+        let mut counted = compact.clone();
+        counted.as_object_mut().unwrap().remove("payload_tokens");
+        let expected_tokens = Tokenizer::o200k_base()
+            .unwrap()
+            .count(&serde_json::to_string(&counted).unwrap());
+        assert_eq!(compact["payload_tokens"], expected_tokens);
         let encoded = serde_json::to_string(&compact).unwrap();
         assert!(!encoded.contains(&"x".repeat(20_000)));
         assert!(

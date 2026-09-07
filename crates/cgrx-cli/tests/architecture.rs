@@ -143,6 +143,32 @@ fn architecture_projects_proven_package_boundaries_cycles_and_hotspots() {
         serde_json::json!(["api", "core"])
     );
     assert_eq!(result["partial"], false);
+    assert_eq!(
+        result["architecture_plan"]["algorithm"],
+        "architecture_futures_v1"
+    );
+    assert_eq!(result["architecture_plan"]["llm_used"], false);
+    assert_eq!(
+        result["architecture_plan"]["issues"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    let issue = &result["architecture_plan"]["issues"][0];
+    assert_eq!(issue["kind"], "PACKAGE_DEPENDENCY_CYCLE");
+    assert_eq!(issue["selected_boundary"]["source"], "api");
+    assert_eq!(issue["selected_boundary"]["target"], "core");
+    assert_eq!(issue["strategies"].as_array().unwrap().len(), 3);
+    assert_eq!(issue["strategies"][0]["policy"], "invert_dependency");
+    assert_eq!(issue["strategies"][0]["recommended"], true);
+    assert_eq!(issue["strategies"][0]["counterfactual"]["rank"], 1);
+    assert_eq!(issue["strategies"][0]["counterfactual"]["llm_used"], false);
+    assert_eq!(
+        issue["strategies"][0]["predicted_graph"]["cycles_removed"],
+        1
+    );
+    assert_eq!(issue["agent_handoff"]["llm_used"], false);
     assert_eq!(result["truncated"], false);
     assert!(result["snapshot"]["repo_revision"].is_string());
     assert_eq!(
@@ -172,6 +198,14 @@ fn architecture_projects_proven_package_boundaries_cycles_and_hotspots() {
             )
     );
     assert_eq!(bounded["truncated"], true);
+    assert_eq!(
+        bounded["architecture_plan"]["issues"][0]["strategies"][0]["policy"],
+        "preserve_and_monitor"
+    );
+    assert_eq!(
+        bounded["architecture_plan"]["issues"][0]["strategies"][1]["status"],
+        "blocked_by_gaps"
+    );
 }
 
 #[test]
@@ -294,6 +328,49 @@ fn architecture_finds_deterministic_weighted_semantic_communities() {
         runtime.get_architecture(&scope(), 1, 20).unwrap(),
         "community detection must be byte-stable for the same snapshot"
     );
+}
+
+#[test]
+fn architecture_plans_high_fan_in_hotspot_futures_without_a_model() {
+    let repository = TestDirectory::new("architecture-hotspot-planner-repository");
+    git(repository.path(), &["init", "-q"]);
+    git(
+        repository.path(),
+        &["config", "user.email", "test@example.invalid"],
+    );
+    git(repository.path(), &["config", "user.name", "CGRX Test"]);
+    fs::create_dir_all(repository.path().join("core")).unwrap();
+    fs::create_dir_all(repository.path().join("callers")).unwrap();
+    fs::write(
+        repository.path().join("core/hot.ts"),
+        "export function hot() { return 1; }\n",
+    )
+    .unwrap();
+    for index in 0..5 {
+        fs::write(
+            repository.path().join(format!("callers/c{index}.ts")),
+            format!(
+                "import {{ hot }} from '../core/hot';\nexport function caller{index}() {{ return hot(); }}\n"
+            ),
+        )
+        .unwrap();
+    }
+    git(repository.path(), &["add", "."]);
+    git(repository.path(), &["commit", "-qm", "fixture"]);
+    let state = TestDirectory::new("architecture-hotspot-planner-state");
+    Runtime::index(repository.path(), state.path()).unwrap();
+    let runtime = Runtime::open(state.path()).unwrap();
+
+    let result = runtime.get_architecture(&scope(), 1, 20).unwrap();
+    let issues = result["architecture_plan"]["issues"].as_array().unwrap();
+    assert_eq!(issues.len(), 1);
+    assert_eq!(issues[0]["kind"], "HIGH_FAN_IN_HOTSPOT");
+    assert_eq!(issues[0]["symbol"]["symbol"], "hot");
+    assert_eq!(issues[0]["symbol"]["fan_in"], 5);
+    assert_eq!(issues[0]["strategies"][0]["policy"], "introduce_facade");
+    assert_eq!(issues[0]["strategies"][0]["recommended"], true);
+    assert_eq!(issues[0]["agent_handoff"]["llm_used"], false);
+    assert_eq!(result["architecture_plan"]["totals"]["future_graphs"], 3);
 }
 
 #[test]

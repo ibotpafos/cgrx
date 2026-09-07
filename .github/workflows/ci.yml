@@ -48,3 +48,5 @@ jobs:
         run: CGRX_EVAL_BINARY=target/release/cgrx python3 -m unittest discover -s scripts -p test_eval_relationships.py
       - name: Refactor evaluator integrity
         run: python3 -m unittest discover -s scripts -p test_eval_refactors.py
+      - name: Architecture planner integrity
+        run: python3 -m unittest discover -s scripts -p test_benchmark_architecture.py

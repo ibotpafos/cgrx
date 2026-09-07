@@ -125,6 +125,15 @@ substring ranking, with body matches last. Broader language count is also not a
 substitute for CGRX's compiler-checked relationship matrix across its supported
 packs.
 
+CGRX now adds a deterministic architecture-futures layer to its proven package
+and symbol graph. It ranks three alternatives for each package cycle or
+high-fan-in hotspot, reports graph deltas and exact score inputs, blocks unsafe
+rewrites on partial coverage, and emits a revision-bound agent handoff with
+`llm_used=false`. Trace's documented architecture explanation is optional AI
+functionality backed by Ollama/OpenAI; its public tool index does not document
+an equivalent model-free counterfactual planner. See the measured
+[five-project benchmark](benchmarks/architecture-futures-2026-09-07.md).
+
 Sources:
 
 - <https://trace-mcp.com/tools-reference.html>
