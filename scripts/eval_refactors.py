@@ -6,9 +6,11 @@ from pathlib import Path, PurePosixPath
 import re
 import subprocess
 import sys
+import time
 
 
 LABELS = ("useful", "false_positive", "uncertain", "unreviewed")
+POLICIES = {"preserve_entrypoints", "canonical_entrypoint", "consolidate"}
 REVISION = re.compile(r"[0-9a-f]{40}")
 
 
@@ -129,6 +131,8 @@ def build_report(document, responses):
     payload_tokens = 0
     partial_projects = 0
     seen_ids = set()
+    policy_counts = {policy: 0 for policy in sorted(POLICIES)}
+    planner_scores = []
     for project, response in zip(document["projects"], responses):
         require(isinstance(response, dict) and "error" not in response, "MCP tool error")
         result = response.get("result")
@@ -181,6 +185,28 @@ def build_report(document, responses):
             prior = existing.get(candidate_id)
             if prior is not None:
                 require(prior["left"] == left and prior["right"] == right, "candidate identity drift")
+            strategies = candidate.get("strategies")
+            require(isinstance(strategies, list) and len(strategies) == 3, "three strategies required")
+            require({item.get("policy") for item in strategies} == POLICIES, "strategy policy set invalid")
+            recommended = [item for item in strategies if item.get("recommended") is True]
+            require(len(recommended) == 1, "exactly one recommended strategy required")
+            scores = []
+            for rank, strategy in enumerate(strategies, 1):
+                counterfactual = strategy.get("counterfactual")
+                require(isinstance(counterfactual, dict), "counterfactual missing")
+                require(counterfactual.get("algorithm") == "counterfactual_refactor_v1", "algorithm drift")
+                require(counterfactual.get("llm_used") is False, "planner must be model-free")
+                require(counterfactual.get("rank") == rank, "strategy rank mismatch")
+                require(isinstance(counterfactual.get("formula"), dict), "formula missing")
+                require(isinstance(counterfactual.get("predicted_graph"), dict), "graph prediction missing")
+                score = counterfactual.get("score")
+                require(isinstance(score, int) and 0 <= score <= 1000, "strategy score invalid")
+                scores.append(score)
+            require(scores == sorted(scores, reverse=True), "strategies are not score-ranked")
+            winner = recommended[0]
+            require(winner is strategies[0], "recommended strategy must rank first")
+            policy_counts[winner["policy"]] += 1
+            planner_scores.append(winner["counterfactual"]["score"])
             rows.append(
                 {
                     "id": candidate_id,
@@ -190,6 +216,9 @@ def build_report(document, responses):
                     "left": left,
                     "right": right,
                     "label": prior["label"] if prior is not None else "unreviewed",
+                    "recommended_policy": winner["policy"],
+                    "counterfactual_score": winner["counterfactual"]["score"],
+                    "reason_codes": winner["counterfactual"]["reasons"],
                 }
             )
         missing_reviewed = [
@@ -214,6 +243,14 @@ def build_report(document, responses):
         "payload_tokens": payload_tokens,
         "precision": precision,
         "partial_projects": partial_projects,
+        "planner": {
+            "algorithm": "counterfactual_refactor_v1",
+            "llm_used": False,
+            "validated_futures": len(rows) * 3,
+            "policy_counts": policy_counts,
+            "recommended_score_min": min(planner_scores) if planner_scores else None,
+            "recommended_score_max": max(planner_scores) if planner_scores else None,
+        },
         "rows": rows,
     }
 
@@ -248,6 +285,7 @@ def invoke(binary, document):
                 },
             }
         )
+    started = time.perf_counter_ns()
     result = subprocess.run(
         [str(binary.resolve()), "serve", "--multi-repo", "--max-repos", "8"],
         input="".join(json.dumps(frame, separators=(",", ":")) + "\n" for frame in frames),
@@ -258,9 +296,10 @@ def invoke(binary, document):
     )
     if result.returncode != 0:
         raise ValueError(result.stderr.strip() or "MCP server failed")
+    elapsed_ms = round((time.perf_counter_ns() - started) / 1_000_000, 3)
     responses = [json.loads(line) for line in result.stdout.splitlines()]
     require(len(responses) == len(frames), "incomplete MCP response set")
-    return build_report(document, responses[1:])
+    return build_report(document, responses[1:]), elapsed_ms
 
 
 def refresh_contract(document, report, path):
@@ -289,11 +328,24 @@ def main():
         default=Path(__file__).resolve().parents[1] / "contracts/refactor_candidates_v1.json",
     )
     parser.add_argument("--refresh-contract", action="store_true")
+    parser.add_argument("--samples", type=int, default=3)
     args = parser.parse_args()
     try:
         document = json.loads(args.contract.read_text())
         validate_contract(document, check_repositories=True)
-        report = invoke(args.binary, document)
+        require(3 <= args.samples <= 9, "samples must be 3..9")
+        measured = [invoke(args.binary, document) for _ in range(args.samples)]
+        report = measured[0][0]
+        require(all(candidate == report for candidate, _ in measured[1:]), "planner output changed between samples")
+        latencies = [elapsed for _, elapsed in measured]
+        ordered = sorted(latencies)
+        report["benchmark"] = {
+            "samples": args.samples,
+            "latency_ms": latencies,
+            "median_ms": ordered[len(ordered) // 2],
+            "deterministic": True,
+            "scope": "one fresh multi-repo MCP process over seven frozen projects",
+        }
         if args.refresh_contract:
             refresh_contract(document, report, args.contract)
         for project in document["projects"]:
@@ -306,7 +358,7 @@ def main():
         "REFACTOR_EVAL=PASS; "
         f"PROJECTS={report['projects']}; CANDIDATES={report['candidate_count']}; "
         f"REVIEWED={report['reviewed_count']}; TOKENS={report['payload_tokens']}; "
-        f"PRECISION={report['precision']}"
+        f"PRECISION={report['precision']}; MEDIAN_MS={report['benchmark']['median_ms']}"
     )
     return 0
 

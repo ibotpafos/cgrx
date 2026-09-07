@@ -414,10 +414,11 @@ impl Runtime {
             .filter(|document| document.provenance == "SYNTAX")
             .map(|document| (document.node_id, document))
             .collect::<BTreeMap<_, _>>();
+        let observations = self.load_current_observations()?;
         let mut evidence_count = 0;
         let mut values = Vec::with_capacity(candidates.len());
         for candidate in candidates {
-            let (value, evidence_truncated) = candidate_json(
+            let (mut value, evidence_truncated) = candidate_json(
                 &candidate,
                 &definitive,
                 &by_node,
@@ -428,6 +429,8 @@ impl Runtime {
                 partial = true;
                 gaps.insert("REFACTOR_EVIDENCE_BUDGET");
             }
+            value["runtime_profile"] =
+                runtime_profile(&candidate, observations.as_ref(), &definitive);
             values.push(value);
         }
 
@@ -462,6 +465,56 @@ impl Runtime {
             ]
         }))
     }
+}
+
+fn runtime_profile(
+    candidate: &RefactorCandidate<'_>,
+    observations: Option<&cgrx_store::ObservationSnapshot>,
+    definitive: &[&StoredArc],
+) -> Value {
+    let left = candidate.left.document.node_id;
+    let right = candidate.right.document.node_id;
+    let static_pairs = definitive
+        .iter()
+        .map(|arc| (arc.source, arc.target))
+        .collect::<BTreeSet<_>>();
+    let mut left_incoming_count = 0_u64;
+    let mut duplicate_incoming_count = 0_u64;
+    let mut candidate_outgoing_count = 0_u64;
+    let mut observed_only_edges = 0_usize;
+    let mut last_seen_unix_nanos = 0_u64;
+    let mut environments = BTreeSet::new();
+    for edge in observations
+        .into_iter()
+        .flat_map(|snapshot| &snapshot.edges)
+    {
+        if ![left, right].contains(&edge.source) && ![left, right].contains(&edge.target) {
+            continue;
+        }
+        if edge.target == left {
+            left_incoming_count = left_incoming_count.saturating_add(edge.count);
+        }
+        if edge.target == right {
+            duplicate_incoming_count = duplicate_incoming_count.saturating_add(edge.count);
+        }
+        if edge.source == left || edge.source == right {
+            candidate_outgoing_count = candidate_outgoing_count.saturating_add(edge.count);
+        }
+        if !static_pairs.contains(&(edge.source, edge.target)) {
+            observed_only_edges += 1;
+        }
+        last_seen_unix_nanos = last_seen_unix_nanos.max(edge.last_seen_unix_nanos);
+        environments.insert(edge.environment.clone());
+    }
+    json!({
+        "left_incoming_count":left_incoming_count,
+        "duplicate_incoming_count":duplicate_incoming_count,
+        "candidate_outgoing_count":candidate_outgoing_count,
+        "observed_only_edges":observed_only_edges,
+        "last_seen_unix_nanos":last_seen_unix_nanos,
+        "environments":environments,
+        "evidence_revision":observations.map(|snapshot| &snapshot.snapshot.repo_revision),
+    })
 }
 
 fn rank_similarity(similarity: Similarity) -> (u16, u16, u16, u16, u16) {

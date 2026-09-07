@@ -61,6 +61,7 @@ existing contracts before adding another always-visible tool.
 | Multi-project daemon LRU/TTL and measured RSS attribution | Current work targets explicit repo-scoped runtimes | Measure resident cost per loaded project before introducing a daemon cache or eviction policy. |
 | Automated client hooks and prompt rewrites | Repository instructions already route discovery through CGRX | Do not patch client prompts from the core binary; keep setup changes explicit and reversible. |
 | Runtime/static overlays and agent guidance | Revision-pinned observed calls can be viewed alone or merged with proven static edges, filtered by environment, and copied as a snapshot-bound agent handoff | Adopted with deterministic hot-path/divergence/blast-radius ranking; no LLM, embedding runtime, model weights, or external AI API. |
+| Counterfactual refactor planning | Three future graphs are ranked from duplication benefit, graph simplification, runtime change cost and coverage risk; compact MCP rows expose the winner and reason codes | CGRX-specific combined capability. The seven-project run validated 129 futures across all four supported languages; no common-corpus competitor accuracy or speed claim is made. |
 
 The next measurement priorities are the PR context benchmark, response cost for
 the remaining tools, and manual review of the refactoring inventory. Framework

@@ -135,6 +135,14 @@ divergence and caller blast radius. Every row includes the formula inputs,
 signals, `refactor_priority`, and `next_action`; it uses no LLM, prompt,
 embedding model, model weights, or external AI API.
 
+`suggest_refactors` uses the same evidence to rank three counterfactual future
+graphs. Each strategy includes a predicted graph delta, a 0–1000 score, exact
+integer formula inputs, reason codes, coverage blockers and an agent handoff.
+Complete low-traffic evidence can favor consolidation; observed traffic or
+coverage gaps increase the cost of redirecting or removing an entry point. The
+ranking algorithm is `counterfactual_refactor_v1` and reports `llm_used=false`.
+See the [seven-project benchmark](docs/benchmarks/counterfactual-refactor-2026-09-07.md).
+
 The workspace has six modes:
 
 The evidence switch independently selects **Static**, **Runtime**, or
