@@ -241,13 +241,9 @@ fn java_this_and_typed_receivers_resolve_to_the_defining_class() {
         .map(|edge| edge.target.as_str())
         .collect();
     calls.sort_unstable();
-    assert_eq!(calls, ["add", "add", "bump"]);
+    assert_eq!(calls, ["Engine", "add", "add", "bump"]);
     assert!(
-        !extraction.unresolved.is_empty()
-            && extraction
-                .unresolved
-                .iter()
-                .all(|gap| { gap.kind == UnresolvedKind::Dispatch && gap.text == "new Engine()" }),
+        extraction.unresolved.is_empty(),
         "{:?}",
         extraction.unresolved
     );
@@ -267,13 +263,96 @@ final class Engine {
         .unwrap()
         .extract(Path::new("Service.java"), source.as_bytes())
         .unwrap();
-    let calls: Vec<&str> = extraction
+    let mut calls: Vec<&str> = extraction
         .edges
         .iter()
         .filter(|edge| edge.relation == RelationKind::Calls)
         .map(|edge| edge.target.as_str())
         .collect();
-    assert_eq!(calls, ["add"]);
+    calls.sort_unstable();
+    assert_eq!(calls, ["Engine", "add"]);
+}
+
+#[test]
+fn java_constructors_resolve_to_single_or_default_declarations() {
+    let source = r#"class Service {
+    int run() { Engine engine = new Engine(1); return engine.add() + new Helper().help(); }
+}
+class Engine {
+    Engine(int x) {}
+    int add() { return 1; }
+}
+class Helper {
+    int help() { return 1; }
+}
+class Chain extends Base {
+    Chain() { super(1); }
+}
+class Base {
+    Base(int x) {}
+}
+"#;
+    let extraction = pack_for_path(Path::new("Service.java"))
+        .unwrap()
+        .extract(Path::new("Service.java"), source.as_bytes())
+        .unwrap();
+    let mut calls: Vec<&str> = extraction
+        .edges
+        .iter()
+        .filter(|edge| edge.relation == RelationKind::Calls)
+        .map(|edge| edge.target.as_str())
+        .collect();
+    calls.sort_unstable();
+    assert_eq!(calls, ["Base", "Engine", "Helper", "add"]);
+    assert!(
+        extraction
+            .unresolved
+            .iter()
+            .any(|gap| gap.kind == UnresolvedKind::Dispatch && gap.text == "new Helper().help()"),
+        "{:?}",
+        extraction.unresolved
+    );
+}
+
+#[test]
+fn java_constructor_resolution_fails_closed() {
+    for source in [
+        // Overloaded constructors stay ambiguous.
+        "class Service { int run() { return new Engine(1).add(); } } class Engine { Engine() {} Engine(int x) {} int add() { return 1; } }",
+        // Generic arguments stay gaps.
+        "class Service { int run() { return new Engine<String>().add(); } } class Engine { Engine() {} int add() { return 1; } }",
+        // Anonymous class bodies stay gaps.
+        "class Service { int run() { return new Engine() { }.add(); } } class Engine { int add() { return 1; } }",
+        // Qualified allocation stays a gap.
+        "class Service { int run(Outer o) { return o.new Inner().add(); } } class Outer { class Inner { int add() { return 1; } } }",
+        // Imported types are not proven.
+        "import app.Engine; class Service { int run() { return new Engine().add(); } }",
+        // Abstract classes cannot be constructed.
+        "class Service { int run() { return new Engine().add(); } } abstract class Engine { Engine() {} int add() { return 1; } }",
+        // `this()` with two constructors stays ambiguous.
+        "class Engine { Engine() {} Engine(int x) { this(); } int add() { return 1; } }",
+        // `super()` with an external superclass stays a gap.
+        "class Child extends Base { Child() { super(1); } }",
+    ] {
+        let extraction = pack_for_path(Path::new("Service.java"))
+            .unwrap()
+            .extract(Path::new("Service.java"), source.as_bytes())
+            .unwrap();
+        assert!(
+            !extraction
+                .edges
+                .iter()
+                .any(|edge| edge.relation == RelationKind::Calls),
+            "{source}"
+        );
+        assert!(
+            extraction
+                .unresolved
+                .iter()
+                .any(|gap| gap.kind == UnresolvedKind::Dispatch),
+            "{source}"
+        );
+    }
 }
 
 #[test]

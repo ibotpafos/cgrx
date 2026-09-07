@@ -58,6 +58,7 @@ struct ClassInfo {
     concrete: bool,
     has_super: bool,
     subclassed: bool,
+    abstract_class: bool,
 }
 
 #[derive(Default)]
@@ -65,6 +66,8 @@ struct JavaFacts {
     methods: BTreeMap<String, usize>,
     method_owners: BTreeMap<String, Vec<String>>,
     classes: BTreeMap<String, ClassInfo>,
+    class_spans: BTreeMap<String, Span>,
+    constructors: BTreeMap<String, Vec<Span>>,
     super_names: BTreeSet<String>,
     bindings: BTreeMap<String, Vec<String>>,
     imported_types: BTreeMap<String, Vec<String>>,
@@ -107,8 +110,12 @@ impl JavaFacts {
             ) && let Some(name) = node.child_by_field_name("name")
             {
                 let class_name = text(name, source);
+                facts
+                    .class_spans
+                    .insert(class_name.clone(), Span::from(name));
                 let entry = facts.classes.entry(class_name).or_default();
                 entry.concrete = node.kind() == "class_declaration";
+                entry.abstract_class = has_modifier(node, source, "abstract");
                 if node.kind() == "class_declaration" {
                     if let Some(superclass) = node.child_by_field_name("superclass") {
                         entry.has_super = true;
@@ -155,6 +162,16 @@ impl JavaFacts {
                     .entry(text(name, source))
                     .or_default()
                     .push(simple_type_name(&text(ty, source)));
+            }
+            if node.kind() == "constructor_declaration"
+                && let Some(name) = node.child_by_field_name("name")
+                && let Some(owner) = enclosing_type_name(node, source)
+            {
+                facts
+                    .constructors
+                    .entry(owner)
+                    .or_default()
+                    .push(Span::from(name));
             }
             if node.kind() == "import_declaration" {
                 let value = text(node, source);
@@ -266,7 +283,28 @@ fn classify(node: Node<'_>, source: &[u8], extraction: &mut Extraction, facts: &
             }
         }
         "object_creation_expression" | "explicit_constructor_invocation" => {
-            unresolved(UnresolvedKind::Dispatch, node, source, extraction);
+            if let Some((target, caller, target_span)) = constructor_target(node, source, facts) {
+                extraction.edges.push(Edge {
+                    relation: RelationKind::Calls,
+                    target,
+                    span: Span::from(node),
+                    context_span: evidence_span(
+                        node,
+                        &[
+                            "expression_statement",
+                            "return_statement",
+                            "local_variable_declaration",
+                            "field_declaration",
+                        ],
+                    ),
+                    provenance: Provenance::JavaConstructor {
+                        caller,
+                        target: target_span,
+                    },
+                });
+            } else {
+                unresolved(UnresolvedKind::Dispatch, node, source, extraction);
+            }
         }
         _ => {}
     }
@@ -285,6 +323,157 @@ fn enclosing_concrete_class_without_inheritance(mut node: Node<'_>) -> bool {
             return false;
         }
         node = parent;
+    }
+    false
+}
+
+/// Prove `new X(args)`, `this(args)` and `super(args)` when the constructed
+/// type is a concrete non-abstract class defined in this file with exactly
+/// one constructor declaration (or none, for the implicit default).
+/// Constructor invocation is statically bound, so superclasses and subclasses
+/// cannot change which declaration runs; overloads, generics, anonymous
+/// bodies, qualified forms and imported types remain gaps. Returns the target
+/// name plus caller and target spans for the proof.
+fn constructor_target(
+    node: Node<'_>,
+    source: &[u8],
+    facts: &JavaFacts,
+) -> Option<(String, Span, Span)> {
+    if node.kind() == "object_creation_expression" {
+        let ty = node.child_by_field_name("type")?;
+        if node.child_by_field_name("type_arguments").is_some()
+            || has_descendant(ty, "type_arguments")
+        {
+            return None;
+        }
+        if has_descendant(node, "class_body") {
+            return None;
+        }
+        let prefix = str::from_utf8(&source[node.start_byte()..ty.start_byte()]).ok()?;
+        if prefix.trim() != "new" {
+            return None;
+        }
+        let class_name = simple_type_name(&text(ty, source));
+        if !is_constructible(&class_name, facts) {
+            return None;
+        }
+        let target_span = match facts.constructors.get(&class_name) {
+            Some(spans) if spans.len() == 1 => spans[0],
+            None => facts.class_spans.get(&class_name).copied()?,
+            _ => return None,
+        };
+        let caller = enclosing_caller_span(node)?;
+        return Some((class_name, caller, target_span));
+    }
+    let constructor = node.child_by_field_name("constructor")?;
+    if node.child_by_field_name("object").is_some() {
+        return None;
+    }
+    let enclosing = enclosing_class_node(node)?;
+    if enclosing.kind() != "class_declaration" {
+        return None;
+    }
+    let enclosing_name = text(enclosing.child_by_field_name("name")?, source);
+    let (owner, target_span) = match constructor.kind() {
+        "this" => {
+            let spans = facts.constructors.get(&enclosing_name)?;
+            if spans.len() != 1 {
+                return None;
+            }
+            (enclosing_name, spans[0])
+        }
+        "super" => {
+            let superclass = enclosing.child_by_field_name("superclass")?;
+            let mut cursor = superclass.walk();
+            let inner = superclass
+                .named_children(&mut cursor)
+                .next()
+                .map(|child| text(child, source))
+                .unwrap_or_else(|| text(superclass, source));
+            let super_name = simple_type_name(&inner);
+            if !is_constructible(&super_name, facts) {
+                return None;
+            }
+            let spans = facts.constructors.get(&super_name)?;
+            if spans.len() != 1 {
+                return None;
+            }
+            (super_name, spans[0])
+        }
+        _ => return None,
+    };
+    let caller = enclosing_caller_span(node)?;
+    Some((owner, caller, target_span))
+}
+
+/// A class that `new` can name: declared here as a concrete non-abstract
+/// class. Imported names never qualify because their declaration (and its
+/// constructor spans) is not in this file.
+fn is_constructible(class_name: &str, facts: &JavaFacts) -> bool {
+    facts
+        .classes
+        .get(class_name)
+        .is_some_and(|info| info.concrete && !info.abstract_class)
+}
+
+fn has_modifier(node: Node<'_>, source: &[u8], modifier: &str) -> bool {
+    let mut cursor = node.walk();
+    for child in node.named_children(&mut cursor) {
+        if child.kind() == "modifiers" {
+            let words = text(child, source);
+            if words
+                .split(|c: char| !c.is_alphanumeric())
+                .any(|word| word == modifier)
+            {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// Innermost enclosing class-like node, if any.
+fn enclosing_class_node(mut node: Node<'_>) -> Option<Node<'_>> {
+    while let Some(parent) = node.parent() {
+        if matches!(
+            parent.kind(),
+            "class_declaration"
+                | "interface_declaration"
+                | "enum_declaration"
+                | "record_declaration"
+        ) {
+            return Some(parent);
+        }
+        node = parent;
+    }
+    None
+}
+
+/// Name span of the enclosing method or constructor, falling back to the
+/// enclosing class name for field initializers.
+fn enclosing_caller_span(mut node: Node<'_>) -> Option<Span> {
+    while let Some(parent) = node.parent() {
+        if matches!(
+            parent.kind(),
+            "method_declaration" | "constructor_declaration" | "class_declaration"
+        ) && let Some(name) = parent.child_by_field_name("name")
+        {
+            return Some(Span::from(name));
+        }
+        node = parent;
+    }
+    None
+}
+
+fn has_descendant(node: Node<'_>, kind: &str) -> bool {
+    if node.kind() == kind {
+        return true;
+    }
+    let mut cursor = node.walk();
+    for child in node.named_children(&mut cursor) {
+        if has_descendant(child, kind) {
+            return true;
+        }
     }
     false
 }

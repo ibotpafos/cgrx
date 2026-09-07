@@ -289,8 +289,15 @@ without inheritance, and is not shadowed by a static import. The same proof
 covers `this` receivers and singly-typed local, parameter and field receivers
 (including `this.field`) when the declared type is a concrete class defined in
 the same file with no superclass, no interfaces, no local subclasses and no
-overloads of the target. Foreign or unbound receivers, overloads, inherited
-calls and constructors remain explicit dispatch gaps. This
+overloads of the target. Foreign or unbound receivers, overloads and inherited
+calls remain explicit dispatch gaps. Construction sites (`new X()`, `this()`
+and `super()`) prove a call edge to the constructor when the type is a
+concrete non-abstract class defined in the same file with exactly one
+constructor declaration, or to the class itself for the implicit default;
+overloaded, generic, anonymous, qualified and imported constructions stay
+gaps. A constructor shares its name with the class, so name-only callers
+traces over an explicit constructor are ambiguous the same way overloaded
+methods are. This
 conservative slice participates in graph traversal, usages, runtime overlays,
 refactor futures and the visualizer without an LSP or model runtime.
 

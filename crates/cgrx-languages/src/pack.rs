@@ -78,6 +78,13 @@ pub enum Provenance {
         receiver_type: Span,
         target: Span,
     },
+    /// Same-file construction site with exact caller and constructor (or
+    /// defaulted class) name spans. Runtime resolution revalidates class and
+    /// constructor uniqueness before this becomes a graph edge.
+    JavaConstructor {
+        caller: Span,
+        target: Span,
+    },
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -239,6 +246,10 @@ impl Extraction {
                 update(&mut hasher, b"go_self_package", "", package);
                 update(&mut hasher, b"go_self_type", "", receiver_type);
                 update(&mut hasher, b"go_self_target", "", target);
+            }
+            if let Provenance::JavaConstructor { caller, target } = edge.provenance {
+                update(&mut hasher, b"java_ctor_caller", "", caller);
+                update(&mut hasher, b"java_ctor_target", "", target);
             }
         }
         for span in &self.lexical_arrows {

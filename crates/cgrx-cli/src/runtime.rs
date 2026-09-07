@@ -46,7 +46,7 @@ use serde_json::{Value, json};
 
 use crate::intent::{TaskIntent, classify};
 
-const EXTRACTION_REVISION: u32 = 27;
+const EXTRACTION_REVISION: u32 = 28;
 
 const NODES_SEGMENT: &str = "nodes.seg";
 const EDGES_SEGMENT: &str = "edges.seg";
@@ -120,6 +120,12 @@ struct GoLocalConstructorTarget {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
+struct JavaConstructorTarget {
+    caller: ByteRange,
+    target: ByteRange,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
 struct RustSelfTarget {
     owner: ByteRange,
     implementation: ByteRange,
@@ -167,6 +173,8 @@ struct StoredDocument {
     go_field_target: Option<Box<GoFieldTarget>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     go_local_constructor_target: Option<GoLocalConstructorTarget>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    java_constructor_target: Option<Box<JavaConstructorTarget>>,
     node_id: u64,
     qualified_name: String,
     path: String,
@@ -2145,6 +2153,7 @@ fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPath, RuntimeE
             ts_lexical_target: None,
             go_field_target: None,
             go_local_constructor_target: None,
+            java_constructor_target: None,
             go_import_path: None,
             go_import_explicit_alias: false,
             go_package: go_package.clone(),
@@ -2184,6 +2193,7 @@ fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPath, RuntimeE
             ts_lexical_target: None,
             go_field_target: None,
             go_local_constructor_target: None,
+            java_constructor_target: None,
             go_import_path: None,
             go_import_explicit_alias: false,
             go_package: None,
@@ -2212,6 +2222,7 @@ fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPath, RuntimeE
             ts_lexical_target: None,
             go_field_target: None,
             go_local_constructor_target: None,
+            java_constructor_target: None,
             go_import_path: None,
             go_import_explicit_alias: false,
             go_package: None,
@@ -2257,6 +2268,7 @@ fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPath, RuntimeE
             | LanguageProvenance::GoLocalConstructor { .. }
             | LanguageProvenance::GoImport { .. }
             | LanguageProvenance::TsLexical { .. }
+            | LanguageProvenance::JavaConstructor { .. }
             | LanguageProvenance::RustSelf { .. }
             | LanguageProvenance::RustModule { .. } => None,
         };
@@ -2317,6 +2329,15 @@ fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPath, RuntimeE
                         constructor: source_text(constructor),
                         target: source_text(target),
                     })
+                }
+                _ => None,
+            },
+            java_constructor_target: match edge.provenance {
+                LanguageProvenance::JavaConstructor { caller, target } => {
+                    Some(Box::new(JavaConstructorTarget {
+                        caller: ByteRange::new(caller.start, caller.end),
+                        target: ByteRange::new(target.start, target.end),
+                    }))
                 }
                 _ => None,
             },
@@ -2389,6 +2410,8 @@ fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPath, RuntimeE
                 ]
             } else if matches!(edge.provenance, LanguageProvenance::TsLexical { .. }) {
                 vec!["EXACT_CALL".to_owned(), "TS_LEXICAL_CALL".to_owned()]
+            } else if matches!(edge.provenance, LanguageProvenance::JavaConstructor { .. }) {
+                vec!["EXACT_CALL".to_owned(), "JAVA_CONSTRUCTOR_CALL".to_owned()]
             } else if is_go_receiver {
                 vec!["EXACT_CALL".to_owned(), "GO_SELF_CALL".to_owned()]
             } else if overload_names.contains(&target) {
@@ -2409,6 +2432,7 @@ fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPath, RuntimeE
                 ts_lexical_target: None,
                 go_field_target: None,
                 go_local_constructor_target: None,
+                java_constructor_target: None,
                 go_import_path: None,
                 go_import_explicit_alias: false,
                 go_package: None,
@@ -2474,6 +2498,7 @@ fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPath, RuntimeE
                 ts_lexical_target: None,
                 go_field_target: None,
                 go_local_constructor_target: None,
+                java_constructor_target: None,
                 go_import_path: None,
                 go_import_explicit_alias: false,
                 go_package: None,
@@ -2523,6 +2548,7 @@ fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPath, RuntimeE
                 ts_lexical_target: None,
                 go_field_target: None,
                 go_local_constructor_target: None,
+                java_constructor_target: None,
                 go_import_path: None,
                 go_import_explicit_alias: false,
                 go_package: None,
@@ -2578,6 +2604,7 @@ fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPath, RuntimeE
                 ts_lexical_target: None,
                 go_field_target: None,
                 go_local_constructor_target: None,
+                java_constructor_target: None,
                 go_import_path: None,
                 go_import_explicit_alias: false,
                 go_package: None,
@@ -2617,6 +2644,7 @@ fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPath, RuntimeE
             ts_lexical_target: None,
             go_field_target: None,
             go_local_constructor_target: None,
+            java_constructor_target: None,
             go_import_path: None,
             go_import_explicit_alias: false,
             go_package: None,
@@ -2642,6 +2670,7 @@ fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPath, RuntimeE
             ts_lexical_target: None,
             go_field_target: None,
             go_local_constructor_target: None,
+            java_constructor_target: None,
             go_import_path: None,
             go_import_explicit_alias: false,
             go_package: None,
@@ -3383,6 +3412,10 @@ fn refresh_qualified_call_gaps(stored: &mut StoredIndex) {
                 || doc
                     .semantic_tags
                     .iter()
+                    .any(|tag| tag == "JAVA_CONSTRUCTOR_CALL")
+                || doc
+                    .semantic_tags
+                    .iter()
                     .any(|tag| tag == "TS_IMPORT_CALL" || tag == "TS_IMPORT_REJECTED")
                 || doc.path.ends_with(".rs")
                     && doc.provenance == "CALLS"
@@ -3538,6 +3571,7 @@ fn rebuild_arcs_with_cargo(
         .filter(|document| {
             (document.path.ends_with(".go") && document.go_field_target.is_some())
                 || (document.path.ends_with(".rs") && document.rust_module_target.is_some())
+                || (document.path.ends_with(".java") && document.java_constructor_target.is_some())
         })
         .map(|document| document.path.as_str())
         .collect();
@@ -3921,6 +3955,30 @@ fn rebuild_arcs_with_cargo(
                     || proof.field.start >= proof.field.end
                     || field_type.qualified_name.is_empty()
                 {
+                    return None;
+                }
+                let target = exact(&proof.target)?;
+                (target.qualified_name == target_name).then_some(target.node_id)
+            })
+        } else if call
+            .semantic_tags
+            .iter()
+            .any(|tag| tag == "JAVA_CONSTRUCTOR_CALL")
+        {
+            call.java_constructor_target.as_ref().and_then(|proof| {
+                if !call.path.ends_with(".java") {
+                    return None;
+                }
+                let exact = |span: &ByteRange| {
+                    let candidates =
+                        syntax_by_span.get(&(call.path.as_str(), span.start, span.end))?;
+                    let [document] = candidates.as_slice() else {
+                        return None;
+                    };
+                    Some(*document)
+                };
+                let caller = exact(&proof.caller)?;
+                if source_document.map(|d| d.node_id) != Some(caller.node_id) {
                     return None;
                 }
                 let target = exact(&proof.target)?;
@@ -4862,6 +4920,7 @@ mod proof_edge_tests {
             ts_lexical_target: None,
             go_field_target: None,
             go_local_constructor_target: None,
+            java_constructor_target: None,
             go_import_path: None,
             go_import_explicit_alias: false,
             go_package: None,
@@ -4887,6 +4946,7 @@ mod proof_edge_tests {
             ts_lexical_target: None,
             go_field_target: None,
             go_local_constructor_target: None,
+            java_constructor_target: None,
             go_import_path: None,
             go_import_explicit_alias: false,
             go_package: None,
@@ -5747,7 +5807,7 @@ mod compact_storage_tests {
             serde_json::from_value::<StoredDocument>(encoded).unwrap(),
             doc
         );
-        assert_eq!(EXTRACTION_REVISION, 27);
+        assert_eq!(EXTRACTION_REVISION, 28);
     }
 
     #[test]

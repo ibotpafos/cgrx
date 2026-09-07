@@ -135,3 +135,37 @@ fn subclassed_receiver_type_leaves_a_dispatch_gap() {
     assert!(!has_callee(&result, "add"), "{result}");
     assert!(has_dispatch_gap(&runtime, "Service.java"));
 }
+
+#[test]
+fn constructor_call_traces_to_the_declared_constructor() {
+    let fixture = Fixture::new(
+        "class Service {\n    int caller() { Engine engine = new Engine(1); return engine.add(); }\n}\nclass Engine {\n    Engine(int x) {}\n    int add() { return 1; }\n}\n",
+    );
+    fs::write(
+        fixture.root().join("Notes.java"),
+        "class Notes {\n    int note() { return 0; }\n}\n",
+    )
+    .unwrap();
+    let mut runtime = fixture.runtime();
+    assert!(runtime.refresh(&fixture.root()).unwrap());
+    let result = trace_named(&runtime, "caller", "Service.java");
+    assert!(has_callee_in(&result, "Engine", "Service.java"), "{result}");
+    assert!(has_callee(&result, "add"), "{result}");
+}
+
+#[test]
+fn overloaded_constructor_leaves_a_dispatch_gap() {
+    let fixture = Fixture::new(
+        "class Service {\n    int caller() { return new Engine(1).add(); }\n}\nclass Engine {\n    Engine() {}\n    Engine(int x) {}\n    int add() { return 1; }\n}\n",
+    );
+    fs::write(
+        fixture.root().join("Notes.java"),
+        "class Notes {\n    int note() { return 0; }\n}\n",
+    )
+    .unwrap();
+    let mut runtime = fixture.runtime();
+    assert!(runtime.refresh(&fixture.root()).unwrap());
+    let result = trace_named(&runtime, "caller", "Service.java");
+    assert!(!has_callee(&result, "Engine"), "{result}");
+    assert!(has_dispatch_gap(&runtime, "Service.java"));
+}
