@@ -821,7 +821,7 @@ fn repository_quality_gate_reuses_proven_architecture_and_warning_policy() {
     let mut m = Mcp::new(&d.0, "2", &d.0.join("log"));
     let response = m.tool(
         "check_repository_gates",
-        json!({"repo":a,"fail_on":"error","max_symbol_fan_in":0}),
+        json!({"repo":a,"fail_on":"error","max_symbol_fan_in":0,"max_coverage_gaps":20000}),
     );
     let result = &response["result"]["structuredContent"];
     let visible: Value =
@@ -850,6 +850,13 @@ fn repository_quality_gate_reuses_proven_architecture_and_warning_policy() {
         &m.tool(
             "check_repository_gates",
             json!({"repo":a,"package_depth":0}),
+        ),
+        "cgrx.invalid_arguments",
+    );
+    error(
+        &m.tool(
+            "check_repository_gates",
+            json!({"repo":a,"max_coverage_gaps":1000001}),
         ),
         "cgrx.invalid_arguments",
     );
