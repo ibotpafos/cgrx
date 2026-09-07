@@ -3829,3 +3829,39 @@ fn assert_refresh_preserves_git_index(linked: bool) {
     );
     fs::remove_file(lock).unwrap();
 }
+
+#[test]
+fn reindex_with_unchanged_snapshot_reuses_published_generation() {
+    let repository = fixture_repository();
+    let state = TestDirectory::new("reindex-reuse-state");
+    let first = Runtime::index(repository.path(), state.path()).unwrap();
+    let generations = fs::read_dir(state.path().join(".cgrx/generations"))
+        .unwrap()
+        .count();
+    let second = Runtime::index(repository.path(), state.path()).unwrap();
+    assert_eq!(second, first);
+    assert_eq!(
+        fs::read_dir(state.path().join(".cgrx/generations"))
+            .unwrap()
+            .count(),
+        generations,
+        "no-op reindex must not publish a new generation"
+    );
+}
+
+#[test]
+fn reindex_after_new_commit_rebuilds_for_the_new_snapshot() {
+    let repository = fixture_repository();
+    let state = TestDirectory::new("reindex-rebuild-state");
+    let first = Runtime::index(repository.path(), state.path()).unwrap();
+    fs::write(
+        repository.path().join("main.py"),
+        b"def target():\n    return 42\n\ndef caller():\n    return target()\n\ndef extra():\n    return 1\n",
+    )
+    .unwrap();
+    git(repository.path(), &["add", "main.py"]);
+    git(repository.path(), &["commit", "-qm", "second"]);
+    let second = Runtime::index(repository.path(), state.path()).unwrap();
+    assert_ne!(second.snapshot, first.snapshot);
+    assert_eq!(second.indexed_files, first.indexed_files);
+}

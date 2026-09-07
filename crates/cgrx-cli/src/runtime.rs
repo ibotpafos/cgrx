@@ -286,6 +286,29 @@ impl UntrackedScanCache {
     }
 }
 
+/// Reuse the published generation when it already matches this snapshot.
+/// Any unreadable, mismatched or stale segment falls through to a full
+/// rebuild, never to reused wrong data.
+fn open_current_report(state: &Path, snapshot: &RepoSnapshot) -> Option<IndexReport> {
+    let reader = GenerationReader::open_current(state).ok()?;
+    if reader.snapshot() != snapshot {
+        return None;
+    }
+    let bytes = reader.read_segment(NODES_SEGMENT).ok()?;
+    let stored: StoredIndex = serde_json::from_slice(&bytes).ok()?;
+    if stored.snapshot != *snapshot
+        || stored.extraction_revision != EXTRACTION_REVISION
+        || reader.read_segment(TERMS_SEGMENT).ok().as_deref() != Some(TERMS_MARKER)
+    {
+        return None;
+    }
+    Some(IndexReport {
+        snapshot: snapshot.clone(),
+        index_input_bytes: stored.index_input_bytes,
+        indexed_files: stored.indexed_files,
+    })
+}
+
 impl Runtime {
     #[must_use]
     pub const fn snapshot(&self) -> &RepoSnapshot {
@@ -1364,6 +1387,9 @@ impl Runtime {
             working_tree_digest,
             graph_generation,
         };
+        if let Some(report) = open_current_report(state, &snapshot) {
+            return Ok(report);
+        }
         let mut documents = Vec::new();
         let mut path_hashes = BTreeMap::new();
         let mut parser_error_ranges = Vec::new();
