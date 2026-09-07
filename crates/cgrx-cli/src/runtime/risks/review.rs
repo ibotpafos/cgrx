@@ -172,6 +172,8 @@ fn test_convention(doc: &StoredDocument) -> bool {
             .split('/')
             .any(|part| matches!(part, "tests" | "__tests__"))
         || file.ends_with("_test.go")
+        || file.ends_with("Test.java")
+        || file.ends_with("Tests.java")
         || [
             ".test.ts",
             ".test.tsx",

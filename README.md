@@ -15,12 +15,14 @@ explicitly on each request. No embedding service, hosted index or API key.
 - Task-sized context with token budgets and follow-up retrieval handles.
 - Coverage reporting: unresolved relationships remain unknown, not absent.
 - Candidate relationship-risk detection for working-tree changes.
+- Deterministic change missions that group impacts, order conflicting work and
+  expose safe parallel batches to coding agents without a model.
 - Snapshot-bound refactoring candidates with hypothetical graph projections.
 - Local evidence graph explorer with current, changed and refactor-future views.
 - Snapshot-bound architecture projection with packages, proven boundaries,
   hotspots, package cycles and deterministic weighted communities.
 - Incremental working-tree refresh, isolated repo identities and writer locks.
-- Rust, Go, TypeScript/JavaScript/TSX and Python parsing. Resolution depth varies
+- Rust, Go, Java, TypeScript/JavaScript/TSX and Python parsing. Resolution depth varies
   by language; this does not replace a compiler or language server.
 
 ## Install with one command
@@ -151,6 +153,15 @@ coverage gaps increase the cost of redirecting or removing an entry point. The
 ranking algorithm is `counterfactual_refactor_v1` and reports `llm_used=false`.
 See the [seven-project benchmark](docs/benchmarks/counterfactual-refactor-2026-09-07.md).
 
+`scan_risks` turns the current working-tree diff into snapshot-bound Change
+Missions. Calls into the same changed target are grouped, independent path sets
+share a parallel group, overlapping path sets gain explicit dependencies, and
+coverage gaps block only affected missions. Each plan carries exact finding,
+impact and candidate-test indexes plus a reproducible agent handoff with
+`llm_used=false`; it never edits code or runs tests. The compact MCP response
+keeps the handoff while omitting duplicated proof bodies. See the
+[end-to-end benchmark](docs/benchmarks/change-missions-2026-09-07.md).
+
 The workspace has six modes:
 
 The evidence switch independently selects **Static**, **Runtime**, or
@@ -197,7 +208,7 @@ is not required by the released executable.
 | check_index_coverage | Recorded gaps for paths/scopes |
 | orient | Budgeted task context |
 | expand | Follow-up context using a returned handle |
-| scan_risks | Candidate relationship risks, not confirmed defects |
+| scan_risks | Candidate relationship risks, tests and deterministic parallel Change Missions |
 | suggest_refactors | Similar callable bodies and a hypothetical extract-helper graph delta |
 
 `search_graph` searches symbol names by default. Set `include_body: true` to
@@ -210,7 +221,7 @@ is capped at 500.
 `get_architecture` groups source files and symbols by the first `package_depth`
 path components. It aggregates proven `CALLS` and `IMPLEMENTS` relationships
 plus unambiguous repository-local `IMPORTS` and conservative static `REFERENCES`
-for Rust, Go, Python and TypeScript/TSX. References require an actual imported
+for Rust, Go, Java, Python and TypeScript/TSX. References require an actual imported
 type or qualified symbol usage; calls and unqualified dynamic names are omitted.
 External targets stay outside the graph, while ambiguous local targets become
 explicit coverage gaps. Every cross-package boundary carries exact source
@@ -305,6 +316,7 @@ cargo test --locked --workspace
 cargo build --locked --release -p cgrx-cli
 python3 scripts/smoke_mcp.py target/release/cgrx
 python3 scripts/eval_relationships.py target/release/cgrx
+python3 scripts/eval_change_missions.py target/release/cgrx
 python3 scripts/eval_refactors.py target/release/cgrx
 python3 scripts/benchmark_architecture.py --help
 ~~~
