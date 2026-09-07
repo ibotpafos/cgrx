@@ -350,6 +350,67 @@ impl Server {
                     .scan_risks(mode, limit)
                     .map_err(backend_error)?
             }
+            "check_change_gates" => {
+                #[derive(Deserialize)]
+                #[serde(deny_unknown_fields)]
+                struct Args {
+                    #[serde(default)]
+                    limit: Option<usize>,
+                    #[serde(default)]
+                    fail_on: Option<String>,
+                    #[serde(default)]
+                    max_warning_findings: Option<usize>,
+                    #[serde(default)]
+                    max_blocked_missions: Option<usize>,
+                    #[serde(default)]
+                    max_coverage_gaps: Option<usize>,
+                    #[serde(default)]
+                    max_unverified_impacts: Option<usize>,
+                }
+                let args: Args = from_value(call.arguments)?;
+                let limit = args.limit.unwrap_or(20);
+                let fail_on = args.fail_on.as_deref().unwrap_or("error");
+                if !(1..=50).contains(&limit)
+                    || !matches!(fail_on, "error" | "warning" | "none")
+                    || [
+                        args.max_warning_findings,
+                        args.max_blocked_missions,
+                        args.max_coverage_gaps,
+                        args.max_unverified_impacts,
+                    ]
+                    .into_iter()
+                    .flatten()
+                    .any(|threshold| threshold > 10_000)
+                {
+                    return Err(JsonRpcError::typed(
+                        -32602,
+                        "cgrx.invalid_arguments",
+                        "limit must be 1..50; fail_on must be error, warning, or none; thresholds must be 0..10000",
+                    ));
+                }
+                let scan = self
+                    .backend
+                    .as_mut()
+                    .ok_or_else(|| {
+                        JsonRpcError::typed(
+                            -32602,
+                            "cgrx.risk_scan_unavailable",
+                            "managed repository required",
+                        )
+                    })?
+                    .scan_risks("changes", limit)
+                    .map_err(backend_error)?;
+                evaluate_change_gates(
+                    &scan,
+                    fail_on,
+                    [
+                        args.max_warning_findings.unwrap_or(0),
+                        args.max_blocked_missions.unwrap_or(0),
+                        args.max_coverage_gaps.unwrap_or(0),
+                        args.max_unverified_impacts.unwrap_or(0),
+                    ],
+                )
+            }
             "orient" => self.orient(from_value(call.arguments)?)?,
             "ingest_runtime_evidence" => {
                 self.ingest_runtime_evidence(from_value(call.arguments)?)?
@@ -659,6 +720,7 @@ impl Server {
 fn model_visible_result(tool: &str, structured: &Value) -> Value {
     match tool {
         "scan_risks" => compact_risks(structured),
+        "check_change_gates" => compact_change_gates(structured),
         "orient" => compact_orient(structured),
         "ingest_runtime_evidence" => compact_runtime_import(structured),
         "expand" => compact_expand(structured),
@@ -673,6 +735,135 @@ fn model_visible_result(tool: &str, structured: &Value) -> Value {
         "status" => compact_status(structured),
         _ => structured.clone(),
     }
+}
+
+fn evaluate_change_gates(scan: &Value, fail_on: &str, thresholds: [usize; 4]) -> Value {
+    let finding_count = scan
+        .get("findings")
+        .and_then(Value::as_array)
+        .map_or(0, Vec::len);
+    let impact_count = scan
+        .get("impacts")
+        .and_then(Value::as_array)
+        .map_or(0, Vec::len);
+    let blocked = scan
+        .pointer("/change_plan/totals/blocked")
+        .and_then(Value::as_u64)
+        .unwrap_or(0) as usize;
+    let gaps = scan
+        .get("coverage_gap_count")
+        .and_then(Value::as_u64)
+        .unwrap_or(0) as usize;
+    let specs = [
+        (
+            "max_warning_findings",
+            finding_count,
+            thresholds[0],
+            "error",
+        ),
+        ("max_blocked_missions", blocked, thresholds[1], "error"),
+        ("max_coverage_gaps", gaps, thresholds[2], "error"),
+        (
+            "max_unverified_impacts",
+            impact_count,
+            thresholds[3],
+            "warning",
+        ),
+    ];
+    let rules = specs
+        .iter()
+        .map(|(rule, value, threshold, severity)| {
+            json!({
+                "rule":rule,
+                "value":value,
+                "threshold":threshold,
+                "severity":severity,
+                "status":if value > threshold {"breached"} else {"passed"}
+            })
+        })
+        .collect::<Vec<_>>();
+    let errors = rules
+        .iter()
+        .filter(|rule| rule["status"] == "breached" && rule["severity"] == "error")
+        .count();
+    let warnings = rules
+        .iter()
+        .filter(|rule| rule["status"] == "breached" && rule["severity"] == "warning")
+        .count();
+    let partial = scan.get("partial").and_then(Value::as_bool).unwrap_or(true);
+    let verdict = if errors > 0 {
+        "FAIL"
+    } else if partial {
+        "INCONCLUSIVE"
+    } else if warnings > 0 {
+        "WARN"
+    } else {
+        "PASS"
+    };
+    let would_block = match fail_on {
+        "none" => false,
+        "warning" => errors > 0 || warnings > 0 || partial,
+        _ => errors > 0 || partial,
+    };
+    let failed_rules = rules
+        .iter()
+        .filter(|rule| rule["status"] == "breached")
+        .map(|rule| rule["rule"].clone())
+        .collect::<Vec<_>>();
+    json!({
+        "snapshot":scan.get("snapshot"),
+        "base_revision":scan.get("base_revision"),
+        "algorithm":"change_quality_gate_v1",
+        "llm_used":false,
+        "verdict":verdict,
+        "would_block":would_block,
+        "fail_on":fail_on,
+        "rules":rules,
+        "totals":{"errors":errors,"warnings":warnings},
+        "partial":partial,
+        "coverage_gaps":scan.get("coverage_gaps"),
+        "coverage_gap_count":gaps,
+        "change_plan":{
+            "totals":scan.pointer("/change_plan/totals"),
+            "execution_order":scan.pointer("/change_plan/execution_order")
+        },
+        "agent_handoff":{
+            "schema_version":"cgrx.agent.change-quality-gate.v1",
+            "algorithm":"change_quality_gate_v1",
+            "llm_used":false,
+            "snapshot":scan.get("snapshot"),
+            "verdict":verdict,
+            "would_block":would_block,
+            "failed_rules":failed_rules,
+            "finding_indexes":(0..finding_count).collect::<Vec<_>>(),
+            "impact_indexes":(0..impact_count).collect::<Vec<_>>(),
+            "change_mission_handoff":scan.pointer("/change_plan/agent_handoff"),
+            "requirements":[
+                "Revalidate the snapshot before acting on this gate.",
+                "Inspect every referenced finding, impact, mission, and coverage gap.",
+                "Record actual test execution separately; candidate tests are not execution proof."
+            ]
+        },
+        "limitations":[
+            "This gate evaluates bounded change evidence, not whole-program correctness.",
+            "INCONCLUSIVE is distinct from PASS and remains blocking unless fail_on is none."
+        ]
+    })
+}
+
+fn compact_change_gates(value: &Value) -> Value {
+    json!({
+        "at":snapshot_tag(value.get("snapshot")),
+        "algorithm":value.get("algorithm"),
+        "llm_used":value.get("llm_used"),
+        "verdict":value.get("verdict"),
+        "would_block":value.get("would_block"),
+        "fail_on":value.get("fail_on"),
+        "rules":value.get("rules"),
+        "partial":value.get("partial"),
+        "gaps":value.get("coverage_gap_count"),
+        "agent_handoff":value.get("agent_handoff")
+    })
 }
 
 fn compact_risks(value: &Value) -> Value {
@@ -1565,6 +1756,7 @@ fn model_visible_schema() -> Value {
     let path_or_scope = path_or_scope_schema(&bounded_scope);
     let mut tools = json!([
         {"name":"scan_risks","description":"Change risks, candidate tests and deterministic parallel agent missions; no tests or LLM executed.","inputSchema":{"type":"object","properties":{"mode":{"enum":["changes"]},"limit":{"type":"integer","minimum":1,"maximum":50}}}},
+        {"name":"check_change_gates","description":"Snapshot-bound conservative change gate over findings, impacts, missions and graph coverage; no tests or LLM executed.","inputSchema":{"type":"object","properties":{"limit":{"type":"integer","minimum":1,"maximum":50},"fail_on":{"enum":["error","warning","none"],"default":"error"},"max_warning_findings":{"type":"integer","minimum":0,"maximum":10000,"default":0},"max_blocked_missions":{"type":"integer","minimum":0,"maximum":10000,"default":0},"max_coverage_gaps":{"type":"integer","minimum":0,"maximum":10000,"default":0},"max_unverified_impacts":{"type":"integer","minimum":0,"maximum":10000,"default":0}}}},
         {"name":"ingest_runtime_evidence","description":"Import revision-pinned runtime call evidence from a local file.","inputSchema":{"type":"object","required":["input_path"],"properties":{"input_path":{"type":"string"},"format":{"enum":["auto","ndjson","otlp-json"],"default":"auto"},"revision":{"type":"string"},"environment":{"type":"string"}}}},
         {"name":"orient","description":"Context","inputSchema":{"type":"object","required":["task","budget","mode","scope"],"properties":{"task":{"type":"string"},"budget":{"type":"integer","minimum":1},"mode":{"enum":["FAST","PRECISE","BOUNDED"]},"scope":bounded_scope.clone()}}},
         {"name":"search_graph","description":"Symbols or bodies","inputSchema":{"type":"object","required":["query"],"properties":{"query":{"type":"string"},"language":{"enum":["typescript","go","java","python","rust"]},"include_body":{"type":"boolean"},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":50}}}},
@@ -1582,6 +1774,10 @@ fn model_visible_schema() -> Value {
         (
             "Scan change risks",
             "Find possible broken calls, candidate tests and deterministic parallel agent missions for working-tree changes versus HEAD.",
+        ),
+        (
+            "Check change quality gates",
+            "Evaluate snapshot-bound change findings, mission blockers and graph coverage with explicit pass, warning, fail or inconclusive semantics.",
         ),
         (
             "Import runtime evidence",
@@ -1641,7 +1837,7 @@ fn model_visible_schema() -> Value {
             json!({"readOnlyHint":false,"destructiveHint":false,"openWorldHint":false});
         tool["outputSchema"] = json!({"type":"object","additionalProperties":true});
     }
-    tools[12]["inputSchema"]["properties"]["paths_or_scope"] = path_or_scope;
+    tools[13]["inputSchema"]["properties"]["paths_or_scope"] = path_or_scope;
     tools
 }
 
@@ -1671,7 +1867,7 @@ mod openai_metadata_tests {
     #[test]
     fn openai_tool_contract() {
         let tools = model_visible_schema();
-        assert_eq!(tools.as_array().unwrap().len(), 13);
+        assert_eq!(tools.as_array().unwrap().len(), 14);
         for tool in tools.as_array().unwrap() {
             assert!(tool["title"].as_str().is_some_and(|s| !s.is_empty()));
             assert!(tool["description"].as_str().is_some_and(|s| s.len() > 20));
@@ -1721,6 +1917,48 @@ mod openai_metadata_tests {
                 .len(),
             3
         );
+    }
+
+    #[test]
+    fn change_gate_never_turns_partial_evidence_into_a_pass() {
+        let scan = json!({
+            "snapshot":{"repo_revision":"abc","working_tree_digest":"00","graph_generation":1},
+            "base_revision":"abc",
+            "findings":[],
+            "impacts":[],
+            "partial":true,
+            "coverage_gap_count":0,
+            "coverage_gaps":[],
+            "change_plan":{"totals":{"blocked":0,"missions":0,"parallel_groups":0},"execution_order":[],"agent_handoff":{}}
+        });
+        let gate = evaluate_change_gates(&scan, "error", [0, 0, 0, 0]);
+        assert_eq!(gate["verdict"], "INCONCLUSIVE");
+        assert_eq!(gate["would_block"], true);
+        assert_eq!(gate["llm_used"], false);
+    }
+
+    #[test]
+    fn change_gate_separates_warning_policy_from_proven_failures() {
+        let warning = json!({
+            "snapshot":{},"findings":[],"impacts":[{}],"partial":false,
+            "coverage_gap_count":0,"coverage_gaps":[],
+            "change_plan":{"totals":{"blocked":0},"execution_order":[],"agent_handoff":{}}
+        });
+        let report = evaluate_change_gates(&warning, "error", [0, 0, 0, 0]);
+        assert_eq!(report["verdict"], "WARN");
+        assert_eq!(report["would_block"], false);
+        let strict = evaluate_change_gates(&warning, "warning", [0, 0, 0, 0]);
+        assert_eq!(strict["would_block"], true);
+
+        let failure = json!({
+            "snapshot":{},"findings":[{}],"impacts":[],"partial":false,
+            "coverage_gap_count":0,"coverage_gaps":[],
+            "change_plan":{"totals":{"blocked":0},"execution_order":[],"agent_handoff":{}}
+        });
+        let failed = evaluate_change_gates(&failure, "error", [0, 0, 0, 0]);
+        assert_eq!(failed["verdict"], "FAIL");
+        assert_eq!(failed["would_block"], true);
+        assert_eq!(failed["agent_handoff"]["finding_indexes"], json!([0]));
     }
 
     #[test]
