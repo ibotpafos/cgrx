@@ -408,6 +408,14 @@ fn architecture_proves_repo_local_imports_for_every_supported_language_and_refre
             "from python.core.helper import helper\nimport os\ndef run():\n    return helper()\n",
         ),
         ("python/core/helper.py", "def helper():\n    return 1\n"),
+        (
+            "java/api/Service.java",
+            "package java.api; import java.core.Helper; import java.util.List; final class Service { Helper helper; }\n",
+        ),
+        (
+            "java/core/Helper.java",
+            "package java.core; final class Helper {}\n",
+        ),
         ("go.mod", "module example.com/cgrxfixture\n\ngo 1.23\n"),
         (
             "go_api/main.go",
@@ -456,13 +464,14 @@ fn architecture_proves_repo_local_imports_for_every_supported_language_and_refre
         imports,
         std::collections::BTreeSet::from([
             ("go_api", "go_core"),
+            ("java/api", "java/core"),
             ("python/api", "python/core"),
             ("src/api", "src"),
             ("typescript/api", "typescript/core"),
         ])
     );
-    assert_eq!(result["import_resolution"]["proven"], 4);
-    assert_eq!(result["import_resolution"]["external"], 4);
+    assert_eq!(result["import_resolution"]["proven"], 5);
+    assert_eq!(result["import_resolution"]["external"], 5);
     assert_eq!(result["import_resolution"]["out_of_scope"], 0);
     assert_eq!(result["import_resolution"]["unresolved_local"], 1);
     assert!(
@@ -570,6 +579,14 @@ fn architecture_proves_used_local_references_for_every_supported_language() {
             "import python.model as model\nimport os\ndef local(value: model.Model):\n    return value\ndef external(value: os.PathLike):\n    return value\n",
         ),
         ("python/model.py", "class Model:\n    pass\n"),
+        (
+            "java/api/Service.java",
+            "package java.api; import java.model.Model; import java.time.Instant; final class Service { Model local(Model value) { return value; } Instant external(Instant value) { return value; } }\n",
+        ),
+        (
+            "java/model/Model.java",
+            "package java.model; final class Model {}\n",
+        ),
         ("Cargo.toml", "[package]\nname='fixture'\nversion='0.1.0'\n"),
         ("src/lib.rs", "pub mod api;\npub mod model;\n"),
         (
@@ -612,13 +629,14 @@ fn architecture_proves_used_local_references_for_every_supported_language() {
         references,
         std::collections::BTreeSet::from([
             ("go_api", "go_model"),
+            ("java/api", "java/model"),
             ("python/api", "python"),
             ("src/api", "src/model"),
             ("typescript/api", "typescript/model"),
         ])
     );
-    assert_eq!(result["reference_resolution"]["proven"], 4);
-    assert_eq!(result["reference_resolution"]["external"], 4);
+    assert_eq!(result["reference_resolution"]["proven"], 6);
+    assert_eq!(result["reference_resolution"]["external"], 6);
     assert_eq!(result["reference_resolution"]["unresolved_local"], 1);
     assert!(
         result["coverage_gaps"]

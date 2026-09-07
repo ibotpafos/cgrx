@@ -275,7 +275,7 @@ fn tools_list_advertises_bounded_graph_search_and_trace() {
         .unwrap();
     assert_eq!(
         refactors["inputSchema"]["properties"]["language"]["enum"],
-        json!(["typescript", "go", "python", "rust"])
+        json!(["typescript", "go", "java", "python", "rust"])
     );
     assert_eq!(
         refactors["inputSchema"]["properties"]["min_score"]["maximum"],

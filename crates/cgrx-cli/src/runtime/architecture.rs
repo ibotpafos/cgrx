@@ -937,11 +937,20 @@ fn supported_source_path(path: &str) -> bool {
         std::path::Path::new(path)
             .extension()
             .and_then(|extension| extension.to_str()),
-        Some("rs" | "go" | "ts" | "tsx" | "py")
+        Some("rs" | "go" | "java" | "ts" | "tsx" | "py")
     )
 }
 
 fn import_specifiers(path: &str, source: &str) -> Vec<String> {
+    if path.ends_with(".java") {
+        let value = source.trim().strip_prefix("import ").unwrap_or_default();
+        let value = value.strip_prefix("static ").unwrap_or(value);
+        let value = value.trim_end_matches(';').trim();
+        if value.is_empty() || value.ends_with(".*") {
+            return Vec::new();
+        }
+        return vec![value.to_owned()];
+    }
     if path.ends_with(".py") {
         let source = source.trim();
         if let Some(rest) = source.strip_prefix("from ") {
@@ -1054,10 +1063,42 @@ fn resolve_import(
     if source_path.ends_with(".py") {
         return resolve_python_import(source_path, specifier, paths);
     }
+    if source_path.ends_with(".java") {
+        return resolve_java_import(specifier, paths);
+    }
     if source_path.ends_with(".rs") {
         return resolve_rust_import(source_path, specifier, paths, cargo_manifests);
     }
     ImportResolution::External
+}
+
+fn resolve_java_import(specifier: &str, paths: &BTreeMap<String, Hash32>) -> ImportResolution {
+    let mut parts = specifier.split('.').collect::<Vec<_>>();
+    if parts.len() < 2 || parts.iter().any(|part| part.is_empty()) {
+        return ImportResolution::UnresolvedLocal;
+    }
+    let class_path = format!("{}.java", parts.join("/"));
+    let mut candidates = paths
+        .keys()
+        .filter(|path| path.as_str() == class_path || path.ends_with(&format!("/{class_path}")))
+        .cloned()
+        .collect::<Vec<_>>();
+    if candidates.is_empty() && parts.len() > 2 {
+        parts.pop();
+        let static_owner = format!("{}.java", parts.join("/"));
+        candidates = paths
+            .keys()
+            .filter(|path| {
+                path.as_str() == static_owner || path.ends_with(&format!("/{static_owner}"))
+            })
+            .cloned()
+            .collect();
+    }
+    match candidates.as_slice() {
+        [path] => ImportResolution::Proven(path.clone()),
+        [] => ImportResolution::External,
+        _ => ImportResolution::UnresolvedLocal,
+    }
 }
 
 fn resolve_python_import(

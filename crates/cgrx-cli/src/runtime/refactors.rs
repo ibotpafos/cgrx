@@ -190,6 +190,7 @@ fn is_callable_candidate(language: &str, source: &str) -> bool {
         "rust" => has_block_after_keyword(&tokens, "fn"),
         "go" => has_block_after_keyword(&tokens, "func"),
         "python" => tokens.iter().any(|token| token == "def"),
+        "java" => source.contains('(') && source.contains('{'),
         "typescript" => {
             let declares_container = tokens
                 .iter()
@@ -282,13 +283,14 @@ impl Runtime {
         limit: usize,
     ) -> Result<Value, RuntimeError> {
         let language = language.map(str::trim);
-        if language.is_some_and(|value| !matches!(value, "typescript" | "go" | "python" | "rust"))
+        if language
+            .is_some_and(|value| !matches!(value, "typescript" | "go" | "java" | "python" | "rust"))
             || min_score > 1000
             || !(1..=50).contains(&limit)
         {
             return Err(RuntimeError::new(
                 "cgrx.invalid_arguments",
-                "language must be typescript, go, python, or rust; min_score must be 0..1000; limit must be 1..50",
+                "language must be typescript, go, java, python, or rust; min_score must be 0..1000; limit must be 1..50",
             ));
         }
 
@@ -781,6 +783,7 @@ mod tests {
             ("rust", "trait Entry { fn run(); }"),
             ("go", "type Entry struct { Value int }"),
             ("python", "class Entry:\n    pass"),
+            ("java", "final class Entry { int value; }"),
             ("typescript", "interface Entry { value: number }"),
             ("typescript", "@sealed class Entry { run() {} }"),
         ] {
@@ -790,6 +793,7 @@ mod tests {
             ("rust", "fn run() {}"),
             ("go", "func run() {}"),
             ("python", "async def run():\n    pass"),
+            ("java", "int run() { return 1; }"),
             ("typescript", "constructor() {}"),
             ("typescript", "const run = () => 1"),
         ] {

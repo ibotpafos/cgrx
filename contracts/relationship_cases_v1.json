@@ -1,7 +1,30 @@
 {
   "schema_version": 1,
-  "description": "Exact direct caller-to-callee relationships on a synthetic four-language repository.",
+  "description": "Exact direct caller-to-callee relationships on a synthetic five-language repository.",
   "cases": [
+    {
+      "id": "java_unique_own_class_call",
+      "language": "java",
+      "target": {
+        "symbol": "javaTarget",
+        "path": "Service.java"
+      },
+      "expected_callers": [
+        {
+          "symbol": "javaCaller",
+          "path": "Service.java"
+        }
+      ]
+    },
+    {
+      "id": "java_same_name_other_class_negative",
+      "language": "java",
+      "target": {
+        "symbol": "javaTarget",
+        "path": "Other.java"
+      },
+      "expected_callers": []
+    },
     {
       "id": "python_direct_cross_file",
       "language": "python",

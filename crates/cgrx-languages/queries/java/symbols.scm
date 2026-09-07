@@ -1,0 +1,6 @@
+(class_declaration name: (identifier) @symbol)
+(interface_declaration name: (identifier) @symbol)
+(enum_declaration name: (identifier) @symbol)
+(record_declaration name: (identifier) @symbol)
+(method_declaration name: (identifier) @symbol)
+(constructor_declaration name: (identifier) @symbol)

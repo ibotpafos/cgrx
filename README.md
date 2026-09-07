@@ -202,7 +202,7 @@ is not required by the released executable.
 
 `search_graph` searches symbol names by default. Set `include_body: true` to
 also locate a term inside symbol bodies, and use `language` (`typescript`, `go`,
-`python`, or `rust`) to keep mixed-repository results focused. TypeScript covers
+`java`, `python`, or `rust`) to keep mixed-repository results focused. TypeScript covers
 both `.ts` and `.tsx`. Every match reports `matched_by` as `symbol` or `body`.
 Use `get_outline` with a repository-relative source path to inspect its symbols
 in source order without paying for function bodies; `limit` defaults to 200 and
@@ -240,6 +240,14 @@ runtime refreshes changed source before analysis. Existing entry points are
 preserved, projected edges are marked `hypothetical`, blocked removals retain
 their gaps, and no source or stored graph is changed. Empty or partial results apply only to the requested scope,
 threshold and reported budgets and coverage gaps.
+
+Java (`.java`) uses a grammar-backed parser for classes, interfaces, enums,
+records, constructors, methods and imports. CGRX proves an unqualified method
+call only when the target is unique in the file, belongs to a concrete class
+without inheritance, and is not shadowed by a static import. Receiver calls,
+overloads, inherited calls and constructors remain explicit dispatch gaps. This
+conservative slice participates in graph traversal, usages, runtime overlays,
+refactor futures and the visualizer without an LSP or model runtime.
 
 See [the Trace MCP reference comparison](docs/reference-trace-mcp.md) for the
 evidence behind this search slice and the capabilities that remain separate.
@@ -317,6 +325,10 @@ precision remains `null` while any candidate is `unreviewed`.
 
 The [architecture community benchmark](docs/benchmarks/architecture-communities-2026-09-07.md)
 records the pinned five-project CGRX/CBM comparison and its limits.
+
+The [Java call graph benchmark](docs/benchmarks/java-call-graph-2026-09-07.md)
+adds a fifth call-aware language with positive and same-name negative controls,
+plus source-anchored Gson coverage for calls, imports, references and abstention.
 
 `get_architecture` also finds package cycles and high-fan-in symbols, builds
 three deterministic future graphs for each issue, ranks them from proven graph

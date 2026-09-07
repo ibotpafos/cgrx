@@ -37,6 +37,20 @@
       }
     },
     {
+      "id": "java",
+      "module": "java",
+      "source": "crates/cgrx-languages/src/java.rs",
+      "extensions": ["java"],
+      "cells": {
+        "java": {
+          "CALLS": ["gson-java-parse-calls-parseString"],
+          "IMPORTS": ["gson-java-import-malformed-json"],
+          "REFERENCE": ["gson-java-reference-malformed-json"],
+          "UNRESOLVED": ["gson-java-receiver-nextDouble-unresolved"]
+        }
+      }
+    },
+    {
       "id": "python",
       "module": "python",
       "source": "crates/cgrx-languages/src/python.rs",
