@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { createState, projectArchitecture, projectGraph, reduce, serializeAgentPlan, summarizeBoundedResult } from "../state.js";
+import { architectureAgentHandoff, createState, projectArchitecture, projectArchitectureFuture, projectGraph, reduce, serializeAgentPlan, summarizeBoundedResult } from "../state.js";
 
 const snapshot = {
   repo_revision: "a".repeat(40),
@@ -63,6 +63,87 @@ test("architecture projection turns proven package boundaries into graph evidenc
   assert.equal(graph.edges[0].confidence, "PROVEN");
   assert.equal(graph.nodes[0].cycle, true);
   assert.equal(graph.root.symbol, "Architecture");
+});
+
+test("architecture cycle futures project inversion and contract extraction", () => {
+  const current = projectArchitecture({
+    snapshot,
+    packages: [
+      { name: "api", files: 1, symbols: 2, fan_in: 1, fan_out: 1 },
+      { name: "core", files: 1, symbols: 2, fan_in: 1, fan_out: 1 }
+    ],
+    boundaries: [
+      { source: "api", target: "core", edges: 2, relations: ["CALLS"], confidence: "PROVEN" },
+      { source: "core", target: "api", edges: 1, relations: ["IMPORTS"], confidence: "PROVEN" }
+    ],
+    cycles: [{ packages: ["api", "core"] }]
+  });
+  const issue = {
+    issue_id: "architecture-issue1.cycle",
+    kind: "PACKAGE_DEPENDENCY_CYCLE",
+    selected_boundary: { source: "api", target: "core" }
+  };
+  const inverted = projectArchitectureFuture(current, issue, {
+    strategy_id: "architecture-strategy1.invert",
+    policy: "invert_dependency"
+  });
+  assert.equal(inverted.edges.some((edge) => edge.source === "package:api" && edge.target === "package:core"), false);
+  assert.equal(inverted.edges.filter((edge) => edge.source === "package:core" && edge.target === "package:api").length, 2);
+  assert.equal(inverted.edges.at(-1).status, "hypothetical");
+
+  const extracted = projectArchitectureFuture(current, issue, {
+    strategy_id: "architecture-strategy1.contract",
+    policy: "extract_contract"
+  });
+  assert.ok(extracted.nodes.some((node) => node.kind === "contract" && node.status === "hypothetical"));
+  assert.equal(extracted.edges.filter((edge) => edge.status === "hypothetical").length, 2);
+});
+
+test("architecture hotspot futures expose facade and community split nodes", () => {
+  const current = projectArchitecture({ snapshot, packages: [], boundaries: [], cycles: [] });
+  const issue = {
+    issue_id: "architecture-issue1.hot",
+    kind: "HIGH_FAN_IN_HOTSPOT",
+    symbol: { symbol: "save", path: "core/store.ts", fan_in: 12 }
+  };
+  const facade = projectArchitectureFuture(current, issue, {
+    strategy_id: "architecture-strategy1.facade",
+    policy: "introduce_facade"
+  });
+  assert.ok(facade.nodes.some((node) => node.kind === "hotspot" && node.symbol === "save"));
+  assert.ok(facade.nodes.some((node) => node.kind === "facade"));
+  assert.equal(facade.edges.at(-1).status, "hypothetical");
+
+  const split = projectArchitectureFuture(current, issue, {
+    strategy_id: "architecture-strategy1.split",
+    policy: "split_by_community"
+  });
+  assert.equal(split.nodes.filter((node) => node.kind === "community-split").length, 2);
+});
+
+test("architecture alternatives produce exact model-free agent handoffs", () => {
+  const issue = {
+    kind: "PACKAGE_DEPENDENCY_CYCLE",
+    packages: ["api", "core"],
+    selected_boundary: { source: "api", target: "core" },
+    agent_handoff: {
+      schema_version: "cgrx.agent.architecture-future.v1",
+      snapshot,
+      verification: ["backend verification"]
+    }
+  };
+  const strategy = {
+    strategy_id: "architecture-strategy1.contract",
+    policy: "extract_contract",
+    predicted_graph: { cycles_removed: 1, packages_added: 1 }
+  };
+  const handoff = architectureAgentHandoff(snapshot, issue, strategy);
+  assert.equal(handoff.strategy_id, strategy.strategy_id);
+  assert.deepEqual(handoff.predicted_graph, strategy.predicted_graph);
+  assert.equal(handoff.llm_used, false);
+  assert.equal(handoff.constraints.llm_used, false);
+  assert.equal(handoff.constraints.revalidate_snapshot_before_edit, true);
+  assert.deepEqual(handoff.verification, ["backend verification"]);
 });
 
 test("projectGraph marks proposed edges without mutating current evidence", () => {

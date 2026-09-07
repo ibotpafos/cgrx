@@ -44,8 +44,9 @@ button { color: inherit; }
 .search__row:focus-within { border-color: var(--focus); box-shadow: 0 0 0 2px rgb(105 216 255 / .12); }
 .search button, .view-actions button, .mode-switch button, .evidence-switch button, .copy-actions button { border: 0; background: transparent; cursor: pointer; }
 .search button { border-left: 1px solid var(--line); color: var(--focus); }
-.rail__section { min-height: 90px; }
-.rail__section--grow { flex: 1; }
+.rail__section { min-height: 90px; flex-shrink: 0; }
+.rail__section--grow { flex: 0 0 auto; }
+#architecture-future-list { max-height: 248px; overflow: auto; padding-right: 3px; }
 .section-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
 .section-title h2 { margin: 0; font-size: 13px; }
 .section-title span { color: var(--muted); font: 11px ui-monospace, monospace; }
@@ -58,7 +59,7 @@ button { color: inherit; }
 .item small { margin-top: 5px; color: var(--muted); font: 10px ui-monospace, monospace; }
 .quiet { color: var(--muted); font-size: 12px; line-height: 1.5; }
 .stage { min-width: 0; min-height: 0; display: grid; grid-template-rows: auto 1fr auto; position: relative; overflow: hidden; background: var(--canvas); }
-.stage__toolbar { display: flex; align-items: center; gap: 20px; min-height: 74px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+.stage__toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; min-height: 74px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
 .stage__toolbar > div:first-child { min-width: 165px; margin-right: auto; }
 .stage__toolbar h1 { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 16px; }
 .mode-switch, .evidence-switch, .view-actions { display: flex; padding: 3px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); }
@@ -88,6 +89,8 @@ button { color: inherit; }
 .node__path { fill: var(--muted); font: 10px ui-monospace, monospace; }
 .node__status { fill: var(--proven); }
 .node--test .node__status { fill: var(--test); }
+.node--future rect { stroke: var(--future); stroke-dasharray: 3 5; }
+.node--future .node__status { fill: var(--future); }
 .node--changed rect { stroke: var(--gap); stroke-dasharray: 7 5; }
 .node--remove rect { stroke: var(--danger); stroke-dasharray: 6 5; opacity: .62; }
 .node--remove .node__title { text-decoration: line-through; fill: var(--danger); }

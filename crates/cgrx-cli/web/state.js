@@ -58,6 +58,33 @@ export function serializeAgentPlan(strategy) {
   return JSON.stringify(strategy.agent_handoff, null, 2);
 }
 
+export function architectureAgentHandoff(snapshot, issue, strategy) {
+  const base = issue.agent_handoff || {};
+  return {
+    ...base,
+    schema_version: "cgrx.agent.architecture-future.v1",
+    snapshot: base.snapshot || snapshot,
+    issue: base.issue || (issue.kind === "PACKAGE_DEPENDENCY_CYCLE"
+      ? { kind: issue.kind, packages: issue.packages, selected_boundary: issue.selected_boundary }
+      : { kind: issue.kind, symbol: issue.symbol }),
+    strategy_id: strategy.strategy_id,
+    policy: strategy.policy,
+    predicted_graph: strategy.predicted_graph,
+    llm_used: false,
+    constraints: {
+      ...(base.constraints || {}),
+      llm_used: false,
+      revalidate_snapshot_before_edit: true,
+      preserve_proven_edges_unless_listed: true
+    },
+    verification: base.verification || [
+      "Re-index edited source before accepting the predicted graph.",
+      "Confirm the targeted cycle or hotspot changed as predicted.",
+      "Report remaining coverage gaps separately from proven graph changes."
+    ]
+  };
+}
+
 export function summarizeBoundedResult(value) {
   const shown = value.candidates?.length || 0;
   const partial = Boolean(value.partial);
@@ -164,6 +191,78 @@ export function projectArchitecture(value) {
     containers: [],
     partial: value.partial,
     coverage_gap_count: value.coverage_gap_count
+  };
+}
+
+export function projectArchitectureFuture(current, issue, strategy) {
+  const nodes = (current.nodes || []).map((node) => ({ ...node }));
+  let edges = (current.edges || []).map((edge) => ({ ...edge, status: "preserved" }));
+  const addNode = (node) => {
+    if (!nodes.some((candidate) => identity(candidate) === identity(node))) nodes.push(node);
+  };
+  const addEdge = (source, target, relation) => edges.push({
+    source, target, relation, confidence: "hypothetical", status: "hypothetical"
+  });
+
+  if (issue?.kind === "PACKAGE_DEPENDENCY_CYCLE") {
+    const source = `package:${issue.selected_boundary?.source}`;
+    const target = `package:${issue.selected_boundary?.target}`;
+    if (strategy.policy !== "preserve_and_monitor") {
+      edges = edges.filter((edge) => !(String(edge.source) === source && String(edge.target) === target));
+    }
+    if (strategy.policy === "invert_dependency") addEdge(target, source, "INVERTED_DEPENDENCY");
+    if (strategy.policy === "extract_contract") {
+      const contract = futureArchitectureNode(
+        `future:contract:${issue.issue_id}`,
+        `${issue.selected_boundary.source} ↔ ${issue.selected_boundary.target} contract`,
+        "contract"
+      );
+      addNode(contract);
+      addEdge(source, contract.node_id, "DEPENDS_ON_CONTRACT");
+      addEdge(target, contract.node_id, "DEPENDS_ON_CONTRACT");
+    }
+  }
+
+  if (issue?.kind === "HIGH_FAN_IN_HOTSPOT") {
+    const hotspot = futureArchitectureNode(
+      `hotspot:${issue.issue_id}`,
+      issue.symbol?.symbol || "hotspot",
+      "hotspot",
+      issue.symbol?.path || "observed hotspot"
+    );
+    hotspot.status = "current";
+    hotspot.fan_in = issue.symbol?.fan_in;
+    addNode(hotspot);
+    if (strategy.policy === "introduce_facade") {
+      const facade = futureArchitectureNode(`future:facade:${issue.issue_id}`, "stable facade", "facade");
+      addNode(facade);
+      addEdge(facade.node_id, hotspot.node_id, "DELEGATES_TO");
+    }
+    if (strategy.policy === "split_by_community") {
+      for (const index of [1, 2]) {
+        const split = futureArchitectureNode(
+          `future:community:${issue.issue_id}:${index}`,
+          `caller community ${index}`,
+          "community-split"
+        );
+        addNode(split);
+        addEdge(split.node_id, hotspot.node_id, "PARTITIONED_CALLS");
+      }
+    }
+  }
+  return { ...current, nodes, edges, projection: strategy.strategy_id, architecture_issue: issue.issue_id };
+}
+
+function futureArchitectureNode(nodeId, symbol, kind, path = "proposed") {
+  return {
+    node_id: nodeId,
+    symbol,
+    path,
+    span: { start: 0, end: 0 },
+    source_hash: "hypothetical",
+    lane: "entrypoints",
+    kind,
+    status: "hypothetical"
   };
 }
 
