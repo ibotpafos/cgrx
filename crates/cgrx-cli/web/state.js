@@ -58,6 +58,36 @@ export function serializeAgentPlan(strategy) {
   return JSON.stringify(strategy.agent_handoff, null, 2);
 }
 
+export function projectChangeMissions(value) {
+  const plan = value?.change_plan || value || {};
+  const missions = (plan.missions || []).map((mission) => ({
+    ...mission,
+    title: mission.change_paths?.[0] || mission.review_paths?.[0] || mission.mission_id,
+    evidenceCount: (mission.finding_indexes?.length || 0) + (mission.impact_indexes?.length || 0),
+    testCount: mission.related_test_indexes?.length || 0
+  }));
+  const byId = new Map(missions.map((mission) => [mission.mission_id, mission]));
+  const groups = (plan.execution_order || []).map((ids, index) => ({
+    index,
+    missions: ids.map((id) => byId.get(id)).filter(Boolean)
+  }));
+  return {
+    snapshot: plan.snapshot,
+    groups,
+    missions,
+    dependencies: missions.flatMap((mission) =>
+      (mission.depends_on || []).map((source) => ({ source, target: mission.mission_id }))
+    ),
+    totals: plan.totals || { missions: missions.length, parallel_groups: groups.length, blocked: 0 },
+    partial: Boolean(plan.partial),
+    agent_handoff: plan.agent_handoff
+  };
+}
+
+export function serializeChangeMissionHandoff(projection) {
+  return JSON.stringify(projection.agent_handoff, null, 2);
+}
+
 export function architectureAgentHandoff(snapshot, issue, strategy) {
   const base = issue.agent_handoff || {};
   return {

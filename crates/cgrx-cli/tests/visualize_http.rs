@@ -174,6 +174,7 @@ fn read_only_api_routes_share_the_current_snapshot() {
         "/api/search?q=selected&scope=**&limit=8",
         "/api/graph?symbol=selected&path=main.rs&direction=both&depth=1&node_limit=80&edge_limit=160",
         "/api/refactors?scope=**&language=rust&min_score=760&limit=8",
+        "/api/change-plan?limit=20",
         "/api/architecture?scope=**&package_depth=1&limit=20",
         "/api/snippet?symbol=selected&path=main.rs",
         "/api/git-history?limit=200",
@@ -187,6 +188,25 @@ fn read_only_api_routes_share_the_current_snapshot() {
         snapshots.push(value["snapshot"].clone());
     }
     assert!(snapshots.windows(2).all(|pair| pair[0] == pair[1]));
+}
+
+#[test]
+fn serves_snapshot_bound_change_missions() {
+    let (_repository, server) = start_server();
+    let response = request(&server, "GET", "/api/change-plan?limit=20", true);
+    assert!(response.starts_with("HTTP/1.1 200"), "{response}");
+    let body = response.split_once("\r\n\r\n").expect("HTTP body").1;
+    let value: serde_json::Value = serde_json::from_str(body).expect("JSON response");
+    assert_eq!(value["change_plan"]["algorithm"], "change_missions_v1");
+    assert_eq!(value["change_plan"]["llm_used"], false);
+    assert_eq!(
+        value["change_plan"]["agent_handoff"]["schema_version"],
+        "cgrx.agent.change-missions.v1"
+    );
+
+    let invalid = request(&server, "GET", "/api/change-plan?limit=51", true);
+    assert!(invalid.starts_with("HTTP/1.1 400"), "{invalid}");
+    assert!(invalid.contains("cgrx.invalid_arguments"), "{invalid}");
 }
 
 #[test]

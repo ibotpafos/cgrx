@@ -47,6 +47,7 @@ button { color: inherit; }
 .rail__section { min-height: 90px; flex-shrink: 0; }
 .rail__section--grow { flex: 0 0 auto; }
 #architecture-future-list { max-height: 248px; overflow: auto; padding-right: 3px; }
+#mission-list { max-height: 210px; overflow: auto; padding-right: 3px; }
 .section-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
 .section-title h2 { margin: 0; font-size: 13px; }
 .section-title span { color: var(--muted); font: 11px ui-monospace, monospace; }
@@ -72,6 +73,22 @@ button { color: inherit; }
 .graph-canvas { min-height: 0; overflow: hidden; outline: none; touch-action: none; }
 .git-history-panel { position: relative; min-height: 0; padding: 10px 12px; overflow: hidden; background: var(--canvas); }
 .git-history-panel[hidden] { display: none; }
+.mission-panel { min-height: 0; overflow: auto; padding: 18px; background: radial-gradient(circle at 50% 0%, rgb(105 216 255 / .06), transparent 42%), var(--canvas); }
+.mission-panel[hidden] { display: none; }
+.mission-panel__header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+.mission-panel__header p { margin: 0; }
+.mission-copy { border: 1px solid var(--future); border-radius: 7px; padding: 9px 12px; background: rgb(183 161 255 / .1); color: var(--text); cursor: pointer; }
+.mission-dag { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(230px, 1fr); align-items: start; gap: 34px; min-width: max-content; }
+.mission-group { position: relative; display: grid; gap: 10px; min-width: 230px; }
+.mission-group:not(:last-child)::after { content: "→"; position: absolute; right: -25px; top: 51px; color: var(--future); font: 20px ui-monospace, monospace; }
+.mission-group h2 { margin: 0; color: var(--text); font-size: 13px; }
+.mission-group > p { margin: -4px 0 4px; color: var(--muted); font: 10px ui-monospace, monospace; }
+.mission-card { display: grid; gap: 7px; width: 100%; min-height: 118px; padding: 13px; border: 1px solid var(--line-strong); border-radius: 10px; text-align: left; background: var(--surface-raised); color: var(--text); cursor: pointer; }
+.mission-card:hover, .mission-card:focus-visible { border-color: var(--focus); outline: none; }
+.mission-card--blocked { border-color: var(--gap); background: rgb(245 183 71 / .05); }
+.mission-card__kind { color: var(--future); font: 700 9px ui-monospace, monospace; letter-spacing: .08em; text-transform: uppercase; }
+.mission-card strong { overflow-wrap: anywhere; font-size: 12px; }
+.mission-card small { color: var(--muted); font: 10px ui-monospace, monospace; }
 .git-history-panel web-git-graph { position: absolute; inset: 10px 12px; display: block; width: auto; height: auto; min-height: 0; color-scheme: dark; }
 .graph-canvas:focus-visible { box-shadow: inset 0 0 0 2px var(--focus); }
 #graph-svg { display: block; width: 100%; height: 100%; min-height: 420px; }

@@ -162,6 +162,13 @@ impact and candidate-test indexes plus a reproducible agent handoff with
 keeps the handoff while omitting duplicated proof bodies. See the
 [end-to-end benchmark](docs/benchmarks/change-missions-2026-09-07.md).
 
+The explorer's **Changes** mode renders that same plan as an execution DAG.
+Columns are sequential groups, cards within a column can run in parallel, and
+each card exposes its paths, evidence indexes, candidate tests, dependencies
+and coverage blockers. **Copy agent handoff** copies the canonical
+`cgrx.agent.change-missions.v1` object returned by `scan_risks`; the UI does
+not reconstruct or reinterpret the task plan.
+
 The workspace has six modes:
 
 The evidence switch independently selects **Static**, **Runtime**, or
