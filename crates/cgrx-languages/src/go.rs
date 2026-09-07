@@ -5,6 +5,55 @@ use crate::pack::{
 use std::collections::{BTreeMap, BTreeSet};
 use tree_sitter::{Language, Node, Parser};
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum GoCallableKind {
+    Function,
+    Method,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GoCallableType {
+    pub kind: GoCallableKind,
+    pub name: String,
+    pub named_type: String,
+}
+
+/// Parse one stored Go declaration and return the single named result or
+/// receiver type. Interfaces, tuples, qualified and generic types remain gaps.
+pub fn go_callable_type(source: &[u8]) -> Option<GoCallableType> {
+    let mut parser = Parser::new();
+    parser.set_language(&tree_sitter_go::LANGUAGE.into()).ok()?;
+    let tree = parser.parse(source, None)?;
+    if tree.root_node().has_error() {
+        return None;
+    }
+    let mut cursor = tree.root_node().walk();
+    let declarations: Vec<_> = tree
+        .root_node()
+        .named_children(&mut cursor)
+        .filter(|node| matches!(node.kind(), "function_declaration" | "method_declaration"))
+        .collect();
+    let [declaration] = declarations.as_slice() else {
+        return None;
+    };
+    let name = text(declaration.child_by_field_name("name")?, source);
+    if declaration.kind() == "method_declaration" {
+        let (_, ty) = receiver(*declaration)?;
+        return Some(GoCallableType {
+            kind: GoCallableKind::Method,
+            name,
+            named_type: text(ty, source),
+        });
+    }
+    let result = declaration.child_by_field_name("result")?;
+    let ty = named_type(result)?;
+    Some(GoCallableType {
+        kind: GoCallableKind::Function,
+        name,
+        named_type: text(ty, source),
+    })
+}
+
 pub(crate) static GO: Go = Go;
 
 pub(crate) struct Go;
@@ -127,6 +176,7 @@ fn classify_go(
                 });
             } else if let Some(provenance) = own_receiver_target(function, source, context)
                 .or_else(|| field_receiver_target(function, source, context))
+                .or_else(|| local_constructor_target(function, source, context))
             {
                 extraction.edges.push(Edge {
                     relation: RelationKind::Calls,
@@ -166,6 +216,101 @@ fn classify_go(
             }
         }
         _ => {}
+    }
+}
+
+fn local_constructor_target(
+    function: Node<'_>,
+    source: &[u8],
+    context: &GoContext<'_>,
+) -> Option<Provenance> {
+    if function.kind() != "selector_expression" || context.has_error {
+        return None;
+    }
+    let operand = function.child_by_field_name("operand")?;
+    let target = function.child_by_field_name("field")?;
+    if operand.kind() != "identifier" || target.kind() != "field_identifier" {
+        return None;
+    }
+    let binding_name = text(operand, source);
+    let mut callable = function.parent()?;
+    while !matches!(
+        callable.kind(),
+        "function_declaration" | "method_declaration" | "func_literal"
+    ) {
+        callable = callable.parent()?;
+    }
+    if callable.kind() == "func_literal" {
+        return None;
+    }
+    let caller = callable.child_by_field_name("name")?;
+    for field in ["parameters", "receiver"] {
+        if callable.child_by_field_name(field).is_some_and(|node| {
+            let mut names = BTreeSet::new();
+            collect_bindings(node, source, &mut names);
+            names.contains(&binding_name)
+        }) {
+            return None;
+        }
+    }
+    let body = callable.child_by_field_name("body")?;
+    let mut writes = Vec::new();
+    collect_binding_writes(body, source, &binding_name, &mut writes);
+    let [write] = writes.as_slice() else {
+        return None;
+    };
+    if write.kind() != "short_var_declaration" || write.end_byte() >= function.start_byte() {
+        return None;
+    }
+    let left = write.child_by_field_name("left")?;
+    let right = write.child_by_field_name("right")?;
+    if left.named_child_count() != 1 || right.named_child_count() != 1 {
+        return None;
+    }
+    let binding = left.named_child(0)?;
+    let initializer = right.named_child(0)?;
+    let constructor = initializer.child_by_field_name("function")?;
+    if binding.kind() != "identifier"
+        || text(binding, source) != binding_name
+        || initializer.kind() != "call_expression"
+        || constructor.kind() != "identifier"
+    {
+        return None;
+    }
+    Some(Provenance::GoLocalConstructor {
+        package: context.package?,
+        caller: Span::from(caller),
+        binding: Span::from(binding),
+        constructor: Span::from(constructor),
+        target: Span::from(target),
+    })
+}
+
+fn collect_binding_writes<'tree>(
+    node: Node<'tree>,
+    source: &[u8],
+    name: &str,
+    writes: &mut Vec<Node<'tree>>,
+) {
+    if matches!(
+        node.kind(),
+        "function_declaration" | "method_declaration" | "func_literal"
+    ) {
+        return;
+    }
+    if matches!(
+        node.kind(),
+        "short_var_declaration" | "assignment_statement" | "range_clause" | "receive_statement"
+    ) && node.child_by_field_name("left").is_some_and(|left| {
+        let mut names = BTreeSet::new();
+        collect_identifiers(left, source, &mut names);
+        names.contains(name)
+    }) {
+        writes.push(node);
+    }
+    let mut cursor = node.walk();
+    for child in node.named_children(&mut cursor) {
+        collect_binding_writes(child, source, name, writes);
     }
 }
 

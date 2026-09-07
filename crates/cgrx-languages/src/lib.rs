@@ -12,6 +12,7 @@ pub use pack::{
     Unresolved, UnresolvedKind, pack_for_path,
 };
 
+pub use go::{GoCallableKind, GoCallableType, go_callable_type};
 pub use rust::RustFileFacts;
 
 // Exact import facts and conservative site classification for runtime integration.

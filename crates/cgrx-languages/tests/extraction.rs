@@ -1427,6 +1427,67 @@ fn go_concrete_field_named_slice_requires_distinct_provenance() {
 }
 
 #[test]
+fn go_single_assignment_constructor_receiver_has_explicit_provenance() {
+    let source = b"package graph\nfunc TestAddNode() { engine := NewEngine(); engine.AddNode() }";
+    let extraction = pack_for_path(Path::new("engine_test.go"))
+        .unwrap()
+        .extract(Path::new("engine_test.go"), source)
+        .unwrap();
+    let edge = extraction
+        .edges
+        .iter()
+        .find(|edge| edge.target == "engine.AddNode")
+        .expect("constructor-bound receiver call");
+    let Provenance::GoLocalConstructor {
+        package,
+        caller,
+        binding,
+        constructor,
+        target,
+    } = edge.provenance
+    else {
+        panic!("wrong provenance: {:?}", edge.provenance);
+    };
+    for (span, expected) in [
+        (package, "graph"),
+        (caller, "TestAddNode"),
+        (binding, "engine"),
+        (constructor, "NewEngine"),
+        (target, "AddNode"),
+    ] {
+        assert_eq!(&source[span.start..span.end], expected.as_bytes());
+    }
+}
+
+#[test]
+fn go_reassigned_or_ambiguous_constructor_bindings_remain_gaps() {
+    for source in [
+        "package graph\nfunc Caller() { engine := NewEngine(); engine = other; engine.AddNode() }",
+        "package graph\nfunc Caller(engine *Engine) { engine := NewEngine(); engine.AddNode() }",
+        "package graph\nfunc Caller() { engine, err := NewEngine(); _ = err; engine.AddNode() }",
+    ] {
+        let extraction = pack_for_path(Path::new("main.go"))
+            .unwrap()
+            .extract(Path::new("main.go"), source.as_bytes())
+            .unwrap();
+        assert!(
+            !extraction
+                .edges
+                .iter()
+                .any(|edge| edge.target == "engine.AddNode"),
+            "{source}"
+        );
+        assert!(
+            extraction
+                .unresolved
+                .iter()
+                .any(|gap| gap.text == "engine.AddNode()"),
+            "{source}"
+        );
+    }
+}
+
+#[test]
 fn go_concrete_field_unsupported_shapes_retain_dispatch_gaps() {
     let source = "package queue\ntype TaskQueue struct { items PriorityQueue }\ntype PriorityQueue []int\nfunc (p PriorityQueue) Len() int { return 0 }\nfunc (q *TaskQueue) Peek() int { return q.items.Len() }";
     for unsupported in [

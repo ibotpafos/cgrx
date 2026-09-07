@@ -46,7 +46,7 @@ use serde_json::{Value, json};
 
 use crate::intent::{TaskIntent, classify};
 
-const EXTRACTION_REVISION: u32 = 26;
+const EXTRACTION_REVISION: u32 = 27;
 
 const NODES_SEGMENT: &str = "nodes.seg";
 const EDGES_SEGMENT: &str = "edges.seg";
@@ -111,6 +111,15 @@ struct GoFieldTarget {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
+struct GoLocalConstructorTarget {
+    package: String,
+    caller: ByteRange,
+    binding: String,
+    constructor: String,
+    target: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
 struct RustSelfTarget {
     owner: ByteRange,
     implementation: ByteRange,
@@ -156,6 +165,8 @@ struct StoredDocument {
     ts_lexical_target: Option<TsLexicalTarget>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     go_field_target: Option<Box<GoFieldTarget>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    go_local_constructor_target: Option<GoLocalConstructorTarget>,
     node_id: u64,
     qualified_name: String,
     path: String,
@@ -2133,6 +2144,7 @@ fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPath, RuntimeE
             rust_self_target: None,
             ts_lexical_target: None,
             go_field_target: None,
+            go_local_constructor_target: None,
             go_import_path: None,
             go_import_explicit_alias: false,
             go_package: go_package.clone(),
@@ -2171,6 +2183,7 @@ fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPath, RuntimeE
             rust_self_target: None,
             ts_lexical_target: None,
             go_field_target: None,
+            go_local_constructor_target: None,
             go_import_path: None,
             go_import_explicit_alias: false,
             go_package: None,
@@ -2198,6 +2211,7 @@ fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPath, RuntimeE
             rust_self_target: None,
             ts_lexical_target: None,
             go_field_target: None,
+            go_local_constructor_target: None,
             go_import_path: None,
             go_import_explicit_alias: false,
             go_package: None,
@@ -2240,6 +2254,7 @@ fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPath, RuntimeE
             }
             LanguageProvenance::Syntax
             | LanguageProvenance::GoFieldReceiver { .. }
+            | LanguageProvenance::GoLocalConstructor { .. }
             | LanguageProvenance::GoImport { .. }
             | LanguageProvenance::TsLexical { .. }
             | LanguageProvenance::RustSelf { .. }
@@ -2281,6 +2296,27 @@ fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPath, RuntimeE
                         field_type: range(field_type),
                         target: range(target),
                     }))
+                }
+                _ => None,
+            },
+            go_local_constructor_target: match edge.provenance {
+                LanguageProvenance::GoLocalConstructor {
+                    package,
+                    caller,
+                    binding,
+                    constructor,
+                    target,
+                } => {
+                    let source_text = |span: Span| {
+                        String::from_utf8_lossy(&source[span.start..span.end]).into_owned()
+                    };
+                    Some(GoLocalConstructorTarget {
+                        package: source_text(package),
+                        caller: ByteRange::new(caller.start, caller.end),
+                        binding: source_text(binding),
+                        constructor: source_text(constructor),
+                        target: source_text(target),
+                    })
                 }
                 _ => None,
             },
@@ -2343,6 +2379,14 @@ fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPath, RuntimeE
                 vec!["EXACT_CALL".to_owned(), "RUST_SELF_CALL".to_owned()]
             } else if matches!(edge.provenance, LanguageProvenance::GoFieldReceiver { .. }) {
                 vec!["EXACT_CALL".to_owned(), "GO_FIELD_CALL".to_owned()]
+            } else if matches!(
+                edge.provenance,
+                LanguageProvenance::GoLocalConstructor { .. }
+            ) {
+                vec![
+                    "EXACT_CALL".to_owned(),
+                    "GO_LOCAL_CONSTRUCTOR_CALL".to_owned(),
+                ]
             } else if matches!(edge.provenance, LanguageProvenance::TsLexical { .. }) {
                 vec!["EXACT_CALL".to_owned(), "TS_LEXICAL_CALL".to_owned()]
             } else if is_go_receiver {
@@ -2364,6 +2408,7 @@ fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPath, RuntimeE
                 rust_self_target: None,
                 ts_lexical_target: None,
                 go_field_target: None,
+                go_local_constructor_target: None,
                 go_import_path: None,
                 go_import_explicit_alias: false,
                 go_package: None,
@@ -2428,6 +2473,7 @@ fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPath, RuntimeE
                 rust_self_target: None,
                 ts_lexical_target: None,
                 go_field_target: None,
+                go_local_constructor_target: None,
                 go_import_path: None,
                 go_import_explicit_alias: false,
                 go_package: None,
@@ -2476,6 +2522,7 @@ fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPath, RuntimeE
                 rust_self_target: None,
                 ts_lexical_target: None,
                 go_field_target: None,
+                go_local_constructor_target: None,
                 go_import_path: None,
                 go_import_explicit_alias: false,
                 go_package: None,
@@ -2530,6 +2577,7 @@ fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPath, RuntimeE
                 rust_self_target: None,
                 ts_lexical_target: None,
                 go_field_target: None,
+                go_local_constructor_target: None,
                 go_import_path: None,
                 go_import_explicit_alias: false,
                 go_package: None,
@@ -2568,6 +2616,7 @@ fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPath, RuntimeE
             rust_self_target: None,
             ts_lexical_target: None,
             go_field_target: None,
+            go_local_constructor_target: None,
             go_import_path: None,
             go_import_explicit_alias: false,
             go_package: None,
@@ -2592,6 +2641,7 @@ fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPath, RuntimeE
             rust_self_target: None,
             ts_lexical_target: None,
             go_field_target: None,
+            go_local_constructor_target: None,
             go_import_path: None,
             go_import_explicit_alias: false,
             go_package: None,
@@ -3329,6 +3379,10 @@ fn refresh_qualified_call_gaps(stored: &mut StoredIndex) {
                 || doc
                     .semantic_tags
                     .iter()
+                    .any(|tag| tag == "GO_LOCAL_CONSTRUCTOR_CALL")
+                || doc
+                    .semantic_tags
+                    .iter()
                     .any(|tag| tag == "TS_IMPORT_CALL" || tag == "TS_IMPORT_REJECTED")
                 || doc.path.ends_with(".rs")
                     && doc.provenance == "CALLS"
@@ -3520,6 +3574,32 @@ fn rebuild_arcs_with_cargo(
             .or_default()
             .push(document);
     }
+    let has_go_local_constructor_calls = documents.iter().any(|document| {
+        document
+            .semantic_tags
+            .iter()
+            .any(|tag| tag == "GO_LOCAL_CONSTRUCTOR_CALL")
+    });
+    let go_callable_types: BTreeMap<_, _> = if has_go_local_constructor_calls {
+        documents
+            .iter()
+            .filter(|document| document.provenance == "SYNTAX" && document.path.ends_with(".go"))
+            .filter_map(|document| {
+                cgrx_languages::go_callable_type(document.search_text.as_bytes()).map(|signature| {
+                    (
+                        (
+                            document.path.as_str(),
+                            document.span_start,
+                            document.span_end,
+                        ),
+                        signature,
+                    )
+                })
+            })
+            .collect()
+    } else {
+        BTreeMap::new()
+    };
     let rust_valid_calls: BTreeSet<_> = documents
         .iter()
         .filter(|document| document.provenance == "SYNTAX" && document.path.ends_with(".rs"))
@@ -3745,6 +3825,75 @@ fn rebuild_arcs_with_cargo(
                 {
                     return None;
                 }
+                Some(target.node_id)
+            })
+        } else if call
+            .semantic_tags
+            .iter()
+            .any(|tag| tag == "GO_LOCAL_CONSTRUCTOR_CALL")
+        {
+            call.go_local_constructor_target.as_ref().and_then(|proof| {
+                if !call.path.ends_with(".go")
+                    || proof.package.is_empty()
+                    || proof.binding.is_empty()
+                    || qualifier != Some(proof.binding.as_str())
+                    || target_name != proof.target
+                {
+                    return None;
+                }
+                let caller = source_document?;
+                if caller.span_start != proof.caller.start
+                    || caller.span_end != proof.caller.end
+                    || caller.go_package.as_deref() != Some(proof.package.as_str())
+                {
+                    return None;
+                }
+                let directory = Path::new(&call.path).parent();
+                let same_package = |document: &&&StoredDocument| {
+                    document.path.ends_with(".go")
+                        && Path::new(&document.path).parent() == directory
+                        && document.go_package.as_deref() == Some(proof.package.as_str())
+                };
+                let constructors: Vec<_> = by_name
+                    .get(proof.constructor.as_str())?
+                    .iter()
+                    .filter(same_package)
+                    .filter_map(|document| {
+                        let signature = go_callable_types.get(&(
+                            document.path.as_str(),
+                            document.span_start,
+                            document.span_end,
+                        ))?;
+                        (signature.kind == cgrx_languages::GoCallableKind::Function
+                            && signature.name == proof.constructor)
+                            .then_some((*document, signature))
+                    })
+                    .collect();
+                let [(constructor, constructor_signature)] = constructors.as_slice() else {
+                    return None;
+                };
+                if !go_function_declaration(constructor) {
+                    return None;
+                }
+                let targets: Vec<_> = by_name
+                    .get(target_name)?
+                    .iter()
+                    .filter(same_package)
+                    .filter_map(|document| {
+                        let signature = go_callable_types.get(&(
+                            document.path.as_str(),
+                            document.span_start,
+                            document.span_end,
+                        ))?;
+                        (signature.kind == cgrx_languages::GoCallableKind::Method
+                            && signature.name == target_name
+                            && signature.named_type == constructor_signature.named_type)
+                            .then_some(*document)
+                    })
+                    .collect();
+                let [target] = targets.as_slice() else {
+                    return None;
+                };
                 Some(target.node_id)
             })
         } else if call.semantic_tags.iter().any(|tag| tag == "GO_FIELD_CALL") {
@@ -4712,6 +4861,7 @@ mod proof_edge_tests {
             rust_self_target: None,
             ts_lexical_target: None,
             go_field_target: None,
+            go_local_constructor_target: None,
             go_import_path: None,
             go_import_explicit_alias: false,
             go_package: None,
@@ -4736,6 +4886,7 @@ mod proof_edge_tests {
             rust_self_target: None,
             ts_lexical_target: None,
             go_field_target: None,
+            go_local_constructor_target: None,
             go_import_path: None,
             go_import_explicit_alias: false,
             go_package: None,
@@ -5596,7 +5747,7 @@ mod compact_storage_tests {
             serde_json::from_value::<StoredDocument>(encoded).unwrap(),
             doc
         );
-        assert_eq!(EXTRACTION_REVISION, 26);
+        assert_eq!(EXTRACTION_REVISION, 27);
     }
 
     #[test]
