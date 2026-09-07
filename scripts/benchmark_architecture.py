@@ -9,6 +9,67 @@ import time
 from statistics import median
 
 
+CYCLE_POLICIES = {"preserve_and_monitor", "invert_dependency", "extract_contract"}
+HOTSPOT_POLICIES = {"preserve_and_monitor", "introduce_facade", "split_by_community"}
+
+
+def validate_planner(architecture: dict) -> dict:
+    planner = architecture.get("architecture_plan")
+    if not isinstance(planner, dict) or planner.get("algorithm") != "architecture_futures_v1":
+        raise RuntimeError("architecture planner algorithm drift")
+    if planner.get("llm_used") is not False:
+        raise RuntimeError("architecture planner must not use an LLM")
+    issues = planner.get("issues")
+    if not isinstance(issues, list):
+        raise RuntimeError("architecture planner issues missing")
+    policy_counts = {
+        policy: 0 for policy in sorted(CYCLE_POLICIES | HOTSPOT_POLICIES)
+    }
+    scores = []
+    for issue in issues:
+        strategies = issue.get("strategies")
+        if not isinstance(strategies, list) or len(strategies) != 3:
+            raise RuntimeError("each architecture issue requires three futures")
+        expected_policies = (
+            CYCLE_POLICIES
+            if issue.get("kind") == "PACKAGE_DEPENDENCY_CYCLE"
+            else HOTSPOT_POLICIES
+        )
+        if {strategy.get("policy") for strategy in strategies} != expected_policies:
+            raise RuntimeError("architecture future policy set drift")
+        if [strategy["counterfactual"].get("rank") for strategy in strategies] != [1, 2, 3]:
+            raise RuntimeError("architecture future rank drift")
+        strategy_scores = [strategy["counterfactual"].get("score") for strategy in strategies]
+        if not all(isinstance(score, int) and 0 <= score <= 1000 for score in strategy_scores):
+            raise RuntimeError("architecture future score out of bounds")
+        if strategy_scores != sorted(strategy_scores, reverse=True):
+            raise RuntimeError("architecture futures are not score-ranked")
+        if any(strategy["counterfactual"].get("llm_used") is not False for strategy in strategies):
+            raise RuntimeError("architecture future unexpectedly used an LLM")
+        winners = [strategy for strategy in strategies if strategy.get("recommended") is True]
+        if len(winners) != 1 or winners[0] is not strategies[0]:
+            raise RuntimeError("architecture issue must have one rank-one recommendation")
+        handoff = issue.get("agent_handoff")
+        if not isinstance(handoff, dict) or handoff.get("llm_used") is not False:
+            raise RuntimeError("architecture agent handoff missing model-free contract")
+        if handoff.get("strategy_id") != winners[0].get("strategy_id"):
+            raise RuntimeError("architecture handoff strategy drift")
+        policy_counts[winners[0]["policy"]] += 1
+        scores.append(winners[0]["counterfactual"]["score"])
+    totals = planner.get("totals")
+    if totals != {"issues": len(issues), "future_graphs": len(issues) * 3}:
+        raise RuntimeError("architecture planner totals drift")
+    return {
+        "algorithm": "architecture_futures_v1",
+        "llm_used": False,
+        "issues": len(issues),
+        "validated_futures": len(issues) * 3,
+        "policy_counts": policy_counts,
+        "recommended_score_min": min(scores) if scores else None,
+        "recommended_score_max": max(scores) if scores else None,
+    }
+
+
 def benchmark(binary: Path, label: str, repo: Path, depth: int, limit: int) -> dict:
     canonical_repo = Path(
         subprocess.run(
@@ -62,16 +123,20 @@ def benchmark(binary: Path, label: str, repo: Path, depth: int, limit: int) -> d
         raise RuntimeError(json.dumps(response["error"], sort_keys=True))
     result = response["result"]
     architecture = result["structuredContent"]
+    planner = validate_planner(architecture)
     visible = result["content"][0]["text"]
+    visible_document = json.loads(visible)
     return {
         "project": label,
         "repo": str(canonical_repo),
         "snapshot": architecture["snapshot"],
         "elapsed_ms": elapsed_ms,
         "model_visible_bytes": len(visible.encode()),
+        "model_visible_tokens": visible_document["payload_tokens"],
         "totals": architecture["totals"],
         "community_detection": architecture["community_detection"],
         "symbol_community_detection": architecture["symbol_community_detection"],
+        "planner": planner,
         "partial": architecture["partial"],
         "truncated": architecture["truncated"],
         "coverage_gap_count": architecture["coverage_gap_count"],

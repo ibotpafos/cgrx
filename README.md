@@ -310,6 +310,14 @@ precision remains `null` while any candidate is `unreviewed`.
 The [architecture community benchmark](docs/benchmarks/architecture-communities-2026-09-07.md)
 records the pinned five-project CGRX/CBM comparison and its limits.
 
+`get_architecture` also finds package cycles and high-fan-in symbols, builds
+three deterministic future graphs for each issue, ranks them from proven graph
+cost and coverage blockers, and returns a snapshot-bound agent handoff. The
+planner does not call or bundle an LLM. The
+[architecture futures benchmark](docs/benchmarks/architecture-futures-2026-09-07.md)
+validates ranks, graph predictions, handoff identity, abstention, determinism,
+latency, and exact model-visible token cost on five frozen projects.
+
 ## License
 
 [MIT](LICENSE). Bundled tokenizer resources and dependencies retain their

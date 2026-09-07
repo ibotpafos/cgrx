@@ -1,6 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use cgrx_core::{ByteRange, ConfidenceClass, EdgeEvidence, Hash32, ResolverClass, Scope};
+use cgrx_core::{
+    ByteRange, ConfidenceClass, EdgeEvidence, Hash32, RepoSnapshot, ResolverClass, Scope,
+};
 use serde_json::{Value, json};
 
 use super::{
@@ -339,8 +341,19 @@ impl Runtime {
             .collect::<Vec<_>>();
 
         let total_boundaries = boundaries.len();
+        let boundary_candidates = boundaries
+            .iter()
+            .map(|((source, target), boundary)| {
+                json!({
+                    "source":source,
+                    "target":target,
+                    "edges":boundary.edges,
+                    "relations":boundary.relations
+                })
+            })
+            .collect::<Vec<_>>();
         let boundary_values = boundaries
-            .into_iter()
+            .iter()
             .filter(|((source, target), _)| {
                 visible_package_names.contains(source) && visible_package_names.contains(target)
             })
@@ -534,6 +547,17 @@ impl Runtime {
             || cycles_truncated
             || communities_truncated
             || symbol_communities_truncated;
+        let partial = truncated
+            || coverage_gap_count > 0
+            || unresolved_import_count > 0
+            || unresolved_reference_count > 0;
+        let architecture_plan = architecture_plan(
+            self.snapshot(),
+            &cycles,
+            &boundary_candidates,
+            &hotspots,
+            partial,
+        );
         let mut gaps = coverage_gap_page(&coverage, 0, 20);
         gaps.extend(
             unresolved_imports
@@ -572,6 +596,7 @@ impl Runtime {
                 "iterations":symbol_iterations,
                 "unclustered_symbols":unclustered_symbols
             },
+            "architecture_plan":architecture_plan,
             "totals":{
                 "packages":total_packages,
                 "boundaries":total_boundaries,
@@ -593,7 +618,7 @@ impl Runtime {
                 "unresolved_local":unresolved_reference_count
             },
             "truncated":truncated,
-            "partial":truncated || coverage_gap_count > 0 || unresolved_import_count > 0 || unresolved_reference_count > 0,
+            "partial":partial,
             "coverage_gaps":gaps,
             "coverage_gap_count":coverage_gap_count + unresolved_import_count + unresolved_reference_count + usize::from(truncated),
             "coverage_gaps_truncated":coverage_gap_count + unresolved_import_count + unresolved_reference_count > 20,
@@ -607,6 +632,296 @@ impl Runtime {
             ]
         }))
     }
+}
+
+fn architecture_plan(
+    snapshot: &RepoSnapshot,
+    cycles: &[Value],
+    boundaries: &[Value],
+    hotspots: &[Value],
+    partial: bool,
+) -> Value {
+    let mut issues = cycles
+        .iter()
+        .filter_map(|cycle| {
+            let packages = cycle.get("packages")?.as_array()?;
+            let package_names = packages
+                .iter()
+                .filter_map(Value::as_str)
+                .collect::<BTreeSet<_>>();
+            let selected = boundaries
+                .iter()
+                .filter(|boundary| {
+                    boundary["source"]
+                        .as_str()
+                        .is_some_and(|name| package_names.contains(name))
+                        && boundary["target"]
+                            .as_str()
+                            .is_some_and(|name| package_names.contains(name))
+                })
+                .min_by_key(|boundary| {
+                    (
+                        boundary["edges"].as_u64().unwrap_or(u64::MAX),
+                        boundary["source"].as_str().unwrap_or_default(),
+                        boundary["target"].as_str().unwrap_or_default(),
+                    )
+                })?;
+            let edge_count = selected["edges"].as_u64().unwrap_or(0);
+            let policies = [
+                ("preserve_and_monitor", 250 + edge_count.saturating_mul(20)),
+                (
+                    "invert_dependency",
+                    900u64.saturating_sub(edge_count.saturating_mul(40)),
+                ),
+                (
+                    "extract_contract",
+                    820u64.saturating_sub(edge_count.saturating_mul(25)),
+                ),
+            ];
+            let mut strategies = policies
+                .into_iter()
+                .map(|(policy, base_score)| {
+                    let destructive = policy != "preserve_and_monitor";
+                    let blocked = destructive && partial;
+                    let gap_penalty = if blocked { 1_000 } else { 0 };
+                    let score = base_score.saturating_sub(gap_penalty);
+                    let predicted_graph = match policy {
+                        "invert_dependency" => json!({
+                            "cycles_removed":1,
+                            "boundaries_removed":1,
+                            "boundaries_added":1,
+                            "packages_added":0
+                        }),
+                        "extract_contract" => json!({
+                            "cycles_removed":1,
+                            "boundaries_removed":1,
+                            "boundaries_added":2,
+                            "packages_added":1
+                        }),
+                        _ => json!({
+                            "cycles_removed":0,
+                            "boundaries_removed":0,
+                            "boundaries_added":0,
+                            "packages_added":0
+                        }),
+                    };
+                    let mut reasons = vec!["package_cycle_detected"];
+                    if selected["relations"]
+                        .as_array()
+                        .is_some_and(|relations| relations.len() > 1)
+                    {
+                        reasons.push("multi_relation_boundary");
+                    }
+                    if blocked {
+                        reasons.push("coverage_gaps_block_graph_rewrite");
+                    }
+                    json!({
+                        "strategy_id":architecture_strategy_id(snapshot, cycle, selected, policy),
+                        "policy":policy,
+                        "status":if blocked { "blocked_by_gaps" } else { "hypothetical" },
+                        "recommended":false,
+                        "counterfactual":{
+                            "algorithm":"architecture_futures_v1",
+                            "score":score,
+                            "rank":0,
+                            "llm_used":false,
+                            "reasons":reasons,
+                            "formula":{
+                                "base_score":base_score,
+                                "gap_penalty":gap_penalty,
+                                "score":"clamp(base_score - gap_penalty, 0, 1000)",
+                                "inputs":{"boundary_edges":edge_count,"partial":partial}
+                            }
+                        },
+                        "predicted_graph":predicted_graph
+                    })
+                })
+                .collect::<Vec<_>>();
+            strategies.sort_by(|left, right| {
+                right["counterfactual"]["score"]
+                    .as_u64()
+                    .cmp(&left["counterfactual"]["score"].as_u64())
+                    .then_with(|| architecture_policy_rank(&left["policy"]).cmp(&architecture_policy_rank(&right["policy"])))
+            });
+            for (index, strategy) in strategies.iter_mut().enumerate() {
+                strategy["recommended"] = (index == 0).into();
+                strategy["counterfactual"]["rank"] = (index + 1).into();
+            }
+            let winner = &strategies[0];
+            Some(json!({
+                "issue_id":architecture_issue_id(snapshot, cycle, selected),
+                "kind":"PACKAGE_DEPENDENCY_CYCLE",
+                "packages":packages,
+                "selected_boundary":selected,
+                "strategies":strategies,
+                "agent_handoff":{
+                    "schema_version":"cgrx.agent.architecture-future.v1",
+                    "snapshot":snapshot,
+                    "issue":{
+                        "kind":"PACKAGE_DEPENDENCY_CYCLE",
+                        "packages":packages,
+                        "selected_boundary":selected
+                    },
+                    "strategy_id":winner["strategy_id"],
+                    "policy":winner["policy"],
+                    "predicted_graph":winner["predicted_graph"],
+                    "verification":[
+                        "Re-index the edited source and require the same repository revision context.",
+                        "Confirm the selected package cycle is absent from get_architecture.",
+                        "Report all remaining coverage gaps separately from proven graph changes."
+                    ],
+                    "llm_used":false
+                }
+            }))
+        })
+        .collect::<Vec<_>>();
+    issues.extend(
+        hotspots
+            .iter()
+            .filter(|hotspot| hotspot["fan_in"].as_u64().unwrap_or(0) >= 4)
+            .map(|hotspot| architecture_hotspot_issue(snapshot, hotspot, partial)),
+    );
+    json!({
+        "algorithm":"architecture_futures_v1",
+        "llm_used":false,
+        "issues":issues,
+        "totals":{
+            "issues":issues.len(),
+            "future_graphs":issues.len() * 3
+        },
+        "limitations":[
+            "Predictions operate on proven package boundaries and do not edit source.",
+            "Destructive graph rewrites are blocked while architecture coverage is partial."
+        ]
+    })
+}
+
+fn architecture_hotspot_issue(snapshot: &RepoSnapshot, hotspot: &Value, partial: bool) -> Value {
+    let fan_in = hotspot["fan_in"].as_u64().unwrap_or(0);
+    let policies = [
+        (
+            "preserve_and_monitor",
+            200 + fan_in.min(100).saturating_mul(5),
+        ),
+        (
+            "introduce_facade",
+            850u64.saturating_sub(fan_in.min(100).saturating_mul(3)),
+        ),
+        (
+            "split_by_community",
+            780u64.saturating_sub(fan_in.min(100).saturating_mul(2)),
+        ),
+    ];
+    let marker = json!({"kind":"HIGH_FAN_IN_HOTSPOT"});
+    let mut strategies = policies
+        .into_iter()
+        .map(|(policy, base_score)| {
+            let destructive = policy != "preserve_and_monitor";
+            let blocked = destructive && partial;
+            let gap_penalty = if blocked { 1_000 } else { 0 };
+            let score = base_score.saturating_sub(gap_penalty);
+            let predicted_graph = match policy {
+                "introduce_facade" => json!({
+                    "hotspots_reduced":1,"callers_redirected":fan_in,"nodes_added":1
+                }),
+                "split_by_community" => json!({
+                    "hotspots_reduced":1,"callers_partitioned":fan_in,"nodes_added":2
+                }),
+                _ => json!({"hotspots_reduced":0,"callers_redirected":0,"nodes_added":0}),
+            };
+            let mut reasons = vec!["high_fan_in_hotspot"];
+            if blocked {
+                reasons.push("coverage_gaps_block_graph_rewrite");
+            }
+            json!({
+                "strategy_id":architecture_strategy_id(snapshot, hotspot, &marker, policy),
+                "policy":policy,
+                "status":if blocked { "blocked_by_gaps" } else { "hypothetical" },
+                "recommended":false,
+                "counterfactual":{
+                    "algorithm":"architecture_futures_v1","score":score,"rank":0,
+                    "llm_used":false,"reasons":reasons,
+                    "formula":{
+                        "base_score":base_score,"gap_penalty":gap_penalty,
+                        "score":"clamp(base_score - gap_penalty, 0, 1000)",
+                        "inputs":{"fan_in":fan_in,"partial":partial}
+                    }
+                },
+                "predicted_graph":predicted_graph
+            })
+        })
+        .collect::<Vec<_>>();
+    strategies.sort_by(|left, right| {
+        right["counterfactual"]["score"]
+            .as_u64()
+            .cmp(&left["counterfactual"]["score"].as_u64())
+            .then_with(|| {
+                architecture_policy_rank(&left["policy"])
+                    .cmp(&architecture_policy_rank(&right["policy"]))
+            })
+    });
+    for (index, strategy) in strategies.iter_mut().enumerate() {
+        strategy["recommended"] = (index == 0).into();
+        strategy["counterfactual"]["rank"] = (index + 1).into();
+    }
+    let winner = &strategies[0];
+    json!({
+        "issue_id":architecture_issue_id(snapshot, hotspot, &marker),
+        "kind":"HIGH_FAN_IN_HOTSPOT",
+        "symbol":hotspot,
+        "strategies":strategies,
+        "agent_handoff":{
+            "schema_version":"cgrx.agent.architecture-future.v1",
+            "snapshot":snapshot,"issue":{"kind":"HIGH_FAN_IN_HOTSPOT","symbol":hotspot},
+            "strategy_id":winner["strategy_id"],"policy":winner["policy"],
+            "predicted_graph":winner["predicted_graph"],
+            "verification":[
+                "Re-index the edited source and require the same repository revision context.",
+                "Confirm fan-in is reduced without losing proven callers.",
+                "Report all remaining coverage gaps separately from proven graph changes."
+            ],
+            "llm_used":false
+        }
+    })
+}
+
+fn architecture_policy_rank(policy: &Value) -> u8 {
+    match policy.as_str() {
+        Some("preserve_and_monitor") => 0,
+        Some("invert_dependency") | Some("introduce_facade") => 1,
+        _ => 2,
+    }
+}
+
+fn architecture_issue_id(snapshot: &RepoSnapshot, cycle: &Value, boundary: &Value) -> String {
+    architecture_identity("architecture-issue1", snapshot, cycle, boundary, "issue")
+}
+
+fn architecture_strategy_id(
+    snapshot: &RepoSnapshot,
+    cycle: &Value,
+    boundary: &Value,
+    policy: &str,
+) -> String {
+    architecture_identity("architecture-strategy1", snapshot, cycle, boundary, policy)
+}
+
+fn architecture_identity(
+    prefix: &str,
+    snapshot: &RepoSnapshot,
+    cycle: &Value,
+    boundary: &Value,
+    policy: &str,
+) -> String {
+    let bytes = serde_json::to_vec(&json!({
+        "snapshot":snapshot,
+        "cycle":cycle,
+        "boundary":boundary,
+        "policy":policy
+    }))
+    .expect("architecture future identity serializes");
+    let digest = blake3::hash(&bytes).to_hex().to_string();
+    format!("{prefix}.{}", &digest[..16])
 }
 
 fn package_name(path: &str, depth: usize) -> String {
