@@ -142,6 +142,10 @@ fn refactor_repository() -> TestDirectory {
             "package sample\nfunc saveGo(value int) {}\nfunc firstGo(input int) int { prepared := input + 1; saveGo(prepared); return prepared }\nfunc secondGo(value int) int { output := value + 9; saveGo(output); return output }\n",
         ),
         (
+            "similar.java",
+            "final class Similar { static void saveJava(int value) {} static int firstJava(int input) { int prepared = input + 1; saveJava(prepared); return prepared; } static int secondJava(int value) { int output = value + 9; saveJava(output); return output; } }\n",
+        ),
+        (
             "similar.py",
             "def save_py(value):\n    pass\n\ndef first_py(input_value):\n    prepared = input_value + 1\n    save_py(prepared)\n    return prepared\n\ndef second_py(value):\n    output = value + 9\n    save_py(output)\n    return output\n",
         ),
@@ -198,6 +202,7 @@ fn suggest_refactors_projects_shared_helper_for_every_supported_extension() {
         ("similar.ts", "typescript", "saveTs"),
         ("similar.tsx", "typescript", "saveTsx"),
         ("similar.go", "go", "saveGo"),
+        ("similar.java", "java", "saveJava"),
         ("similar.py", "python", "save_py"),
         ("similar.rs", "rust", "save_rs"),
     ] {
@@ -260,7 +265,7 @@ fn suggest_refactors_rejects_invalid_arguments_and_weak_pairs() {
     assert_eq!(negative["total"], 0, "{negative}");
 
     for (language, score, limit) in [
-        (Some("java"), 760, 20),
+        (Some("kotlin"), 760, 20),
         (Some("rust"), 1001, 20),
         (Some("rust"), 760, 0),
         (Some("rust"), 760, 51),
@@ -1617,6 +1622,10 @@ fn search_graph_can_search_bodies_and_filter_every_supported_language() {
             "feature.rs",
             "fn rust_feature() -> &'static str { \"body_token_rs\" }\n",
         ),
+        (
+            "Feature.java",
+            "final class Feature { String javaFeature() { return \"body_token_java\"; } }\n",
+        ),
     ];
     for (path, source) in fixtures {
         fs::write(repository.path().join(path), source).expect("write language fixture");
@@ -1637,6 +1646,7 @@ fn search_graph_can_search_bodies_and_filter_every_supported_language() {
         ("typescript", "body_token_ts", 2),
         ("go", "body_token_go", 1),
         ("python", "body_token_py", 1),
+        ("java", "body_token_java", 2),
         ("rust", "body_token_rs", 1),
     ];
     for (language, query, expected) in cases {
@@ -1659,7 +1669,7 @@ fn search_graph_can_search_bodies_and_filter_every_supported_language() {
         .expect("search names only");
     assert_eq!(names_only["total"], 0);
     let error = runtime
-        .search_graph_filtered("anything", &scope, 10, Some("java"), true)
+        .search_graph_filtered("anything", &scope, 10, Some("kotlin"), true)
         .expect_err("unsupported language fails closed");
     assert_eq!(error.code(), "cgrx.invalid_arguments");
 }

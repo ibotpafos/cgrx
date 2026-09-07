@@ -385,6 +385,7 @@ pub fn pack_for_path(path: &RepoPath) -> Option<&'static dyn LanguagePack> {
     [
         &crate::typescript::TYPESCRIPT as &dyn LanguagePack,
         &crate::go::GO,
+        &crate::java::JAVA,
         &crate::python::PYTHON,
         &crate::rust::RUST,
     ]

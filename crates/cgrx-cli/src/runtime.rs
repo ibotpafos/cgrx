@@ -46,7 +46,7 @@ use serde_json::{Value, json};
 
 use crate::intent::{TaskIntent, classify};
 
-const EXTRACTION_REVISION: u32 = 25;
+const EXTRACTION_REVISION: u32 = 26;
 
 const NODES_SEGMENT: &str = "nodes.seg";
 const EDGES_SEGMENT: &str = "edges.seg";
@@ -305,12 +305,12 @@ impl Runtime {
         include_body: bool,
     ) -> Result<Value, RuntimeError> {
         let language = language.map(str::trim);
-        if language
-            .is_some_and(|language| !matches!(language, "typescript" | "go" | "python" | "rust"))
-        {
+        if language.is_some_and(|language| {
+            !matches!(language, "typescript" | "go" | "java" | "python" | "rust")
+        }) {
             return Err(RuntimeError::new(
                 "cgrx.invalid_arguments",
-                "language must be one of typescript, go, python, or rust",
+                "language must be one of typescript, go, java, python, or rust",
             ));
         }
         self.search_graph_with_matcher(query, scope, limit, language, include_body, path_in_scope)
@@ -5596,7 +5596,7 @@ mod compact_storage_tests {
             serde_json::from_value::<StoredDocument>(encoded).unwrap(),
             doc
         );
-        assert_eq!(EXTRACTION_REVISION, 25);
+        assert_eq!(EXTRACTION_REVISION, 26);
     }
 
     #[test]

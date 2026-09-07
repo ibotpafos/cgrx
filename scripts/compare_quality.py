@@ -13,7 +13,7 @@ from pathlib import Path
 import re
 import sys
 
-LANGUAGES = ('go', 'typescript', 'python', 'rust')
+LANGUAGES = ('go', 'java', 'typescript', 'python', 'rust')
 
 
 def require(condition, message):

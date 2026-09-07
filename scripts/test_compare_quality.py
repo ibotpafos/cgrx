@@ -7,7 +7,7 @@ import compare_quality as gate
 
 def fixture():
     rows = []
-    for language in ['go', 'typescript', 'python', 'rust']:
+    for language in ['go', 'java', 'typescript', 'python', 'rust']:
         for negative in [False, True]:
             expected = [] if negative else ['file:target:10']
             snapshot = {'repo': '/repo/' + language, 'revision': 'a' * 40, 'source_digest': 'b' * 64}
@@ -25,7 +25,7 @@ def fixture():
 
 
 def evaluate(data):
-    return gate.compare(data, minimum_cases=8, minimum_per_language=2, minimum_gain=0.005)
+    return gate.compare(data, minimum_cases=10, minimum_per_language=2, minimum_gain=0.005)
 
 
 class ComparisonTests(unittest.TestCase):

@@ -454,7 +454,7 @@ def collect(corpus, config, factory=Stdio, counter=None):
         target = task['evidence']['target']
         record = f'{target["path"]}:{target["symbol"]}:{target["start_line"]}'
         suffix = Path(task['evidence']['source']['path']).suffix
-        language = {'.go':'go','.ts':'typescript','.tsx':'typescript','.py':'python','.rs':'rust'}.get(suffix)
+        language = {'.go':'go','.java':'java','.ts':'typescript','.tsx':'typescript','.py':'python','.rs':'rust'}.get(suffix)
         require(language is not None, 'unsupported language')
         row = {'id':task['id'],'language':language,'split':task['split'],'snapshot':snap,
                'expected':[record], 'assertion':'bounded source-to-designated-target CALLS membership'}

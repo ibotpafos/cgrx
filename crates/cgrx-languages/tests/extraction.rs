@@ -26,7 +26,7 @@ fn extraction_rejects_absolute_repository_paths() {
 #[test]
 fn static_reference_subset_is_exact_and_shadow_aware_for_every_language() {
     type ReferenceCase<'a> = (&'a str, &'a [u8], &'a [(&'a str, &'a str)]);
-    let cases: [ReferenceCase<'_>; 4] = [
+    let cases: [ReferenceCase<'_>; 5] = [
         (
             "api.ts",
             b"import type { Model } from './model';\nimport type { External } from 'external';\ntype A = Model;\ntype B = External;\n",
@@ -36,6 +36,11 @@ fn static_reference_subset_is_exact_and_shadow_aware_for_every_language() {
             "api.go",
             b"package api\nimport (\"example.com/repo/model\"; \"fmt\")\ntype A struct { V model.Model }\ntype B struct { V fmt.Stringer }\n",
             &[("model.Model", "example.com/repo/model"), ("fmt.Stringer", "fmt")],
+        ),
+        (
+            "api.java",
+            b"import app.model.Model; import java.time.Instant; final class Api { Model local(Model v) { return v; } Instant external(Instant v) { return v; } }\n",
+            &[("Model", "app.model.Model"), ("Instant", "java.time.Instant")],
         ),
         (
             "api.py",
@@ -74,6 +79,7 @@ fn static_reference_subset_is_exact_and_shadow_aware_for_every_language() {
         ("api.go", b"package api\nimport \"example.com/repo/model\"\nfunc f(model any) { _ = model.Value }\n".as_slice()),
         ("api.py", b"import package.model as model\ndef f(model: object): return model.Value\n".as_slice()),
         ("api.ts", b"import { Model } from './model';\ntype Model = string;\ntype Alias = Model;\n".as_slice()),
+        ("api.java", b"import app.model.Model; final class Model { Model local(Model v) { return v; } }".as_slice()),
     ];
     for (path, source) in shadowed {
         let path = Path::new(path);
@@ -149,6 +155,102 @@ fn python_direct_call_matches_frozen_gold_span() {
     assert_eq!(
         &source[edge.context_span.start..edge.context_span.end],
         b"message = greet()"
+    );
+}
+
+#[test]
+fn java_proves_only_unique_own_class_calls_without_inheritance() {
+    let path = Path::new("src/Service.java");
+    let source = br#"import java.util.List;
+final class Service {
+    int target() { return 1; }
+    int caller() { return target(); }
+    int dispatch(Other other) { return other.target(); }
+}
+"#;
+    let extraction = pack_for_path(path).unwrap().extract(path, source).unwrap();
+    assert_eq!(
+        extraction
+            .symbols
+            .iter()
+            .map(|item| item.name.as_str())
+            .collect::<Vec<_>>(),
+        ["Service", "caller", "dispatch", "target"]
+    );
+    let calls = extraction
+        .edges
+        .iter()
+        .filter(|edge| edge.relation == RelationKind::Calls)
+        .collect::<Vec<_>>();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].target, "target");
+    assert_eq!(&source[calls[0].span.start..calls[0].span.end], b"target()");
+    assert!(
+        extraction
+            .unresolved
+            .iter()
+            .any(|gap| gap.text == "other.target()" && gap.kind == UnresolvedKind::Dispatch)
+    );
+}
+
+#[test]
+fn java_overloads_inheritance_and_static_imports_fail_closed() {
+    for source in [
+        "class Service { int target(){return 1;} int target(int x){return x;} int caller(){return target();} }",
+        "class Service extends Base { int target(){return 1;} int caller(){return target();} }",
+        "import static tools.Helpers.target; class Service { int target(){return 1;} int caller(){return target();} }",
+    ] {
+        let extraction = pack_for_path(Path::new("Service.java"))
+            .unwrap()
+            .extract(Path::new("Service.java"), source.as_bytes())
+            .unwrap();
+        assert!(
+            !extraction
+                .edges
+                .iter()
+                .any(|edge| edge.relation == RelationKind::Calls),
+            "{source}"
+        );
+        assert!(
+            extraction
+                .unresolved
+                .iter()
+                .any(|gap| gap.kind == UnresolvedKind::Dispatch),
+            "{source}"
+        );
+    }
+}
+
+#[test]
+fn java_imported_type_references_are_exact_and_local_types_shadow_them() {
+    let source = b"import app.model.Model; final class Service { Model load(Model value) { return value; } }";
+    let extraction = pack_for_path(Path::new("Service.java"))
+        .unwrap()
+        .extract(Path::new("Service.java"), source)
+        .unwrap();
+    let references = extraction
+        .edges
+        .iter()
+        .filter(|edge| edge.relation == RelationKind::References)
+        .collect::<Vec<_>>();
+    assert_eq!(references.len(), 2);
+    assert!(
+        references
+            .iter()
+            .all(|edge| edge.target == "app.model.Model")
+    );
+
+    let shadowed =
+        b"import app.model.Model; final class Model { Model load(Model value) { return value; } }";
+    let extraction = pack_for_path(Path::new("Model.java"))
+        .unwrap()
+        .extract(Path::new("Model.java"), shadowed)
+        .unwrap();
+    assert!(
+        !extraction
+            .edges
+            .iter()
+            .any(|edge| edge.relation == RelationKind::References)
     );
 }
 
@@ -490,6 +592,7 @@ fn decorators_are_unresolved_and_never_emitted_as_calls() {
 #[test]
 fn checked_in_tree_sitter_queries_compile() {
     let typescript = tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into();
+    let java = tree_sitter_java::LANGUAGE.into();
     let python = tree_sitter_python::LANGUAGE.into();
     let rust = tree_sitter_rust::LANGUAGE.into();
     let go = tree_sitter_go::LANGUAGE.into();
@@ -499,6 +602,13 @@ fn checked_in_tree_sitter_queries_compile() {
         include_str!("../queries/typescript/imports.scm"),
     ] {
         Query::new(&typescript, source).expect("valid TypeScript query");
+        for source in [
+            include_str!("../queries/java/symbols.scm"),
+            include_str!("../queries/java/calls.scm"),
+            include_str!("../queries/java/imports.scm"),
+        ] {
+            Query::new(&java, source).expect("valid Java query");
+        }
     }
     for source in [
         include_str!("../queries/python/symbols.scm"),

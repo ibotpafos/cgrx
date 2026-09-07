@@ -174,6 +174,10 @@ fn graph_view_covers_every_supported_source_extension() {
             "package sample\nfunc targetGo() int { return 1 }\nfunc selectedGo() int { return targetGo() }\n",
         ),
         (
+            "sample.java",
+            "final class Sample { int targetJava() { return 1; } int selectedJava() { return targetJava(); } }",
+        ),
+        (
             "sample.py",
             "def target_py():\n    return 1\n\ndef selected_py():\n    return target_py()\n",
         ),
@@ -194,6 +198,7 @@ fn graph_view_covers_every_supported_source_extension() {
         ("sample.ts", "selectedTs", "targetTs"),
         ("sample.tsx", "selectedTsx", "targetTsx"),
         ("sample.go", "selectedGo", "targetGo"),
+        ("sample.java", "selectedJava", "targetJava"),
         ("sample.py", "selected_py", "target_py"),
         ("sample.rs", "selected_rs", "target_rs"),
     ] {

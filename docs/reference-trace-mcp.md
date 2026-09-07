@@ -11,7 +11,7 @@ contract instead of adding another always-visible MCP tool:
 - `include_body: true` searches a symbol's indexed body after higher-priority
   exact, prefix, and substring symbol-name matches;
 - `language` accepts every CGRX language pack: `typescript`, `go`, `python`, and
-  `rust`; TypeScript includes `.ts` and `.tsx`;
+  `java`, and `rust`; TypeScript includes `.ts` and `.tsx`;
 - each result reports `matched_by: symbol | body`, so callers can distinguish
   direct symbol discovery from content discovery;
 - the default remains name-only for stable precision and response cost.
@@ -25,7 +25,7 @@ contract instead of adding another always-visible MCP tool:
   `hop` and the immediate `via` target, keeping a transitive impact chain auditable.
 
 The coverage tests exercise body discovery and file outlines across `.ts`,
-`.tsx`, `.go`, `.py`, and `.rs`, including language rejection, deterministic
+`.tsx`, `.go`, `.java`, `.py`, and `.rs`, including language rejection, deterministic
 source order, truncation, and missing-path errors.
 Usage-site tests cover direct calls in all five extensions, a two-hop reverse
 impact chain, and relation-aware deduplication between `CALLS` and `IMPLEMENTS`
@@ -54,14 +54,14 @@ existing contracts before adding another always-visible tool.
 | Minimal/standard/full tool presets | CGRX exposes 12 focused tools with a model-visible schema budget below 2,000 tokens | Keep the small default surface; add a preset only when optional tools justify its fixed cost. |
 | Budgeted context bundles and project maps | `orient` + revision-bound `expand` return bounded task context; `get_architecture` adds packages, proven boundaries, hotspots, package cycles, package communities and symbol communities | Architecture now reports deterministic weighted-modularity clusters at package and symbol granularity, including representative symbols, binding packages, edge types, modularity, cohesion and unclustered counts. |
 | Read-only history drill-down | The graph explorer embeds a Git lane view | Commit bodies and changed-file metadata now load on demand; selecting a file requests only its bounded patch. History, file count and patch bytes have independent limits. |
-| Framework-aware routes, ORM links, DI, and tests | CGRX currently proves compiler-checked `CALLS`/`IMPLEMENTS` for TypeScript/TSX, Go, Python, and Rust | Build framework packs only with frozen positive/negative relation fixtures; do not count symbol-only extraction as relationship support. |
+| Framework-aware routes, ORM links, DI, and tests | CGRX proves conservative `CALLS` for TypeScript/TSX, Go, Java, Python, and Rust, with deeper language-specific proof where available | Build framework packs only with frozen positive/negative relation fixtures; do not count symbol-only extraction as relationship support. |
 | Calibrated quality gates | `scan_risks` returns candidates, evidence, candidate tests, per-impact test-reach states, and explicit gaps | A proven call path is kept separate from heuristic test identity, behavioral coverage and execution status; defer merge-blocking scores until thresholds are calibrated on labeled changes and false positives. |
 | Decision memory with confidence, provenance, temporal validity, and privacy tags | Outside the current code-index contract | Reuse those data-quality rules if memory is added; keep reconstructible code out of durable memory. |
 | Local session analytics and opt-in tracing | No exported source/query telemetry in the current core | Add local latency/error/response-size metrics first; any exporter must remain opt-in and metadata-only. Trace documents its anonymous daily usage ping as a separate subsystem, so that policy must not be inferred from the tracing switch. |
 | Multi-project daemon LRU/TTL and measured RSS attribution | Current work targets explicit repo-scoped runtimes | Measure resident cost per loaded project before introducing a daemon cache or eviction policy. |
 | Automated client hooks and prompt rewrites | Repository instructions already route discovery through CGRX | Do not patch client prompts from the core binary; keep setup changes explicit and reversible. |
 | Runtime/static overlays and agent guidance | Revision-pinned observed calls can be viewed alone or merged with proven static edges, filtered by environment, and copied as a snapshot-bound agent handoff | Adopted with deterministic hot-path/divergence/blast-radius ranking; no LLM, embedding runtime, model weights, or external AI API. |
-| Counterfactual refactor planning | Three future graphs are ranked from duplication benefit, graph simplification, runtime change cost and coverage risk; compact MCP rows expose the winner and reason codes | CGRX-specific combined capability. The seven-project run validated 129 futures across all four supported languages; no common-corpus competitor accuracy or speed claim is made. |
+| Counterfactual refactor planning | Three future graphs are ranked from duplication benefit, graph simplification, runtime change cost and coverage risk; compact MCP rows expose the winner and reason codes | CGRX-specific combined capability. Refactor futures support all five languages; the earlier seven-project run validated 129 futures across the four languages supported at that time. No common-corpus competitor accuracy or speed claim is made. |
 
 The next measurement priorities are the PR context benchmark, response cost for
 the remaining tools, and manual review of the refactoring inventory. Framework

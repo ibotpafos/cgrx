@@ -69,6 +69,10 @@ fn fixture() -> (TestDirectory, TestDirectory, String) {
             "package sample\nfunc goTarget() {}\nfunc goCaller() { goTarget() }\n",
         ),
         (
+            "calls.java",
+            "final class Calls { static void javaTarget() {} static void javaCaller() { javaTarget(); } }\n",
+        ),
+        (
             "calls.py",
             "def py_target():\n    pass\n\ndef py_caller():\n    py_target()\n",
         ),
@@ -142,6 +146,7 @@ fn ndjson(revision: &str) -> Vec<u8> {
         ("tsCaller", "calls.ts", 2, "tsTarget", 1),
         ("tsxCaller", "calls.tsx", 2, "tsxTarget", 1),
         ("goCaller", "calls.go", 3, "goTarget", 2),
+        ("javaCaller", "calls.java", 1, "javaTarget", 1),
         ("py_caller", "calls.py", 4, "py_target", 1),
         ("rust_caller", "calls.rs", 2, "rust_target", 1),
     ];
@@ -187,10 +192,10 @@ fn ndjson_resolves_every_supported_extension_and_observed_traversal() {
         )
         .unwrap();
 
-    assert_eq!(report.accepted, 5);
+    assert_eq!(report.accepted, 6);
     assert_eq!(report.ambiguous, 0);
     assert_eq!(report.unresolved, 0);
-    assert_eq!(runtime.runtime_evidence_status().unwrap().edges, 5);
+    assert_eq!(runtime.runtime_evidence_status().unwrap().edges, 6);
 
     let traced = runtime
         .trace_path_with_evidence(
