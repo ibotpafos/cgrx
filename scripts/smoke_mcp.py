@@ -52,7 +52,7 @@ with tempfile.TemporaryDirectory(prefix="cgrx-smoke-") as directory:
     responses = [json.loads(line) for line in result.stdout.splitlines()]
     assert len(responses) == 8, responses
     assert all("error" not in r for r in responses), responses
-    assert len(responses[1]["result"]["tools"]) == 12, responses[1]
+    assert len(responses[1]["result"]["tools"]) == 13, responses[1]
     nodes = responses[2]["result"]["structuredContent"]["nodes"]
     assert len(nodes) == 1 and nodes[0]["symbol"] == "caller", responses[2]
     matches = responses[3]["result"]["structuredContent"]["matches"]
@@ -86,4 +86,4 @@ with tempfile.TemporaryDirectory(prefix="cgrx-smoke-") as directory:
     assert architecture["totals"]["symbol_communities"] >= 1, responses[7]
     assert architecture["symbol_communities"][0]["top_nodes"], responses[7]
     assert set(architecture["snapshot"]) == {"repo_revision", "working_tree_digest", "graph_generation"}, responses[7]
-print("MCP_SMOKE=PASS; TOOLS=12; CALLER=caller; BODY_SEARCH=target; OUTLINE=5; USAGES=1; REFACTORS=1; ARCHITECTURE=1")
+print("MCP_SMOKE=PASS; TOOLS=13; CALLER=caller; BODY_SEARCH=target; OUTLINE=5; USAGES=1; REFACTORS=1; ARCHITECTURE=1")

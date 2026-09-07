@@ -1,9 +1,13 @@
 mod architecture;
 mod graph_view;
+mod observations;
 mod refactors;
 mod risks;
 mod ts_config;
 pub use graph_view::{GraphDirection, GraphViewRequest};
+pub use observations::{
+    ImportRuntimeEvidenceReport, RuntimeEvidenceFormat, RuntimeInsight, RuntimeInsightsReport,
+};
 pub use risks::RiskBaseline;
 use ts_config::TsResolutionConfig;
 
@@ -223,6 +227,7 @@ struct StoredTsFileFacts {
 }
 
 pub struct Runtime {
+    state_root: PathBuf,
     stored: StoredIndex,
     base_snapshot: RepoSnapshot,
     base_path_hashes: BTreeMap<String, Hash32>,
@@ -1568,6 +1573,7 @@ impl Runtime {
         normalize_stored(&mut stored);
         let base_traversal_truncated = stored.coverage.traversal_truncated;
         Ok(Self {
+            state_root: state.to_path_buf(),
             base_snapshot: stored.snapshot.clone(),
             base_path_hashes: stored.path_hashes.clone(),
             stored,

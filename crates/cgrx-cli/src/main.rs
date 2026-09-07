@@ -5,14 +5,15 @@ mod visualize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::fs;
-use std::io::{self, BufRead, Write};
+use std::io::{self, BufRead, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use cgrx_capsule::Tokenizer;
-use cgrx_cli::Runtime;
+use cgrx_cli::{Runtime, RuntimeEvidenceFormat};
 use cgrx_core::{
-    CapsuleStatus, Hash32, QueryRequest, RelationKind, RepoSnapshot, Scope, canonical_hash,
+    CapsuleStatus, EvidenceSelector, Hash32, QueryRequest, RelationKind, RepoSnapshot, Scope,
+    canonical_hash,
 };
 use cgrx_mcp::{
     BackendError, Server, ToolBackend, model_visible_schema_json, revision_bound_handle,
@@ -30,7 +31,7 @@ fn main() {
 fn run(args: Vec<String>) -> Result<(), String> {
     let Some(command) = args.first().map(String::as_str) else {
         return Err(
-            "expected init, index, serve, visualize, orient, expand, status, schema, skill, usage-report, or bench"
+            "expected init, index, observe, serve, visualize, orient, expand, status, schema, skill, usage-report, or bench"
                 .to_owned(),
         );
     };
@@ -43,6 +44,7 @@ fn run(args: Vec<String>) -> Result<(), String> {
         }
         "init" => init(args.get(1).map(PathBuf::from))?,
         "index" => index(&args[1..])?,
+        "observe" => observe(&args[1..])?,
         "serve" => serve(&args[1..])?,
         "visualize" => visualize::run(&args[1..])?,
         "orient" => {
@@ -68,6 +70,156 @@ fn run(args: Vec<String>) -> Result<(), String> {
         "usage-report" => usage_report(&args[1..])?,
         "bench" => println!("{}", json!({"status":"DELEGATED_TO_BENCH_HARNESS"})),
         other => return Err(format!("unknown command {other}")),
+    }
+    Ok(())
+}
+
+fn observe(args: &[String]) -> Result<(), String> {
+    let Some(action) = args.first().map(String::as_str) else {
+        return Err("observe requires import, status, insights, or prune".to_owned());
+    };
+    let rest = &args[1..];
+    if !rest.iter().any(|argument| argument == "--json") {
+        return Err("observe requires --json".to_owned());
+    }
+    let root = Path::new(optional_flag(rest, "--root").unwrap_or("."))
+        .canonicalize()
+        .map_err(|error| error.to_string())?;
+    let state = managed_state_path(&root)?;
+    let runtime = open_managed_runtime(&root, &state)?;
+    let output = match action {
+        "import" => {
+            validate_flags(
+                rest,
+                &[
+                    "--root",
+                    "--input",
+                    "--format",
+                    "--revision",
+                    "--environment",
+                    "--json",
+                ],
+            )?;
+            let input_path = flag(rest, "--input")?;
+            let input = read_observation_input(input_path)?;
+            let format = match optional_flag(rest, "--format").unwrap_or("auto") {
+                "auto" => RuntimeEvidenceFormat::Auto,
+                "ndjson" => RuntimeEvidenceFormat::Ndjson,
+                "otlp-json" => RuntimeEvidenceFormat::OtlpJson,
+                _ => {
+                    return Err(
+                        "observe import --format must be auto, ndjson, or otlp-json".to_owned()
+                    );
+                }
+            };
+            serde_json::to_value(
+                runtime
+                    .import_runtime_evidence(
+                        &root,
+                        &input,
+                        format,
+                        optional_flag(rest, "--revision"),
+                        optional_flag(rest, "--environment"),
+                    )
+                    .map_err(|error| error.to_string())?,
+            )
+            .map_err(|error| error.to_string())?
+        }
+        "insights" => {
+            validate_flags(rest, &["--root", "--limit", "--json"])?;
+            let limit = optional_flag(rest, "--limit")
+                .unwrap_or("20")
+                .parse::<usize>()
+                .map_err(|_| "observe insights limit must be an integer".to_owned())?;
+            let scope = Scope {
+                include: Vec::new(),
+                exclude: Vec::new(),
+                relation_kinds: vec![RelationKind::Calls],
+                max_depth: 4,
+            };
+            serde_json::to_value(
+                runtime
+                    .runtime_insights(&scope, limit)
+                    .map_err(|error| error.to_string())?,
+            )
+            .map_err(|error| error.to_string())?
+        }
+        "status" => {
+            validate_flags(rest, &["--root", "--json"])?;
+            serde_json::to_value(
+                runtime
+                    .runtime_evidence_status()
+                    .map_err(|error| error.to_string())?,
+            )
+            .map_err(|error| error.to_string())?
+        }
+        "prune" => {
+            validate_flags(
+                rest,
+                &[
+                    "--root",
+                    "--before-unix-nanos",
+                    "--dry-run",
+                    "--apply",
+                    "--json",
+                ],
+            )?;
+            let dry_run = rest.iter().any(|argument| argument == "--dry-run");
+            let apply = rest.iter().any(|argument| argument == "--apply");
+            if dry_run == apply {
+                return Err("observe prune requires exactly one of --dry-run or --apply".to_owned());
+            }
+            let before = flag(rest, "--before-unix-nanos")?
+                .parse::<u64>()
+                .map_err(|_| "observe prune timestamp must be an unsigned integer".to_owned())?;
+            serde_json::to_value(
+                runtime
+                    .prune_runtime_evidence(before, dry_run)
+                    .map_err(|error| error.to_string())?,
+            )
+            .map_err(|error| error.to_string())?
+        }
+        _ => return Err(format!("unknown observe action {action}")),
+    };
+    println!("{output}");
+    Ok(())
+}
+
+fn read_observation_input(path: &str) -> Result<Vec<u8>, String> {
+    let maximum = cgrx_core::MAX_TRACE_BYTES;
+    if path == "-" {
+        let mut input = Vec::new();
+        io::stdin()
+            .take((maximum + 1) as u64)
+            .read_to_end(&mut input)
+            .map_err(|error| error.to_string())?;
+        if input.len() > maximum {
+            return Err(format!("runtime evidence exceeds {maximum} bytes"));
+        }
+        return Ok(input);
+    }
+    let metadata = fs::metadata(path).map_err(|error| error.to_string())?;
+    if metadata.len() > maximum as u64 {
+        return Err(format!("runtime evidence exceeds {maximum} bytes"));
+    }
+    fs::read(path).map_err(|error| error.to_string())
+}
+
+fn validate_flags(args: &[String], allowed: &[&str]) -> Result<(), String> {
+    let boolean = ["--json", "--dry-run", "--apply"];
+    let mut cursor = 0;
+    while cursor < args.len() {
+        let flag = args[cursor].as_str();
+        if !allowed.contains(&flag) {
+            return Err(format!("unexpected argument {flag}"));
+        }
+        cursor += 1;
+        if !boolean.contains(&flag) {
+            if cursor >= args.len() || args[cursor].starts_with("--") {
+                return Err(format!("{flag} requires a value"));
+            }
+            cursor += 1;
+        }
     }
     Ok(())
 }
@@ -511,6 +663,72 @@ fn has_budget_exclusions(report: &cgrx_cli::OrientReport) -> bool {
 }
 
 impl ToolBackend for RuntimeMcpBackend {
+    fn ingest_runtime_evidence(
+        &mut self,
+        input_path: &str,
+        format: &str,
+        revision: Option<&str>,
+        environment: Option<&str>,
+    ) -> Result<Value, BackendError> {
+        let (Some(root), Some(state)) = (&self.watch_root, &self.managed_state) else {
+            return Err(BackendError::new(
+                "cgrx.runtime_evidence_unavailable",
+                "runtime evidence import requires serve --root or --multi-repo",
+            ));
+        };
+        let candidate = Path::new(input_path);
+        let candidate = if candidate.is_absolute() {
+            candidate.to_path_buf()
+        } else {
+            root.join(candidate)
+        };
+        let canonical = candidate.canonicalize().map_err(|_| {
+            BackendError::new(
+                "cgrx.invalid_runtime_path",
+                "runtime input file does not exist",
+            )
+        })?;
+        let import_root = state.join(".cgrx/imports").canonicalize().ok();
+        if !canonical.is_file()
+            || (!canonical.starts_with(root)
+                && !import_root
+                    .as_ref()
+                    .is_some_and(|allowed| canonical.starts_with(allowed)))
+        {
+            return Err(BackendError::new(
+                "cgrx.invalid_runtime_path",
+                "runtime input must be a file inside the repository or managed imports directory",
+            ));
+        }
+        let metadata = fs::metadata(&canonical)
+            .map_err(|error| BackendError::new("cgrx.runtime_input", error.to_string()))?;
+        if metadata.len() > cgrx_core::MAX_TRACE_BYTES as u64 {
+            return Err(BackendError::new(
+                "cgrx.runtime_evidence_too_large",
+                "runtime input exceeds the configured byte limit",
+            ));
+        }
+        let input = fs::read(&canonical)
+            .map_err(|error| BackendError::new("cgrx.runtime_input", error.to_string()))?;
+        let format = match format {
+            "auto" => RuntimeEvidenceFormat::Auto,
+            "ndjson" => RuntimeEvidenceFormat::Ndjson,
+            "otlp-json" => RuntimeEvidenceFormat::OtlpJson,
+            _ => {
+                return Err(BackendError::new(
+                    "cgrx.invalid_arguments",
+                    "format must be auto, ndjson, or otlp-json",
+                ));
+            }
+        };
+        let report = self
+            .runtime
+            .import_runtime_evidence(root, &input, format, revision, environment)
+            .map_err(|error| BackendError::new(error.code(), error.to_string()))?;
+        serde_json::to_value(report)
+            .map_err(|error| BackendError::new("cgrx.runtime_evidence", error.to_string()))
+    }
+
     fn scan_risks(&mut self, _mode: &str, limit: usize) -> Result<Value, BackendError> {
         self.refresh()?;
         let (Some(state), Some(root)) = (&self.managed_state, &self.watch_root) else {
@@ -624,14 +842,15 @@ impl ToolBackend for RuntimeMcpBackend {
         } else {
             report.compiled.status
         };
-        Ok(json!({
+        let result = json!({
             "handle":handle,
             "snapshot":report.snapshot,
             "status":status,
             "records":records,
             "next_handles":next_handles,
             "cumulative_budget":cumulative_budget
-        }))
+        });
+        Ok(result)
     }
 
     fn search_graph(
@@ -693,6 +912,25 @@ impl ToolBackend for RuntimeMcpBackend {
             .map_err(|error| BackendError::new(error.code(), error.to_string()))
     }
 
+    fn trace_path_with_evidence(
+        &mut self,
+        symbol: &str,
+        path: Option<&str>,
+        direction: &str,
+        depth: u8,
+        scope: Value,
+        limit: u32,
+        evidence: EvidenceSelector,
+    ) -> Result<Value, BackendError> {
+        self.refresh()?;
+        let scope = graph_scope(&scope)?;
+        let limit = usize::try_from(limit)
+            .map_err(|_| BackendError::new("cgrx.invalid_arguments", "limit is out of range"))?;
+        self.runtime
+            .trace_path_with_evidence(symbol, path, direction, depth, &scope, limit, evidence)
+            .map_err(|error| BackendError::new(error.code(), error.to_string()))
+    }
+
     fn find_usages(
         &mut self,
         symbol: &str,
@@ -707,6 +945,24 @@ impl ToolBackend for RuntimeMcpBackend {
             .map_err(|_| BackendError::new("cgrx.invalid_arguments", "limit is out of range"))?;
         self.runtime
             .find_usages(symbol, path, &scope, depth, limit)
+            .map_err(|error| BackendError::new(error.code(), error.to_string()))
+    }
+
+    fn find_usages_with_evidence(
+        &mut self,
+        symbol: &str,
+        path: Option<&str>,
+        scope: Value,
+        depth: u8,
+        limit: u32,
+        evidence: EvidenceSelector,
+    ) -> Result<Value, BackendError> {
+        self.refresh()?;
+        let scope = graph_scope(&scope)?;
+        let limit = usize::try_from(limit)
+            .map_err(|_| BackendError::new("cgrx.invalid_arguments", "limit is out of range"))?;
+        self.runtime
+            .find_usages_with_evidence(symbol, path, &scope, depth, limit, evidence)
             .map_err(|error| BackendError::new(error.code(), error.to_string()))
     }
 
@@ -798,7 +1054,7 @@ impl ToolBackend for RuntimeMcpBackend {
             "traversal_truncated":coverage.traversal_truncated,
             "dynamic_dispatch":coverage.dynamic_dispatch.iter().take(COVERAGE_OUTPUT_LIMIT).collect::<Vec<_>>()
         });
-        Ok(json!({
+        let mut result = json!({
             "snapshot":self.runtime.snapshot(),
             "graph":{
                 "nodes":self.runtime.graph_node_count(),
@@ -810,7 +1066,19 @@ impl ToolBackend for RuntimeMcpBackend {
             "coverage_gap_count":coverage_gap_count,
             "coverage_gaps":coverage_gaps,
             "coverage_gaps_truncated":coverage_gaps_truncated
-        }))
+        });
+        let runtime_evidence = self
+            .runtime
+            .runtime_evidence_status()
+            .map_err(|error| BackendError::new(error.code(), error.to_string()))?;
+        if runtime_evidence.edges > 0
+            || runtime_evidence.unresolved > 0
+            || runtime_evidence.ambiguous > 0
+        {
+            result["runtime_evidence"] = serde_json::to_value(runtime_evidence)
+                .map_err(|error| BackendError::new("cgrx.runtime_evidence", error.to_string()))?;
+        }
+        Ok(result)
     }
 }
 
