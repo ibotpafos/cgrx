@@ -6,8 +6,8 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 static TEST_DIRECTORY_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
-use cgrx_cli::{OrientReport, Runtime};
-use cgrx_core::{Mode, QueryRequest, RelationKind, Scope};
+use cgrx_cli::{GraphDirection, GraphViewRequest, OrientReport, Runtime, RuntimeEvidenceFormat};
+use cgrx_core::{EvidenceSelector, Mode, QueryRequest, RelationKind, Scope};
 use cgrx_store::GenerationReader;
 
 struct TestDirectory(PathBuf);
@@ -30,6 +30,57 @@ impl TestDirectory {
     fn path(&self) -> &Path {
         &self.0
     }
+}
+
+#[test]
+fn graph_view_overlays_runtime_counts_and_filters_environments() {
+    let repository = fixture_repository();
+    let state = TestDirectory::new("runtime-overlay-state");
+    Runtime::index(repository.path(), state.path()).unwrap();
+    let runtime = Runtime::open(state.path()).unwrap();
+    let revision = runtime.snapshot().repo_revision.clone();
+    for (environment, count) in [("prod", 8), ("staging", 3)] {
+        let trace = format!(
+            "{{\"schema\":\"cgrx.runtime.v1\",\"repo_revision\":\"{revision}\",\"environment\":\"{environment}\",\"observed_at_unix_nanos\":1000000000,\"count\":{count},\"caller\":{{\"function\":\"caller\",\"file\":\"main.py\"}},\"callee\":{{\"function\":\"target\",\"file\":\"main.py\"}}}}\n"
+        );
+        runtime
+            .import_runtime_evidence(
+                repository.path(),
+                trace.as_bytes(),
+                RuntimeEvidenceFormat::Ndjson,
+                None,
+                None,
+            )
+            .unwrap();
+    }
+    let request = || GraphViewRequest {
+        symbol: "caller".into(),
+        path: Some("main.py".into()),
+        direction: GraphDirection::Callees,
+        depth: 1,
+        scope: Scope {
+            include: vec!["**".into()],
+            exclude: vec![],
+            relation_kinds: vec![RelationKind::Calls],
+            max_depth: 1,
+        },
+        node_limit: 20,
+        edge_limit: 20,
+    };
+    let observed = runtime
+        .graph_view_with_evidence(request(), EvidenceSelector::Observed, &["prod".into()])
+        .unwrap();
+    assert_eq!(observed["evidence"], "observed");
+    assert_eq!(observed["edges"][0]["count"], 8);
+    assert_eq!(observed["edges"][0]["environments"][0], "prod");
+    assert_eq!(observed["edges"][0]["confidence"], "OBSERVED");
+
+    let combined = runtime
+        .graph_view_with_evidence(request(), EvidenceSelector::All, &[])
+        .unwrap();
+    assert_eq!(combined["edges"][0]["count"], 11);
+    assert_eq!(combined["edges"][0]["evidence"], "static+observed");
+    assert_eq!(combined["edges"][0]["confidence"], "PROVEN");
 }
 
 impl Drop for TestDirectory {

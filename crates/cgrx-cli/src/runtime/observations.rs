@@ -217,6 +217,17 @@ impl Runtime {
             .map_err(|error| RuntimeError::new("cgrx.runtime_evidence_store", error.to_string()))
     }
 
+    pub fn runtime_evidence_environments(&self) -> Result<Vec<String>, RuntimeError> {
+        Ok(self
+            .load_current_observations()?
+            .into_iter()
+            .flat_map(|snapshot| snapshot.edges)
+            .map(|edge| edge.environment)
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect())
+    }
+
     pub fn prune_runtime_evidence(
         &self,
         before_unix_nanos: u64,
@@ -627,7 +638,7 @@ impl Runtime {
             .unwrap_or(Resolution::Missing))
     }
 
-    fn load_current_observations(
+    pub(super) fn load_current_observations(
         &self,
     ) -> Result<Option<cgrx_store::ObservationSnapshot>, RuntimeError> {
         let snapshot = ObservationStore::open(&self.state_root)

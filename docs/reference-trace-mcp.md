@@ -60,6 +60,7 @@ existing contracts before adding another always-visible tool.
 | Local session analytics and opt-in tracing | No exported source/query telemetry in the current core | Add local latency/error/response-size metrics first; any exporter must remain opt-in and metadata-only. Trace documents its anonymous daily usage ping as a separate subsystem, so that policy must not be inferred from the tracing switch. |
 | Multi-project daemon LRU/TTL and measured RSS attribution | Current work targets explicit repo-scoped runtimes | Measure resident cost per loaded project before introducing a daemon cache or eviction policy. |
 | Automated client hooks and prompt rewrites | Repository instructions already route discovery through CGRX | Do not patch client prompts from the core binary; keep setup changes explicit and reversible. |
+| Runtime/static overlays and agent guidance | Revision-pinned observed calls can be viewed alone or merged with proven static edges, filtered by environment, and copied as a snapshot-bound agent handoff | Adopted with deterministic hot-path/divergence/blast-radius ranking; no LLM, embedding runtime, model weights, or external AI API. |
 
 The next measurement priorities are the PR context benchmark, response cost for
 the remaining tools, and manual review of the refactoring inventory. Framework

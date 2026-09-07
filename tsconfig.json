@@ -10,6 +10,7 @@
   },
   "include": [
     "crates/cgrx-cli/web/git-history.ts",
+    "crates/cgrx-cli/web/runtime-evidence.ts",
     "crates/cgrx-cli/web/vendor-entry.ts"
   ]
 }
