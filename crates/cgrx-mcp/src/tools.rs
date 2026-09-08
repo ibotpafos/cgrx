@@ -146,6 +146,18 @@ pub trait ToolBackend: Send + Sync {
     }
     fn get_code_snippet(&mut self, symbol: &str, path: Option<&str>)
     -> Result<Value, BackendError>;
+    fn find_similar(
+        &mut self,
+        _symbol: &str,
+        _path: Option<&str>,
+        _scope: Value,
+        _limit: u32,
+    ) -> Result<Value, BackendError> {
+        Err(BackendError::new(
+            "cgrx.similarity_unavailable",
+            "find_similar requires a managed repository backend",
+        ))
+    }
     fn check_index_coverage(
         &mut self,
         paths: &[String],
