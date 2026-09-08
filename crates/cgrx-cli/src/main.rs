@@ -19,7 +19,8 @@ use cgrx_core::{
     canonical_hash,
 };
 use cgrx_mcp::{
-    BackendError, Server, ToolBackend, model_visible_schema_json, revision_bound_handle,
+    BackendError, Server, ToolBackend, gate_to_sarif, model_visible_schema_json,
+    revision_bound_handle,
 };
 use cgrx_metrics::Summarize;
 use serde::Deserialize;
@@ -35,7 +36,7 @@ fn main() {
 fn run(args: Vec<String>) -> Result<(), String> {
     let Some(command) = args.first().map(String::as_str) else {
         return Err(
-            "expected init, index, daemon, observe, serve, visualize, orient, expand, status, schema, skill, usage-report, metrics, or bench"
+            "expected init, index, daemon, observe, serve, visualize, orient, expand, status, check-gates, schema, skill, usage-report, metrics, or bench"
                 .to_owned(),
         );
     };
@@ -79,6 +80,7 @@ fn run(args: Vec<String>) -> Result<(), String> {
                 Path::new(root),
             )?;
         }
+        "check-gates" => check_gates(&args[1..])?,
         "schema" => schema(&args[1..])?,
         "skill" => skill::run(&args[1..])?,
         "usage-report" => usage_report(&args[1..])?,
@@ -1468,6 +1470,12 @@ struct PartialScope {
 }
 
 fn invoke_managed(name: &str, arguments: Value, root: &Path) -> Result<(), String> {
+    let response = call_managed_tool(name, arguments, root)?;
+    println!("{response}");
+    Ok(())
+}
+
+fn call_managed_tool(name: &str, arguments: Value, root: &Path) -> Result<Value, String> {
     let root = root.canonicalize().map_err(|error| error.to_string())?;
     let state = managed_state_path(&root)?;
     let runtime = open_managed_runtime(&root, &state)?;
@@ -1479,8 +1487,162 @@ fn invoke_managed(name: &str, arguments: Value, root: &Path) -> Result<(), Strin
         "params":{"name":name,"arguments":arguments}
     });
     let response = server.dispatch_line(&request.to_string());
-    println!("{response}");
+    serde_json::from_str(&response).map_err(|error| error.to_string())
+}
+
+fn managed_structured_content(response: &Value, tool: &str) -> Result<Value, String> {
+    if let Some(error) = response.get("error") {
+        return Err(format!(
+            "{tool} failed: {}",
+            error.get("message").unwrap_or(&Value::Null)
+        ));
+    }
+    response
+        .pointer("/result/structuredContent")
+        .cloned()
+        .ok_or_else(|| format!("{tool} returned no structuredContent"))
+}
+
+fn check_gates(args: &[String]) -> Result<(), String> {
+    const ALLOWED: &[&str] = &[
+        "--root",
+        "--gate",
+        "--format",
+        "--fail-on",
+        "--limit",
+        "--package-depth",
+        "--max-warning-findings",
+        "--max-blocked-missions",
+        "--max-coverage-gaps",
+        "--max-unverified-impacts",
+        "--max-package-cycles",
+        "--max-package-fan-out",
+        "--max-symbol-fan-in",
+        "--max-unresolved-local-dependencies",
+        "--output",
+    ];
+    validate_value_flags(args, ALLOWED)?;
+    let gate = flag(args, "--gate")?;
+    if !matches!(gate, "change" | "repository") {
+        return Err("--gate must be change or repository".to_owned());
+    }
+    let format = flag_or(args, "--format", "json");
+    if !matches!(format, "json" | "sarif") {
+        return Err("--format must be json or sarif".to_owned());
+    }
+    let fail_on = flag_or(args, "--fail-on", "error");
+    if !matches!(fail_on, "error" | "warning" | "none") {
+        return Err("--fail-on must be error, warning, or none".to_owned());
+    }
+    let output = flag_or(args, "--output", "-");
+    let root = Path::new(optional_flag(args, "--root").unwrap_or("."));
+
+    let (tool, arguments) = if gate == "change" {
+        let limit = parse_bounded_usize(flag_or(args, "--limit", "20"), "--limit", 1, 50)?;
+        (
+            "check_change_gates",
+            json!({
+                "limit": limit,
+                "fail_on": fail_on,
+                "max_warning_findings": parse_bounded_usize(flag_or(args, "--max-warning-findings", "0"), "--max-warning-findings", 0, 10_000)?,
+                "max_blocked_missions": parse_bounded_usize(flag_or(args, "--max-blocked-missions", "0"), "--max-blocked-missions", 0, 10_000)?,
+                "max_coverage_gaps": parse_bounded_usize(flag_or(args, "--max-coverage-gaps", "0"), "--max-coverage-gaps", 0, 10_000)?,
+                "max_unverified_impacts": parse_bounded_usize(flag_or(args, "--max-unverified-impacts", "0"), "--max-unverified-impacts", 0, 10_000)?,
+            }),
+        )
+    } else {
+        (
+            "check_repository_gates",
+            json!({
+                "scope": Value::Null,
+                "package_depth": parse_bounded_usize(flag_or(args, "--package-depth", "2"), "--package-depth", 1, 4)?,
+                "fail_on": fail_on,
+                "max_package_cycles": parse_bounded_usize(flag_or(args, "--max-package-cycles", "0"), "--max-package-cycles", 0, 1_000_000)?,
+                "max_package_fan_out": parse_bounded_usize(flag_or(args, "--max-package-fan-out", "20"), "--max-package-fan-out", 0, 1_000_000)?,
+                "max_symbol_fan_in": parse_bounded_usize(flag_or(args, "--max-symbol-fan-in", "50"), "--max-symbol-fan-in", 0, 1_000_000)?,
+                "max_unresolved_local_dependencies": parse_bounded_usize(flag_or(args, "--max-unresolved-local-dependencies", "0"), "--max-unresolved-local-dependencies", 0, 1_000_000)?,
+                "max_coverage_gaps": parse_bounded_usize(flag_or(args, "--max-coverage-gaps", "0"), "--max-coverage-gaps", 0, 1_000_000)?,
+            }),
+        )
+    };
+
+    let response = call_managed_tool(tool, arguments, root)?;
+    let structured = managed_structured_content(&response, tool)?;
+    let verdict = structured
+        .get("verdict")
+        .and_then(Value::as_str)
+        .unwrap_or("INCONCLUSIVE")
+        .to_owned();
+    let would_block = structured
+        .get("would_block")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    let rendered = if format == "sarif" {
+        let root = root.canonicalize().map_err(|error| error.to_string())?;
+        let resolve = |path: &str, offset: u64| file_line(&root, path, offset);
+        gate_to_sarif(tool, &structured, Some(&resolve))?
+    } else {
+        structured
+    };
+    let text = serde_json::to_string_pretty(&rendered).map_err(|error| error.to_string())?;
+    if output == "-" {
+        println!("{text}");
+    } else {
+        fs::write(output, format!("{text}\n")).map_err(|error| error.to_string())?;
+    }
+    if would_block {
+        return Err(format!(
+            "{tool} verdict {verdict} would block (fail_on={fail_on})"
+        ));
+    }
     Ok(())
+}
+
+fn file_line(root: &Path, path: &str, offset: u64) -> Option<u64> {
+    let candidate = Path::new(path);
+    let full = if candidate.is_absolute() {
+        candidate.to_path_buf()
+    } else {
+        root.join(candidate)
+    };
+    let bytes = fs::read(full).ok()?;
+    let offset = usize::try_from(offset).ok()?;
+    if offset > bytes.len() {
+        return None;
+    }
+    Some(
+        bytes[..offset]
+            .iter()
+            .filter(|byte| **byte == b'\n')
+            .count() as u64
+            + 1,
+    )
+}
+
+fn validate_value_flags(args: &[String], allowed: &[&str]) -> Result<(), String> {
+    let mut cursor = 0;
+    while cursor < args.len() {
+        let name = args[cursor].as_str();
+        if !allowed.contains(&name) {
+            return Err(format!("unexpected argument {name}"));
+        }
+        cursor += 1;
+        if cursor >= args.len() || args[cursor].starts_with("--") {
+            return Err(format!("{name} requires a value"));
+        }
+        cursor += 1;
+    }
+    Ok(())
+}
+
+fn parse_bounded_usize(value: &str, name: &str, min: usize, max: usize) -> Result<usize, String> {
+    let parsed: usize = value
+        .parse()
+        .map_err(|_| format!("{name} must be an integer"))?;
+    if !(min..=max).contains(&parsed) {
+        return Err(format!("{name} must be from {min} to {max}"));
+    }
+    Ok(parsed)
 }
 
 fn schema(args: &[String]) -> Result<(), String> {
