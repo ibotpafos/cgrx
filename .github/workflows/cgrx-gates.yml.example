@@ -1,0 +1,98 @@
+# Reusable CGRX quality-gate workflow with SARIF upload.
+#
+# This is an EXAMPLE file: it is not executed by GitHub Actions as-is.
+# Copy it to .github/workflows/cgrx-gates.yml (or call it via workflow_call
+# from your CI workflow) and pin the third-party actions to your policy.
+#
+# What it does:
+#   1. Builds the cgrx binary from the pinned Rust toolchain.
+#   2. Runs check_change_gates and check_repository_gates with SARIF output.
+#      Reports are written BEFORE the command exits nonzero on a blocking
+#      verdict, so upload steps with `if: always()` still publish alerts.
+#   3. Uploads both SARIF reports to code scanning.
+#   4. Fails the job exactly when a gate would_block.
+
+name: CGRX gates
+
+on:
+  workflow_call:
+    inputs:
+      fail-on:
+        description: Gate sensitivity passed as --fail-on to both gates.
+        required: false
+        default: error
+        type: string
+      change-limit:
+        description: Finding/impact scan limit for the change gate.
+        required: false
+        default: 20
+        type: number
+      package-depth:
+        description: Package depth for the repository gate.
+        required: false
+        default: 2
+        type: number
+      max-coverage-gaps:
+        description: Tolerated index coverage gaps for both gates.
+        required: false
+        default: 0
+        type: number
+      working-directory:
+        description: Repository root to gate (defaults to the checkout root).
+        required: false
+        default: .
+        type: string
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  cgrx-gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - name: Rust toolchain
+        run: rustup toolchain install 1.89.0 --profile minimal
+
+      - name: Build cgrx
+        run: cargo build --locked --release -p cgrx-cli
+
+      - name: Change gates (SARIF)
+        id: change
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          "$GITHUB_WORKSPACE/target/release/cgrx" check-gates \
+            --gate change \
+            --format sarif \
+            --fail-on "${{ inputs.fail-on }}" \
+            --limit "${{ inputs.change-limit }}" \
+            --max-coverage-gaps "${{ inputs.max-coverage-gaps }}" \
+            --output cgrx-change.sarif
+
+      - name: Upload change-gate SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: ${{ inputs.working-directory }}/cgrx-change.sarif
+          category: cgrx-change-gates
+
+      - name: Repository gates (SARIF)
+        id: repository
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          "$GITHUB_WORKSPACE/target/release/cgrx" check-gates \
+            --gate repository \
+            --format sarif \
+            --fail-on "${{ inputs.fail-on }}" \
+            --package-depth "${{ inputs.package-depth }}" \
+            --max-coverage-gaps "${{ inputs.max-coverage-gaps }}" \
+            --output cgrx-repository.sarif
+
+      - name: Upload repository-gate SARIF
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: ${{ inputs.working-directory }}/cgrx-repository.sarif
+          category: cgrx-repository-gates

@@ -1,0 +1,141 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "runs": [
+    {
+      "automationDetails": {
+        "id": "cgrx/repository-gates"
+      },
+      "properties": {
+        "cgrxAlgorithm": "repository_quality_gate_v1",
+        "cgrxFailOn": "error",
+        "cgrxGate": "repository",
+        "cgrxPartial": false,
+        "cgrxVerdict": "WARN",
+        "cgrxWouldBlock": false,
+        "llmUsed": false
+      },
+      "results": [
+        {
+          "level": "warning",
+          "message": {
+            "text": "cgrx repository gate verdict WARN (fail_on=error, would_block=false)"
+          },
+          "ruleId": "cgrx/gate-verdict"
+        },
+        {
+          "level": "warning",
+          "message": {
+            "text": "cgrx max_package_fan_out breached: value 24 exceeds threshold 20 (severity warning)"
+          },
+          "ruleId": "cgrx/max_package_fan_out"
+        }
+      ],
+      "tool": {
+        "driver": {
+          "fullName": "CGRX code graph gates",
+          "informationUri": "https://github.com/ibotpafos/cgrx",
+          "name": "cgrx",
+          "rules": [
+            {
+              "fullDescription": {
+                "text": "Snapshot-bound CGRX quality-gate verdict. No tests or LLM were executed."
+              },
+              "id": "cgrx/gate-verdict",
+              "name": "GateVerdict",
+              "shortDescription": {
+                "text": "Overall CGRX repository gate verdict."
+              }
+            },
+            {
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "fullDescription": {
+                "text": "Package dependency cycles above the budget."
+              },
+              "id": "cgrx/max_package_cycles",
+              "name": "max_package_cycles",
+              "properties": {
+                "severity": "error",
+                "threshold": 0
+              },
+              "shortDescription": {
+                "text": "Package dependency cycles above the budget."
+              }
+            },
+            {
+              "defaultConfiguration": {
+                "level": "warning"
+              },
+              "fullDescription": {
+                "text": "Maximum package fan-out above the budget."
+              },
+              "id": "cgrx/max_package_fan_out",
+              "name": "max_package_fan_out",
+              "properties": {
+                "severity": "warning",
+                "threshold": 20
+              },
+              "shortDescription": {
+                "text": "Maximum package fan-out above the budget."
+              }
+            },
+            {
+              "defaultConfiguration": {
+                "level": "warning"
+              },
+              "fullDescription": {
+                "text": "Maximum symbol fan-in above the budget."
+              },
+              "id": "cgrx/max_symbol_fan_in",
+              "name": "max_symbol_fan_in",
+              "properties": {
+                "severity": "warning",
+                "threshold": 50
+              },
+              "shortDescription": {
+                "text": "Maximum symbol fan-in above the budget."
+              }
+            },
+            {
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "fullDescription": {
+                "text": "Unresolved local dependencies above the budget."
+              },
+              "id": "cgrx/max_unresolved_local_dependencies",
+              "name": "max_unresolved_local_dependencies",
+              "properties": {
+                "severity": "error",
+                "threshold": 0
+              },
+              "shortDescription": {
+                "text": "Unresolved local dependencies above the budget."
+              }
+            },
+            {
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "fullDescription": {
+                "text": "Index coverage gaps above the budget."
+              },
+              "id": "cgrx/max_coverage_gaps",
+              "name": "max_coverage_gaps",
+              "properties": {
+                "severity": "error",
+                "threshold": 2
+              },
+              "shortDescription": {
+                "text": "Index coverage gaps above the budget."
+              }
+            }
+          ],
+          "version": "0.1.0"
+        }
+      }
+    }
+  ],
+  "version": "2.1.0"
+}
