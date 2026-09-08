@@ -32,6 +32,7 @@ pub(super) fn run(args: &[String]) -> Result<(), String> {
     let mut max_symbol_fan_in = 50usize;
     let mut max_unresolved_local_dependencies = 0usize;
     let mut repository_max_coverage_gaps = 0usize;
+    let mut allow_inconclusive_within_budgets = false;
 
     let mut i = 0;
     while i < args.len() {
@@ -102,6 +103,9 @@ pub(super) fn run(args: &[String]) -> Result<(), String> {
                 repository_max_coverage_gaps =
                     parse_usize(args.get(i), "--repository-max-coverage-gaps")?;
             }
+            "--allow-inconclusive-within-budgets" => {
+                allow_inconclusive_within_budgets = true;
+            }
             other => return Err(format!("unknown flag: {other}")),
         }
         i += 1;
@@ -125,16 +129,18 @@ pub(super) fn run(args: &[String]) -> Result<(), String> {
             max_coverage_gaps,
             max_unverified_impacts,
         )?;
-        let would_block = result["would_block"].as_bool().unwrap_or(false);
+        let would_block = result["would_block"].as_bool().unwrap_or(true);
+        let effective_block = effective_would_block(&result, allow_inconclusive_within_budgets);
         let verdict = result["verdict"].as_str().unwrap_or("UNKNOWN");
-        if would_block {
+        if effective_block {
             failed = true;
         }
         messages.push(format!(
-            "change_gates: verdict={verdict} would_block={would_block}"
+            "change_gates: verdict={verdict} would_block={would_block} ci_effective_block={effective_block}"
         ));
         if matches!(format, Format::Human) {
             print_change_report(&result);
+            print_ci_override(would_block, effective_block);
         }
     }
 
@@ -148,16 +154,18 @@ pub(super) fn run(args: &[String]) -> Result<(), String> {
             max_unresolved_local_dependencies,
             repository_max_coverage_gaps,
         )?;
-        let would_block = result["would_block"].as_bool().unwrap_or(false);
+        let would_block = result["would_block"].as_bool().unwrap_or(true);
+        let effective_block = effective_would_block(&result, allow_inconclusive_within_budgets);
         let verdict = result["verdict"].as_str().unwrap_or("UNKNOWN");
-        if would_block {
+        if effective_block {
             failed = true;
         }
         messages.push(format!(
-            "repository_gates: verdict={verdict} would_block={would_block}"
+            "repository_gates: verdict={verdict} would_block={would_block} ci_effective_block={effective_block}"
         ));
         if matches!(format, Format::Human) {
             print_repository_report(&result);
+            print_ci_override(would_block, effective_block);
         }
     }
 
@@ -297,6 +305,30 @@ fn parse_usize(value: Option<&String>, name: &str) -> Result<usize, String> {
         .map_err(|_| format!("{name} must be an integer"))
 }
 
+fn effective_would_block(result: &Value, allow_inconclusive_within_budgets: bool) -> bool {
+    let would_block = result["would_block"].as_bool().unwrap_or(true);
+    if !would_block
+        || !allow_inconclusive_within_budgets
+        || result["verdict"].as_str() != Some("INCONCLUSIVE")
+    {
+        return would_block;
+    }
+    result["rules"].as_array().is_none_or(|rules| {
+        rules.is_empty()
+            || rules
+                .iter()
+                .any(|rule| rule["status"].as_str() != Some("passed"))
+    })
+}
+
+fn print_ci_override(would_block: bool, effective_block: bool) {
+    if would_block != effective_block {
+        println!(
+            "  ci_effective_block: {effective_block} (inconclusive counts are within reviewed budgets)"
+        );
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -340,5 +372,27 @@ mod tests {
         assert_ne!(Gate::Change, Gate::Repository);
         assert_ne!(Gate::Change, Gate::Both);
         assert_ne!(Gate::Repository, Gate::Both);
+    }
+
+    #[test]
+    fn inconclusive_result_is_allowed_only_when_every_budget_passes() {
+        let within_budget = json!({
+            "verdict": "INCONCLUSIVE",
+            "would_block": true,
+            "rules": [{"status": "passed"}]
+        });
+        assert!(effective_would_block(&within_budget, false));
+        assert!(!effective_would_block(&within_budget, true));
+
+        let breached = json!({
+            "verdict": "INCONCLUSIVE",
+            "would_block": true,
+            "rules": [{"status": "breached"}]
+        });
+        assert!(effective_would_block(&breached, true));
+        assert!(effective_would_block(
+            &json!({"verdict":"INCONCLUSIVE"}),
+            true
+        ));
     }
 }

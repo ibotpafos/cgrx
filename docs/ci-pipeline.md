@@ -32,6 +32,8 @@ The quality gates job runs after the basic checks pass, using the release binary
 
 The repository gate runs against the checked-out commit. On pull requests, the workflow then moves Git's index and HEAD baseline to the trusted base commit while leaving the checked-out files intact. This gives `scan_risks` the real pull-request working-tree delta; on pushes there is no change gate because no PR base exists.
 
+The workflow pins the current repository and change-gate measurements as reviewed budgets. Because the repository still has known coverage gaps, it explicitly enables `--allow-inconclusive-within-budgets`: this overrides the backend's conservative partial-coverage block only when every rule remains within its reviewed budget. A breached rule, a `FAIL` verdict, a missing rule set, or use of the CLI without this flag still fails closed. Changing a budget is therefore an explicit, reviewable policy change instead of an implicit consequence of an unrelated edit.
+
 ## CLI Command
 
 ```bash
@@ -46,6 +48,7 @@ cgrx ci --repo <path> [--format github|human] [--gate change|repository|both] [t
 | `--format <fmt>` | Output format (`github` or `human`) | `human` |
 | `--gate <gate>` | Which gates to run (`change`, `repository`, `both`) | `both` |
 | `--fail-on <level>` | Fail level (`error`, `warning`, `none`) | `error` |
+| `--allow-inconclusive-within-budgets` | Allow `INCONCLUSIVE` only when every explicit rule budget passes | disabled |
 
 ### Threshold Flags (Change Gates)
 
