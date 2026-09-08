@@ -11,10 +11,11 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
-const TOOLS: [&str; 15] = [
+const TOOLS: [&str; 18] = [
     "scan_risks",
     "check_change_gates",
     "check_repository_gates",
+    "check_security_gates",
     "ingest_runtime_evidence",
     "orient",
     "expand",
@@ -27,6 +28,8 @@ const TOOLS: [&str; 15] = [
     "suggest_refactors",
     "get_code_snippet",
     "check_index_coverage",
+    "memory_record",
+    "memory_recall",
 ];
 
 struct Entry {
@@ -231,11 +234,17 @@ impl Router {
             self.entries.insert(
                 root.clone(),
                 Entry {
-                    server: Server::with_backend(RuntimeMcpBackend::managed(
-                        runtime,
-                        root.clone(),
-                        state,
-                    )),
+                    server: {
+                        let mut server = Server::with_backend(RuntimeMcpBackend::managed(
+                            runtime,
+                            root.clone(),
+                            state,
+                        ));
+                        if let Ok(store) = cgrx_store::MemoryStore::open(&root) {
+                            server.set_memory_store(store);
+                        }
+                        server
+                    },
                     repo_id: identity,
                     incarnation: format!("{}-{}", self.nonce, self.clock),
                     accessed: self.clock,
@@ -253,6 +262,9 @@ impl Router {
                 .ok_or_else(|| error("cgrx.invalid_arguments", "handle must be a string"))?;
             let inner = entry.unwrap_handle(handle)?;
             args.insert("handle".to_owned(), json!(inner));
+        }
+        if name == "memory_record" {
+            args.insert("repo".to_owned(), json!(root.to_string_lossy()));
         }
         let frame = json!({"jsonrpc":"2.0","id":request.id,"method":"tools/call","params":{"name":name,"arguments":args}});
         let mut response: Value =

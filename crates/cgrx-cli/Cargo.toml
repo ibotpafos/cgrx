@@ -22,6 +22,7 @@ cgrx-metrics = { path = "../cgrx-metrics" }
 blake3 = "1.8.7"
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.143"
+notify = "6.1.1"
 
 [[test]]
 name = "cli"
@@ -30,3 +31,6 @@ path = "../../tests/cli.rs"
 [[test]]
 name = "multi_repo"
 path = "../../tests/multi_repo.rs"
+
+[dev-dependencies]
+tempfile = "3"

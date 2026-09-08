@@ -135,7 +135,7 @@ fn multi_repo_lazy_schema_and_notifications() {
     );
     let r = m.rpc("tools/list", json!({}));
     let ts = r["result"]["tools"].as_array().unwrap();
-    assert_eq!(ts.len(), 16);
+    assert_eq!(ts.len(), 18);
     for t in ts {
         assert!(
             t["inputSchema"]["required"]
@@ -145,6 +145,93 @@ fn multi_repo_lazy_schema_and_notifications() {
         );
     }
     assert!(!d.0.join(".git").exists());
+}
+
+#[test]
+fn multi_repo_memory_record_preserves_canonical_repository_provenance() {
+    let d = Dir::new();
+    let repo = d.repo("memory", "fn remembered() {}\n");
+    let mut m = Mcp::new(&d.0, "1", &d.0.join("log"));
+
+    let recorded = m.tool(
+        "memory_record",
+        json!({
+            "repo": repo,
+            "fact": "the remembered function is in main.rs",
+            "confidence": 900,
+            "path": "main.rs",
+            "span": {"start_line": 1, "end_line": 1}
+        }),
+    );
+    assert!(recorded.get("result").is_some(), "{recorded}");
+    assert_eq!(
+        recorded["result"]["structuredContent"]["record"]["provenance"]["repo"],
+        json!(repo.canonicalize().unwrap())
+    );
+
+    let recalled = m.tool("memory_recall", json!({"repo":repo,"limit":10}));
+    assert_eq!(
+        recalled["result"]["structuredContent"]["results"][0]["fact"],
+        "the remembered function is in main.rs",
+        "{recalled}"
+    );
+}
+
+#[test]
+fn multi_repo_routes_security_gate_and_preserves_default_allowlists() {
+    let d = Dir::new();
+    let repo = d.repo("security", "fn baseline() {}\n");
+    fs::write(repo.join("Cargo.lock"), "").unwrap();
+    fs::create_dir(repo.join("licenses")).unwrap();
+    fs::write(
+        repo.join("licenses/dependencies.md"),
+        "| Package | Version | License |\n| --- | --- | --- |\n| serde | 1.0.0 | MIT |\n",
+    )
+    .unwrap();
+    git(&repo, &["add", "."]);
+    git(&repo, &["commit", "-qm", "security inputs"]);
+    fs::create_dir(repo.join("fixtures")).unwrap();
+    fs::write(
+        repo.join("fixtures/config.rs"),
+        "let api_key = \"fixture-secret-value\";\n",
+    )
+    .unwrap();
+    let mut m = Mcp::new(&d.0, "1", &d.0.join("log"));
+
+    let defaulted = m.tool(
+        "check_security_gates",
+        json!({"repo":repo,"fail_on":"error"}),
+    );
+    assert_eq!(
+        defaulted["result"]["structuredContent"]["verdict"], "PASS",
+        "{defaulted}"
+    );
+
+    let strict = m.tool(
+        "check_security_gates",
+        json!({
+            "repo":repo,
+            "fail_on":"error",
+            "allowlist_paths":[],
+            "allowlist_licenses":["MIT"]
+        }),
+    );
+    assert_eq!(
+        strict["result"]["structuredContent"]["verdict"], "FAIL",
+        "{strict}"
+    );
+}
+
+#[test]
+fn security_gate_rejects_blank_allowlist_entries() {
+    let d = Dir::new();
+    let repo = d.repo("security-blank", "fn baseline() {}\n");
+    let mut m = Mcp::new(&d.0, "1", &d.0.join("log"));
+    let response = m.tool(
+        "check_security_gates",
+        json!({"repo":repo,"allowlist_paths":[""]}),
+    );
+    error(&response, "cgrx.invalid_arguments");
 }
 
 #[test]

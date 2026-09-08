@@ -79,6 +79,22 @@
     {
       "path": "cases/py-depth-truncation/gold.json",
       "sha256": "2ae346cedaae5df6a82da7422efab7553a6a370c9b7648176572832ceb243775"
+    },
+    {
+      "path": "cases/c-direct-call/gold.json",
+      "sha256": "1753376264e845ef40cbac71630c3f0113f79c4b8ede34d41491297e467fa85b"
+    },
+    {
+      "path": "cases/c-parser-error-range/gold.json",
+      "sha256": "0242409486d36a0ba39ee915061524684995a2bb67a5fc69d1a218a4a000b849"
+    },
+    {
+      "path": "cases/kotlin-direct-call/gold.json",
+      "sha256": "082397b4ac24bf5c748f78741510f99dd4f11acf113b2ea3266297f861307ed8"
+    },
+    {
+      "path": "cases/kotlin-parser-error-range/gold.json",
+      "sha256": "f0429de4e0e490e063bfcb16785f1ef5cf4638a06326d4f926d3e2976cb8253d"
     }
   ],
   "version": 1

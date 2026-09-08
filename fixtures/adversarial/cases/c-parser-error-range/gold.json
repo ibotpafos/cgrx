@@ -1,0 +1,32 @@
+{
+  "expected_cgcr_status": "PARTIAL",
+  "expected_graph_only": false,
+  "gold_spans": [
+    {
+      "end_byte": 92,
+      "path": "repo/src/main.c",
+      "relation_kind": "CALLS",
+      "risk_class": "high",
+      "source_sha256": "34432309580004ce0138036529247e08241d07d226ea6c444b6f0bb4b7b941bf",
+      "start_byte": 71,
+      "text": "int value = stable();"
+    }
+  ],
+  "id": "c-parser-error-range",
+  "language": "c",
+  "query": "What call remains before the parser error range?",
+  "required_uncertainty": [
+    "parser_error_range"
+  ],
+  "scope": {
+    "exclude": [],
+    "include": [
+      "repo/**"
+    ],
+    "max_depth": 4,
+    "relation_kinds": [
+      "CALLS"
+    ]
+  },
+  "scorer_type": "unsupported"
+}

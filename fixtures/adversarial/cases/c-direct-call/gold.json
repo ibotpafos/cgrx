@@ -1,0 +1,30 @@
+{
+  "expected_cgcr_status": "COMPLETE_BOUNDED",
+  "expected_graph_only": true,
+  "gold_spans": [
+    {
+      "end_byte": 103,
+      "path": "repo/src/main.c",
+      "relation_kind": "CALLS",
+      "risk_class": "low",
+      "source_sha256": "be547180cbb1af474f842654b41f387c1e2bf824faf2e732c2e8ea99e4a128ac",
+      "start_byte": 74,
+      "text": "int result = add(1, 2);"
+    }
+  ],
+  "id": "c-direct-call",
+  "language": "c",
+  "query": "Where is add called?",
+  "required_uncertainty": [],
+  "scope": {
+    "exclude": [],
+    "include": [
+      "repo/**"
+    ],
+    "max_depth": 4,
+    "relation_kinds": [
+      "CALLS"
+    ]
+  },
+  "scorer_type": "positive_evidence"
+}

@@ -1,9 +1,16 @@
 //! Executable CGRX runtime shared by the CLI and real-execution benchmark.
 
 mod cargo_roots;
+pub mod file_watcher;
+
+pub use file_watcher::{FileWatcher, FileWatcherEvent, NotifyWatcher};
 mod intent;
 mod runtime;
 
+pub use runtime::security::{
+    LicenseFinding, SecretFinding, SecurityAuditConfig, SecurityAuditResult, evaluate_dependencies,
+    evaluate_licenses, evaluate_secret_diff, evaluate_security_gates,
+};
 pub use runtime::{
     GraphDirection, GraphViewRequest, ImportRuntimeEvidenceReport, IndexReport, OrientReport,
     RiskBaseline, Runtime, RuntimeError, RuntimeEvidenceFormat, RuntimeInsight,

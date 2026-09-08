@@ -3,6 +3,7 @@ use cgrx_core::{
     CapsuleStatus, EvidenceSelector, Hash32, Mode, QueryRequest, RepoSnapshot, Scope,
     canonical_hash,
 };
+use cgrx_store::{MAX_CONFIDENCE, MemoryRecallQuery, MemoryRecordInput, MemorySpan, MemoryStore};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::fs::{self, OpenOptions};
@@ -17,6 +18,7 @@ const PROTOCOL_VERSION: &str = "2025-06-18";
 pub struct Server {
     snapshot: RepoSnapshot,
     backend: Option<Box<dyn ToolBackend>>,
+    memory: Option<MemoryStore>,
     usage_log: Option<UsageLog>,
     metrics_log: Option<MetricsLog>,
 }
@@ -68,18 +70,6 @@ pub trait ToolBackend: Send + Sync {
         include_body: bool,
     ) -> Result<Value, BackendError>;
     fn get_outline(&mut self, path: &str, limit: u32) -> Result<Value, BackendError>;
-    fn find_similar(
-        &mut self,
-        _symbol: &str,
-        _path: Option<&str>,
-        _scope: Value,
-        _limit: u32,
-    ) -> Result<Value, BackendError> {
-        Err(BackendError::new(
-            "cgrx.similarity_unavailable",
-            "find_similar requires an indexed runtime backend",
-        ))
-    }
     fn get_architecture(
         &mut self,
         scope: Value,
@@ -156,6 +146,18 @@ pub trait ToolBackend: Send + Sync {
     }
     fn get_code_snippet(&mut self, symbol: &str, path: Option<&str>)
     -> Result<Value, BackendError>;
+    fn find_similar(
+        &mut self,
+        _symbol: &str,
+        _path: Option<&str>,
+        _scope: Value,
+        _limit: u32,
+    ) -> Result<Value, BackendError> {
+        Err(BackendError::new(
+            "cgrx.similarity_unavailable",
+            "find_similar requires a managed repository backend",
+        ))
+    }
     fn check_index_coverage(
         &mut self,
         paths: &[String],
@@ -163,6 +165,26 @@ pub trait ToolBackend: Send + Sync {
         offset: usize,
         limit: usize,
     ) -> Result<Value, BackendError>;
+    fn security_audit(
+        &mut self,
+        fail_on: &str,
+        max_secret_findings: usize,
+        max_dependency_findings: usize,
+        max_license_findings: usize,
+        allowlist_paths: &[String],
+        allowlist_licenses: &[String],
+    ) -> Result<Value, BackendError> {
+        let _ = fail_on;
+        let _ = max_secret_findings;
+        let _ = max_dependency_findings;
+        let _ = max_license_findings;
+        let _ = allowlist_paths;
+        let _ = allowlist_licenses;
+        Err(BackendError::new(
+            "cgrx.security_audit_unavailable",
+            "security audit requires a managed repository backend",
+        ))
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -187,6 +209,7 @@ impl Server {
         Self {
             snapshot,
             backend: None,
+            memory: None,
             usage_log: None,
             metrics_log: None,
         }
@@ -197,9 +220,15 @@ impl Server {
         Self {
             snapshot: backend.snapshot().clone(),
             backend: Some(Box::new(backend)),
+            memory: None,
             usage_log: None,
             metrics_log: None,
         }
+    }
+
+    /// Attach the durable decision-memory store rooted at the managed repository.
+    pub fn set_memory_store(&mut self, store: MemoryStore) {
+        self.memory = Some(store);
     }
 
     pub fn enable_usage_log(
@@ -550,12 +579,98 @@ impl Server {
             "get_architecture" => self.get_architecture(from_value(call.arguments)?)?,
             "trace_path" => self.trace_path(from_value(call.arguments)?)?,
             "find_usages" => self.find_usages(from_value(call.arguments)?)?,
-            "find_similar" => self.find_similar(from_value(call.arguments)?)?,
             "suggest_refactors" => self.suggest_refactors(from_value(call.arguments)?)?,
             "get_code_snippet" => self.get_code_snippet(from_value(call.arguments)?)?,
             "check_index_coverage" => self.check_index_coverage(from_value(call.arguments)?)?,
+            "check_security_gates" => {
+                #[derive(Deserialize)]
+                #[serde(deny_unknown_fields)]
+                struct Args {
+                    #[serde(default)]
+                    fail_on: Option<String>,
+                    #[serde(default)]
+                    max_secret_findings: Option<usize>,
+                    #[serde(default)]
+                    max_dependency_findings: Option<usize>,
+                    #[serde(default)]
+                    max_license_findings: Option<usize>,
+                    #[serde(default)]
+                    allowlist_paths: Option<Vec<String>>,
+                    #[serde(default)]
+                    allowlist_licenses: Option<Vec<String>>,
+                }
+                let args: Args = from_value(call.arguments)?;
+                let fail_on = args.fail_on.as_deref().unwrap_or("error");
+                if !matches!(fail_on, "error" | "warning" | "none")
+                    || [
+                        args.max_secret_findings,
+                        args.max_dependency_findings,
+                        args.max_license_findings,
+                    ]
+                    .into_iter()
+                    .flatten()
+                    .any(|threshold| threshold > 10_000)
+                    || args
+                        .allowlist_paths
+                        .iter()
+                        .chain(args.allowlist_licenses.iter())
+                        .flatten()
+                        .any(|entry| entry.trim().is_empty())
+                {
+                    return Err(JsonRpcError::typed(
+                        -32602,
+                        "cgrx.invalid_arguments",
+                        "fail_on must be error, warning, or none; thresholds must be 0..10000; allowlist entries must be non-blank",
+                    ));
+                }
+                let allowlist_paths = args.allowlist_paths.unwrap_or_else(|| {
+                    ["fixtures", "tests"]
+                        .into_iter()
+                        .map(str::to_owned)
+                        .collect()
+                });
+                let allowlist_licenses = args.allowlist_licenses.unwrap_or_else(|| {
+                    [
+                        "MIT",
+                        "Apache-2.0",
+                        "BSD-2-Clause",
+                        "BSD-3-Clause",
+                        "ISC",
+                        "Unicode-3.0",
+                        "Unicode-DFS-2016",
+                        "MPL-2.0",
+                        "Unlicense",
+                        "MIT-0",
+                        "CC0-1.0",
+                        "LLVM-exception",
+                    ]
+                    .into_iter()
+                    .map(str::to_owned)
+                    .collect()
+                });
+                self.backend
+                    .as_mut()
+                    .ok_or_else(|| {
+                        JsonRpcError::typed(
+                            -32602,
+                            "cgrx.security_audit_unavailable",
+                            "managed repository required",
+                        )
+                    })?
+                    .security_audit(
+                        fail_on,
+                        args.max_secret_findings.unwrap_or(0),
+                        args.max_dependency_findings.unwrap_or(0),
+                        args.max_license_findings.unwrap_or(0),
+                        &allowlist_paths,
+                        &allowlist_licenses,
+                    )
+                    .map_err(backend_error)?
+            }
             "expand" => self.expand(from_value(call.arguments)?)?,
             "status" => self.status(from_value(call.arguments)?)?,
+            "memory_record" => self.memory_record(from_value(call.arguments)?)?,
+            "memory_recall" => self.memory_recall(from_value(call.arguments)?)?,
             _ => {
                 return Err(JsonRpcError::typed(
                     -32602,
@@ -689,24 +804,6 @@ impl Server {
         };
         backend
             .get_architecture(arguments.scope, arguments.package_depth, arguments.limit)
-            .map_err(backend_error)
-    }
-
-    fn find_similar(&mut self, arguments: FindSimilarArguments) -> Result<Value, JsonRpcError> {
-        let Some(backend) = &mut self.backend else {
-            return Err(JsonRpcError::typed(
-                -32020,
-                "cgrx.index_adapter_not_connected",
-                "find_similar requires an indexed runtime backend",
-            ));
-        };
-        backend
-            .find_similar(
-                &arguments.symbol,
-                arguments.path.as_deref(),
-                arguments.scope,
-                arguments.limit,
-            )
             .map_err(backend_error)
     }
 
@@ -864,6 +961,84 @@ impl Server {
             "coverage_gaps": [{"code":"INDEX_ADAPTER_NOT_CONNECTED","scope":arguments.paths_or_scope}]
         }))
     }
+
+    fn memory_record(&mut self, arguments: MemoryRecordArguments) -> Result<Value, JsonRpcError> {
+        let Some(store) = &self.memory else {
+            return Err(JsonRpcError::typed(
+                -32020,
+                "cgrx.memory_unavailable",
+                "memory_record requires a managed repository backend",
+            ));
+        };
+        let rev = arguments
+            .rev
+            .unwrap_or_else(|| self.snapshot.repo_revision.clone());
+        if rev != self.snapshot.repo_revision {
+            return Err(JsonRpcError::typed(
+                -32602,
+                "cgrx.invalid_arguments",
+                "provenance rev must equal the pinned snapshot revision",
+            ));
+        }
+        let input = MemoryRecordInput {
+            fact: arguments.fact,
+            confidence: arguments.confidence,
+            provenance: cgrx_store::MemoryProvenance {
+                repo: arguments.repo,
+                rev,
+                path: arguments.path,
+                span: arguments.span.map(|span| MemorySpan {
+                    start_line: span.start_line,
+                    end_line: span.end_line,
+                }),
+            },
+            valid_until_unix_nanos: arguments.valid_until_unix_nanos,
+            privacy_tag: arguments.privacy_tag,
+        };
+        let now = now_unix_nanos();
+        let publication = store.record(&input, now).map_err(memory_error)?;
+        Ok(json!({
+            "snapshot": self.snapshot,
+            "record": publication.record,
+            "duplicate": publication.duplicate,
+            "llm_used": false,
+        }))
+    }
+
+    fn memory_recall(&mut self, arguments: MemoryRecallArguments) -> Result<Value, JsonRpcError> {
+        let limit = arguments.limit.unwrap_or(20);
+        let min_confidence = arguments.min_confidence.unwrap_or(0);
+        if !(1..=50).contains(&limit) || min_confidence > MAX_CONFIDENCE {
+            return Err(JsonRpcError::typed(
+                -32602,
+                "cgrx.invalid_arguments",
+                "limit must be 1..50; min_confidence must be 0..1000",
+            ));
+        }
+        let Some(store) = &self.memory else {
+            return Err(JsonRpcError::typed(
+                -32020,
+                "cgrx.memory_unavailable",
+                "memory_recall requires a managed repository backend",
+            ));
+        };
+        let (results, truncated) = store
+            .recall(&MemoryRecallQuery {
+                query: arguments.query,
+                min_confidence,
+                privacy_tag: arguments.privacy_tag,
+                revision: arguments.revision,
+                limit,
+                now_unix_nanos: now_unix_nanos(),
+            })
+            .map_err(memory_error)?;
+        Ok(json!({
+            "snapshot": self.snapshot,
+            "results": results,
+            "truncated": truncated,
+            "llm_used": false,
+        }))
+    }
 }
 
 fn model_visible_result(tool: &str, structured: &Value) -> Value {
@@ -871,6 +1046,7 @@ fn model_visible_result(tool: &str, structured: &Value) -> Value {
         "scan_risks" => compact_risks(structured),
         "check_change_gates" => compact_change_gates(structured),
         "check_repository_gates" => compact_repository_gates(structured),
+        "check_security_gates" => compact_security_gates(structured),
         "orient" => compact_orient(structured),
         "ingest_runtime_evidence" => compact_runtime_import(structured),
         "expand" => compact_expand(structured),
@@ -883,6 +1059,8 @@ fn model_visible_result(tool: &str, structured: &Value) -> Value {
         "get_code_snippet" => compact_snippet(structured),
         "check_index_coverage" => compact_coverage(structured),
         "status" => compact_status(structured),
+        "memory_record" => compact_memory_record(structured),
+        "memory_recall" => compact_memory_recall(structured),
         _ => structured.clone(),
     }
 }
@@ -1152,6 +1330,70 @@ fn compact_repository_gates(value: &Value) -> Value {
         "would_block":value.get("would_block"),"fail_on":value.get("fail_on"),
         "rules":value.get("rules"),"partial":value.get("partial"),
         "gaps":value.get("coverage_gap_count"),"agent_handoff":value.get("agent_handoff")
+    })
+}
+
+fn compact_security_gates(value: &Value) -> Value {
+    let secret_findings = value
+        .get("secret_findings")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .map(|item| {
+            json!([
+                item.get("path"),
+                item.get("line"),
+                item.get("rule"),
+                item.get("severity"),
+                item.get("confidence")
+            ])
+        })
+        .collect::<Vec<_>>();
+    let dependency_findings = value
+        .get("dependency_findings")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .map(|item| {
+            json!([
+                item.get("package"),
+                item.get("version"),
+                item.get("rule"),
+                item.get("severity")
+            ])
+        })
+        .collect::<Vec<_>>();
+    let license_findings = value
+        .get("license_findings")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .map(|item| {
+            json!([
+                item.get("package"),
+                item.get("version"),
+                item.get("license"),
+                item.get("status")
+            ])
+        })
+        .collect::<Vec<_>>();
+    json!({
+        "at": snapshot_tag(value.get("snapshot")),
+        "algorithm": value.get("algorithm"),
+        "llm_used": value.get("llm_used"),
+        "verdict": value.get("verdict"),
+        "would_block": value.get("would_block"),
+        "fail_on": value.get("fail_on"),
+        "rules": value.get("rules"),
+        "partial": value.get("partial"),
+        "gaps": value.get("coverage_gap_count"),
+        "secret_finding_cols": ["path", "line", "rule", "severity", "confidence"],
+        "secret_findings": secret_findings,
+        "dependency_finding_cols": ["package", "version", "rule", "severity"],
+        "dependency_findings": dependency_findings,
+        "license_finding_cols": ["package", "version", "license", "status"],
+        "license_findings": license_findings,
+        "agent_handoff": value.get("agent_handoff")
     })
 }
 
@@ -1885,17 +2127,6 @@ const fn default_architecture_limit() -> u32 {
 }
 
 #[derive(Deserialize)]
-struct FindSimilarArguments {
-    symbol: String,
-    #[serde(default)]
-    path: Option<String>,
-    #[serde(default)]
-    scope: Value,
-    #[serde(default = "default_graph_limit")]
-    limit: u32,
-}
-
-#[derive(Deserialize)]
 struct TracePathArguments {
     symbol: String,
     #[serde(default)]
@@ -1992,6 +2223,45 @@ struct StatusArguments {
     paths_or_scope: Value,
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MemorySpanArguments {
+    start_line: u32,
+    end_line: u32,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MemoryRecordArguments {
+    fact: String,
+    confidence: u16,
+    repo: String,
+    #[serde(default)]
+    rev: Option<String>,
+    path: String,
+    #[serde(default)]
+    span: Option<MemorySpanArguments>,
+    #[serde(default)]
+    valid_until_unix_nanos: Option<u64>,
+    #[serde(default)]
+    privacy_tag: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MemoryRecallArguments {
+    #[serde(default)]
+    query: Option<String>,
+    #[serde(default)]
+    min_confidence: Option<u16>,
+    #[serde(default)]
+    privacy_tag: Option<String>,
+    #[serde(default)]
+    revision: Option<String>,
+    #[serde(default)]
+    limit: Option<usize>,
+}
+
 fn from_value<T: for<'de> Deserialize<'de>>(value: Value) -> Result<T, JsonRpcError> {
     serde_json::from_value(value)
         .map_err(|error| JsonRpcError::typed(-32602, "cgrx.invalid_arguments", error.to_string()))
@@ -2008,6 +2278,48 @@ fn backend_error(error: BackendError) -> JsonRpcError {
         _ => -32020,
     };
     JsonRpcError::typed(rpc_code, &error.code, error.detail)
+}
+
+fn memory_error(error: std::io::Error) -> JsonRpcError {
+    match error.kind() {
+        std::io::ErrorKind::InvalidInput => {
+            JsonRpcError::typed(-32602, "cgrx.invalid_arguments", error.to_string())
+        }
+        _ => internal_error(error),
+    }
+}
+
+fn now_unix_nanos() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |duration| duration.as_nanos() as u64)
+}
+
+fn compact_memory_record(value: &Value) -> Value {
+    json!({
+        "at": snapshot_tag(value.get("snapshot")),
+        "id": value.pointer("/record/id"),
+        "duplicate": value.get("duplicate"),
+        "llm_used": false,
+    })
+}
+
+fn compact_memory_recall(value: &Value) -> Value {
+    let rows: Vec<_> = value
+        .get("results")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .take(50)
+        .map(|item| json!([item.get("id"), item.get("confidence"), item.get("fact")]))
+        .collect();
+    json!({
+        "at": snapshot_tag(value.get("snapshot")),
+        "cols": ["id", "confidence", "fact"],
+        "rows": rows,
+        "truncated": value.get("truncated"),
+        "llm_used": false,
+    })
 }
 
 pub fn revision_bound_handle(
@@ -2058,19 +2370,21 @@ fn model_visible_schema() -> Value {
         {"name":"scan_risks","description":"Change risks, candidate tests and deterministic parallel agent missions; no tests or LLM executed.","inputSchema":{"type":"object","properties":{"mode":{"enum":["changes"]},"limit":{"type":"integer","minimum":1,"maximum":50},"runs":{"type":"array","items":{"type":"object","properties":{"runner_command":{"type":"string"},"revision":{"type":"string"},"results":{"type":"array","items":{"type":"object","properties":{"path":{"type":"string"},"symbol":{"type":"string"},"status":{"enum":["passed","failed"]},"source_hash":{"type":"string"}}}}}}}}}},
         {"name":"check_change_gates","description":"Snapshot-bound conservative change gate over findings, impacts, missions and graph coverage; no tests or LLM executed.","inputSchema":{"type":"object","properties":{"limit":{"type":"integer","minimum":1,"maximum":50},"fail_on":{"enum":["error","warning","none"],"default":"error"},"max_warning_findings":{"type":"integer","minimum":0,"maximum":10000,"default":0},"max_blocked_missions":{"type":"integer","minimum":0,"maximum":10000,"default":0},"max_coverage_gaps":{"type":"integer","minimum":0,"maximum":10000,"default":0},"max_unverified_impacts":{"type":"integer","minimum":0,"maximum":10000,"default":0},"runs":{"type":"array","items":{"type":"object","properties":{"runner_command":{"type":"string"},"revision":{"type":"string"},"results":{"type":"array","items":{"type":"object","properties":{"path":{"type":"string"},"symbol":{"type":"string"},"status":{"enum":["passed","failed"]},"source_hash":{"type":"string"}}}}}}}}}},
         {"name":"check_repository_gates","description":"Snapshot-bound architecture gate over package cycles, graph coupling, unresolved local dependencies and coverage; no LLM executed.","inputSchema":{"type":"object","properties":{"scope":path_or_scope.clone(),"package_depth":{"type":"integer","minimum":1,"maximum":4,"default":2},"fail_on":{"enum":["error","warning","none"],"default":"error"},"max_package_cycles":{"type":"integer","minimum":0,"maximum":1000000,"default":0},"max_package_fan_out":{"type":"integer","minimum":0,"maximum":1000000,"default":20},"max_symbol_fan_in":{"type":"integer","minimum":0,"maximum":1000000,"default":50},"max_unresolved_local_dependencies":{"type":"integer","minimum":0,"maximum":1000000,"default":0},"max_coverage_gaps":{"type":"integer","minimum":0,"maximum":1000000,"default":0}}}},
+        {"name":"check_security_gates","description":"Snapshot-bound security gate over secret detection in diff, dependency audit, and license compliance; no LLM executed.","inputSchema":{"type":"object","properties":{"fail_on":{"enum":["error","warning","none"],"default":"error"},"max_secret_findings":{"type":"integer","minimum":0,"maximum":10000,"default":0},"max_dependency_findings":{"type":"integer","minimum":0,"maximum":10000,"default":0},"max_license_findings":{"type":"integer","minimum":0,"maximum":10000,"default":0},"allowlist_paths":{"type":"array","items":{"type":"string"}},"allowlist_licenses":{"type":"array","items":{"type":"string"}}}}},
         {"name":"ingest_runtime_evidence","description":"Import revision-pinned runtime call evidence from a local file.","inputSchema":{"type":"object","required":["input_path"],"properties":{"input_path":{"type":"string"},"format":{"enum":["auto","ndjson","otlp-json"],"default":"auto"},"revision":{"type":"string"},"environment":{"type":"string"}}}},
         {"name":"orient","description":"Context","inputSchema":{"type":"object","required":["task","budget","mode","scope"],"properties":{"task":{"type":"string"},"budget":{"type":"integer","minimum":1},"mode":{"enum":["FAST","PRECISE","BOUNDED"]},"scope":bounded_scope.clone()}}},
-        {"name":"search_graph","description":"Symbols or bodies","inputSchema":{"type":"object","required":["query"],"properties":{"query":{"type":"string"},"language":{"enum":["typescript","go","java","python","rust"]},"include_body":{"type":"boolean"},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":50}}}},
+        {"name":"search_graph","description":"Symbols or bodies","inputSchema":{"type":"object","required":["query"],"properties":{"query":{"type":"string"},"language":{"enum":["typescript","go","java","c","kotlin","python","rust"]},"include_body":{"type":"boolean"},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":50}}}},
         {"name":"get_outline","description":"File symbols","inputSchema":{"type":"object","required":["path"],"properties":{"path":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":500}}}},
         {"name":"get_architecture","description":"Packages, proven boundaries, communities and model-free ranked graph futures for cycles and hotspots","inputSchema":{"type":"object","properties":{"scope":path_or_scope.clone(),"package_depth":{"type":"integer","minimum":1,"maximum":4},"limit":{"type":"integer","minimum":1,"maximum":100}}}},
         {"name":"trace_path","description":"Calls","inputSchema":{"type":"object","required":["symbol"],"properties":{"symbol":{"type":"string"},"path":{"type":"string"},"direction":{"enum":["callers","callees","both"]},"depth":{"type":"integer","minimum":1,"maximum":4},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":50},"evidence":{"enum":["static","observed","all"],"default":"static"}}}},
         {"name":"find_usages","description":"Proven usages","inputSchema":{"type":"object","required":["symbol"],"properties":{"symbol":{"type":"string"},"path":{"type":"string"},"depth":{"type":"integer","minimum":1,"maximum":4},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":500},"evidence":{"enum":["static","observed","all"],"default":"static"}}}},
-        {"name":"find_similar","description":"Duplicate bodies","inputSchema":{"type":"object","required":["symbol"],"properties":{"symbol":{"type":"string"},"path":{"type":"string"},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":50}}}},
-        {"name":"suggest_refactors","description":"Similar code and hypothetical graph delta","inputSchema":{"type":"object","properties":{"language":{"enum":["typescript","go","java","python","rust"]},"min_score":{"type":"integer","minimum":0,"maximum":1000},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":50}}}},
+        {"name":"suggest_refactors","description":"Similar code and hypothetical graph delta","inputSchema":{"type":"object","properties":{"language":{"enum":["typescript","go","java","c","kotlin","python","rust"]},"min_score":{"type":"integer","minimum":0,"maximum":1000},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":50}}}},
         {"name":"get_code_snippet","description":"Source","inputSchema":{"type":"object","required":["symbol"],"properties":{"symbol":{"type":"string"},"path":{"type":"string"}}}},
         {"name":"check_index_coverage","description":"Coverage","inputSchema":{"type":"object","properties":{"paths":{"type":"array","items":{"type":"string"}},"scopes":{"type":"array","items":{"type":"string"}},"offset":{"type":"integer","minimum":0},"limit":{"type":"integer","minimum":1,"maximum":500}}}},
         {"name":"expand","description":"Expand","inputSchema":{"type":"object","required":["handle","budget"],"properties":{"handle":{"type":"string"},"budget":{"type":"integer","minimum":1}}}},
-        {"name":"status","inputSchema":{"type":"object","required":["paths_or_scope"],"properties":{"paths_or_scope":{}}}}
+        {"name":"status","inputSchema":{"type":"object","required":["paths_or_scope"],"properties":{"paths_or_scope":{}}}},
+        {"name":"memory_record","description":"Record","inputSchema":{"type":"object","required":["fact","confidence","repo","path"],"properties":{"fact":{"type":"string"},"confidence":{"type":"integer","minimum":0,"maximum":1000},"repo":{"type":"string"},"rev":{"type":"string"},"path":{"type":"string"},"span":{"type":"object","required":["start_line","end_line"],"properties":{"start_line":{"type":"integer","minimum":1},"end_line":{"type":"integer","minimum":1}}},"valid_until_unix_nanos":{"type":"integer","minimum":1},"privacy_tag":{"type":"string"}}}},
+        {"name":"memory_recall","description":"Recall","inputSchema":{"type":"object","properties":{"query":{"type":"string"},"min_confidence":{"type":"integer","minimum":0,"maximum":1000,"default":0},"privacy_tag":{"type":"string"},"revision":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":50,"default":20}}}}
     ]);
     let metadata = [
         (
@@ -2084,6 +2398,10 @@ fn model_visible_schema() -> Value {
         (
             "Check repository quality gates",
             "Evaluate proven repository architecture with explicit cycle, coupling, unresolved-dependency and coverage policies.",
+        ),
+        (
+            "Check security gates",
+            "Evaluate secret detection in diff, dependency audit, and license compliance with explicit pass, warning, fail or inconclusive semantics.",
         ),
         (
             "Import runtime evidence",
@@ -2114,10 +2432,6 @@ fn model_visible_schema() -> Value {
             "List proven direct or transitive incoming call or implementation sites with hop, resolver evidence and coverage gaps.",
         ),
         (
-            "Find similar",
-            "Find exact duplicate implementations by deterministic body fingerprint; scoped and never guessed.",
-        ),
-        (
             "Suggest refactors",
             "Find structurally similar functions and preview a snapshot-bound hypothetical extract-helper graph delta.",
         ),
@@ -2137,6 +2451,14 @@ fn model_visible_schema() -> Value {
             "Check index status",
             "Check repository revision, index freshness and gaps before code discovery.",
         ),
+        (
+            "Record decision",
+            "Persist a revision-pinned decision fact with confidence, provenance and optional TTL; identical facts replay as duplicates without LLM calls.",
+        ),
+        (
+            "Recall decisions",
+            "Recall non-expired decision facts with bounded deterministic ranking by confidence; no LLM executed.",
+        ),
     ];
     for (tool, (title, description)) in tools.as_array_mut().unwrap().iter_mut().zip(metadata) {
         tool["title"] = json!(title);
@@ -2147,7 +2469,13 @@ fn model_visible_schema() -> Value {
             json!({"readOnlyHint":false,"destructiveHint":false,"openWorldHint":false});
         tool["outputSchema"] = json!({"type":"object","additionalProperties":true});
     }
-    tools[15]["inputSchema"]["properties"]["paths_or_scope"] = path_or_scope;
+    let status = tools
+        .as_array_mut()
+        .expect("tool schema is an array")
+        .iter_mut()
+        .find(|tool| tool["name"] == "status")
+        .expect("status tool is present");
+    status["inputSchema"]["properties"]["paths_or_scope"] = path_or_scope;
     tools
 }
 
@@ -2177,7 +2505,7 @@ mod openai_metadata_tests {
     #[test]
     fn openai_tool_contract() {
         let tools = model_visible_schema();
-        assert_eq!(tools.as_array().unwrap().len(), 16);
+        assert_eq!(tools.as_array().unwrap().len(), 18);
         for tool in tools.as_array().unwrap() {
             assert!(tool["title"].as_str().is_some_and(|s| !s.is_empty()));
             assert!(tool["description"].as_str().is_some_and(|s| s.len() > 20));
@@ -2202,7 +2530,7 @@ mod openai_metadata_tests {
         );
         assert_eq!(
             search["inputSchema"]["properties"]["language"]["enum"],
-            json!(["typescript", "go", "java", "python", "rust"])
+            json!(["typescript", "go", "java", "c", "kotlin", "python", "rust"])
         );
         for name in ["trace_path", "find_usages"] {
             let tool = tools
@@ -2522,6 +2850,124 @@ mod openai_metadata_tests {
             encoded.len() < 4_000,
             "compact payload bytes: {}",
             encoded.len()
+        );
+    }
+
+    fn memory_snapshot(revision: &str) -> RepoSnapshot {
+        RepoSnapshot {
+            repo_revision: revision.to_owned(),
+            working_tree_digest: Hash32([7; 32]),
+            graph_generation: 3,
+        }
+    }
+
+    fn memory_server(revision: &str) -> (Server, PathBuf) {
+        static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!(
+            "cgrx-mcp-memory-{}-{}-{seq}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock after epoch")
+                .as_nanos()
+        ));
+        let mut server = Server::new(memory_snapshot(revision));
+        server.set_memory_store(MemoryStore::open(&dir).expect("open memory store"));
+        (server, dir)
+    }
+
+    fn record_arguments(fact: &str, confidence: u16) -> Value {
+        json!({
+            "fact": fact,
+            "confidence": confidence,
+            "repo": "/repo",
+            "path": "src/lib.rs",
+            "span": {"start_line": 1, "end_line": 5},
+        })
+    }
+
+    #[test]
+    fn memory_record_pins_revision_and_recalls_deterministically() {
+        let (mut server, dir) = memory_server("rev-memory-1");
+        let recorded = server
+            .memory_record(from_value(record_arguments("cache the router", 900)).unwrap())
+            .unwrap();
+        assert_eq!(recorded["duplicate"], false);
+        assert_eq!(recorded["llm_used"], false);
+        assert_eq!(recorded["snapshot"]["repo_revision"], "rev-memory-1");
+        assert_eq!(recorded["record"]["fact"], "cache the router");
+        assert_eq!(recorded["record"]["privacy_tag"], "default");
+
+        let replayed = server
+            .memory_record(from_value(record_arguments("cache the router", 900)).unwrap())
+            .unwrap();
+        assert_eq!(replayed["duplicate"], true);
+        assert_eq!(replayed["record"]["id"], recorded["record"]["id"]);
+
+        server
+            .memory_record(from_value(record_arguments("drop the cache", 100)).unwrap())
+            .unwrap();
+        let recalled = server
+            .memory_recall(from_value(json!({"limit": 10})).unwrap())
+            .unwrap();
+        assert_eq!(recalled["llm_used"], false);
+        assert_eq!(recalled["truncated"], false);
+        let facts: Vec<_> = recalled["results"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|item| item["fact"].as_str().unwrap().to_owned())
+            .collect();
+        assert_eq!(facts, vec!["cache the router", "drop the cache"]);
+
+        let filtered = server
+            .memory_recall(from_value(json!({"query": "CACHE", "min_confidence": 500})).unwrap())
+            .unwrap();
+        assert_eq!(filtered["results"].as_array().unwrap().len(), 1);
+
+        let compact = model_visible_result("memory_recall", &recalled);
+        assert_eq!(compact["llm_used"], false);
+        assert_eq!(compact["cols"], json!(["id", "confidence", "fact"]));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn memory_record_rejects_foreign_revision_and_bad_bounds() {
+        let (mut server, dir) = memory_server("rev-memory-2");
+        let mut foreign: Value = record_arguments("foreign fact", 500);
+        foreign["rev"] = json!("rev-other");
+        assert!(server.memory_record(from_value(foreign).unwrap()).is_err());
+        assert!(
+            server
+                .memory_recall(from_value(json!({"limit": 0})).unwrap())
+                .is_err()
+        );
+        assert!(
+            server
+                .memory_recall(from_value(json!({"min_confidence": 1001})).unwrap())
+                .is_err()
+        );
+        assert!(
+            server
+                .memory_record(from_value(record_arguments("", 100)).unwrap())
+                .is_err()
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn memory_tools_require_an_attached_store() {
+        let mut server = Server::new(memory_snapshot("rev-memory-3"));
+        assert!(
+            server
+                .memory_record(from_value(record_arguments("fact", 10)).unwrap())
+                .is_err()
+        );
+        assert!(
+            server
+                .memory_recall(from_value(json!({})).unwrap())
+                .is_err()
         );
     }
 }

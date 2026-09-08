@@ -9366,6 +9366,694 @@
         "site": "site"
       },
       "rationale": "response has the external Express Response interface type, and this repository source does not identify one concrete clearCookie implementation."
+    },
+    {
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/LANGUAGE-WAVE-1-C-KOTLIN/fixture",
+      "revision": "e7beb7ca38c07cd17904d9c2c0e8ee1d92600003",
+      "split": "train",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-08"
+      },
+      "id": "c-main-call-read-item",
+      "category": "call",
+      "question": "Which same-file C function is called to read the item?",
+      "evidence": {
+        "source": {
+          "path": "src/main.c",
+          "sha256": "061b18030150daf796a442340c864a84c7d811b15cf6f1d6ee9ef73b94e86418",
+          "start_line": 11,
+          "end_line": 15,
+          "span_sha256": "7b11b931b7ab5c1ddf9073f5397c3c4c25baaf4a6025aa6ad9e66995ba12b5a5",
+          "symbol": "main"
+        },
+        "site": {
+          "path": "src/main.c",
+          "sha256": "061b18030150daf796a442340c864a84c7d811b15cf6f1d6ee9ef73b94e86418",
+          "start_line": 14,
+          "end_line": 14,
+          "span_sha256": "8494e29f154a1fa1ebf927f6efb3e6c3e61b81c5425b0d5546e86b63652ca155",
+          "symbol": "read_item"
+        },
+        "target": {
+          "path": "src/main.c",
+          "sha256": "061b18030150daf796a442340c864a84c7d811b15cf6f1d6ee9ef73b94e86418",
+          "start_line": 7,
+          "end_line": 9,
+          "span_sha256": "43168faeb2e30d7b7fc7fefbbbbc3ce079a2f17e6baa6d7ebd42fbd52d3d139a",
+          "symbol": "read_item"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "read_item has one same-file function definition and the direct identifier call has a unique static target."
+    },
+    {
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/LANGUAGE-WAVE-1-C-KOTLIN/fixture",
+      "revision": "e7beb7ca38c07cd17904d9c2c0e8ee1d92600003",
+      "split": "train",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-08"
+      },
+      "id": "c-main-import-item-header",
+      "category": "import",
+      "question": "Which header is imported by main.c?",
+      "evidence": {
+        "source": {
+          "path": "src/main.c",
+          "sha256": "061b18030150daf796a442340c864a84c7d811b15cf6f1d6ee9ef73b94e86418",
+          "start_line": 1,
+          "end_line": 1,
+          "span_sha256": "9dae658c684a616171993cd65b7dc3c39fe61ba7a853b7410ae011277d17ada1",
+          "symbol": "item"
+        },
+        "site": {
+          "path": "src/main.c",
+          "sha256": "061b18030150daf796a442340c864a84c7d811b15cf6f1d6ee9ef73b94e86418",
+          "start_line": 1,
+          "end_line": 1,
+          "span_sha256": "9dae658c684a616171993cd65b7dc3c39fe61ba7a853b7410ae011277d17ada1",
+          "symbol": "item"
+        },
+        "target": {
+          "path": "src/item.h",
+          "sha256": "564d7c5db51c2afeeb92a666ae41fb4dde5d040456d532f255042db449e64a7c",
+          "start_line": 16,
+          "end_line": 18,
+          "span_sha256": "0ef797b4cee41bc4b1c57702839aae54f828475050ccd8cf1ea7fc5d5cbc635b",
+          "symbol": "item"
+        }
+      },
+      "expected": {
+        "relation": "IMPORTS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The quoted include names item.h, whose committed header content is pinned in the same evidence repository."
+    },
+    {
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/LANGUAGE-WAVE-1-C-KOTLIN/fixture",
+      "revision": "e7beb7ca38c07cd17904d9c2c0e8ee1d92600003",
+      "split": "train",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-08"
+      },
+      "id": "c-main-reference-item",
+      "category": "reference",
+      "question": "Which same-file typedef supplies Item in main?",
+      "evidence": {
+        "source": {
+          "path": "src/main.c",
+          "sha256": "061b18030150daf796a442340c864a84c7d811b15cf6f1d6ee9ef73b94e86418",
+          "start_line": 11,
+          "end_line": 15,
+          "span_sha256": "7b11b931b7ab5c1ddf9073f5397c3c4c25baaf4a6025aa6ad9e66995ba12b5a5",
+          "symbol": "main"
+        },
+        "site": {
+          "path": "src/main.c",
+          "sha256": "061b18030150daf796a442340c864a84c7d811b15cf6f1d6ee9ef73b94e86418",
+          "start_line": 12,
+          "end_line": 12,
+          "span_sha256": "980e533ac1f01f6776932474edcdfbd69138a67b2d645f887eb2f311b26d0c91",
+          "symbol": "Item"
+        },
+        "target": {
+          "path": "src/main.c",
+          "sha256": "061b18030150daf796a442340c864a84c7d811b15cf6f1d6ee9ef73b94e86418",
+          "start_line": 3,
+          "end_line": 5,
+          "span_sha256": "55e67b4a88f9fba9fb516eade5e8ce40dc33aef65298a37bfd1a58be880afdfb",
+          "symbol": "Item"
+        }
+      },
+      "expected": {
+        "relation": "REFERENCE",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Item is a unique same-file typedef and the local variable declaration uses that exact type name."
+    },
+    {
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/LANGUAGE-WAVE-1-C-KOTLIN/fixture",
+      "revision": "e7beb7ca38c07cd17904d9c2c0e8ee1d92600003",
+      "split": "train",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-08"
+      },
+      "id": "c-main-unresolved-emit-value",
+      "category": "ambiguous",
+      "question": "Can emit_value be assigned a repository-local C target?",
+      "evidence": {
+        "source": {
+          "path": "src/main.c",
+          "sha256": "061b18030150daf796a442340c864a84c7d811b15cf6f1d6ee9ef73b94e86418",
+          "start_line": 11,
+          "end_line": 15,
+          "span_sha256": "7b11b931b7ab5c1ddf9073f5397c3c4c25baaf4a6025aa6ad9e66995ba12b5a5",
+          "symbol": "main"
+        },
+        "site": {
+          "path": "src/main.c",
+          "sha256": "061b18030150daf796a442340c864a84c7d811b15cf6f1d6ee9ef73b94e86418",
+          "start_line": 13,
+          "end_line": 13,
+          "span_sha256": "6e357f12b0656131ac87855d10f9439197421f938b26e19ed3b7752b52de4658",
+          "symbol": "emit_value"
+        }
+      },
+      "expected": {
+        "relation": "UNRESOLVED",
+        "source": "source",
+        "target": null,
+        "site": "site"
+      },
+      "rationale": "No emit_value declaration exists in the evidence repository, so the call remains explicit unresolved dispatch."
+    },
+    {
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/LANGUAGE-WAVE-1-C-KOTLIN/fixture",
+      "revision": "e7beb7ca38c07cd17904d9c2c0e8ee1d92600003",
+      "split": "train",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-08"
+      },
+      "id": "c-header-call-buffer-length",
+      "category": "call",
+      "question": "Which header-local function is called by measured_length?",
+      "evidence": {
+        "source": {
+          "path": "src/item.h",
+          "sha256": "564d7c5db51c2afeeb92a666ae41fb4dde5d040456d532f255042db449e64a7c",
+          "start_line": 11,
+          "end_line": 14,
+          "span_sha256": "c722e4bc5fd97c857b231e398ad2ece85e73781541a054175b4f550111c0d4e1",
+          "symbol": "measured_length"
+        },
+        "site": {
+          "path": "src/item.h",
+          "sha256": "564d7c5db51c2afeeb92a666ae41fb4dde5d040456d532f255042db449e64a7c",
+          "start_line": 13,
+          "end_line": 13,
+          "span_sha256": "a6a3beedabeae08f1a6f8381b95cab843c7915d2ffe550a4736d36aade09a0ec",
+          "symbol": "buffer_length"
+        },
+        "target": {
+          "path": "src/item.h",
+          "sha256": "564d7c5db51c2afeeb92a666ae41fb4dde5d040456d532f255042db449e64a7c",
+          "start_line": 7,
+          "end_line": 9,
+          "span_sha256": "a221048f43f9b8c02a4ac10dbbfa4679f239b306aea20efe619ece3e1c9cc36c",
+          "symbol": "buffer_length"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "buffer_length has one definition in the same header and the direct identifier call has a unique static target."
+    },
+    {
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/LANGUAGE-WAVE-1-C-KOTLIN/fixture",
+      "revision": "e7beb7ca38c07cd17904d9c2c0e8ee1d92600003",
+      "split": "train",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-08"
+      },
+      "id": "c-header-import-support",
+      "category": "import",
+      "question": "Which header is imported by item.h?",
+      "evidence": {
+        "source": {
+          "path": "src/item.h",
+          "sha256": "564d7c5db51c2afeeb92a666ae41fb4dde5d040456d532f255042db449e64a7c",
+          "start_line": 1,
+          "end_line": 1,
+          "span_sha256": "2912485d0715a01e8f49ecd3a07dac55be101c7f2288aaa6c807f982adc5dcc9",
+          "symbol": "support"
+        },
+        "site": {
+          "path": "src/item.h",
+          "sha256": "564d7c5db51c2afeeb92a666ae41fb4dde5d040456d532f255042db449e64a7c",
+          "start_line": 1,
+          "end_line": 1,
+          "span_sha256": "2912485d0715a01e8f49ecd3a07dac55be101c7f2288aaa6c807f982adc5dcc9",
+          "symbol": "support"
+        },
+        "target": {
+          "path": "src/support.h",
+          "sha256": "bb85b0822b791f96e991c62bf7c00e68aa31680ded918301c64c722c43a8c033",
+          "start_line": 3,
+          "end_line": 5,
+          "span_sha256": "205c30c8a8da18f7d77381efdaf10db69d99b609b06e61d942ab3e5c261b988a",
+          "symbol": "support"
+        }
+      },
+      "expected": {
+        "relation": "IMPORTS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The quoted include names support.h, whose committed declaration is pinned in the same evidence repository."
+    },
+    {
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/LANGUAGE-WAVE-1-C-KOTLIN/fixture",
+      "revision": "e7beb7ca38c07cd17904d9c2c0e8ee1d92600003",
+      "split": "train",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-08"
+      },
+      "id": "c-header-reference-buffer",
+      "category": "reference",
+      "question": "Which header-local typedef supplies Buffer in measured_length?",
+      "evidence": {
+        "source": {
+          "path": "src/item.h",
+          "sha256": "564d7c5db51c2afeeb92a666ae41fb4dde5d040456d532f255042db449e64a7c",
+          "start_line": 11,
+          "end_line": 14,
+          "span_sha256": "c722e4bc5fd97c857b231e398ad2ece85e73781541a054175b4f550111c0d4e1",
+          "symbol": "measured_length"
+        },
+        "site": {
+          "path": "src/item.h",
+          "sha256": "564d7c5db51c2afeeb92a666ae41fb4dde5d040456d532f255042db449e64a7c",
+          "start_line": 11,
+          "end_line": 11,
+          "span_sha256": "c95498b431491ce57e8f14d4467fc78874a8b661147d40208e1536287ad3d955",
+          "symbol": "Buffer"
+        },
+        "target": {
+          "path": "src/item.h",
+          "sha256": "564d7c5db51c2afeeb92a666ae41fb4dde5d040456d532f255042db449e64a7c",
+          "start_line": 3,
+          "end_line": 5,
+          "span_sha256": "2f1f9288e74ac8ebf5d06192529ebf2f8420a6459a470a833d91b13c9472a996",
+          "symbol": "Buffer"
+        }
+      },
+      "expected": {
+        "relation": "REFERENCE",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Buffer is a unique header-local typedef used in the measured_length parameter declaration."
+    },
+    {
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/LANGUAGE-WAVE-1-C-KOTLIN/fixture",
+      "revision": "e7beb7ca38c07cd17904d9c2c0e8ee1d92600003",
+      "split": "train",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-08"
+      },
+      "id": "c-header-unresolved-audit-buffer",
+      "category": "ambiguous",
+      "question": "Can audit_buffer be assigned a repository-local C target?",
+      "evidence": {
+        "source": {
+          "path": "src/item.h",
+          "sha256": "564d7c5db51c2afeeb92a666ae41fb4dde5d040456d532f255042db449e64a7c",
+          "start_line": 11,
+          "end_line": 14,
+          "span_sha256": "c722e4bc5fd97c857b231e398ad2ece85e73781541a054175b4f550111c0d4e1",
+          "symbol": "measured_length"
+        },
+        "site": {
+          "path": "src/item.h",
+          "sha256": "564d7c5db51c2afeeb92a666ae41fb4dde5d040456d532f255042db449e64a7c",
+          "start_line": 12,
+          "end_line": 12,
+          "span_sha256": "61d602ae7082579b4510a5da0277b5d15a8fd25d40c98972ff2ad1ca0fefb062",
+          "symbol": "audit_buffer"
+        }
+      },
+      "expected": {
+        "relation": "UNRESOLVED",
+        "source": "source",
+        "target": null,
+        "site": "site"
+      },
+      "rationale": "No audit_buffer declaration exists in the evidence repository, so the call remains explicit unresolved dispatch."
+    },
+    {
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/LANGUAGE-WAVE-1-C-KOTLIN/fixture",
+      "revision": "e7beb7ca38c07cd17904d9c2c0e8ee1d92600003",
+      "split": "train",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-08"
+      },
+      "id": "kotlin-main-call-label",
+      "category": "call",
+      "question": "Which top-level Kotlin function is called by render?",
+      "evidence": {
+        "source": {
+          "path": "src/Main.kt",
+          "sha256": "48ca2a5c98cbba172030287188b9b2306ff0e879964f1e112fccf836e3e90c66",
+          "start_line": 7,
+          "end_line": 7,
+          "span_sha256": "d77a8247e78b76093272a037e3df24a70e8a40fdc8ab86f3d67f0e6020856f4c",
+          "symbol": "render"
+        },
+        "site": {
+          "path": "src/Main.kt",
+          "sha256": "48ca2a5c98cbba172030287188b9b2306ff0e879964f1e112fccf836e3e90c66",
+          "start_line": 7,
+          "end_line": 7,
+          "span_sha256": "d77a8247e78b76093272a037e3df24a70e8a40fdc8ab86f3d67f0e6020856f4c",
+          "symbol": "label"
+        },
+        "target": {
+          "path": "src/Main.kt",
+          "sha256": "48ca2a5c98cbba172030287188b9b2306ff0e879964f1e112fccf836e3e90c66",
+          "start_line": 5,
+          "end_line": 5,
+          "span_sha256": "2baf0d9f4f6113ae6221324f0ef1054eb340feb117e2bc15b56df70e0ab67252",
+          "symbol": "label"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "label is the unique top-level declaration named by the direct call in render."
+    },
+    {
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/LANGUAGE-WAVE-1-C-KOTLIN/fixture",
+      "revision": "e7beb7ca38c07cd17904d9c2c0e8ee1d92600003",
+      "split": "train",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-08"
+      },
+      "id": "kotlin-main-import-clock",
+      "category": "import",
+      "question": "Which declaration supplies the Kotlin Clock import?",
+      "evidence": {
+        "source": {
+          "path": "src/Main.kt",
+          "sha256": "48ca2a5c98cbba172030287188b9b2306ff0e879964f1e112fccf836e3e90c66",
+          "start_line": 1,
+          "end_line": 1,
+          "span_sha256": "2d76e0a45310fcdea3a374d694071d1a7be0faa372d5f5ca2c1942529e3281c3",
+          "symbol": "Clock"
+        },
+        "site": {
+          "path": "src/Main.kt",
+          "sha256": "48ca2a5c98cbba172030287188b9b2306ff0e879964f1e112fccf836e3e90c66",
+          "start_line": 1,
+          "end_line": 1,
+          "span_sha256": "2d76e0a45310fcdea3a374d694071d1a7be0faa372d5f5ca2c1942529e3281c3",
+          "symbol": "Clock"
+        },
+        "target": {
+          "path": "src/Clock.kt",
+          "sha256": "7fdcde07df105c29a5de80ceaea5974dd8e74cdbace4261f71be6dffaf417b67",
+          "start_line": 3,
+          "end_line": 3,
+          "span_sha256": "62e53f4d8f1a36eaf7194589d07c9c90a0404b7549eb86c0231f1209f97dd134",
+          "symbol": "Clock"
+        }
+      },
+      "expected": {
+        "relation": "IMPORTS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The explicit evidence.Clock import names the committed Clock class declaration."
+    },
+    {
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/LANGUAGE-WAVE-1-C-KOTLIN/fixture",
+      "revision": "e7beb7ca38c07cd17904d9c2c0e8ee1d92600003",
+      "split": "train",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-08"
+      },
+      "id": "kotlin-main-reference-clock",
+      "category": "reference",
+      "question": "Which imported Kotlin type supplies Clock in Event?",
+      "evidence": {
+        "source": {
+          "path": "src/Main.kt",
+          "sha256": "48ca2a5c98cbba172030287188b9b2306ff0e879964f1e112fccf836e3e90c66",
+          "start_line": 3,
+          "end_line": 3,
+          "span_sha256": "e400196fcff168fb6c8477067006702f469d502e35ef7a4bf5c85071eb2814da",
+          "symbol": "Event"
+        },
+        "site": {
+          "path": "src/Main.kt",
+          "sha256": "48ca2a5c98cbba172030287188b9b2306ff0e879964f1e112fccf836e3e90c66",
+          "start_line": 3,
+          "end_line": 3,
+          "span_sha256": "e400196fcff168fb6c8477067006702f469d502e35ef7a4bf5c85071eb2814da",
+          "symbol": "Clock"
+        },
+        "target": {
+          "path": "src/Clock.kt",
+          "sha256": "7fdcde07df105c29a5de80ceaea5974dd8e74cdbace4261f71be6dffaf417b67",
+          "start_line": 3,
+          "end_line": 3,
+          "span_sha256": "62e53f4d8f1a36eaf7194589d07c9c90a0404b7549eb86c0231f1209f97dd134",
+          "symbol": "Clock"
+        }
+      },
+      "expected": {
+        "relation": "REFERENCE",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Clock is explicitly imported from evidence.Clock and used as the Event property type."
+    },
+    {
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/LANGUAGE-WAVE-1-C-KOTLIN/fixture",
+      "revision": "e7beb7ca38c07cd17904d9c2c0e8ee1d92600003",
+      "split": "train",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-08"
+      },
+      "id": "kotlin-main-unresolved-println",
+      "category": "ambiguous",
+      "question": "Can println in Kotlin main be assigned one repository-local target?",
+      "evidence": {
+        "source": {
+          "path": "src/Main.kt",
+          "sha256": "48ca2a5c98cbba172030287188b9b2306ff0e879964f1e112fccf836e3e90c66",
+          "start_line": 9,
+          "end_line": 11,
+          "span_sha256": "5694a67cc47b45327ec511f5fe3053cf53cf8e90ab7fb579715707405374afd9",
+          "symbol": "main"
+        },
+        "site": {
+          "path": "src/Main.kt",
+          "sha256": "48ca2a5c98cbba172030287188b9b2306ff0e879964f1e112fccf836e3e90c66",
+          "start_line": 10,
+          "end_line": 10,
+          "span_sha256": "726514b401d38c090b6fe1b0019ab0b3387006d2ac584737c15fdefe4815771d",
+          "symbol": "println"
+        }
+      },
+      "expected": {
+        "relation": "UNRESOLVED",
+        "source": "source",
+        "target": null,
+        "site": "site"
+      },
+      "rationale": "println is supplied by the Kotlin runtime rather than a unique declaration in the evidence repository."
+    },
+    {
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/LANGUAGE-WAVE-1-C-KOTLIN/fixture",
+      "revision": "e7beb7ca38c07cd17904d9c2c0e8ee1d92600003",
+      "split": "train",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-08"
+      },
+      "id": "kotlin-script-call-make",
+      "category": "call",
+      "question": "Which top-level Kotlin script function is called by runReport?",
+      "evidence": {
+        "source": {
+          "path": "src/report.kts",
+          "sha256": "c811a50308c072ebb64362b7e5ee11be98d80cff587184275a76cc68533e6e6f",
+          "start_line": 7,
+          "end_line": 7,
+          "span_sha256": "b1ea7f4dfbe60654cd5f85bbb75621b42a3adae196104e607ea791870e19a323",
+          "symbol": "runReport"
+        },
+        "site": {
+          "path": "src/report.kts",
+          "sha256": "c811a50308c072ebb64362b7e5ee11be98d80cff587184275a76cc68533e6e6f",
+          "start_line": 7,
+          "end_line": 7,
+          "span_sha256": "b1ea7f4dfbe60654cd5f85bbb75621b42a3adae196104e607ea791870e19a323",
+          "symbol": "make"
+        },
+        "target": {
+          "path": "src/report.kts",
+          "sha256": "c811a50308c072ebb64362b7e5ee11be98d80cff587184275a76cc68533e6e6f",
+          "start_line": 5,
+          "end_line": 5,
+          "span_sha256": "3c600b2d55f728fef4d7a1d9b4d12bb4a656eef8edd7fd7f9215ec15b4dee511",
+          "symbol": "make"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "make is the unique top-level declaration named by the direct call in runReport."
+    },
+    {
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/LANGUAGE-WAVE-1-C-KOTLIN/fixture",
+      "revision": "e7beb7ca38c07cd17904d9c2c0e8ee1d92600003",
+      "split": "train",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-08"
+      },
+      "id": "kotlin-script-import-clock",
+      "category": "import",
+      "question": "Which declaration supplies the Kotlin script Clock import?",
+      "evidence": {
+        "source": {
+          "path": "src/report.kts",
+          "sha256": "c811a50308c072ebb64362b7e5ee11be98d80cff587184275a76cc68533e6e6f",
+          "start_line": 1,
+          "end_line": 1,
+          "span_sha256": "2d76e0a45310fcdea3a374d694071d1a7be0faa372d5f5ca2c1942529e3281c3",
+          "symbol": "Clock"
+        },
+        "site": {
+          "path": "src/report.kts",
+          "sha256": "c811a50308c072ebb64362b7e5ee11be98d80cff587184275a76cc68533e6e6f",
+          "start_line": 1,
+          "end_line": 1,
+          "span_sha256": "2d76e0a45310fcdea3a374d694071d1a7be0faa372d5f5ca2c1942529e3281c3",
+          "symbol": "Clock"
+        },
+        "target": {
+          "path": "src/Clock.kt",
+          "sha256": "7fdcde07df105c29a5de80ceaea5974dd8e74cdbace4261f71be6dffaf417b67",
+          "start_line": 3,
+          "end_line": 3,
+          "span_sha256": "62e53f4d8f1a36eaf7194589d07c9c90a0404b7549eb86c0231f1209f97dd134",
+          "symbol": "Clock"
+        }
+      },
+      "expected": {
+        "relation": "IMPORTS",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "The explicit evidence.Clock import names the committed Clock class declaration."
+    },
+    {
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/LANGUAGE-WAVE-1-C-KOTLIN/fixture",
+      "revision": "e7beb7ca38c07cd17904d9c2c0e8ee1d92600003",
+      "split": "train",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-08"
+      },
+      "id": "kotlin-script-reference-clock",
+      "category": "reference",
+      "question": "Which imported Kotlin type supplies Clock in Job?",
+      "evidence": {
+        "source": {
+          "path": "src/report.kts",
+          "sha256": "c811a50308c072ebb64362b7e5ee11be98d80cff587184275a76cc68533e6e6f",
+          "start_line": 3,
+          "end_line": 3,
+          "span_sha256": "fe6aa0ff78f8f4274e7e6ed6ba2aca644c48f4b11746359773c6abab9c0d59fe",
+          "symbol": "Job"
+        },
+        "site": {
+          "path": "src/report.kts",
+          "sha256": "c811a50308c072ebb64362b7e5ee11be98d80cff587184275a76cc68533e6e6f",
+          "start_line": 3,
+          "end_line": 3,
+          "span_sha256": "fe6aa0ff78f8f4274e7e6ed6ba2aca644c48f4b11746359773c6abab9c0d59fe",
+          "symbol": "Clock"
+        },
+        "target": {
+          "path": "src/Clock.kt",
+          "sha256": "7fdcde07df105c29a5de80ceaea5974dd8e74cdbace4261f71be6dffaf417b67",
+          "start_line": 3,
+          "end_line": 3,
+          "span_sha256": "62e53f4d8f1a36eaf7194589d07c9c90a0404b7549eb86c0231f1209f97dd134",
+          "symbol": "Clock"
+        }
+      },
+      "expected": {
+        "relation": "REFERENCE",
+        "source": "source",
+        "target": "target",
+        "site": "site"
+      },
+      "rationale": "Clock is explicitly imported from evidence.Clock and used as the Job property type."
+    },
+    {
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/LANGUAGE-WAVE-1-C-KOTLIN/fixture",
+      "revision": "e7beb7ca38c07cd17904d9c2c0e8ee1d92600003",
+      "split": "train",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-08"
+      },
+      "id": "kotlin-script-unresolved-println",
+      "category": "ambiguous",
+      "question": "Can println in the Kotlin script be assigned one repository-local target?",
+      "evidence": {
+        "source": {
+          "path": "src/report.kts",
+          "sha256": "c811a50308c072ebb64362b7e5ee11be98d80cff587184275a76cc68533e6e6f",
+          "start_line": 9,
+          "end_line": 9,
+          "span_sha256": "340d0c6fc5966f7aed4b7326a22de87b755f9db20d643226b8e1561d05abe92e",
+          "symbol": "println"
+        },
+        "site": {
+          "path": "src/report.kts",
+          "sha256": "c811a50308c072ebb64362b7e5ee11be98d80cff587184275a76cc68533e6e6f",
+          "start_line": 9,
+          "end_line": 9,
+          "span_sha256": "340d0c6fc5966f7aed4b7326a22de87b755f9db20d643226b8e1561d05abe92e",
+          "symbol": "println"
+        }
+      },
+      "expected": {
+        "relation": "UNRESOLVED",
+        "source": "source",
+        "target": null,
+        "site": "site"
+      },
+      "rationale": "println is supplied by the Kotlin runtime rather than a unique declaration in the evidence repository."
     }
   ]
 }
