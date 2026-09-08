@@ -1,3 +1,4 @@
+mod ci;
 mod file_watcher;
 mod multi_repo;
 mod skill;
@@ -36,7 +37,7 @@ fn main() {
 fn run(args: Vec<String>) -> Result<(), String> {
     let Some(command) = args.first().map(String::as_str) else {
         return Err(
-            "expected init, index, daemon, observe, serve, visualize, orient, expand, status, check-gates, schema, skill, usage-report, metrics, or bench"
+            "expected init, index, daemon, observe, serve, visualize, orient, expand, status, check-gates, schema, skill, usage-report, metrics, ci, or bench"
                 .to_owned(),
         );
     };
@@ -86,6 +87,7 @@ fn run(args: Vec<String>) -> Result<(), String> {
         "usage-report" => usage_report(&args[1..])?,
         "metrics" => metrics_summary(&args[1..])?,
         "bench" => bench(&args[1..])?,
+        "ci" => ci::run(&args[1..])?,
         other => return Err(format!("unknown command {other}")),
     }
     Ok(())
