@@ -257,4 +257,3 @@ The repository-readiness sprint is complete only when:
 - measurement sources and a 30-day review date are recorded;
 - remaining launch or external-user gates are explicitly reported rather than
   treated as complete through local evidence.
-
