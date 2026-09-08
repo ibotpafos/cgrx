@@ -781,25 +781,35 @@ fn serve(args: &[String]) -> Result<(), String> {
     {
         return Err("serve --root cannot be combined with --state or --watch-root".to_owned());
     }
-    let mut server = if let Some(state) = optional_flag(args, "--state") {
+    let (mut server, memory_root) = if let Some(state) = optional_flag(args, "--state") {
         let mut runtime = Runtime::open(Path::new(state)).map_err(|error| error.to_string())?;
         let watch_root = optional_flag(args, "--watch-root").map(PathBuf::from);
         if let Some(root) = &watch_root {
             runtime.refresh(root).map_err(|error| error.to_string())?;
         }
+        let memory_root = watch_root.clone();
         let backend = if let Some(root) = watch_root {
             RuntimeMcpBackend::managed(runtime, root, PathBuf::from(state))
         } else {
             RuntimeMcpBackend::new(runtime, None)
         };
-        Server::with_backend(backend)
+        (Server::with_backend(backend), memory_root)
     } else {
         let root = root.unwrap_or_else(|| PathBuf::from("."));
         let root = root.canonicalize().map_err(|error| error.to_string())?;
         let state = managed_state_path(&root)?;
         let runtime = open_managed_runtime(&root, &state)?;
-        Server::with_backend(RuntimeMcpBackend::managed(runtime, root, state))
+        let memory_root = Some(root.clone());
+        (
+            Server::with_backend(RuntimeMcpBackend::managed(runtime, root, state)),
+            memory_root,
+        )
     };
+    if let Some(dir) = memory_root {
+        if let Ok(store) = cgrx_store::MemoryStore::open(dir) {
+            server.set_memory_store(store);
+        }
+    }
     if let Ok(path) = env::var("CGRX_USAGE_LOG") {
         let client = env::var("CGRX_CLIENT").unwrap_or_else(|_| "unknown".to_owned());
         let session = env::var("CGRX_USAGE_SESSION")
