@@ -12,7 +12,7 @@ offline, deterministic, and never invoke an LLM (`llm_used: false`).
   "fact": "Retry the router with a warm cache before reindexing",
   "confidence": 800,
   "provenance": {
-    "repo": "/Volumes/D/Projects/cgrx",
+    "repo": "/absolute/repository",
     "rev": "44a50ba7b2197caf8ee9ce8ccd108b18166991b5",
     "path": "crates/cgrx-cli/src/main.rs",
     "span": {"start_line": 575, "end_line": 600}

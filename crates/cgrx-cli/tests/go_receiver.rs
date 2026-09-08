@@ -349,10 +349,14 @@ fn go_self_runtime_field_and_map_writes_preserve_exact_method_calls() {
 #[test]
 fn go_own_module_import_survives_only_proven_unrelated_replacements() {
     for (label, replacements, expected) in [
-        ("vex_unrelated", "replace vex/threads => ./threads\n", true),
+        (
+            "unrelated_module",
+            "replace example.test/threads => ./threads\n",
+            true,
+        ),
         (
             "unrelated_block",
-            "replace (\n // dependency overrides\n vex/threads => ./threads\n example.test/lib v1.2.3 => example.test/fork v1.2.4\n)\n",
+            "replace (\n // dependency overrides\n example.test/threads => ./threads\n example.test/lib v1.2.3 => example.test/fork v1.2.4\n)\n",
             true,
         ),
         (
@@ -362,48 +366,57 @@ fn go_own_module_import_survives_only_proven_unrelated_replacements() {
         ),
         (
             "segment_not_text_prefix",
-            "replace vpnextra/lib => ./local\n",
+            "replace example.test/rooted/lib => ./local\n",
             true,
         ),
-        ("self", "replace vpn => ./other\n", false),
-        ("descendant", "replace vpn/app => ./other\n", false),
+        ("self", "replace example.test/root => ./other\n", false),
+        (
+            "descendant",
+            "replace example.test/root/app => ./other\n",
+            false,
+        ),
         (
             "mixed_block",
-            "replace (\n vex/threads => ./threads\n vpn/app v1.2.3 => ./other\n)\n",
+            "replace (\n example.test/threads => ./threads\n example.test/root/app v1.2.3 => ./other\n)\n",
             false,
         ),
         (
             "unterminated_block",
-            "replace (\n vex/threads => ./threads\n",
+            "replace (\n example.test/threads => ./threads\n",
             false,
         ),
-        ("missing_arrow", "replace vex/threads ./threads\n", false),
+        (
+            "missing_arrow",
+            "replace example.test/threads ./threads\n",
+            false,
+        ),
         (
             "extra_arrow",
-            "replace vex/threads => ./threads => ./other\n",
+            "replace example.test/threads => ./threads => ./other\n",
             false,
         ),
         (
             "inline_block_unsupported",
-            "replace ( vex/threads => ./threads )\n",
+            "replace ( example.test/threads => ./threads )\n",
             false,
         ),
         (
             "quoted_path_unsupported",
-            "replace \"vex/threads\" => ./threads\n",
+            "replace \"example.test/threads\" => ./threads\n",
             false,
         ),
         (
             "block_comment_unsupported",
-            "replace /* comment */ vex/threads => ./threads\n",
+            "replace /* comment */ example.test/threads => ./threads\n",
             false,
         ),
     ] {
-        let fixture =
-            Fixture::new("package auth\nimport \"vpn/app\"\nfunc Login() { app.Target() }\n");
+        let fixture = Fixture::new(
+            "package auth\nimport \"example.test/root/app\"\nfunc Login() { app.Target() }\n",
+        );
         fs::write(
             fixture.root.join("go.mod"),
-            format!("module vpn\ngo 1.23\n{replacements}"),
+            format!("module example.test/root\ngo 1.23\n{replacements}"),
         )
         .unwrap();
         fs::write(
@@ -447,7 +460,7 @@ fn go_own_module_import_survives_only_proven_unrelated_replacements() {
             );
             fs::write(
                 fixture.root.join("go.mod"),
-                "module vpn\nreplace vpn/app => ./other\n",
+                "module example.test/root\nreplace example.test/root/app => ./other\n",
             )
             .unwrap();
             assert!(runtime.refresh(&fixture.root).unwrap());
@@ -458,7 +471,7 @@ fn go_own_module_import_survives_only_proven_unrelated_replacements() {
             );
             fs::write(
                 fixture.root.join("go.mod"),
-                format!("module vpn\ngo 1.23\n{replacements}"),
+                format!("module example.test/root\ngo 1.23\n{replacements}"),
             )
             .unwrap();
             assert!(runtime.refresh(&fixture.root).unwrap());

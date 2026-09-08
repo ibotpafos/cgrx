@@ -606,7 +606,7 @@ fn own_receiver_target(
     }
     let type_name = text(ty, source);
     let target_name = text(field, source);
-    // The type declaration can live in another file (as in VEX). Explicit
+    // The type declaration can live in another file. Explicit
     // receiver declarations establish identity; locally visible aliases,
     // interfaces, duplicate types, and field/method conflicts invalidate it.
     let types = context

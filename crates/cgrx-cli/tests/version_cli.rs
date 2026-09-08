@@ -1,4 +1,5 @@
 use std::io::{Read, Write};
+use std::path::Path;
 use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::thread;
@@ -67,6 +68,26 @@ fn version_flags_print_only_the_package_version() {
             assert_eq!(stderr, "");
         }
     }
+}
+
+#[test]
+fn installer_default_release_matches_cli_package_version() {
+    let installer = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join("install.sh");
+    let output = Command::new("sh")
+        .arg(installer)
+        .arg("--help")
+        .output()
+        .expect("run installer help");
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8(output.stderr).unwrap(), "");
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let expected = format!("CGRX_VERSION=v{}", env!("CARGO_PKG_VERSION"));
+    assert!(
+        stdout.split_whitespace().any(|field| field == expected),
+        "installer help does not advertise {expected}: {stdout}"
+    );
 }
 
 #[test]

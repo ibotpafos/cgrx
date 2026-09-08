@@ -22,17 +22,18 @@ explicitly on each request. No embedding service, hosted index or API key.
 - Snapshot-bound architecture projection with packages, proven boundaries,
   hotspots, package cycles and deterministic weighted communities.
 - Incremental working-tree refresh, isolated repo identities and writer locks.
-- Rust, Go, Java, TypeScript/JavaScript/TSX and Python parsing. Resolution depth varies
+- Rust, Go, Java, Kotlin, C, TypeScript/JavaScript/TSX and Python parsing. Resolution depth varies
   by language; this does not replace a compiler or language server.
 
 ## Install with one command
 
 ~~~sh
-curl -fsSL https://raw.githubusercontent.com/ibotpafos/cgrx/v0.1.0-alpha.7/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/ibotpafos/cgrx/v0.1.0-alpha.8/install.sh | sh
 ~~~
 
 Installs to `$HOME/.local/bin/cgrx`, without sudo. Apple Silicon macOS downloads
-and verifies the release archive; Linux and Intel macOS build the pinned tag
+the release archive, verifies its checksum and requires `cgrx --version` to
+match the selected tag; Linux and Intel macOS build the pinned tag
 (requires rustup with Rust 1.89.0, Git and a C compiler). Existing binaries are
 backed up before replacement. MCP initialization is checked before activation.
 Client configurations and shell profiles are left unchanged.
@@ -61,7 +62,7 @@ Native Windows is not supported.
 ~~~sh
 git clone https://github.com/ibotpafos/cgrx.git
 cd cgrx
-git checkout v0.1.0-alpha.7
+git checkout v0.1.0-alpha.8
 cargo install --locked --path crates/cgrx-cli
 ~~~
 

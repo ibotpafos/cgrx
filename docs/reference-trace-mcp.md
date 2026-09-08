@@ -73,8 +73,8 @@ their accuracy and resource budgets can be tested independently.
 
 The release stdio server scanned seven frozen repositories with
 `min_score=760` and `limit=50`. It returned 37 callable pairs in deterministic
-repeated runs: 13 in Pyramid, 2 in itsdangerous, 1 in blinker, 1 in Vocal
-School, 20 in CGRX, and none in GD or VEX. The compact model-visible responses
+repeated runs: 13 in private corpus D, 2 in itsdangerous, 1 in blinker, 1 in
+private corpus C, 20 in CGRX, and none in private corpora A or B. The compact model-visible responses
 cost 2,506 o200k tokens in aggregate.
 
 All 37 rows remain `unreviewed`, so measured precision is intentionally `null`.
@@ -99,12 +99,12 @@ file; it is a response-size measurement, not a tokenizer or task-accuracy claim.
 
 | Snapshot | Raw bytes | Outline bytes | Ratio |
 | --- | ---: | ---: | ---: |
-| GD | 994 | 413 | 0.415 |
-| VEX | 2,802 | 651 | 0.232 |
-| Pyramid | 6,405 | 817 | 0.128 |
+| Private corpus A | 994 | 413 | 0.415 |
+| Private corpus B | 2,802 | 651 | 0.232 |
+| Private corpus D | 6,405 | 817 | 0.128 |
 | itsdangerous | 1,409 | 452 | 0.321 |
 | blinker | 19,132 | 1,078 | 0.056 |
-| Vocal School | 1,067 | 459 | 0.430 |
+| Private corpus C | 1,067 | 459 | 0.430 |
 | CGRX | 203,614 | 6,430 | 0.032 |
 | **Total** | **235,423** | **10,300** | **0.044** |
 

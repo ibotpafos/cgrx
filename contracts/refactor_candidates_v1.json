@@ -5,27 +5,27 @@
   "limit": 50,
   "projects": [
     {
-      "id": "gd",
-      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/SAME-SNAPSHOT-CBM/snapshots/gd",
+      "id": "corpus_a",
+      "repo": "/private/cgrx-corpus/corpus-a",
       "revision": "9d77eb9b8feea3c9063240eeefdacdd1b4b83bc0",
       "scope": "packages/notifications-core/src/**",
       "candidates": []
     },
     {
-      "id": "vex",
-      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/SAME-SNAPSHOT-CBM/snapshots/vex",
+      "id": "corpus_b",
+      "repo": "/private/cgrx-corpus/corpus-b",
       "revision": "da5cd1a21f8f4650798cc19c92ff8790b324e6d3",
       "scope": "internal/envutil/**",
       "candidates": []
     },
     {
-      "id": "pyramid",
-      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/EXPANDED-GRAPH-CORPUS/snapshots/pyramid",
+      "id": "corpus_d",
+      "repo": "/private/cgrx-corpus/corpus-d",
       "revision": "dbca43c53d7f49bbf988813cd97720098be3ac3f",
       "scope": "backend/internal/graph/**",
       "candidates": [
         {
-          "id": "pyramid:refactor1.24731e8544961825",
+          "id": "corpus_d:refactor1.24731e8544961825",
           "left": {
             "node_id": 187877165364842761,
             "path": "backend/internal/graph/engine_test.go",
@@ -47,7 +47,7 @@
           "label": "unreviewed"
         },
         {
-          "id": "pyramid:refactor1.275cc93ac7ebd4f4",
+          "id": "corpus_d:refactor1.275cc93ac7ebd4f4",
           "left": {
             "node_id": 18157719220466109783,
             "path": "backend/internal/graph/engine_test.go",
@@ -69,7 +69,7 @@
           "label": "unreviewed"
         },
         {
-          "id": "pyramid:refactor1.628a88fb47bc96f2",
+          "id": "corpus_d:refactor1.628a88fb47bc96f2",
           "left": {
             "node_id": 16111952727481451063,
             "path": "backend/internal/graph/engine_test.go",
@@ -91,7 +91,7 @@
           "label": "unreviewed"
         },
         {
-          "id": "pyramid:refactor1.678563e38aa7ee87",
+          "id": "corpus_d:refactor1.678563e38aa7ee87",
           "left": {
             "node_id": 187877165364842761,
             "path": "backend/internal/graph/engine_test.go",
@@ -113,7 +113,7 @@
           "label": "unreviewed"
         },
         {
-          "id": "pyramid:refactor1.4731780f96e1d79f",
+          "id": "corpus_d:refactor1.4731780f96e1d79f",
           "left": {
             "node_id": 6245845959392972832,
             "path": "backend/internal/graph/engine_test.go",
@@ -135,7 +135,7 @@
           "label": "unreviewed"
         },
         {
-          "id": "pyramid:refactor1.909f6a8902d45150",
+          "id": "corpus_d:refactor1.909f6a8902d45150",
           "left": {
             "node_id": 18157719220466109783,
             "path": "backend/internal/graph/engine_test.go",
@@ -157,7 +157,7 @@
           "label": "unreviewed"
         },
         {
-          "id": "pyramid:refactor1.33e0137e2b0d9761",
+          "id": "corpus_d:refactor1.33e0137e2b0d9761",
           "left": {
             "node_id": 8093806962969154810,
             "path": "backend/internal/graph/engine_test.go",
@@ -179,7 +179,7 @@
           "label": "unreviewed"
         },
         {
-          "id": "pyramid:refactor1.5b2acfbbc14003fa",
+          "id": "corpus_d:refactor1.5b2acfbbc14003fa",
           "left": {
             "node_id": 187877165364842761,
             "path": "backend/internal/graph/engine_test.go",
@@ -201,7 +201,7 @@
           "label": "unreviewed"
         },
         {
-          "id": "pyramid:refactor1.ad60aa1f7234f784",
+          "id": "corpus_d:refactor1.ad60aa1f7234f784",
           "left": {
             "node_id": 16320796651751065357,
             "path": "backend/internal/graph/engine.go",
@@ -223,7 +223,7 @@
           "label": "unreviewed"
         },
         {
-          "id": "pyramid:refactor1.a132b09da4f07dba",
+          "id": "corpus_d:refactor1.a132b09da4f07dba",
           "left": {
             "node_id": 15390378632722721726,
             "path": "backend/internal/graph/engine.go",
@@ -245,7 +245,7 @@
           "label": "unreviewed"
         },
         {
-          "id": "pyramid:refactor1.3668dc2a94d9a346",
+          "id": "corpus_d:refactor1.3668dc2a94d9a346",
           "left": {
             "node_id": 18157719220466109783,
             "path": "backend/internal/graph/engine_test.go",
@@ -267,7 +267,7 @@
           "label": "unreviewed"
         },
         {
-          "id": "pyramid:refactor1.ca7c097cf73799ca",
+          "id": "corpus_d:refactor1.ca7c097cf73799ca",
           "left": {
             "node_id": 187877165364842761,
             "path": "backend/internal/graph/engine_test.go",
@@ -289,7 +289,7 @@
           "label": "unreviewed"
         },
         {
-          "id": "pyramid:refactor1.e99fa04a28f7817d",
+          "id": "corpus_d:refactor1.e99fa04a28f7817d",
           "left": {
             "node_id": 6245845959392972832,
             "path": "backend/internal/graph/engine_test.go",
@@ -314,7 +314,7 @@
     },
     {
       "id": "itsdangerous",
-      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/itsdangerous",
+      "repo": "/private/cgrx-corpus/public/itsdangerous",
       "revision": "672971d66a2ef9f85151e53283113f33d642dabd",
       "scope": "src/itsdangerous/**",
       "candidates": [
@@ -366,7 +366,7 @@
     },
     {
       "id": "blinker",
-      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/NEXT/corpus/fixtures/blinker",
+      "repo": "/private/cgrx-corpus/public/blinker",
       "revision": "c3364059663df1ddce32799d6b1922af89a345f6",
       "scope": "src/blinker/**",
       "candidates": [
@@ -395,13 +395,13 @@
       ]
     },
     {
-      "id": "vocal-school",
-      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/IBO-271-MULTIPROJECT-20260905/vocal-snapshot",
+      "id": "corpus_c-school",
+      "repo": "/private/cgrx-corpus/corpus-c",
       "revision": "8613b9fc15a0989ccc5bd1d5fb41dcc0d350d578",
       "scope": "apps/api/src/chat/**",
       "candidates": [
         {
-          "id": "vocal-school:refactor1.76141d54774bc2eb",
+          "id": "corpus_c-school:refactor1.76141d54774bc2eb",
           "left": {
             "node_id": 4417745515971509295,
             "path": "apps/api/src/chat/chat.controller.ts",
@@ -426,7 +426,7 @@
     },
     {
       "id": "cgrx",
-      "repo": "/Volumes/D/Projects/cgrx-opensource/.worktrees/benchmark-e55018497074",
+      "repo": "/private/cgrx-corpus/cgrx",
       "revision": "e55018497074c40ea89cd3c1a6d2f357806a4a5b",
       "scope": "crates/cgrx-cli/src/**",
       "candidates": [

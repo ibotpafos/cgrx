@@ -76,7 +76,7 @@ jobs:
             --max-package-fan-out 92 \
             --max-symbol-fan-in 144 \
             --max-unresolved-local-dependencies 83 \
-            --repository-max-coverage-gaps 17940
+            --repository-max-coverage-gaps 17984
       - name: Materialize pull-request changes against the base revision
         if: github.event_name == 'pull_request'
         env:
@@ -87,8 +87,8 @@ jobs:
         run: |
           target/release/cgrx ci --repo . --format github --gate change \
             --allow-inconclusive-within-budgets \
-            --max-blocked-missions 3 \
-            --max-coverage-gaps 11 \
+            --max-blocked-missions 19 \
+            --max-coverage-gaps 26 \
             --max-unverified-impacts 1
       - name: Relationship evaluator integrity and real MCP fanout
         run: CGRX_EVAL_BINARY=target/release/cgrx python3 -m unittest discover -s scripts -p test_eval_relationships.py

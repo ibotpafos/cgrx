@@ -12,8 +12,8 @@
 
 ## Global Constraints
 
-- Work only in `/Volumes/D/Projects/cgrx-opensource/.worktrees/ibo-289-graph-explorer` on `feat/ibo-289-graph-explorer`.
-- Use an isolated checkout-local `CARGO_TARGET_DIR=/Volumes/D/Projects/cgrx-opensource/.worktrees/ibo-289-graph-explorer/target-ibo-289`.
+- Work only in `<primary-checkout>/.worktrees/ibo-289-graph-explorer` on `feat/ibo-289-graph-explorer`.
+- Use an isolated checkout-local `CARGO_TARGET_DIR=<worktree>/target-ibo-289`.
 - Keep `suggest_refactors` as the existing MCP tool; the model-visible tool count must remain 11 and schema cost at or below 2,000 tokens.
 - Treat current `CALLS` and `IMPLEMENTS` arcs as proven only when they carry current indexed evidence. Treat refactor deltas as hypothetical and candidate tests as `not_run`.
 - Any coverage, truncation, public-surface, or unresolved-dispatch gap blocks a node-removal strategy.

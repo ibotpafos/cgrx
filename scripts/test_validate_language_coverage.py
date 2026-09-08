@@ -29,8 +29,8 @@ class LanguageCoverageTests(unittest.TestCase):
 
     def test_missing_wrong_relation_or_wrong_extension_task_fails(self):
         contract=copy.deepcopy(self.contract); contract['languages'][0]['cells']['tsx']['CALLS']=['missing']; self.invalid(contract)
-        contract=copy.deepcopy(self.contract); contract['languages'][0]['cells']['tsx']['CALLS']=['pyramid-tsx-main-import-app']; self.invalid(contract)
-        contract=copy.deepcopy(self.contract); contract['languages'][0]['cells']['tsx']['CALLS']=['vocal-chat-rooms-getRooms']; self.invalid(contract)
+        contract=copy.deepcopy(self.contract); contract['languages'][0]['cells']['tsx']['CALLS']=['corpus_d-tsx-main-import-app']; self.invalid(contract)
+        contract=copy.deepcopy(self.contract); contract['languages'][0]['cells']['tsx']['CALLS']=['corpus_c-chat-rooms-getRooms']; self.invalid(contract)
 
     def test_source_extension_or_registered_pack_drift_fails(self):
         contract=copy.deepcopy(self.contract); contract['languages'][0]['extensions']=['ts']; del contract['languages'][0]['cells']['tsx']; self.invalid(contract)

@@ -8,7 +8,7 @@ previous 195-task corpus represented the four language names but omitted `.tsx`
 entirely and left six language/relation cells empty.
 
 The corpus now has 206 source-anchored tasks. Eleven new tasks close the missing
-cells with real source from Pyramid, Vocal School, VEX and CGRX:
+cells with real source from private corpora D, C and B plus CGRX:
 
 | Extension | CALLS | IMPORTS | REFERENCE | UNRESOLVED |
 | --- | --- | --- | --- | --- |
@@ -29,9 +29,9 @@ failure cases on Linux and macOS.
 
 A frozen five-task control selected one source-anchored CALLS assertion for
 each supported extension. Before the implementation change, CGRX found 4/5:
-`.ts`, `.go`, `.py` and `.rs` passed, while the real Pyramid `.tsx` call from
+`.ts`, `.go`, `.py` and `.rs` passed, while the real private-corpus-D `.tsx` call from
 `createProject` to the stable outer `fetchProjects` arrow was absent. The CBM
-reference observed 4/5, finding that `.tsx` target but missing the Vocal `.ts`
+reference observed 4/5, finding that `.tsx` target but missing the private-corpus-C `.ts`
 service receiver.
 
 The TypeScript lexical resolver now accepts a named function or named const

@@ -4,7 +4,7 @@
 
 This slice extends the existing paired CALLS corpus from five to seven pinned
 repositories and from 111 to 117 assertions. The six new train assertions were
-read directly from Vocal School, General Digits and CGRX source before either
+read directly from private corpora C and A and CGRX source before either
 engine was run. Configuration selection is explicit and outcome-independent.
 
 The implementation adds exact TypeScript resolution for
@@ -13,7 +13,7 @@ The implementation adds exact TypeScript resolution for
 export chain are unique, and the target method has one exact syntax span. Regular
 nested functions, mutable/plain parameters, ambiguous modules, duplicate exports,
 source/config hash changes and unsupported configuration still abstain. The
-reviewed Vocal configuration chain now accepts the neutral options it uses and
+reviewed private-corpus-C configuration chain now accepts the neutral options it uses and
 `moduleResolution: "node"`; other unreviewed resolution values still fail closed.
 
 The collector now preflights every selected repository, records full and selected
@@ -30,32 +30,32 @@ membership is observable.
 
 | Snapshot/task slice | CGRX designated targets | CBM designated targets | CGRX median | CBM median | Result boundary |
 | --- | ---: | ---: | ---: | ---: | --- |
-| Vocal controller receivers, baseline CGRX | 0/3 | 0/3 | 30-32 ms | 14-20 ms | Both missed before this slice |
-| Vocal controller receivers, candidate CGRX | 3/3 | 0/3 | 26-27 ms | 12-16 ms | Candidate adds three exact edges |
+| Private-corpus-C controller receivers, baseline CGRX | 0/3 | 0/3 | 30-32 ms | 14-20 ms | Both missed before this slice |
+| Private-corpus-C controller receivers, candidate CGRX | 3/3 | 0/3 | 26-27 ms | 12-16 ms | Candidate adds three exact edges |
 | CGRX `git_text -> git_bytes` control | 1/1 | 1/1 | 14 ms | 13 ms | Both return the designated target |
-| GD dashboard alias canary | 1/1 | unknown | 387 ms | 44 ms before failure | CBM changed tracked index artifacts |
-| GD engineers alias canary | 1/1 | unknown | 390 ms | 44 ms before failure | CBM changed tracked index artifacts |
+| Private-corpus-A dashboard alias canary | 1/1 | unknown | 387 ms | 44 ms before failure | CBM changed tracked index artifacts |
+| Private-corpus-A engineers alias canary | 1/1 | unknown | 390 ms | 44 ms before failure | CBM changed tracked index artifacts |
 
 The earlier unchanged-binary screen also found the designated target in all four
-selected VEX, Pyramid, Blinker and ItsDangerous CALLS assertions for both engines.
-CGRX warm medians were about 81 ms on VEX and 9-11 ms on the three smaller
-snapshots; CBM was about 29-34 ms on VEX and 12-16 ms on the smaller snapshots.
+selected private corpora B and D, Blinker and ItsDangerous CALLS assertions for both engines.
+CGRX warm medians were about 81 ms on private corpus B and 9-11 ms on the three smaller
+snapshots; CBM was about 29-34 ms on private corpus B and 12-16 ms on the smaller snapshots.
 This bounded membership screen does not establish global precision, recall or
 superiority.
 
 CBM was configured with `persistence=false`, yet its shared daemon rewrote
 `.codebase-memory/artifact.json` and `.codebase-memory/graph.db.zst` in the clean
-GD snapshot. The collector detected the byte change and failed the CBM arm. Each
+private-corpus-A snapshot. The collector detected the byte change and failed the CBM arm. Each
 mutation was preserved in a named reversible stash before the next canary; no
-reference result is claimed for those two GD tasks.
+reference result is claimed for those two private-corpus-A tasks.
 
 ## Evidence and release boundary
 
 Raw configurations, collector logs, JSON measurements, source-mutation patch and
 snapshot material are under
 `local/evidence/IBO-271-MULTIPROJECT-20260905/`. The candidate results are
-`measurements-candidate-final.json`, `measurements-candidate-gd-dashboard.json`
-and `measurements-candidate-gd-engineers.json`.
+`measurements-candidate-final.json`, `measurements-candidate-corpus-a-dashboard.json`
+and `measurements-candidate-corpus-a-engineers.json`.
 
 This document records local source, build and paired-tool evidence only. The
 branch is not pushed, merged, installed into the registered launcher, or deployed.
