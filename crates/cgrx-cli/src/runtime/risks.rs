@@ -2,6 +2,9 @@
 use super::*;
 mod missions;
 mod review;
+mod test_runs;
+
+pub use test_runs::{TestCaseResult, TestOutcome, TestRunRecord};
 
 const DOCUMENT_LIMIT: usize = 100_000;
 const EDGE_LIMIT: usize = 20_000;
@@ -60,6 +63,19 @@ impl Runtime {
         baseline: &RiskBaseline,
         root: &Path,
         limit: usize,
+    ) -> Result<Value, RuntimeError> {
+        self.scan_risks_with_test_runs(baseline, root, limit, &[])
+    }
+
+    /// Scan change risks, annotating `verification_plan` candidates covered by
+    /// recorded real test runs. Without runs the plan keeps `not_run`; a run
+    /// annotates a candidate only on exact revision and file-hash match.
+    pub fn scan_risks_with_test_runs(
+        &self,
+        baseline: &RiskBaseline,
+        root: &Path,
+        limit: usize,
+        runs: &[TestRunRecord],
     ) -> Result<Value, RuntimeError> {
         if !(1..=50).contains(&limit) {
             return Err(RuntimeError::new(
@@ -279,6 +295,12 @@ impl Runtime {
             &mut evidence,
             limit,
             &mut gaps,
+        );
+        test_runs::apply(
+            &mut verification_plan,
+            runs,
+            &self.snapshot().repo_revision,
+            &self.stored.path_hashes,
         );
         partial |= !gaps.is_empty();
         verification_plan["partial"] = json!(partial);

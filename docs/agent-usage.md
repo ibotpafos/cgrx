@@ -85,6 +85,19 @@ It is a read-only checklist, not a test runner:
 - `execution_status="not_run"` means **no test was executed**. Confirm candidate
   identity, inspect its assertions and use the repository's test instructions.
   The tool deliberately does not guess commands, workspace packages or flags.
+- Recorded runs are opt-in execution evidence: build a `TestRunRecord` with
+  the literal `runner_command`, the exact 40-hex `revision` the runner
+  executed against, and per-test `results` (`path`, `symbol`, `passed` /
+  `failed`, plus the `source_hash` copied from the scanned `related_tests`
+  entry). Pass it to `scan_risks_with_test_runs`. A result annotates a
+  candidate only on exact revision match **and** exact file-hash match; a
+  fresh `failed` wins over `passed` so failures are never masked. Anything
+  stale or mismatched keeps `not_run`, exactly as a scan without runs.
+  Annotated candidates carry `execution_status="passed"|"failed"` and an
+  `execution` object (`runner_command`, `revision`, `status`); the top-level
+  `execution_status` becomes `passed`, `failed` or `partial` (only some
+  candidates covered). `test_reach` entries are annotated per impact the same
+  way. Refresh the scan after further edits — recorded hashes go stale.
 - `partial` inherits scan uncertainty; `truncated` specifically reports the
   test-candidate output cap. Each result array is bounded by `limit`; the two
   arrays do not share one combined cap. See top-level `coverage_gaps` and counts.
