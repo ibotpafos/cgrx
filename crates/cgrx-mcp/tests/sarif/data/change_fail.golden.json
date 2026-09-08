@@ -1,0 +1,276 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "runs": [
+    {
+      "automationDetails": {
+        "id": "cgrx/change-gates"
+      },
+      "properties": {
+        "cgrxAlgorithm": "change_quality_gate_v1",
+        "cgrxFailOn": "error",
+        "cgrxGate": "change",
+        "cgrxPartial": false,
+        "cgrxVerdict": "FAIL",
+        "cgrxWouldBlock": true,
+        "llmUsed": false
+      },
+      "results": [
+        {
+          "level": "error",
+          "message": {
+            "text": "cgrx change gate verdict FAIL (fail_on=error, would_block=true)"
+          },
+          "ruleId": "cgrx/gate-verdict"
+        },
+        {
+          "level": "error",
+          "message": {
+            "text": "cgrx max_warning_findings breached: value 2 exceeds threshold 0 (severity error)"
+          },
+          "ruleId": "cgrx/max_warning_findings"
+        },
+        {
+          "level": "warning",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/broken.ts"
+                },
+                "region": {
+                  "byteLength": 25,
+                  "byteOffset": 0
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "cgrx coverage gap PARSER_ERROR_RANGE: src/broken.ts:0-25"
+          },
+          "ruleId": "cgrx/max_coverage_gaps"
+        },
+        {
+          "level": "warning",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "vendor/gen.ts"
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "cgrx coverage gap EXCLUDED_PATH: vendor/gen.ts"
+          },
+          "ruleId": "cgrx/max_coverage_gaps"
+        },
+        {
+          "level": "warning",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/moved.ts"
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "cgrx coverage gap STALE_PATH: src/moved.ts"
+          },
+          "ruleId": "cgrx/max_coverage_gaps"
+        },
+        {
+          "level": "warning",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/dyn.ts"
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "cgrx coverage gap DYNAMIC_DISPATCH: src/dyn.ts:4-9"
+          },
+          "ruleId": "cgrx/max_coverage_gaps"
+        },
+        {
+          "level": "warning",
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/other.ts"
+                }
+              }
+            }
+          ],
+          "message": {
+            "text": "cgrx coverage gap DYNAMIC_DISPATCH: src/other.ts:1-2"
+          },
+          "ruleId": "cgrx/max_coverage_gaps"
+        },
+        {
+          "level": "error",
+          "message": {
+            "text": "cgrx max_coverage_gaps breached: value 5 exceeds threshold 0 (severity error)"
+          },
+          "relatedLocations": [
+            {
+              "id": 1,
+              "message": {
+                "text": "cgrx coverage gap PARSER_ERROR_RANGE: src/broken.ts:0-25"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/broken.ts"
+                },
+                "region": {
+                  "byteLength": 25,
+                  "byteOffset": 0
+                }
+              }
+            },
+            {
+              "id": 1,
+              "message": {
+                "text": "cgrx coverage gap EXCLUDED_PATH: vendor/gen.ts"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "vendor/gen.ts"
+                }
+              }
+            },
+            {
+              "id": 1,
+              "message": {
+                "text": "cgrx coverage gap STALE_PATH: src/moved.ts"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/moved.ts"
+                }
+              }
+            },
+            {
+              "id": 1,
+              "message": {
+                "text": "cgrx coverage gap DYNAMIC_DISPATCH: src/dyn.ts:4-9"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/dyn.ts"
+                }
+              }
+            },
+            {
+              "id": 1,
+              "message": {
+                "text": "cgrx coverage gap DYNAMIC_DISPATCH: src/other.ts:1-2"
+              },
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "src/other.ts"
+                }
+              }
+            }
+          ],
+          "ruleId": "cgrx/max_coverage_gaps"
+        }
+      ],
+      "tool": {
+        "driver": {
+          "fullName": "CGRX code graph gates",
+          "informationUri": "https://github.com/ibotpafos/cgrx",
+          "name": "cgrx",
+          "rules": [
+            {
+              "fullDescription": {
+                "text": "Snapshot-bound CGRX quality-gate verdict. No tests or LLM were executed."
+              },
+              "id": "cgrx/gate-verdict",
+              "name": "GateVerdict",
+              "shortDescription": {
+                "text": "Overall CGRX change gate verdict."
+              }
+            },
+            {
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "fullDescription": {
+                "text": "Change findings above the warning budget."
+              },
+              "id": "cgrx/max_warning_findings",
+              "name": "max_warning_findings",
+              "properties": {
+                "severity": "error",
+                "threshold": 0
+              },
+              "shortDescription": {
+                "text": "Change findings above the warning budget."
+              }
+            },
+            {
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "fullDescription": {
+                "text": "Blocked change missions above the budget."
+              },
+              "id": "cgrx/max_blocked_missions",
+              "name": "max_blocked_missions",
+              "properties": {
+                "severity": "error",
+                "threshold": 0
+              },
+              "shortDescription": {
+                "text": "Blocked change missions above the budget."
+              }
+            },
+            {
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "fullDescription": {
+                "text": "Index coverage gaps above the budget."
+              },
+              "id": "cgrx/max_coverage_gaps",
+              "name": "max_coverage_gaps",
+              "properties": {
+                "severity": "error",
+                "threshold": 0
+              },
+              "shortDescription": {
+                "text": "Index coverage gaps above the budget."
+              }
+            },
+            {
+              "defaultConfiguration": {
+                "level": "warning"
+              },
+              "fullDescription": {
+                "text": "Unverified blast-radius impacts above the budget."
+              },
+              "id": "cgrx/max_unverified_impacts",
+              "name": "max_unverified_impacts",
+              "properties": {
+                "severity": "warning",
+                "threshold": 0
+              },
+              "shortDescription": {
+                "text": "Unverified blast-radius impacts above the budget."
+              }
+            }
+          ],
+          "version": "0.1.0"
+        }
+      }
+    }
+  ],
+  "version": "2.1.0"
+}

@@ -129,6 +129,7 @@ dependencies = [
  "cgrx-core",
  "cgrx-languages",
  "cgrx-mcp",
+ "cgrx-metrics",
  "cgrx-retrieval",
  "cgrx-store",
  "notify",
@@ -166,6 +167,14 @@ version = "0.1.0"
 dependencies = [
  "cgrx-capsule",
  "cgrx-core",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "cgrx-metrics"
+version = "0.1.0"
+dependencies = [
  "serde",
  "serde_json",
 ]
