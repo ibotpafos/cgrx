@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Usage questions and ideas
+    url: https://github.com/ibotpafos/cgrx/discussions
+    about: Ask for help or discuss an idea before turning it into scoped work.
+  - name: Private security report
+    url: https://github.com/ibotpafos/cgrx/security/advisories/new
+    about: Report vulnerabilities or sensitive private-repository details privately.
