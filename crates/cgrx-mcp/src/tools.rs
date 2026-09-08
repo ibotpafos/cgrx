@@ -18,12 +18,17 @@ pub struct Server {
     snapshot: RepoSnapshot,
     backend: Option<Box<dyn ToolBackend>>,
     usage_log: Option<UsageLog>,
+    metrics_log: Option<MetricsLog>,
 }
 
 struct UsageLog {
     path: PathBuf,
     client: String,
     session: String,
+}
+
+struct MetricsLog {
+    path: PathBuf,
 }
 
 pub trait ToolBackend: Send + Sync {
@@ -178,6 +183,7 @@ impl Server {
             snapshot,
             backend: None,
             usage_log: None,
+            metrics_log: None,
         }
     }
 
@@ -187,6 +193,7 @@ impl Server {
             snapshot: backend.snapshot().clone(),
             backend: Some(Box::new(backend)),
             usage_log: None,
+            metrics_log: None,
         }
     }
 
@@ -200,6 +207,12 @@ impl Server {
             path: path.as_ref().to_path_buf(),
             client: client.into(),
             session: session.into(),
+        });
+    }
+
+    pub fn enable_metrics_log(&mut self, path: impl AsRef<Path>) {
+        self.metrics_log = Some(MetricsLog {
+            path: path.as_ref().to_path_buf(),
         });
     }
 
@@ -237,16 +250,46 @@ impl Server {
         let serialized =
             serde_json::to_string(&response).expect("JSON-RPC response must serialize");
         if let Some(tool) = tool {
+            let latency_us = started.elapsed().as_micros();
             self.record_usage(
                 &tool,
                 ok,
-                started.elapsed().as_micros(),
+                latency_us,
                 frame.len(),
                 serialized.len(),
                 response_snapshot.as_ref(),
             );
+            self.record_metrics(&tool, ok, latency_us, serialized.len());
         }
         serialized
+    }
+
+    fn record_metrics(&self, tool: &str, ok: bool, latency_us: u128, response_bytes: usize) {
+        let Some(metrics) = &self.metrics_log else {
+            return;
+        };
+        if let Some(parent) = metrics.path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        let Ok(mut file) = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&metrics.path)
+        else {
+            return;
+        };
+        let timestamp_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |duration| duration.as_millis());
+        let event = json!({
+            "event": "tool_call",
+            "timestamp_ms": timestamp_ms,
+            "tool": tool,
+            "ok": ok,
+            "latency_us": latency_us,
+            "response_bytes": response_bytes,
+        });
+        let _ = writeln!(file, "{event}");
     }
 
     fn record_usage(

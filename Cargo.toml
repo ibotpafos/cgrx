@@ -9,6 +9,7 @@ members = [
   "crates/cgrx-cgcr",
   "crates/cgrx-mcp",
   "crates/cgrx-cli",
+  "crates/cgrx-metrics",
 ]
 
 [workspace.package]

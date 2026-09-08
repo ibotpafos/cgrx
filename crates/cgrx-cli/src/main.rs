@@ -19,6 +19,7 @@ use cgrx_core::{
 use cgrx_mcp::{
     BackendError, Server, ToolBackend, model_visible_schema_json, revision_bound_handle,
 };
+use cgrx_metrics::Summarize;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -32,7 +33,7 @@ fn main() {
 fn run(args: Vec<String>) -> Result<(), String> {
     let Some(command) = args.first().map(String::as_str) else {
         return Err(
-            "expected init, index, daemon, observe, serve, visualize, orient, expand, status, schema, skill, usage-report, or bench"
+            "expected init, index, daemon, observe, serve, visualize, orient, expand, status, schema, skill, usage-report, metrics, or bench"
                 .to_owned(),
         );
     };
@@ -78,6 +79,7 @@ fn run(args: Vec<String>) -> Result<(), String> {
         "schema" => schema(&args[1..])?,
         "skill" => skill::run(&args[1..])?,
         "usage-report" => usage_report(&args[1..])?,
+        "metrics" => metrics_summary(&args[1..])?,
         "bench" => bench(&args[1..])?,
         other => return Err(format!("unknown command {other}")),
     }
@@ -216,7 +218,7 @@ fn read_observation_input(path: &str) -> Result<Vec<u8>, String> {
 }
 
 fn validate_flags(args: &[String], allowed: &[&str]) -> Result<(), String> {
-    let boolean = ["--json", "--dry-run", "--apply", "--once"];
+    let boolean = ["--json", "--dry-run", "--apply", "--once", "--summary"];
     let mut cursor = 0;
     while cursor < args.len() {
         let flag = args[cursor].as_str();
@@ -576,6 +578,29 @@ fn usage_report(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+fn metrics_summary(args: &[String]) -> Result<(), String> {
+    validate_flags(args, &["--log", "--json", "--summary"])?;
+    if !args.iter().any(|argument| argument == "--json") {
+        return Err("metrics requires --json".to_owned());
+    }
+    let log = flag(args, "--log")?;
+    let (events, ignored) = cgrx_metrics::parse_events_from_path(Path::new(log))
+        .map_err(|error| format!("failed to read metrics log: {error}"))?;
+    let summary = (events, ignored).summarize();
+    if args.iter().any(|argument| argument == "--summary") {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&summary).map_err(|error| error.to_string())?
+        );
+    } else {
+        println!(
+            "{}",
+            serde_json::to_string(&summary).map_err(|error| error.to_string())?
+        );
+    }
+    Ok(())
+}
+
 fn index(args: &[String]) -> Result<(), String> {
     if !args.iter().any(|argument| argument == "--json") {
         return Err("index requires --json".to_owned());
@@ -694,6 +719,9 @@ fn serve(args: &[String]) -> Result<(), String> {
         let session = env::var("CGRX_USAGE_SESSION")
             .unwrap_or_else(|_| format!("{}-{}", client, std::process::id()));
         server.enable_usage_log(path, client, session);
+    }
+    if let Ok(path) = env::var("CGRX_METRICS_LOG") {
+        server.enable_metrics_log(path);
     }
     let stdin = io::stdin();
     let mut stdout = io::stdout().lock();
