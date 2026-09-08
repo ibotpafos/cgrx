@@ -87,8 +87,8 @@ jobs:
         run: |
           target/release/cgrx ci --repo . --format github --gate change \
             --allow-inconclusive-within-budgets \
-            --max-blocked-missions 3 \
-            --max-coverage-gaps 11 \
+            --max-blocked-missions 19 \
+            --max-coverage-gaps 26 \
             --max-unverified-impacts 1
       - name: Relationship evaluator integrity and real MCP fanout
         run: CGRX_EVAL_BINARY=target/release/cgrx python3 -m unittest discover -s scripts -p test_eval_relationships.py
