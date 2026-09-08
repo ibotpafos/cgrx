@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
@@ -9,6 +8,34 @@ use crate::RuntimeError;
 const SECRET_LIMIT: usize = 50;
 const DEPENDENCY_LIMIT: usize = 200;
 const LICENSE_LIMIT: usize = 100;
+const UNTRACKED_FILE_SIZE_LIMIT: usize = 1024 * 1024;
+
+struct FindingBatch<T> {
+    findings: Vec<T>,
+    total: usize,
+    truncated: bool,
+    coverage_gaps: Vec<Value>,
+}
+
+impl<T> FindingBatch<T> {
+    fn new() -> Self {
+        Self {
+            findings: Vec::new(),
+            total: 0,
+            truncated: false,
+            coverage_gaps: Vec::new(),
+        }
+    }
+
+    fn push(&mut self, finding: T, limit: usize) {
+        self.total += 1;
+        if self.findings.len() < limit {
+            self.findings.push(finding);
+        } else {
+            self.truncated = true;
+        }
+    }
+}
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct SecretFinding {
@@ -53,6 +80,10 @@ impl Default for SecurityAuditConfig {
                 "Unicode-3.0".to_owned(),
                 "Unicode-DFS-2016".to_owned(),
                 "MPL-2.0".to_owned(),
+                "Unlicense".to_owned(),
+                "MIT-0".to_owned(),
+                "CC0-1.0".to_owned(),
+                "LLVM-exception".to_owned(),
             ],
             max_secret_findings: 0,
             max_dependency_findings: 0,
@@ -87,27 +118,68 @@ pub fn evaluate_security_gates(
     config: &SecurityAuditConfig,
     snapshot: &Value,
 ) -> Result<SecurityAuditResult, RuntimeError> {
-    let secret_findings = evaluate_secret_diff(config)?;
-    let dependency_findings = evaluate_dependencies(config)?;
-    let license_findings = evaluate_licenses(config)?;
-
-    let partial = false;
+    let mut coverage_gaps = Vec::new();
+    let secret_batch = collect_secret_diff(config).unwrap_or_else(|error| {
+        coverage_gaps.push(component_gap("secret_diff", &error));
+        FindingBatch::new()
+    });
+    let dependency_batch = collect_dependencies(config).unwrap_or_else(|error| {
+        coverage_gaps.push(component_gap("dependencies", &error));
+        FindingBatch::new()
+    });
+    let license_batch = collect_licenses(config).unwrap_or_else(|error| {
+        coverage_gaps.push(component_gap("licenses", &error));
+        FindingBatch::new()
+    });
+    coverage_gaps.extend(secret_batch.coverage_gaps.iter().cloned());
+    coverage_gaps.extend(dependency_batch.coverage_gaps.iter().cloned());
+    coverage_gaps.extend(license_batch.coverage_gaps.iter().cloned());
+    for (component, batch_total, returned, truncated) in [
+        (
+            "secret_diff",
+            secret_batch.total,
+            secret_batch.findings.len(),
+            secret_batch.truncated,
+        ),
+        (
+            "dependencies",
+            dependency_batch.total,
+            dependency_batch.findings.len(),
+            dependency_batch.truncated,
+        ),
+        (
+            "licenses",
+            license_batch.total,
+            license_batch.findings.len(),
+            license_batch.truncated,
+        ),
+    ] {
+        if truncated {
+            coverage_gaps.push(json!({
+                "code": "FINDINGS_TRUNCATED",
+                "component": component,
+                "total": batch_total,
+                "returned": returned
+            }));
+        }
+    }
+    let partial = !coverage_gaps.is_empty();
     let rules = [
         (
             "max_secret_findings",
-            secret_findings.len(),
+            secret_batch.total,
             config.max_secret_findings,
             "error",
         ),
         (
             "max_dependency_findings",
-            dependency_findings.len(),
+            dependency_batch.total,
             config.max_dependency_findings,
             "error",
         ),
         (
             "max_license_findings",
-            license_findings.len(),
+            license_batch.total,
             config.max_license_findings,
             "error",
         ),
@@ -151,7 +223,6 @@ pub fn evaluate_security_gates(
         _ => errors > 0 || partial,
     };
 
-    let coverage_gaps: Vec<Value> = vec![];
     let coverage_gap_count = coverage_gaps.len();
 
     let failed_rules: Vec<Value> = rules_json
@@ -168,9 +239,9 @@ pub fn evaluate_security_gates(
         "verdict": verdict,
         "would_block": would_block,
         "failed_rules": failed_rules,
-        "secret_finding_indexes": (0..secret_findings.len()).collect::<Vec<_>>(),
-        "dependency_finding_indexes": (0..dependency_findings.len()).collect::<Vec<_>>(),
-        "license_finding_indexes": (0..license_findings.len()).collect::<Vec<_>>(),
+        "secret_finding_indexes": (0..secret_batch.findings.len()).collect::<Vec<_>>(),
+        "dependency_finding_indexes": (0..dependency_batch.findings.len()).collect::<Vec<_>>(),
+        "license_finding_indexes": (0..license_batch.findings.len()).collect::<Vec<_>>(),
         "requirements": [
             "Revalidate the snapshot before acting on this gate.",
             "Inspect every referenced secret, dependency, and license finding.",
@@ -190,9 +261,9 @@ pub fn evaluate_security_gates(
         partial,
         coverage_gaps,
         coverage_gap_count,
-        secret_findings,
-        dependency_findings,
-        license_findings,
+        secret_findings: secret_batch.findings,
+        dependency_findings: dependency_batch.findings,
+        license_findings: license_batch.findings,
         agent_handoff,
         limitations: vec![
             "Secret detection is conservative and pattern-based; false positives are possible.".to_owned(),
@@ -203,64 +274,119 @@ pub fn evaluate_security_gates(
     })
 }
 
+fn component_gap(component: &str, error: &RuntimeError) -> Value {
+    json!({
+        "code": error.code(),
+        "component": component,
+        "detail": error.to_string()
+    })
+}
+
 /// Scan working-tree diff for secrets using conservative patterns.
 /// Returns findings with path, line, rule, severity, and confidence.
 pub fn evaluate_secret_diff(
     config: &SecurityAuditConfig,
 ) -> Result<Vec<SecretFinding>, RuntimeError> {
+    collect_secret_diff(config).map(|batch| batch.findings)
+}
+
+fn collect_secret_diff(
+    config: &SecurityAuditConfig,
+) -> Result<FindingBatch<SecretFinding>, RuntimeError> {
     let root = Path::new(&config.snapshot_path);
-    let output = std::process::Command::new("git")
-        .args(["diff", "--unified=0", "--no-color", "--"])
+    let tracked = std::process::Command::new(crate::git_executable())
+        .args([
+            "diff",
+            "HEAD",
+            "--name-only",
+            "--diff-filter=ACMRTUXB",
+            "--no-renames",
+            "-z",
+            "--",
+        ])
         .current_dir(root)
         .output()
         .map_err(|e| RuntimeError::new("cgrx.git_error", e.to_string()))?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).to_lowercase();
-        if stderr.contains("not a git repository") {
-            return Ok(vec![]);
-        }
+    if !tracked.status.success() {
+        let stderr = String::from_utf8_lossy(&tracked.stderr).to_lowercase();
         return Err(RuntimeError::new(
             "cgrx.git_error",
             stderr.trim().to_owned(),
         ));
     }
 
-    let diff_text = String::from_utf8_lossy(&output.stdout);
-    let mut findings = Vec::new();
-    let mut current_path: Option<String> = None;
-    let mut current_line: usize = 0;
+    let mut batch = FindingBatch::new();
+    for raw_path in tracked
+        .stdout
+        .split(|byte| *byte == 0)
+        .filter(|path| !path.is_empty())
+    {
+        let path = std::str::from_utf8(raw_path).map_err(|error| {
+            RuntimeError::new(
+                "cgrx.path_encoding",
+                format!("tracked path is not UTF-8: {error}"),
+            )
+        })?;
+        if path_is_allowlisted(path, &config.allowlist_paths) {
+            continue;
+        }
 
-    for line in diff_text.lines() {
-        if let Some(stripped) = line.strip_prefix("+++ b/") {
-            current_path = Some(stripped.to_owned());
-            current_line = 0;
-            continue;
+        let output = std::process::Command::new(crate::git_executable())
+            .args([
+                "diff",
+                "HEAD",
+                "--unified=0",
+                "--no-color",
+                "--no-ext-diff",
+                "--no-textconv",
+                "--no-renames",
+                "--",
+            ])
+            .arg(path)
+            .current_dir(root)
+            .output()
+            .map_err(|error| RuntimeError::new("cgrx.git_error", error.to_string()))?;
+        if !output.status.success() {
+            return Err(RuntimeError::new(
+                "cgrx.git_error",
+                String::from_utf8_lossy(&output.stderr).trim().to_owned(),
+            ));
         }
-        if line.starts_with("@@") {
-            if let Some(pos) = line.find("+") {
-                let rest = &line[pos + 1..];
-                if let Some(comma) = rest.find(',') {
-                    current_line = rest[..comma].parse().unwrap_or(0);
-                } else {
-                    current_line = rest.trim().parse().unwrap_or(0);
-                }
+
+        let diff_text = String::from_utf8_lossy(&output.stdout);
+        let mut current_line = 0usize;
+        let mut in_hunk = false;
+        for line in diff_text.lines() {
+            if line.starts_with("Binary files ") {
+                batch.coverage_gaps.push(json!({
+                    "code": "UNSCANNED_BINARY_FILE",
+                    "component": "secret_diff",
+                    "path": path
+                }));
+                break;
             }
-            continue;
-        }
-        if line.starts_with("---") || line.starts_with("diff") || line.starts_with("index") {
-            continue;
-        }
-        if let Some(ref path) = current_path {
+            if line.starts_with("@@") {
+                in_hunk = true;
+                if let Some(pos) = line.find('+') {
+                    let rest = &line[pos + 1..];
+                    current_line = rest
+                        .split([',', ' '])
+                        .next()
+                        .and_then(|value| value.parse().ok())
+                        .unwrap_or(0);
+                }
+                continue;
+            }
+            if !in_hunk {
+                continue;
+            }
             if line.starts_with('+') && !line.starts_with("+++") {
                 let content = &line[1..];
                 if let Some(finding) =
                     check_secret_line(path, current_line, content, &config.allowlist_paths)
                 {
-                    findings.push(finding);
-                    if findings.len() >= SECRET_LIMIT {
-                        break;
-                    }
+                    batch.push(finding, SECRET_LIMIT);
                 }
             }
             if !line.starts_with('-') {
@@ -269,7 +395,76 @@ pub fn evaluate_secret_diff(
         }
     }
 
-    Ok(findings)
+    let untracked = std::process::Command::new(crate::git_executable())
+        .args(["ls-files", "--others", "--exclude-standard", "-z"])
+        .current_dir(root)
+        .output()
+        .map_err(|error| RuntimeError::new("cgrx.git_error", error.to_string()))?;
+    if !untracked.status.success() {
+        return Err(RuntimeError::new(
+            "cgrx.git_error",
+            String::from_utf8_lossy(&untracked.stderr).trim().to_owned(),
+        ));
+    }
+    for raw_path in untracked
+        .stdout
+        .split(|byte| *byte == 0)
+        .filter(|path| !path.is_empty())
+    {
+        let path = std::str::from_utf8(raw_path).map_err(|error| {
+            RuntimeError::new(
+                "cgrx.path_encoding",
+                format!("untracked path is not UTF-8: {error}"),
+            )
+        })?;
+        if path_is_allowlisted(path, &config.allowlist_paths) {
+            continue;
+        }
+        let metadata = fs::symlink_metadata(root.join(path))
+            .map_err(|error| RuntimeError::new("cgrx.source_read", error.to_string()))?;
+        if !metadata.file_type().is_file() {
+            batch.coverage_gaps.push(json!({
+                "code": "UNSCANNED_SPECIAL_FILE",
+                "component": "secret_diff",
+                "path": path
+            }));
+            continue;
+        }
+        let bytes = fs::read(root.join(path))
+            .map_err(|error| RuntimeError::new("cgrx.source_read", error.to_string()))?;
+        if bytes.len() > UNTRACKED_FILE_SIZE_LIMIT {
+            batch.coverage_gaps.push(json!({
+                "code": "UNSCANNED_LARGE_FILE",
+                "component": "secret_diff",
+                "path": path,
+                "size": bytes.len(),
+                "limit": UNTRACKED_FILE_SIZE_LIMIT
+            }));
+            continue;
+        }
+        if bytes.contains(&0) {
+            batch.coverage_gaps.push(json!({
+                "code": "UNSCANNED_BINARY_FILE",
+                "component": "secret_diff",
+                "path": path
+            }));
+            continue;
+        }
+        let content = std::str::from_utf8(&bytes).map_err(|error| {
+            RuntimeError::new(
+                "cgrx.source_encoding",
+                format!("{path} is not valid UTF-8: {error}"),
+            )
+        })?;
+        for (index, line) in content.lines().enumerate() {
+            if let Some(finding) = check_secret_line(path, index + 1, line, &config.allowlist_paths)
+            {
+                batch.push(finding, SECRET_LIMIT);
+            }
+        }
+    }
+
+    Ok(batch)
 }
 
 fn check_secret_line(
@@ -278,10 +473,8 @@ fn check_secret_line(
     content: &str,
     allowlist_paths: &[String],
 ) -> Option<SecretFinding> {
-    for allowed in allowlist_paths {
-        if path.contains(allowed) {
-            return None;
-        }
+    if path_is_allowlisted(path, allowlist_paths) {
+        return None;
     }
 
     let lower = content.to_lowercase();
@@ -377,10 +570,14 @@ fn check_secret_line(
     }
 
     // AWS access key pattern
-    if content.contains("AKIA") && content.len() > content.find("AKIA").unwrap_or(0) + 20 {
+    if content.contains("AKIA") && content.len() >= content.find("AKIA").unwrap_or(0) + 20 {
         let start = content.find("AKIA").unwrap();
         let candidate = &content[start..];
-        if candidate.len() >= 20 && candidate[..20].chars().all(|c| c.is_ascii_alphanumeric()) {
+        if candidate
+            .as_bytes()
+            .get(..20)
+            .is_some_and(|key| key.iter().all(u8::is_ascii_alphanumeric))
+        {
             return Some(SecretFinding {
                 path: path.to_owned(),
                 line,
@@ -394,70 +591,75 @@ fn check_secret_line(
     None
 }
 
+fn path_is_allowlisted(path: &str, allowlist_paths: &[String]) -> bool {
+    allowlist_paths.iter().any(|allowed| {
+        let allowed = allowed.trim().trim_matches('/');
+        !allowed.is_empty() && (path == allowed || path.starts_with(&format!("{allowed}/")))
+    })
+}
+
 /// Audit dependencies from Cargo.lock using local heuristics.
 /// Checks for known suspicious patterns without network access.
 pub fn evaluate_dependencies(config: &SecurityAuditConfig) -> Result<Vec<Value>, RuntimeError> {
+    collect_dependencies(config).map(|batch| batch.findings)
+}
+
+fn collect_dependencies(config: &SecurityAuditConfig) -> Result<FindingBatch<Value>, RuntimeError> {
     let lock_path = Path::new(&config.snapshot_path).join("Cargo.lock");
     let content = fs::read_to_string(&lock_path)
         .map_err(|e| RuntimeError::new("cgrx.lock_read", e.to_string()))?;
 
-    let mut findings = Vec::new();
-    let mut packages = BTreeMap::new();
-    let mut current_package = String::new();
-    let mut current_version = String::new();
-
-    for line in content.lines() {
-        if line.starts_with("[[package]]") {
-            if !current_package.is_empty() {
-                packages.insert(current_package.clone(), current_version.clone());
-            }
-            current_package = String::new();
-            current_version = String::new();
-        } else if let Some(stripped) = line.strip_prefix("name = ") {
-            current_package = trimmed_matches(stripped).to_owned();
-        } else if let Some(stripped) = line.strip_prefix("version = ") {
-            current_version = trimmed_matches(stripped).to_owned();
-        }
-    }
-    if !current_package.is_empty() {
-        packages.insert(current_package, current_version);
-    }
+    let parsed = content.parse::<toml::Value>().map_err(|error| {
+        RuntimeError::new("cgrx.lock_parse", format!("invalid Cargo.lock: {error}"))
+    })?;
+    let packages: &[toml::Value] = match parsed.get("package") {
+        Some(value) => value.as_array().ok_or_else(|| {
+            RuntimeError::new("cgrx.lock_parse", "Cargo.lock package must be an array")
+        })?,
+        None => &[],
+    };
+    let mut batch = FindingBatch::new();
 
     // Known suspicious patterns (conservative, local heuristics only)
     let suspicious_prefixes = ["rust-", "rs-", "sys-", "binding-", "ffi-"];
     let known_empty_versions = ["0.0.0", "0.0.0-0", "0.0.1-alpha.0"];
 
-    for (name, version) in packages {
+    for package in packages {
+        let name = package
+            .get("name")
+            .and_then(toml::Value::as_str)
+            .ok_or_else(|| RuntimeError::new("cgrx.lock_parse", "package name is missing"))?;
+        let version = package
+            .get("version")
+            .and_then(toml::Value::as_str)
+            .ok_or_else(|| RuntimeError::new("cgrx.lock_parse", "package version is missing"))?;
         // Check for empty/placeholder versions
-        if known_empty_versions.contains(&version.as_str()) {
-            findings.push(json!({
-                "package": name,
-                "version": version,
-                "rule": "EMPTY_VERSION",
-                "severity": "error",
-                "confidence": "candidate",
-                "detail": "Package version appears to be a placeholder or empty version."
-            }));
-            if findings.len() >= DEPENDENCY_LIMIT {
-                break;
-            }
+        if known_empty_versions.contains(&version) {
+            batch.push(
+                json!({
+                    "package": name,
+                    "version": version,
+                    "rule": "EMPTY_VERSION",
+                    "severity": "error",
+                    "confidence": "candidate",
+                    "detail": "Package version appears to be a placeholder or empty version."
+                }),
+                DEPENDENCY_LIMIT,
+            );
             continue;
         }
 
         // Check for suspicious naming patterns
         for prefix in suspicious_prefixes {
             if name.starts_with(prefix) && name != prefix {
-                findings.push(json!({
+                batch.push(json!({
                     "package": name,
                     "version": version,
                     "rule": "SUSPICIOUS_NAME",
                     "severity": "warning",
                     "confidence": "candidate",
                     "detail": format!("Package name matches suspicious prefix pattern: {}", prefix)
-                }));
-                if findings.len() >= DEPENDENCY_LIMIT {
-                    break;
-                }
+                }), DEPENDENCY_LIMIT);
                 break;
             }
         }
@@ -467,21 +669,21 @@ pub fn evaluate_dependencies(config: &SecurityAuditConfig) -> Result<Vec<Value>,
             && let Ok(major_num) = major.parse::<u32>()
             && major_num >= 100
         {
-            findings.push(json!({
-                "package": name,
-                "version": version,
-                "rule": "HIGH_VERSION",
-                "severity": "warning",
-                "confidence": "candidate",
-                "detail": "Package has unusually high major version number."
-            }));
-            if findings.len() >= DEPENDENCY_LIMIT {
-                break;
-            }
+            batch.push(
+                json!({
+                    "package": name,
+                    "version": version,
+                    "rule": "HIGH_VERSION",
+                    "severity": "warning",
+                    "confidence": "candidate",
+                    "detail": "Package has unusually high major version number."
+                }),
+                DEPENDENCY_LIMIT,
+            );
         }
     }
 
-    Ok(findings)
+    Ok(batch)
 }
 
 /// Evaluate licenses against allowlist.
@@ -489,77 +691,262 @@ pub fn evaluate_dependencies(config: &SecurityAuditConfig) -> Result<Vec<Value>,
 pub fn evaluate_licenses(
     config: &SecurityAuditConfig,
 ) -> Result<Vec<LicenseFinding>, RuntimeError> {
-    let deps_path = Path::new(&config.snapshot_path).join("licenses/dependencies.md");
-    let content = match fs::read_to_string(&deps_path) {
-        Ok(c) => c,
-        Err(_) => {
-            return Ok(vec![]);
-        }
-    };
+    collect_licenses(config).map(|batch| batch.findings)
+}
 
-    let mut findings = Vec::new();
-    let mut in_table = false;
+fn collect_licenses(
+    config: &SecurityAuditConfig,
+) -> Result<FindingBatch<LicenseFinding>, RuntimeError> {
+    let deps_path = Path::new(&config.snapshot_path).join("licenses/dependencies.md");
+    let content = fs::read_to_string(&deps_path)
+        .map_err(|error| RuntimeError::new("cgrx.license_read", error.to_string()))?;
+
+    let mut batch = FindingBatch::new();
+    let mut columns: Option<(usize, Option<usize>, usize)> = None;
+    let mut data_rows = 0usize;
 
     for line in content.lines() {
-        if line.starts_with("|") && line.contains("License") {
-            in_table = true;
+        if !line.trim_start().starts_with('|') {
             continue;
         }
-        if !in_table || !line.starts_with("|") {
+        let cells = markdown_cells(line);
+        if cells.iter().all(|cell| {
+            !cell.is_empty()
+                && cell
+                    .chars()
+                    .all(|ch| ch == '-' || ch == ':' || ch.is_whitespace())
+        }) {
             continue;
         }
-        if line.starts_with("|---") {
+        if columns.is_none() {
+            let package = cells
+                .iter()
+                .position(|cell| cell.eq_ignore_ascii_case("Package"));
+            let version = cells
+                .iter()
+                .position(|cell| cell.eq_ignore_ascii_case("Version"));
+            let license = cells
+                .iter()
+                .position(|cell| cell.eq_ignore_ascii_case("License"));
+            if let (Some(package), Some(license)) = (package, license) {
+                columns = Some((package, version, license));
+            }
             continue;
         }
-
-        let cells: Vec<&str> = line.split('|').collect();
-        if cells.len() < 4 {
-            continue;
-        }
-
-        let package = cells[1].trim();
-        let version = cells[2].trim();
-        let license = cells[3].trim();
-
+        let (package_index, version_index, license_index) = columns.unwrap();
+        let package_cell = cells.get(package_index).copied().unwrap_or("");
+        let license = cells.get(license_index).copied().unwrap_or("");
+        let (package, version) = if let Some(version_index) = version_index {
+            (
+                package_cell.to_owned(),
+                cells.get(version_index).copied().unwrap_or("").to_owned(),
+            )
+        } else {
+            split_package_version(package_cell).ok_or_else(|| {
+                RuntimeError::new(
+                    "cgrx.license_parse",
+                    format!("package entry lacks a version: {package_cell}"),
+                )
+            })?
+        };
         if package.is_empty() || version.is_empty() || license.is_empty() {
-            continue;
+            return Err(RuntimeError::new(
+                "cgrx.license_parse",
+                "license inventory contains an empty required cell",
+            ));
         }
+        data_rows += 1;
 
-        let status = if config
-            .allowlist_licenses
-            .iter()
-            .any(|l| license.contains(l))
-        {
+        let status = if license_expression_allowed(license, &config.allowlist_licenses) {
             "passed"
         } else {
             "breached"
         };
 
         if status == "breached" {
-            findings.push(LicenseFinding {
-                package: package.to_owned(),
-                version: version.to_owned(),
-                license: license.to_owned(),
-                status: status.to_owned(),
-            });
-            if findings.len() >= LICENSE_LIMIT {
-                break;
-            }
+            batch.push(
+                LicenseFinding {
+                    package,
+                    version,
+                    license: license.to_owned(),
+                    status: status.to_owned(),
+                },
+                LICENSE_LIMIT,
+            );
         }
     }
 
-    Ok(findings)
+    if columns.is_none() || data_rows == 0 {
+        return Err(RuntimeError::new(
+            "cgrx.license_parse",
+            "license inventory has no Package/License data rows",
+        ));
+    }
+    Ok(batch)
 }
 
-fn trimmed_matches(s: &str) -> &str {
-    s.trim().trim_matches('"')
+fn markdown_cells(line: &str) -> Vec<&str> {
+    line.trim()
+        .trim_matches('|')
+        .split('|')
+        .map(str::trim)
+        .collect()
+}
+
+fn split_package_version(value: &str) -> Option<(String, String)> {
+    value
+        .char_indices()
+        .rev()
+        .find(|(index, ch)| {
+            *ch == '-'
+                && value
+                    .get(index + 1..)
+                    .and_then(|tail| tail.chars().next())
+                    .is_some_and(|next| next.is_ascii_digit())
+        })
+        .map(|(index, _)| (value[..index].to_owned(), value[index + 1..].to_owned()))
+}
+
+fn license_expression_allowed(expression: &str, allowlist: &[String]) -> bool {
+    let allowed = |token: &str| allowlist.iter().any(|item| item.trim() == token);
+    let normalized = expression.replace('/', " OR ");
+    let mut tokens = Vec::new();
+    let mut current = String::new();
+    for ch in normalized.chars() {
+        match ch {
+            '(' | ')' => {
+                if !current.trim().is_empty() {
+                    tokens.push(current.trim().to_owned());
+                }
+                tokens.push(ch.to_string());
+                current.clear();
+            }
+            ch if ch.is_whitespace() => {
+                if !current.is_empty() {
+                    tokens.push(std::mem::take(&mut current));
+                }
+            }
+            _ => current.push(ch),
+        }
+    }
+    if !current.is_empty() {
+        tokens.push(current);
+    }
+    let mut parser = LicenseExpressionParser {
+        tokens: &tokens,
+        index: 0,
+        allowed: &allowed,
+    };
+    parser
+        .parse_expression()
+        .is_some_and(|result| result && parser.index == tokens.len())
+}
+
+struct LicenseExpressionParser<'a, F> {
+    tokens: &'a [String],
+    index: usize,
+    allowed: &'a F,
+}
+
+impl<F: Fn(&str) -> bool> LicenseExpressionParser<'_, F> {
+    fn parse_expression(&mut self) -> Option<bool> {
+        let mut result = self.parse_term()?;
+        while self.peek("OR") {
+            self.index += 1;
+            result |= self.parse_term()?;
+        }
+        Some(result)
+    }
+
+    fn parse_term(&mut self) -> Option<bool> {
+        let mut result = self.parse_factor()?;
+        while self.peek("AND") {
+            self.index += 1;
+            result &= self.parse_factor()?;
+        }
+        Some(result)
+    }
+
+    fn parse_factor(&mut self) -> Option<bool> {
+        if self.peek("(") {
+            self.index += 1;
+            let result = self.parse_expression()?;
+            if !self.peek(")") {
+                return None;
+            }
+            self.index += 1;
+            return Some(result);
+        }
+        let license = self.tokens.get(self.index)?;
+        if matches!(license.as_str(), ")" | "AND" | "OR" | "WITH") {
+            return None;
+        }
+        self.index += 1;
+        let mut result = (self.allowed)(license);
+        if self.peek("WITH") {
+            self.index += 1;
+            let exception = self.tokens.get(self.index)?;
+            self.index += 1;
+            result &= (self.allowed)(exception);
+        }
+        Some(result)
+    }
+
+    fn peek(&self, expected: &str) -> bool {
+        self.tokens
+            .get(self.index)
+            .is_some_and(|token| token.eq_ignore_ascii_case(expected))
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
+    use std::process::Command;
     use tempfile::NamedTempFile;
+
+    fn git(root: &Path, args: &[&str]) {
+        let status = Command::new(crate::git_executable())
+            .args([
+                "-c",
+                "user.name=CGRX Test",
+                "-c",
+                "user.email=test@example.invalid",
+            ])
+            .args(args)
+            .current_dir(root)
+            .status()
+            .unwrap();
+        assert!(status.success());
+    }
+
+    fn committed_repository() -> tempfile::TempDir {
+        let repository = tempfile::tempdir().unwrap();
+        git(repository.path(), &["init", "-q"]);
+        fs::write(repository.path().join("Cargo.lock"), "").unwrap();
+        fs::create_dir(repository.path().join("licenses")).unwrap();
+        fs::write(
+            repository.path().join("licenses/dependencies.md"),
+            "| Package | Version | License |\n| --- | --- | --- |\n| serde | 1.0.0 | MIT |\n",
+        )
+        .unwrap();
+        fs::write(repository.path().join("tracked.rs"), "fn baseline() {}\n").unwrap();
+        git(repository.path(), &["add", "."]);
+        git(repository.path(), &["commit", "-qm", "fixture"]);
+        repository
+    }
+
+    fn config(root: &Path) -> SecurityAuditConfig {
+        SecurityAuditConfig {
+            snapshot_path: root.to_string_lossy().into_owned(),
+            allowlist_paths: Vec::new(),
+            allowlist_licenses: vec!["MIT".to_owned()],
+            max_secret_findings: 0,
+            max_dependency_findings: 0,
+            max_license_findings: 0,
+            ..SecurityAuditConfig::default()
+        }
+    }
 
     #[test]
     fn secret_detection_private_key() {
@@ -607,6 +994,113 @@ mod tests {
     }
 
     #[test]
+    fn secret_detection_aws_candidate_is_utf8_safe() {
+        let content = "AKIAABCDEFGHIJKLMNO💥";
+        assert!(check_secret_line("src/config.rs", 1, content, &[]).is_none());
+        let exact = "AKIAABCDEFGHIJKLMNOP";
+        assert_eq!(
+            check_secret_line("src/config.rs", 2, exact, &[])
+                .expect("exact 20-byte AWS key")
+                .rule,
+            "AWS_ACCESS_KEY"
+        );
+    }
+
+    #[test]
+    fn secret_diff_includes_staged_and_untracked_files() {
+        let repository = committed_repository();
+        fs::write(
+            repository.path().join("tracked.rs"),
+            "let api_key = \"staged-secret-value\";\n",
+        )
+        .unwrap();
+        git(repository.path(), &["add", "tracked.rs"]);
+        fs::write(
+            repository.path().join("untracked.rs"),
+            "let password = \"untracked-secret-value\";\n",
+        )
+        .unwrap();
+
+        let findings = evaluate_secret_diff(&config(repository.path())).unwrap();
+        assert!(
+            findings.iter().any(|finding| finding.path == "tracked.rs"),
+            "{findings:?}"
+        );
+        assert!(
+            findings
+                .iter()
+                .any(|finding| finding.path == "untracked.rs"),
+            "{findings:?}"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn secret_diff_scans_tracked_paths_that_git_would_quote() {
+        let repository = committed_repository();
+        let quoted_path = "quoted\nname.rs";
+        fs::write(repository.path().join(quoted_path), "fn baseline() {}\n").unwrap();
+        git(repository.path(), &["add", "."]);
+        git(repository.path(), &["commit", "-qm", "quoted path fixture"]);
+        fs::write(
+            repository.path().join(quoted_path),
+            "let api_key = \"quoted-path-secret-value\";\n",
+        )
+        .unwrap();
+
+        let findings = evaluate_secret_diff(&config(repository.path())).unwrap();
+        assert!(
+            findings.iter().any(|finding| finding.path == quoted_path),
+            "{findings:?}"
+        );
+    }
+
+    #[test]
+    fn added_header_like_text_cannot_switch_the_allowlist_path() {
+        let repository = committed_repository();
+        fs::write(
+            repository.path().join("tracked.rs"),
+            concat!(
+                "++ b/fixtures/fake.rs\n",
+                "let api_key = \"real-secret-value\";\n",
+            ),
+        )
+        .unwrap();
+        let mut audit_config = config(repository.path());
+        audit_config.allowlist_paths = vec!["fixtures".to_owned()];
+
+        let findings = evaluate_secret_diff(&audit_config).unwrap();
+        assert!(
+            findings.iter().any(|finding| finding.path == "tracked.rs"),
+            "{findings:?}"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn untracked_symlink_is_not_followed_outside_the_repository() {
+        use std::os::unix::fs::symlink;
+
+        let repository = committed_repository();
+        let external = NamedTempFile::new().unwrap();
+        fs::write(
+            external.path(),
+            "let api_key = \"external-secret-value\";\n",
+        )
+        .unwrap();
+        symlink(external.path(), repository.path().join("outside-link")).unwrap();
+
+        let batch = collect_secret_diff(&config(repository.path())).unwrap();
+        assert!(batch.findings.is_empty(), "{:?}", batch.findings);
+        assert!(
+            batch
+                .coverage_gaps
+                .iter()
+                .any(|gap| gap["code"] == "UNSCANNED_SPECIAL_FILE")
+        );
+    }
+
+    #[test]
     fn secret_detection_allowlist_paths() {
         let content = r#"let api_key = "sk-1234567890abcdef1234567890abcdef";"#;
         let finding = check_secret_line("fixtures/test.rs", 1, content, &["fixtures".to_owned()]);
@@ -650,115 +1144,109 @@ mod tests {
 
     #[test]
     fn dependency_audit_empty_version() {
-        let mut file = NamedTempFile::new().unwrap();
-        writeln!(file, "[[package]]").unwrap();
-        writeln!(file, r#"name = "suspicious-pkg""#).unwrap();
-        writeln!(file, r#"version = "0.0.0""#).unwrap();
-
-        let path = file.path().to_str().unwrap();
-        let content = fs::read_to_string(path).unwrap();
-        let mut packages = BTreeMap::new();
-        let mut current_package = String::new();
-        let mut current_version = String::new();
-
-        for line in content.lines() {
-            if line.starts_with("[[package]]") {
-                if !current_package.is_empty() {
-                    packages.insert(current_package.clone(), current_version.clone());
-                }
-                current_package = String::new();
-                current_version = String::new();
-            } else if let Some(stripped) = line.strip_prefix("name = ") {
-                current_package = trimmed_matches(stripped).to_owned();
-            } else if let Some(stripped) = line.strip_prefix("version = ") {
-                current_version = trimmed_matches(stripped).to_owned();
-            }
-        }
-        if !current_package.is_empty() {
-            packages.insert(current_package, current_version);
-        }
-
-        assert!(packages.contains_key("suspicious-pkg"));
-        assert_eq!(packages["suspicious-pkg"], "0.0.0");
+        let repository = committed_repository();
+        fs::write(
+            repository.path().join("Cargo.lock"),
+            "[[package]]\nname = \"suspicious-pkg\"\nversion = \"0.0.0\"\n",
+        )
+        .unwrap();
+        let findings = evaluate_dependencies(&config(repository.path())).unwrap();
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0]["package"], "suspicious-pkg");
+        assert_eq!(findings[0]["rule"], "EMPTY_VERSION");
     }
 
     #[test]
     fn license_checking_allowlisted() {
-        let mut file = NamedTempFile::new().unwrap();
-        writeln!(file, "| Package | Version | License |").unwrap();
-        writeln!(file, "|---------|---------|---------|").unwrap();
-        writeln!(file, "| serde | 1.0.0 | MIT |").unwrap();
-        writeln!(file, "| tokio | 1.0.0 | Apache-2.0 |").unwrap();
-        writeln!(file, "| gpl-crate | 1.0.0 | GPL-3.0 |").unwrap();
-
-        let path = file.path().to_str().unwrap();
-        let content = fs::read_to_string(path).unwrap();
-        let allowlist = ["MIT".to_owned(), "Apache-2.0".to_owned()];
-
-        let mut findings = Vec::new();
-        let mut in_table = false;
-
-        for line in content.lines() {
-            if line.starts_with("|") && line.contains("License") {
-                in_table = true;
-                continue;
-            }
-            if !in_table || !line.starts_with("|") {
-                continue;
-            }
-            if line.starts_with("|---") {
-                continue;
-            }
-
-            let cells: Vec<&str> = line.split('|').collect();
-            if cells.len() < 4 {
-                continue;
-            }
-
-            let package = cells[1].trim();
-            let version = cells[2].trim();
-            let license = cells[3].trim();
-
-            if package.is_empty() || version.is_empty() || license.is_empty() {
-                continue;
-            }
-
-            let status = if allowlist.iter().any(|l| license.contains(l)) {
-                "passed"
-            } else {
-                "breached"
-            };
-
-            if status == "breached" {
-                findings.push(LicenseFinding {
-                    package: package.to_owned(),
-                    version: version.to_owned(),
-                    license: license.to_owned(),
-                    status: status.to_owned(),
-                });
-            }
-        }
-
+        let repository = committed_repository();
+        fs::write(
+            repository.path().join("licenses/dependencies.md"),
+            concat!(
+                "| Package | Version | License |\n",
+                "| --- | --- | --- |\n",
+                "| serde | 1.0.0 | MIT |\n",
+                "| tokio | 1.0.0 | Apache-2.0 |\n",
+                "| gpl-crate | 1.0.0 | GPL-3.0 |\n",
+            ),
+        )
+        .unwrap();
+        let mut audit_config = config(repository.path());
+        audit_config.allowlist_licenses = vec!["MIT".to_owned(), "Apache-2.0".to_owned()];
+        let findings = evaluate_licenses(&audit_config).unwrap();
         assert_eq!(findings.len(), 1);
         assert_eq!(findings[0].package, "gpl-crate");
         assert_eq!(findings[0].license, "GPL-3.0");
     }
 
     #[test]
-    fn evaluate_security_gates_pass() {
-        let temp_dir = tempfile::tempdir().unwrap();
-        let lock_path = temp_dir.path().join("Cargo.lock");
-        std::fs::write(&lock_path, "").unwrap();
+    fn license_checking_supports_repository_inventory_shape() {
+        let repository = committed_repository();
+        fs::write(
+            repository.path().join("licenses/dependencies.md"),
+            concat!(
+                "| Package | License | Upstream |\n",
+                "| --- | --- | --- |\n",
+                "| serde-1.0.0 | MIT | https://example.invalid/serde |\n",
+                "| copyleft-2.0.0 | GPL-3.0 | https://example.invalid/copyleft |\n",
+            ),
+        )
+        .unwrap();
 
-        let config = SecurityAuditConfig {
-            snapshot_path: temp_dir.path().to_str().unwrap().to_owned(),
-            fail_on: "error".to_owned(),
-            allowlist_paths: vec!["fixtures".to_owned(), "tests".to_owned()],
-            allowlist_licenses: vec!["MIT".to_owned(), "Apache-2.0".to_owned()],
-            max_secret_findings: 100,
-            max_dependency_findings: 100,
-            max_license_findings: 100,
-        };
+        let findings = evaluate_licenses(&config(repository.path())).unwrap();
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].package, "copyleft");
+        assert_eq!(findings[0].version, "2.0.0");
+        assert_eq!(findings[0].license, "GPL-3.0");
+    }
+
+    #[test]
+    fn license_expressions_apply_boolean_semantics() {
+        let mit = vec!["MIT".to_owned()];
+        assert!(license_expression_allowed("MIT OR GPL-3.0", &mit));
+        assert!(!license_expression_allowed("MIT AND GPL-3.0", &mit));
+        assert!(!license_expression_allowed(
+            "(MIT OR Apache-2.0) AND Unicode-3.0",
+            &mit
+        ));
+        assert!(license_expression_allowed("Unlicense/MIT", &mit));
+    }
+
+    #[test]
+    fn missing_license_inventory_is_not_treated_as_clean() {
+        let repository = committed_repository();
+        fs::remove_file(repository.path().join("licenses/dependencies.md")).unwrap();
+        let error = evaluate_licenses(&config(repository.path())).unwrap_err();
+        assert_eq!(error.code(), "cgrx.license_read");
+    }
+
+    #[test]
+    fn truncated_secret_payload_cannot_pass_the_gate() {
+        let repository = committed_repository();
+        let secrets = (0..=SECRET_LIMIT)
+            .map(|index| format!("let api_key_{index} = \"secret-value-{index:04}\";"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        fs::write(repository.path().join("tracked.rs"), secrets).unwrap();
+        let mut audit_config = config(repository.path());
+        audit_config.max_secret_findings = SECRET_LIMIT;
+
+        let result = evaluate_security_gates(
+            &audit_config,
+            &json!({"repo_revision":"fixture","graph_generation":1}),
+        )
+        .unwrap();
+        assert!(result.partial);
+        assert_eq!(result.verdict, "FAIL");
+        assert!(result.would_block);
+    }
+
+    #[test]
+    fn evaluate_security_gates_pass() {
+        let repository = committed_repository();
+        let mut config = config(repository.path());
+        config.max_secret_findings = 100;
+        config.max_dependency_findings = 100;
+        config.max_license_findings = 100;
 
         let snapshot = json!({"repo_revision": "abc123", "graph_generation": 1});
         let result = evaluate_security_gates(&config, &snapshot).unwrap();

@@ -2006,3 +2006,26 @@ fn daemon_watch_emits_only_freshness_transitions() {
     assert_eq!(event["changed"], serde_json::json!(false));
     assert!(event["error"].is_null());
 }
+
+#[test]
+fn watch_command_rejects_missing_root() {
+    let output = cli()
+        .args(["watch", "--json"])
+        .output()
+        .expect("watch executes");
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("--root"));
+}
+
+#[test]
+fn watch_command_rejects_missing_json() {
+    let repository = TestDirectory::new("watch-no-json");
+    git(repository.path(), &["init", "-q"]);
+    let output = cli()
+        .args(["watch", "--root"])
+        .arg(repository.path())
+        .output()
+        .expect("watch executes");
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("--json"));
+}

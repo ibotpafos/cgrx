@@ -610,13 +610,44 @@ impl Server {
                     .into_iter()
                     .flatten()
                     .any(|threshold| threshold > 10_000)
+                    || args
+                        .allowlist_paths
+                        .iter()
+                        .chain(args.allowlist_licenses.iter())
+                        .flatten()
+                        .any(|entry| entry.trim().is_empty())
                 {
                     return Err(JsonRpcError::typed(
                         -32602,
                         "cgrx.invalid_arguments",
-                        "fail_on must be error, warning, or none; thresholds must be 0..10000",
+                        "fail_on must be error, warning, or none; thresholds must be 0..10000; allowlist entries must be non-blank",
                     ));
                 }
+                let allowlist_paths = args.allowlist_paths.unwrap_or_else(|| {
+                    ["fixtures", "tests"]
+                        .into_iter()
+                        .map(str::to_owned)
+                        .collect()
+                });
+                let allowlist_licenses = args.allowlist_licenses.unwrap_or_else(|| {
+                    [
+                        "MIT",
+                        "Apache-2.0",
+                        "BSD-2-Clause",
+                        "BSD-3-Clause",
+                        "ISC",
+                        "Unicode-3.0",
+                        "Unicode-DFS-2016",
+                        "MPL-2.0",
+                        "Unlicense",
+                        "MIT-0",
+                        "CC0-1.0",
+                        "LLVM-exception",
+                    ]
+                    .into_iter()
+                    .map(str::to_owned)
+                    .collect()
+                });
                 self.backend
                     .as_mut()
                     .ok_or_else(|| {
@@ -631,8 +662,8 @@ impl Server {
                         args.max_secret_findings.unwrap_or(0),
                         args.max_dependency_findings.unwrap_or(0),
                         args.max_license_findings.unwrap_or(0),
-                        &args.allowlist_paths.unwrap_or_default(),
-                        &args.allowlist_licenses.unwrap_or_default(),
+                        &allowlist_paths,
+                        &allowlist_licenses,
                     )
                     .map_err(backend_error)?
             }
@@ -2474,7 +2505,7 @@ mod openai_metadata_tests {
     #[test]
     fn openai_tool_contract() {
         let tools = model_visible_schema();
-        assert_eq!(tools.as_array().unwrap().len(), 17);
+        assert_eq!(tools.as_array().unwrap().len(), 18);
         for tool in tools.as_array().unwrap() {
             assert!(tool["title"].as_str().is_some_and(|s| !s.is_empty()));
             assert!(tool["description"].as_str().is_some_and(|s| s.len() > 20));
