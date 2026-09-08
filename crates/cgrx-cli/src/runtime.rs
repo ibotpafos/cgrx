@@ -161,6 +161,49 @@ fn is_zero(value: &usize) -> bool {
     *value == 0
 }
 
+/// Deterministic structural fingerprint of a declaration body: blake3 over
+/// whitespace-normalized source with every whole-token occurrence of the
+/// declaration's own name removed. Equal fingerprints prove byte-identical
+/// bodies modulo whitespace and self-naming — a duplicate-implementation
+/// signal that is exact, stable across runs, and never a heuristic guess.
+fn body_fingerprint(declaration_name: &str, body: &str) -> Option<String> {
+    let mut normalized = String::with_capacity(body.len());
+    let mut pending_space = false;
+    for character in body.chars() {
+        if character.is_whitespace() {
+            pending_space = !normalized.is_empty();
+        } else {
+            if pending_space {
+                normalized.push(' ');
+                pending_space = false;
+            }
+            normalized.push(character);
+        }
+    }
+    let mut filtered = String::with_capacity(normalized.len());
+    let mut token = String::new();
+    for character in normalized.chars() {
+        if character.is_alphanumeric() || character == '_' {
+            token.push(character);
+        } else {
+            if !token.is_empty() {
+                if token != declaration_name {
+                    filtered.push_str(&token);
+                }
+                token.clear();
+            }
+            filtered.push(character);
+        }
+    }
+    if !token.is_empty() && token != declaration_name {
+        filtered.push_str(&token);
+    }
+    if filtered.trim().is_empty() {
+        return None;
+    }
+    Some(blake3::hash(filtered.as_bytes()).to_hex().to_string())
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 struct StoredDocument {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -177,6 +220,8 @@ struct StoredDocument {
     go_local_constructor_target: Option<GoLocalConstructorTarget>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     java_constructor_target: Option<Box<JavaConstructorTarget>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    semantic_fingerprint: Option<String>,
     node_id: u64,
     qualified_name: String,
     path: String,
@@ -503,6 +548,120 @@ impl Runtime {
             "total":total,
             "truncated":total > limit,
             "coverage_gap_count":coverage_gap_count(&scoped.coverage(&self.stored.coverage))
+        }))
+    }
+
+    /// Exact duplicate-implementation lookup over structural body
+    /// fingerprints. Only SYNTAX documents with a computed fingerprint match;
+    /// results are scoped, sorted deterministically, and never guessed.
+    pub fn find_similar(
+        &self,
+        symbol: &str,
+        path: Option<&str>,
+        limit: usize,
+        scope: &Scope,
+    ) -> Result<Value, RuntimeError> {
+        if symbol.trim().is_empty() || !(1..=50).contains(&limit) {
+            return Err(RuntimeError::new(
+                "cgrx.invalid_arguments",
+                "symbol and limit 1..50 are required",
+            ));
+        }
+        let mut scoped = ScopedQuery::new(&self.stored, scope, path_in_scope);
+        let mut roots: Vec<_> = self
+            .stored
+            .documents
+            .iter()
+            .filter(|document| {
+                document.provenance == "SYNTAX"
+                    && scoped.contains_path(&document.path)
+                    && path.is_none_or(|path| document.path == path)
+                    && document.qualified_name == symbol
+            })
+            .collect();
+        if roots.is_empty() {
+            let folded = symbol.to_lowercase();
+            roots = self
+                .stored
+                .documents
+                .iter()
+                .filter(|document| {
+                    document.provenance == "SYNTAX"
+                        && scoped.contains_path(&document.path)
+                        && path.is_none_or(|path| document.path == path)
+                        && document.qualified_name.to_lowercase() == folded
+                })
+                .collect();
+        }
+        roots.sort_by_key(|document| (&document.path, document.span_start, document.node_id));
+        let root = match roots.as_slice() {
+            [] => {
+                return Err(RuntimeError::new(
+                    "cgrx.symbol_not_found",
+                    format!("symbol {symbol} was not found in scope"),
+                ));
+            }
+            [root] => *root,
+            _ => {
+                let candidates = roots
+                    .iter()
+                    .map(|document| format!("{}:{}", document.path, document.span_start))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                return Err(RuntimeError::new(
+                    "cgrx.ambiguous_symbol",
+                    format!("symbol {symbol} matches {candidates}; pass path"),
+                ));
+            }
+        };
+        let root_json = json!({
+            "qualified_name": root.qualified_name,
+            "path": root.path,
+            "span_start": root.span_start,
+            "span_end": root.span_end,
+            "node_id": root.node_id,
+        });
+        let Some(fingerprint) = &root.semantic_fingerprint else {
+            return Ok(json!({
+                "root": root_json,
+                "fingerprint": Value::Null,
+                "matches": [],
+                "matched": 0,
+                "truncated": false,
+            }));
+        };
+        let matches: Vec<_> = self
+            .stored
+            .documents
+            .iter()
+            .filter(|document| {
+                document.provenance == "SYNTAX"
+                    && document.node_id != root.node_id
+                    && scoped.contains_path(&document.path)
+                    && document.semantic_fingerprint.as_ref() == Some(fingerprint)
+            })
+            .collect();
+        let matched = matches.len();
+        let truncated = matched > limit;
+        let rows = matches
+            .into_iter()
+            .take(limit)
+            .map(|document| {
+                json!({
+                    "qualified_name": document.qualified_name,
+                    "path": document.path,
+                    "span_start": document.span_start,
+                    "span_end": document.span_end,
+                    "node_id": document.node_id,
+                })
+            })
+            .collect::<Vec<_>>();
+        Ok(json!({
+            "root": root_json,
+            "fingerprint": fingerprint,
+            "matches": rows,
+            "matched": matched,
+            "truncated": truncated,
         }))
     }
 
@@ -2180,6 +2339,12 @@ fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPath, RuntimeE
             .and_then(|bytes| std::str::from_utf8(bytes).ok())
             .unwrap_or(&symbol.name)
             .to_owned();
+        let search_text = source
+            .get(symbol.search_span.start..symbol.search_span.end)
+            .map_or_else(String::new, |bytes| {
+                String::from_utf8_lossy(bytes).into_owned()
+            });
+        let semantic_fingerprint = body_fingerprint(&symbol.name, &search_text);
         documents.push(StoredDocument {
             rust_module_target: None,
             rust_self_target: None,
@@ -2192,15 +2357,12 @@ fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPath, RuntimeE
             go_import_explicit_alias: false,
             go_package: go_package.clone(),
             go_receiver_target: None,
+            semantic_fingerprint,
             node_id: stable_node_id(relative, symbol.span, &symbol.name),
             qualified_name: symbol.name.clone(),
             path: relative.to_owned(),
             text,
-            search_text: source
-                .get(symbol.search_span.start..symbol.search_span.end)
-                .map_or_else(String::new, |bytes| {
-                    String::from_utf8_lossy(bytes).into_owned()
-                }),
+            search_text,
             span_start: symbol.span.start,
             span_end: symbol.span.end,
             body_start: symbol.search_span.start,
@@ -2233,6 +2395,7 @@ fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPath, RuntimeE
             go_import_explicit_alias: false,
             go_package: None,
             go_receiver_target: None,
+            semantic_fingerprint: None,
             node_id: stable_node_id(relative, edge.span, &format!("import:{text}")),
             qualified_name: edge.target.clone(),
             path: relative.to_owned(),
@@ -2263,6 +2426,7 @@ fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPath, RuntimeE
             go_import_explicit_alias: false,
             go_package: None,
             go_receiver_target: None,
+            semantic_fingerprint: None,
             node_id: stable_node_id(relative, edge.span, &format!("reference:{text}")),
             qualified_name: edge.target.clone(),
             path: relative.to_owned(),
@@ -2327,6 +2491,7 @@ fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPath, RuntimeE
             ContextWindow::lines(0),
         );
         documents.push(StoredDocument {
+            semantic_fingerprint: None,
             go_field_target: match edge.provenance {
                 LanguageProvenance::GoFieldReceiver {
                     package,
@@ -2487,6 +2652,7 @@ fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPath, RuntimeE
                 go_import_explicit_alias: false,
                 go_package: None,
                 go_receiver_target: None,
+                semantic_fingerprint: None,
                 node_id: stable_node_id(
                     relative,
                     edge.context_span,
@@ -2554,6 +2720,7 @@ fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPath, RuntimeE
                 go_import_explicit_alias: false,
                 go_package: None,
                 go_receiver_target: None,
+                semantic_fingerprint: None,
                 node_id: stable_node_id(relative, span, &format!("call:{}", import.local)),
                 qualified_name: import.local.clone(),
                 path: relative.to_owned(),
@@ -2605,6 +2772,7 @@ fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPath, RuntimeE
                 go_import_explicit_alias: false,
                 go_package: None,
                 go_receiver_target: None,
+                semantic_fingerprint: None,
                 node_id: stable_node_id(relative, span, &format!("call:{}", receiver.method)),
                 qualified_name: receiver.method.clone(),
                 path: relative.to_owned(),
@@ -2662,6 +2830,7 @@ fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPath, RuntimeE
                 go_import_explicit_alias: false,
                 go_package: None,
                 go_receiver_target: None,
+                semantic_fingerprint: None,
                 node_id: stable_node_id(relative, span, &format!("unresolved:{text}")),
                 qualified_name: format!("unresolved:{text}"),
                 path: relative.to_owned(),
@@ -2703,6 +2872,7 @@ fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPath, RuntimeE
             go_import_explicit_alias: false,
             go_package: None,
             go_receiver_target: None,
+            semantic_fingerprint: None,
             node_id: stable_node_id(relative, span, &format!("route:{text}")),
             qualified_name: symbol.name.clone(),
             path: relative.to_owned(),
@@ -2730,6 +2900,7 @@ fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPath, RuntimeE
             go_import_explicit_alias: false,
             go_package: None,
             go_receiver_target: None,
+            semantic_fingerprint: None,
             node_id: stable_node_id(relative, span, &format!("implements:{text}")),
             qualified_name: text.clone(),
             path: relative.to_owned(),
@@ -5036,6 +5207,7 @@ mod proof_edge_tests {
             go_import_explicit_alias: false,
             go_package: None,
             go_receiver_target: None,
+            semantic_fingerprint: None,
             node_id,
             qualified_name: name.to_owned(),
             path: path.to_owned(),
@@ -5063,6 +5235,7 @@ mod proof_edge_tests {
             go_import_explicit_alias: false,
             go_package: None,
             go_receiver_target: None,
+            semantic_fingerprint: None,
             node_id,
             qualified_name: name.to_owned(),
             path: path.to_owned(),

@@ -20,9 +20,6 @@ pub struct ResolvedObservation {
     pub last_seen_unix_nanos: u64,
     pub source_resolution: ResolutionKind,
     pub target_resolution: ResolutionKind,
-    /// Semantic fingerprint for code entity matching across reindexes
-    #[serde(default)]
-    pub semantic_fingerprint: Option<SemanticFingerprint>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -45,9 +42,6 @@ pub struct StoredObservationEdge {
     pub last_seen_unix_nanos: u64,
     pub source_resolution: ResolutionKind,
     pub target_resolution: ResolutionKind,
-    /// Semantic fingerprint for code entity matching across reindexes
-    #[serde(default)]
-    pub semantic_fingerprint: Option<SemanticFingerprint>,
     pub batch_ids: Vec<Hash32>,
     pub additional_batches: u64,
 }
@@ -355,7 +349,6 @@ fn merge_batch(snapshot: &mut ObservationSnapshot, batch: &ResolvedBatch) {
             last_seen_unix_nanos: observation.last_seen_unix_nanos,
             source_resolution: observation.source_resolution,
             target_resolution: observation.target_resolution,
-            semantic_fingerprint: None,
             batch_ids: Vec::new(),
             additional_batches: 0,
         });
@@ -466,19 +459,4 @@ fn invalid_input(detail: impl Into<String>) -> io::Error {
 
 fn invalid_data(detail: impl Into<String>) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, detail.into())
-}
-
-// Semantic fingerprint for code entities, persisted across reindexes
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct SemanticFingerprint {
-    /// Hash of the function/method signature
-    pub signature_hash: String,
-    /// Hash of the enclosing type/class name
-    pub type_hash: String,
-    /// Language-specific provenance
-    pub provenance: String,
-    /// File path and line range context
-    pub context: String,
-    /// Additional metadata hash
-    pub metadata_hash: String,
 }

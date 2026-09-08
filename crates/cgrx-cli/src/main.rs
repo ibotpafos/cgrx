@@ -67,6 +67,14 @@ fn run(args: Vec<String>) -> Result<(), String> {
             let root = optional_flag(&args[1..], "--root").unwrap_or(".");
             invoke_managed("status", status_arguments(&args[1..]), Path::new(root))?;
         }
+        "find-similar" => {
+            let root = optional_flag(&args[1..], "--root").unwrap_or(".");
+            invoke_managed(
+                "find_similar",
+                find_similar_arguments(&args[1..])?,
+                Path::new(root),
+            )?;
+        }
         "schema" => schema(&args[1..])?,
         "skill" => skill::run(&args[1..])?,
         "usage-report" => usage_report(&args[1..])?,
@@ -1090,6 +1098,22 @@ impl ToolBackend for RuntimeMcpBackend {
             .map_err(|error| BackendError::new(error.code(), error.to_string()))
     }
 
+    fn find_similar(
+        &mut self,
+        symbol: &str,
+        path: Option<&str>,
+        scope: Value,
+        limit: u32,
+    ) -> Result<Value, BackendError> {
+        self.refresh()?;
+        let scope = graph_scope(&scope)?;
+        let limit = usize::try_from(limit)
+            .map_err(|_| BackendError::new("cgrx.invalid_arguments", "limit is out of range"))?;
+        self.runtime
+            .find_similar(symbol, path, limit, &scope)
+            .map_err(|error| BackendError::new(error.code(), error.to_string()))
+    }
+
     fn find_usages(
         &mut self,
         symbol: &str,
@@ -1369,6 +1393,22 @@ fn status_arguments(args: &[String]) -> Value {
         }
     }
     json!({"paths_or_scope": if paths.is_empty() { json!(["**/*"]) } else { json!(paths) }})
+}
+
+fn find_similar_arguments(args: &[String]) -> Result<Value, String> {
+    let symbol = args
+        .iter()
+        .find(|argument| !argument.starts_with('-'))
+        .ok_or("find-similar requires a symbol")?
+        .clone();
+    let mut arguments = json!({"symbol": symbol});
+    if let Some(path) = optional_flag(args, "--path") {
+        arguments["path"] = json!(path);
+    }
+    if let Some(limit) = optional_flag(args, "--limit") {
+        arguments["limit"] = json!(parse_u32(limit, "limit")?);
+    }
+    Ok(arguments)
 }
 
 fn flag<'a>(args: &'a [String], name: &str) -> Result<&'a str, String> {

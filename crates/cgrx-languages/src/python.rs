@@ -84,8 +84,9 @@ impl LanguagePack for Python {
                     return;
                 };
                 if function.kind() == "identifier" {
-                    // Try to resolve ClassName() as a constructor call
-                    // Emit constructor edge for Python
+                    // Unqualified same-file call: resolved by name at runtime
+                    // with package scoping; class constructors stay a gap
+                    // until a Python proof chain lands.
                     extraction.edges.push(Edge {
                         relation: RelationKind::Calls,
                         target: text(function, source),

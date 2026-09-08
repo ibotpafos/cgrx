@@ -58,6 +58,18 @@ pub trait ToolBackend: Send + Sync {
         include_body: bool,
     ) -> Result<Value, BackendError>;
     fn get_outline(&mut self, path: &str, limit: u32) -> Result<Value, BackendError>;
+    fn find_similar(
+        &mut self,
+        _symbol: &str,
+        _path: Option<&str>,
+        _scope: Value,
+        _limit: u32,
+    ) -> Result<Value, BackendError> {
+        Err(BackendError::new(
+            "cgrx.similarity_unavailable",
+            "find_similar requires an indexed runtime backend",
+        ))
+    }
     fn get_architecture(
         &mut self,
         scope: Value,
@@ -486,6 +498,7 @@ impl Server {
             "get_architecture" => self.get_architecture(from_value(call.arguments)?)?,
             "trace_path" => self.trace_path(from_value(call.arguments)?)?,
             "find_usages" => self.find_usages(from_value(call.arguments)?)?,
+            "find_similar" => self.find_similar(from_value(call.arguments)?)?,
             "suggest_refactors" => self.suggest_refactors(from_value(call.arguments)?)?,
             "get_code_snippet" => self.get_code_snippet(from_value(call.arguments)?)?,
             "check_index_coverage" => self.check_index_coverage(from_value(call.arguments)?)?,
@@ -624,6 +637,24 @@ impl Server {
         };
         backend
             .get_architecture(arguments.scope, arguments.package_depth, arguments.limit)
+            .map_err(backend_error)
+    }
+
+    fn find_similar(&mut self, arguments: FindSimilarArguments) -> Result<Value, JsonRpcError> {
+        let Some(backend) = &mut self.backend else {
+            return Err(JsonRpcError::typed(
+                -32020,
+                "cgrx.index_adapter_not_connected",
+                "find_similar requires an indexed runtime backend",
+            ));
+        };
+        backend
+            .find_similar(
+                &arguments.symbol,
+                arguments.path.as_deref(),
+                arguments.scope,
+                arguments.limit,
+            )
             .map_err(backend_error)
     }
 
@@ -1802,6 +1833,17 @@ const fn default_architecture_limit() -> u32 {
 }
 
 #[derive(Deserialize)]
+struct FindSimilarArguments {
+    symbol: String,
+    #[serde(default)]
+    path: Option<String>,
+    #[serde(default)]
+    scope: Value,
+    #[serde(default = "default_graph_limit")]
+    limit: u32,
+}
+
+#[derive(Deserialize)]
 struct TracePathArguments {
     symbol: String,
     #[serde(default)]
@@ -1971,6 +2013,7 @@ fn model_visible_schema() -> Value {
         {"name":"get_architecture","description":"Packages, proven boundaries, communities and model-free ranked graph futures for cycles and hotspots","inputSchema":{"type":"object","properties":{"scope":path_or_scope.clone(),"package_depth":{"type":"integer","minimum":1,"maximum":4},"limit":{"type":"integer","minimum":1,"maximum":100}}}},
         {"name":"trace_path","description":"Calls","inputSchema":{"type":"object","required":["symbol"],"properties":{"symbol":{"type":"string"},"path":{"type":"string"},"direction":{"enum":["callers","callees","both"]},"depth":{"type":"integer","minimum":1,"maximum":4},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":50},"evidence":{"enum":["static","observed","all"],"default":"static"}}}},
         {"name":"find_usages","description":"Proven usages","inputSchema":{"type":"object","required":["symbol"],"properties":{"symbol":{"type":"string"},"path":{"type":"string"},"depth":{"type":"integer","minimum":1,"maximum":4},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":500},"evidence":{"enum":["static","observed","all"],"default":"static"}}}},
+        {"name":"find_similar","description":"Duplicate bodies","inputSchema":{"type":"object","required":["symbol"],"properties":{"symbol":{"type":"string"},"path":{"type":"string"},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":50}}}},
         {"name":"suggest_refactors","description":"Similar code and hypothetical graph delta","inputSchema":{"type":"object","properties":{"language":{"enum":["typescript","go","java","python","rust"]},"min_score":{"type":"integer","minimum":0,"maximum":1000},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":50}}}},
         {"name":"get_code_snippet","description":"Source","inputSchema":{"type":"object","required":["symbol"],"properties":{"symbol":{"type":"string"},"path":{"type":"string"}}}},
         {"name":"check_index_coverage","description":"Coverage","inputSchema":{"type":"object","properties":{"paths":{"type":"array","items":{"type":"string"}},"scopes":{"type":"array","items":{"type":"string"}},"offset":{"type":"integer","minimum":0},"limit":{"type":"integer","minimum":1,"maximum":500}}}},
@@ -2019,6 +2062,10 @@ fn model_visible_schema() -> Value {
             "List proven direct or transitive incoming call or implementation sites with hop, resolver evidence and coverage gaps.",
         ),
         (
+            "Find similar",
+            "Find exact duplicate implementations by deterministic body fingerprint; scoped and never guessed.",
+        ),
+        (
             "Suggest refactors",
             "Find structurally similar functions and preview a snapshot-bound hypothetical extract-helper graph delta.",
         ),
@@ -2048,7 +2095,7 @@ fn model_visible_schema() -> Value {
             json!({"readOnlyHint":false,"destructiveHint":false,"openWorldHint":false});
         tool["outputSchema"] = json!({"type":"object","additionalProperties":true});
     }
-    tools[14]["inputSchema"]["properties"]["paths_or_scope"] = path_or_scope;
+    tools[15]["inputSchema"]["properties"]["paths_or_scope"] = path_or_scope;
     tools
 }
 
@@ -2078,7 +2125,7 @@ mod openai_metadata_tests {
     #[test]
     fn openai_tool_contract() {
         let tools = model_visible_schema();
-        assert_eq!(tools.as_array().unwrap().len(), 15);
+        assert_eq!(tools.as_array().unwrap().len(), 16);
         for tool in tools.as_array().unwrap() {
             assert!(tool["title"].as_str().is_some_and(|s| !s.is_empty()));
             assert!(tool["description"].as_str().is_some_and(|s| s.len() > 20));
