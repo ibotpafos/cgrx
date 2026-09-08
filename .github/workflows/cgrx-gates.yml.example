@@ -51,7 +51,7 @@ jobs:
   cgrx-gates:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Rust toolchain
         run: rustup toolchain install 1.89.0 --profile minimal
@@ -73,13 +73,14 @@ jobs:
 
       - name: Upload change-gate SARIF
         if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@6f5948dfacef28e207b48d0905cf90c03365536d # v3
         with:
           sarif_file: ${{ inputs.working-directory }}/cgrx-change.sarif
           category: cgrx-change-gates
 
       - name: Repository gates (SARIF)
         id: repository
+        if: always()
         working-directory: ${{ inputs.working-directory }}
         run: |
           "$GITHUB_WORKSPACE/target/release/cgrx" check-gates \
@@ -92,7 +93,7 @@ jobs:
 
       - name: Upload repository-gate SARIF
         if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@6f5948dfacef28e207b48d0905cf90c03365536d # v3
         with:
           sarif_file: ${{ inputs.working-directory }}/cgrx-repository.sarif
           category: cgrx-repository-gates

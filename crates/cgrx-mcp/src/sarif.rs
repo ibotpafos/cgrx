@@ -186,6 +186,11 @@ pub fn gate_to_sarif(
                                 })
                             })
                     })
+                    .enumerate()
+                    .map(|(index, mut location)| {
+                        location["id"] = json!(index + 1);
+                        location
+                    })
                     .collect::<Vec<_>>()
                     .into();
             }

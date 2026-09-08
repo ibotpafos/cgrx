@@ -145,6 +145,21 @@ fn gaps_without_paths_produce_no_location_results() {
 }
 
 #[test]
+fn related_location_ids_are_unique_within_the_rule_result() {
+    let sarif = gate_to_sarif("check_change_gates", &change_fail_gate(), None).expect("renders");
+    let related = results(&sarif)
+        .iter()
+        .find(|result| result.get("relatedLocations").is_some())
+        .and_then(|result| result["relatedLocations"].as_array())
+        .expect("coverage rule has related locations");
+    let ids: Vec<_> = related
+        .iter()
+        .map(|location| location["id"].clone())
+        .collect();
+    assert_eq!(ids, vec![json!(1), json!(2), json!(3), json!(4), json!(5)]);
+}
+
+#[test]
 fn resolver_maps_byte_offsets_to_lines() {
     let gate = json!({
         "verdict": "FAIL",

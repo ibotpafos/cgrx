@@ -1,3 +1,4 @@
+mod file_watcher;
 mod multi_repo;
 mod skill;
 mod visualize;
@@ -11,6 +12,7 @@ use std::process::Command;
 use std::time::Instant;
 
 use cgrx_capsule::Tokenizer;
+use cgrx_cli::file_watcher::{FileWatcher, NotifyWatcher};
 use cgrx_cli::{Runtime, RuntimeEvidenceFormat};
 use cgrx_core::{
     CapsuleStatus, EvidenceSelector, Hash32, QueryRequest, RelationKind, RepoSnapshot, Scope,
@@ -20,6 +22,7 @@ use cgrx_mcp::{
     BackendError, Server, ToolBackend, gate_to_sarif, model_visible_schema_json,
     revision_bound_handle,
 };
+use cgrx_metrics::Summarize;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -33,7 +36,7 @@ fn main() {
 fn run(args: Vec<String>) -> Result<(), String> {
     let Some(command) = args.first().map(String::as_str) else {
         return Err(
-            "expected init, index, observe, serve, visualize, orient, expand, status, check-gates, schema, skill, usage-report, or bench"
+            "expected init, index, daemon, observe, serve, visualize, orient, expand, status, check-gates, schema, skill, usage-report, metrics, or bench"
                 .to_owned(),
         );
     };
@@ -46,6 +49,8 @@ fn run(args: Vec<String>) -> Result<(), String> {
         }
         "init" => init(args.get(1).map(PathBuf::from))?,
         "index" => index(&args[1..])?,
+        "daemon" => daemon(&args[1..])?,
+        "watch" => watch(&args[1..])?,
         "observe" => observe(&args[1..])?,
         "serve" => serve(&args[1..])?,
         "visualize" => visualize::run(&args[1..])?,
@@ -67,10 +72,19 @@ fn run(args: Vec<String>) -> Result<(), String> {
             let root = optional_flag(&args[1..], "--root").unwrap_or(".");
             invoke_managed("status", status_arguments(&args[1..]), Path::new(root))?;
         }
+        "find-similar" => {
+            let root = optional_flag(&args[1..], "--root").unwrap_or(".");
+            invoke_managed(
+                "find_similar",
+                find_similar_arguments(&args[1..])?,
+                Path::new(root),
+            )?;
+        }
         "check-gates" => check_gates(&args[1..])?,
         "schema" => schema(&args[1..])?,
         "skill" => skill::run(&args[1..])?,
         "usage-report" => usage_report(&args[1..])?,
+        "metrics" => metrics_summary(&args[1..])?,
         "bench" => bench(&args[1..])?,
         other => return Err(format!("unknown command {other}")),
     }
@@ -209,7 +223,7 @@ fn read_observation_input(path: &str) -> Result<Vec<u8>, String> {
 }
 
 fn validate_flags(args: &[String], allowed: &[&str]) -> Result<(), String> {
-    let boolean = ["--json", "--dry-run", "--apply"];
+    let boolean = ["--json", "--dry-run", "--apply", "--once", "--summary"];
     let mut cursor = 0;
     while cursor < args.len() {
         let flag = args[cursor].as_str();
@@ -375,6 +389,178 @@ fn bench(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+fn daemon(args: &[String]) -> Result<(), String> {
+    validate_flags(
+        args,
+        &[
+            "--root",
+            "--state",
+            "--json",
+            "--once",
+            "--interval-secs",
+            "--max-iterations",
+        ],
+    )?;
+    if !args.iter().any(|argument| argument == "--json") {
+        return Err("daemon requires --json".to_owned());
+    }
+    let root = Path::new(flag(args, "--root")?)
+        .canonicalize()
+        .map_err(|error| error.to_string())?;
+    let state = PathBuf::from(flag(args, "--state")?);
+    let once = args.iter().any(|argument| argument == "--once");
+    let interval_secs = optional_flag(args, "--interval-secs")
+        .map(|value| parse_u32(value, "interval-secs"))
+        .transpose()?
+        .unwrap_or(2);
+    if !(1..=3600).contains(&interval_secs) {
+        return Err("interval-secs must be between 1 and 3600".to_owned());
+    }
+    let max_iterations = optional_flag(args, "--max-iterations")
+        .map(|value| parse_u32(value, "max-iterations"))
+        .transpose()?;
+    if max_iterations.is_some_and(|value| value == 0) {
+        return Err("max-iterations must be at least 1".to_owned());
+    }
+    if once && max_iterations.is_some() {
+        return Err("daemon --once cannot be combined with --max-iterations".to_owned());
+    }
+    let mut runtime = Runtime::open(&state).map_err(|error| error.to_string())?;
+    // The hot loop never polls: each iteration blocks inside
+    // `Runtime::refresh` (one git batch + only the changed files are
+    // re-read), then sleeps. An event is printed only when the freshness
+    // signature changes, so an idle tree stays silent.
+    let mut last_signature: Option<String> = None;
+    let mut iteration: u64 = 0;
+    loop {
+        iteration += 1;
+        let started = Instant::now();
+        let (changed, error) = match runtime.refresh(&root) {
+            Ok(changed) => (changed, None),
+            Err(error) => (
+                false,
+                Some(json!({"code": error.code(), "message": error.to_string()})),
+            ),
+        };
+        let changed_paths = runtime.changed_paths();
+        let event = json!({
+            "schema_version": 1,
+            "command": "daemon",
+            "engine_version": env!("CARGO_PKG_VERSION"),
+            "iteration": iteration,
+            "changed": changed,
+            "changed_paths": changed_paths,
+            "snapshot": runtime.snapshot(),
+            "refresh_us": started.elapsed().as_micros() as u64,
+            "error": error,
+            "measurement": "wall_clock_monotonic"
+        });
+        let signature = format!(
+            "{changed}|{}|{}",
+            changed_paths.join(","),
+            event["error"]["code"].as_str().unwrap_or("")
+        );
+        if last_signature.as_ref() != Some(&signature) {
+            println!("{event}");
+            last_signature = Some(signature);
+        }
+        if !event["error"].is_null() && once {
+            return Err(format!(
+                "daemon refresh failed: {}",
+                event["error"]["code"].as_str().unwrap_or("unknown")
+            ));
+        }
+        if once || max_iterations.is_some_and(|max| iteration >= u64::from(max)) {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_secs(u64::from(interval_secs)));
+    }
+    Ok(())
+}
+
+fn watch(args: &[String]) -> Result<(), String> {
+    validate_flags(args, &["--root", "--state", "--json"])?;
+    if !args.iter().any(|argument| argument == "--json") {
+        return Err("watch requires --json".to_owned());
+    }
+    let root = Path::new(flag(args, "--root")?)
+        .canonicalize()
+        .map_err(|error| error.to_string())?;
+    let state = if let Some(state) = optional_flag(args, "--state") {
+        PathBuf::from(state)
+    } else {
+        managed_state_path(&root)?
+    };
+    let mut runtime = open_managed_runtime(&root, &state)?;
+    let watcher = NotifyWatcher::new(&root)?;
+    let mut last_signature: Option<String> = None;
+    let mut iteration: u64 = 0;
+    loop {
+        iteration += 1;
+        let started = Instant::now();
+        let mut changed = false;
+        let mut error_event = None;
+        while let Some(event) = watcher.next_event() {
+            let changed_paths = event.changed_paths;
+            let refresh_result = runtime.refresh(&root);
+            match refresh_result {
+                Ok(did_change) => {
+                    changed = changed || did_change;
+                    let signature = format!(
+                        "{}|{}",
+                        changed_paths.join(","),
+                        runtime.changed_paths().join(",")
+                    );
+                    let event_json = json!({
+                        "schema_version": 1,
+                        "command": "watch",
+                        "engine_version": env!("CARGO_PKG_VERSION"),
+                        "iteration": iteration,
+                        "changed": did_change,
+                        "watched_paths": changed_paths,
+                        "changed_paths": runtime.changed_paths(),
+                        "snapshot": runtime.snapshot(),
+                        "refresh_us": started.elapsed().as_micros() as u64,
+                        "error": null,
+                        "measurement": "wall_clock_monotonic"
+                    });
+                    if last_signature.as_ref() != Some(&signature) {
+                        println!("{event_json}");
+                        last_signature = Some(signature);
+                    }
+                }
+                Err(error) => {
+                    error_event = Some(json!({"code": error.code(), "message": error.to_string()}));
+                    break;
+                }
+            }
+        }
+        if let Some(error) = error_event {
+            return Err(format!(
+                "watch refresh failed: {}",
+                error["code"].as_str().unwrap_or("unknown")
+            ));
+        }
+        let empty: Vec<String> = Vec::new();
+        if !changed {
+            let event_json = json!({
+                "schema_version": 1,
+                "command": "watch",
+                "engine_version": env!("CARGO_PKG_VERSION"),
+                "iteration": iteration,
+                "changed": false,
+                "watched_paths": empty,
+                "changed_paths": empty,
+                "snapshot": runtime.snapshot(),
+                "refresh_us": started.elapsed().as_micros() as u64,
+                "error": null,
+                "measurement": "wall_clock_monotonic"
+            });
+            println!("{event_json}");
+        }
+    }
+}
+
 fn usage_report(args: &[String]) -> Result<(), String> {
     if !args.iter().any(|argument| argument == "--json") {
         return Err("usage-report requires --json".to_owned());
@@ -477,6 +663,29 @@ fn usage_report(args: &[String]) -> Result<(), String> {
         "groups":group_rows
     });
     println!("{report}");
+    Ok(())
+}
+
+fn metrics_summary(args: &[String]) -> Result<(), String> {
+    validate_flags(args, &["--log", "--json", "--summary"])?;
+    if !args.iter().any(|argument| argument == "--json") {
+        return Err("metrics requires --json".to_owned());
+    }
+    let log = flag(args, "--log")?;
+    let (events, ignored) = cgrx_metrics::parse_events_from_path(Path::new(log))
+        .map_err(|error| format!("failed to read metrics log: {error}"))?;
+    let summary = (events, ignored).summarize();
+    if args.iter().any(|argument| argument == "--summary") {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&summary).map_err(|error| error.to_string())?
+        );
+    } else {
+        println!(
+            "{}",
+            serde_json::to_string(&summary).map_err(|error| error.to_string())?
+        );
+    }
     Ok(())
 }
 
@@ -608,6 +817,9 @@ fn serve(args: &[String]) -> Result<(), String> {
         let session = env::var("CGRX_USAGE_SESSION")
             .unwrap_or_else(|_| format!("{}-{}", client, std::process::id()));
         server.enable_usage_log(path, client, session);
+    }
+    if let Ok(path) = env::var("CGRX_METRICS_LOG") {
+        server.enable_metrics_log(path);
     }
     let stdin = io::stdin();
     let mut stdout = io::stdout().lock();
@@ -810,7 +1022,12 @@ impl ToolBackend for RuntimeMcpBackend {
             .map_err(|error| BackendError::new("cgrx.runtime_evidence", error.to_string()))
     }
 
-    fn scan_risks(&mut self, _mode: &str, limit: usize) -> Result<Value, BackendError> {
+    fn scan_risks(
+        &mut self,
+        _mode: &str,
+        limit: usize,
+        runs: Option<Value>,
+    ) -> Result<Value, BackendError> {
         self.refresh()?;
         let (Some(state), Some(root)) = (&self.managed_state, &self.watch_root) else {
             return Err(BackendError::new(
@@ -826,12 +1043,19 @@ impl ToolBackend for RuntimeMcpBackend {
                     .risk_baseline(),
             );
         }
+        let runs = match runs {
+            Some(value) => serde_json::from_value(value).map_err(|e| {
+                BackendError::new("cgrx.invalid_arguments", format!("invalid runs: {e}"))
+            })?,
+            None => Vec::new(),
+        };
         let mut result = self
             .runtime
-            .scan_risks(
+            .scan_risks_with_test_runs(
                 self.risk_baseline.as_ref().expect("baseline loaded"),
                 root,
                 limit,
+                &runs,
             )
             .map_err(|e| BackendError::new(e.code(), e.to_string()))?;
         result["baseline_cache_hit"] = json!(cache_hit);
@@ -1009,6 +1233,22 @@ impl ToolBackend for RuntimeMcpBackend {
             .map_err(|_| BackendError::new("cgrx.invalid_arguments", "limit is out of range"))?;
         self.runtime
             .trace_path_with_evidence(symbol, path, direction, depth, &scope, limit, evidence)
+            .map_err(|error| BackendError::new(error.code(), error.to_string()))
+    }
+
+    fn find_similar(
+        &mut self,
+        symbol: &str,
+        path: Option<&str>,
+        scope: Value,
+        limit: u32,
+    ) -> Result<Value, BackendError> {
+        self.refresh()?;
+        let scope = graph_scope(&scope)?;
+        let limit = usize::try_from(limit)
+            .map_err(|_| BackendError::new("cgrx.invalid_arguments", "limit is out of range"))?;
+        self.runtime
+            .find_similar(symbol, path, limit, &scope)
             .map_err(|error| BackendError::new(error.code(), error.to_string()))
     }
 
@@ -1263,11 +1503,6 @@ fn managed_structured_content(response: &Value, tool: &str) -> Result<Value, Str
         .ok_or_else(|| format!("{tool} returned no structuredContent"))
 }
 
-/// Run `check_change_gates` or `check_repository_gates` and render the
-/// result as JSON or SARIF 2.1.0.
-///
-/// Exit semantics for CI: the rendered report is always written first; when
-/// the gate `would_block`, this returns `Err` so the process exits nonzero.
 fn check_gates(args: &[String]) -> Result<(), String> {
     const ALLOWED: &[&str] = &[
         "--root",
@@ -1304,33 +1539,31 @@ fn check_gates(args: &[String]) -> Result<(), String> {
 
     let (tool, arguments) = if gate == "change" {
         let limit = parse_bounded_usize(flag_or(args, "--limit", "20"), "--limit", 1, 50)?;
-        let arguments = json!({
-            "limit": limit,
-            "fail_on": fail_on,
-            "max_warning_findings": parse_bounded_usize(flag_or(args, "--max-warning-findings", "0"), "--max-warning-findings", 0, 10_000)?,
-            "max_blocked_missions": parse_bounded_usize(flag_or(args, "--max-blocked-missions", "0"), "--max-blocked-missions", 0, 10_000)?,
-            "max_coverage_gaps": parse_bounded_usize(flag_or(args, "--max-coverage-gaps", "0"), "--max-coverage-gaps", 0, 10_000)?,
-            "max_unverified_impacts": parse_bounded_usize(flag_or(args, "--max-unverified-impacts", "0"), "--max-unverified-impacts", 0, 10_000)?,
-        });
-        ("check_change_gates", arguments)
+        (
+            "check_change_gates",
+            json!({
+                "limit": limit,
+                "fail_on": fail_on,
+                "max_warning_findings": parse_bounded_usize(flag_or(args, "--max-warning-findings", "0"), "--max-warning-findings", 0, 10_000)?,
+                "max_blocked_missions": parse_bounded_usize(flag_or(args, "--max-blocked-missions", "0"), "--max-blocked-missions", 0, 10_000)?,
+                "max_coverage_gaps": parse_bounded_usize(flag_or(args, "--max-coverage-gaps", "0"), "--max-coverage-gaps", 0, 10_000)?,
+                "max_unverified_impacts": parse_bounded_usize(flag_or(args, "--max-unverified-impacts", "0"), "--max-unverified-impacts", 0, 10_000)?,
+            }),
+        )
     } else {
-        let package_depth = parse_bounded_usize(
-            flag_or(args, "--package-depth", "2"),
-            "--package-depth",
-            1,
-            4,
-        )?;
-        let arguments = json!({
-            "scope": Value::Null,
-            "package_depth": package_depth,
-            "fail_on": fail_on,
-            "max_package_cycles": parse_bounded_usize(flag_or(args, "--max-package-cycles", "0"), "--max-package-cycles", 0, 1_000_000)?,
-            "max_package_fan_out": parse_bounded_usize(flag_or(args, "--max-package-fan-out", "20"), "--max-package-fan-out", 0, 1_000_000)?,
-            "max_symbol_fan_in": parse_bounded_usize(flag_or(args, "--max-symbol-fan-in", "50"), "--max-symbol-fan-in", 0, 1_000_000)?,
-            "max_unresolved_local_dependencies": parse_bounded_usize(flag_or(args, "--max-unresolved-local-dependencies", "0"), "--max-unresolved-local-dependencies", 0, 1_000_000)?,
-            "max_coverage_gaps": parse_bounded_usize(flag_or(args, "--max-coverage-gaps", "0"), "--max-coverage-gaps", 0, 1_000_000)?,
-        });
-        ("check_repository_gates", arguments)
+        (
+            "check_repository_gates",
+            json!({
+                "scope": Value::Null,
+                "package_depth": parse_bounded_usize(flag_or(args, "--package-depth", "2"), "--package-depth", 1, 4)?,
+                "fail_on": fail_on,
+                "max_package_cycles": parse_bounded_usize(flag_or(args, "--max-package-cycles", "0"), "--max-package-cycles", 0, 1_000_000)?,
+                "max_package_fan_out": parse_bounded_usize(flag_or(args, "--max-package-fan-out", "20"), "--max-package-fan-out", 0, 1_000_000)?,
+                "max_symbol_fan_in": parse_bounded_usize(flag_or(args, "--max-symbol-fan-in", "50"), "--max-symbol-fan-in", 0, 1_000_000)?,
+                "max_unresolved_local_dependencies": parse_bounded_usize(flag_or(args, "--max-unresolved-local-dependencies", "0"), "--max-unresolved-local-dependencies", 0, 1_000_000)?,
+                "max_coverage_gaps": parse_bounded_usize(flag_or(args, "--max-coverage-gaps", "0"), "--max-coverage-gaps", 0, 1_000_000)?,
+            }),
+        )
     };
 
     let response = call_managed_tool(tool, arguments, root)?;
@@ -1338,18 +1571,18 @@ fn check_gates(args: &[String]) -> Result<(), String> {
     let verdict = structured
         .get("verdict")
         .and_then(Value::as_str)
-        .unwrap_or("INCONCLUSIVE");
+        .unwrap_or("INCONCLUSIVE")
+        .to_owned();
     let would_block = structured
         .get("would_block")
         .and_then(Value::as_bool)
         .unwrap_or(true);
-
     let rendered = if format == "sarif" {
         let root = root.canonicalize().map_err(|error| error.to_string())?;
         let resolve = |path: &str, offset: u64| file_line(&root, path, offset);
         gate_to_sarif(tool, &structured, Some(&resolve))?
     } else {
-        structured.clone()
+        structured
     };
     let text = serde_json::to_string_pretty(&rendered).map_err(|error| error.to_string())?;
     if output == "-" {
@@ -1365,10 +1598,6 @@ fn check_gates(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-/// Map a byte offset in a repository file to a 1-based line number.
-///
-/// Returns `None` when the file cannot be read or the offset is out of
-/// range; SARIF rendering then falls back to `byteOffset`/`byteLength`.
 fn file_line(root: &Path, path: &str, offset: u64) -> Option<u64> {
     let candidate = Path::new(path);
     let full = if candidate.is_absolute() {
@@ -1462,6 +1691,22 @@ fn status_arguments(args: &[String]) -> Value {
         }
     }
     json!({"paths_or_scope": if paths.is_empty() { json!(["**/*"]) } else { json!(paths) }})
+}
+
+fn find_similar_arguments(args: &[String]) -> Result<Value, String> {
+    let symbol = args
+        .iter()
+        .find(|argument| !argument.starts_with('-'))
+        .ok_or("find-similar requires a symbol")?
+        .clone();
+    let mut arguments = json!({"symbol": symbol});
+    if let Some(path) = optional_flag(args, "--path") {
+        arguments["path"] = json!(path);
+    }
+    if let Some(limit) = optional_flag(args, "--limit") {
+        arguments["limit"] = json!(parse_u32(limit, "limit")?);
+    }
+    Ok(arguments)
 }
 
 fn flag<'a>(args: &'a [String], name: &str) -> Result<&'a str, String> {

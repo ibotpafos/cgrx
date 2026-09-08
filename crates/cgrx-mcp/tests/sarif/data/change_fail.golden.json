@@ -135,7 +135,7 @@
               }
             },
             {
-              "id": 1,
+              "id": 2,
               "message": {
                 "text": "cgrx coverage gap EXCLUDED_PATH: vendor/gen.ts"
               },
@@ -146,7 +146,7 @@
               }
             },
             {
-              "id": 1,
+              "id": 3,
               "message": {
                 "text": "cgrx coverage gap STALE_PATH: src/moved.ts"
               },
@@ -157,7 +157,7 @@
               }
             },
             {
-              "id": 1,
+              "id": 4,
               "message": {
                 "text": "cgrx coverage gap DYNAMIC_DISPATCH: src/dyn.ts:4-9"
               },
@@ -168,7 +168,7 @@
               }
             },
             {
-              "id": 1,
+              "id": 5,
               "message": {
                 "text": "cgrx coverage gap DYNAMIC_DISPATCH: src/other.ts:1-2"
               },
