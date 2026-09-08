@@ -896,7 +896,12 @@ impl ToolBackend for RuntimeMcpBackend {
             .map_err(|error| BackendError::new("cgrx.runtime_evidence", error.to_string()))
     }
 
-    fn scan_risks(&mut self, _mode: &str, limit: usize) -> Result<Value, BackendError> {
+    fn scan_risks(
+        &mut self,
+        _mode: &str,
+        limit: usize,
+        runs: Option<Value>,
+    ) -> Result<Value, BackendError> {
         self.refresh()?;
         let (Some(state), Some(root)) = (&self.managed_state, &self.watch_root) else {
             return Err(BackendError::new(
@@ -912,12 +917,19 @@ impl ToolBackend for RuntimeMcpBackend {
                     .risk_baseline(),
             );
         }
+        let runs = match runs {
+            Some(value) => serde_json::from_value(value).map_err(|e| {
+                BackendError::new("cgrx.invalid_arguments", format!("invalid runs: {e}"))
+            })?,
+            None => Vec::new(),
+        };
         let mut result = self
             .runtime
-            .scan_risks(
+            .scan_risks_with_test_runs(
                 self.risk_baseline.as_ref().expect("baseline loaded"),
                 root,
                 limit,
+                &runs,
             )
             .map_err(|e| BackendError::new(e.code(), e.to_string()))?;
         result["baseline_cache_hit"] = json!(cache_hit);

@@ -1,4 +1,5 @@
 //! Synchronous, offline MCP surface for CGRX.
+#![recursion_limit = "256"]
 
 mod protocol;
 mod tools;
