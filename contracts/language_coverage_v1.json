@@ -9,16 +9,16 @@
       "extensions": ["ts", "tsx"],
       "cells": {
         "ts": {
-          "CALLS": ["vocal-chat-rooms-getRooms"],
-          "IMPORTS": ["vocal-ts-auth-import-service"],
-          "REFERENCE": ["gd-notification-preferences"],
-          "UNRESOLVED": ["vocal-ts-response-clear-cookie-unresolved"]
+          "CALLS": ["corpus_c-chat-rooms-getRooms"],
+          "IMPORTS": ["corpus_c-ts-auth-import-service"],
+          "REFERENCE": ["corpus_a-notification-preferences"],
+          "UNRESOLVED": ["corpus_c-ts-response-clear-cookie-unresolved"]
         },
         "tsx": {
-          "CALLS": ["pyramid-tsx-create-project-fetch-projects"],
-          "IMPORTS": ["pyramid-tsx-main-import-app"],
-          "REFERENCE": ["pyramid-tsx-open-project-reference"],
-          "UNRESOLVED": ["pyramid-tsx-login-callback-unresolved"]
+          "CALLS": ["corpus_d-tsx-create-project-fetch-projects"],
+          "IMPORTS": ["corpus_d-tsx-main-import-app"],
+          "REFERENCE": ["corpus_d-tsx-open-project-reference"],
+          "UNRESOLVED": ["corpus_d-tsx-login-callback-unresolved"]
         }
       }
     },
@@ -29,10 +29,10 @@
       "extensions": ["go"],
       "cells": {
         "go": {
-          "CALLS": ["vpn-bool-default"],
-          "IMPORTS": ["vex-go-networkprobe-import-domain"],
-          "REFERENCE": ["pyramid-dependency-edge-type"],
-          "UNRESOLVED": ["vex-go-context-err-unresolved"]
+          "CALLS": ["corpus_b-bool-default"],
+          "IMPORTS": ["corpus_b-go-networkprobe-import-domain"],
+          "REFERENCE": ["corpus_d-dependency-edge-type"],
+          "UNRESOLVED": ["corpus_b-go-context-err-unresolved"]
         }
       }
     },

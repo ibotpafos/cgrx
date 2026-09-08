@@ -4,7 +4,7 @@ Base: `3974bf3a7127a4563b15a3a59e3ba49249d93652` (includes const-arrow fix).
 Branch: `perf/ibo-271-warm-config`.
 
 The existing eight Go train CALLS assertions were replayed on a clean,
-source-hash-verified VEX snapshot at the corpus revision. Only its canonical
+source-hash-verified private-corpus-B snapshot at the corpus revision. Only its canonical
 local path was remapped; oracle, task IDs, splits and byte anchors were retained.
 No heldout source was used for tuning. Both CGRX and CBM found all eight
 specified targets. This is designated-target membership, not exhaustive CALLS

@@ -6,7 +6,7 @@ Base: f3b8cc8. Tracking: IBO-228. No release, client replacement or publication 
 1. Go: one demonstrated receiver/type resolution defect; go.rs and dedicated regression tests.
 2. TypeScript: one demonstrated lexical/type resolution defect; typescript.rs and dedicated tests.
 3. Reliability: reproduce immutable-generation error before altering storage state transitions; preserve immutability and locking.
-4. Real task corpus: initial source-verified GD/VEX/Pyramid cases with revision, hash and evidence references; offline validator; no source repository changes.
+4. Real task corpus: initial source-verified private-corpus cases with revision, hash and evidence references; offline validator; no source repository changes.
 5. Explainable impacts: source-backed impact evidence and an agent A/B evaluation protocol.
 6. Parent: strict paired benchmark gate and integration. Missing evidence must invalidate comparison, never become an empty successful result.
 

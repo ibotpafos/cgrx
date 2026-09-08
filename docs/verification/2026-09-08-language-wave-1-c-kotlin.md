@@ -70,7 +70,7 @@ The MCP schema and runtime filters expose both languages through `search_graph` 
 ## Verification
 
 ```bash
-cd /Volumes/D/Projects/cgrx-opensource/.worktrees/pr-54-review
+cd /absolute/cgrx-worktree
 CARGO_TARGET_DIR=/tmp/cgrx-pr54-target cargo fmt --all -- --check
 CARGO_TARGET_DIR=/tmp/cgrx-pr54-target cargo clippy --locked --workspace --all-targets -- -D warnings
 CARGO_TARGET_DIR=/tmp/cgrx-pr54-target cargo test --locked --workspace

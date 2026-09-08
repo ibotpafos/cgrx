@@ -1,13 +1,13 @@
 #!/bin/sh
 # CGRX user-local installer. No sudo, shell profile edits, or client config edits.
 set -eu
-version=${CGRX_VERSION:-v0.1.0-alpha.7}
+version=${CGRX_VERSION:-v0.1.0-alpha.8}
 dest=${CGRX_INSTALL_DIR:-"$HOME/.local/bin"}
 source_install=0
 for arg in "$@"; do
     case "$arg" in
         --source) source_install=1 ;;
-        --help) printf '%s\n' 'Usage: sh install.sh [--source]' 'CGRX_VERSION=v0.1.0-alpha.7 CGRX_INSTALL_DIR=$HOME/.local/bin'; exit 0 ;;
+        --help) printf '%s\n' 'Usage: sh install.sh [--source]' 'CGRX_VERSION=v0.1.0-alpha.8 CGRX_INSTALL_DIR=$HOME/.local/bin'; exit 0 ;;
         *) echo "Unknown option: $arg" >&2; exit 2 ;;
     esac
 done
@@ -58,6 +58,9 @@ else
     tar -xzOf "$stage/$asset" cgrx > "$stage/cgrx"
 fi
 chmod 755 "$stage/cgrx"
+expected_version="cgrx ${version#v}"
+reported_version=$("$stage/cgrx" --version 2>/dev/null) || { echo 'Release binary version check failed' >&2; exit 1; }
+[ "$reported_version" = "$expected_version" ] || { echo 'Release binary version mismatch; previous install unchanged' >&2; exit 1; }
 printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"cgrx-installer","version":"1"}}}' | "$stage/cgrx" serve --multi-repo > "$stage/probe.json"
 grep -q '"protocolVersion"' "$stage/probe.json" || { echo 'MCP initialization check failed' >&2; exit 1; }
 if [ -d "$dest/cgrx" ]; then echo 'Destination cgrx is a directory' >&2; exit 1; fi

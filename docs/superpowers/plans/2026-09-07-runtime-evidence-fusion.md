@@ -558,7 +558,7 @@ Never convert a failed or truncated result into an empty answer.
 
 - [ ] **Step 4: Run evaluator tests and the measured benchmark**
 
-Run: `python3 -m unittest scripts/test_eval_runtime_evidence.py && python3 scripts/eval_runtime_evidence.py --cgrx target/release/cgrx --cbm /Users/ila/.local/bin/codebase-memory-mcp --output target/runtime-evidence-report.json`
+Run: `python3 -m unittest scripts/test_eval_runtime_evidence.py && python3 scripts/eval_runtime_evidence.py --cgrx target/release/cgrx --cbm /absolute/verified/cbm-launcher --output target/runtime-evidence-report.json`
 
 Expected: harness tests pass; report explicitly states each pass/fail gate and
 the bounded scope. If CBM rejects the normalized task, record incompatibility

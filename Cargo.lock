@@ -98,7 +98,7 @@ checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 
 [[package]]
 name = "cgrx-capsule"
-version = "0.1.0"
+version = "0.1.0-alpha.8"
 dependencies = [
  "blake3",
  "cgrx-core",
@@ -112,7 +112,7 @@ dependencies = [
 
 [[package]]
 name = "cgrx-cgcr"
-version = "0.1.0"
+version = "0.1.0-alpha.8"
 dependencies = [
  "cgrx-capsule",
  "cgrx-core",
@@ -121,7 +121,7 @@ dependencies = [
 
 [[package]]
 name = "cgrx-cli"
-version = "0.1.0"
+version = "0.1.0-alpha.8"
 dependencies = [
  "blake3",
  "cgrx-capsule",
@@ -141,7 +141,7 @@ dependencies = [
 
 [[package]]
 name = "cgrx-core"
-version = "0.1.0"
+version = "0.1.0-alpha.8"
 dependencies = [
  "blake3",
  "serde",
@@ -150,7 +150,7 @@ dependencies = [
 
 [[package]]
 name = "cgrx-languages"
-version = "0.1.0"
+version = "0.1.0-alpha.8"
 dependencies = [
  "blake3",
  "serde",
@@ -166,7 +166,7 @@ dependencies = [
 
 [[package]]
 name = "cgrx-lsp"
-version = "0.1.0"
+version = "0.1.0-alpha.8"
 dependencies = [
  "cgrx-cli",
  "cgrx-languages",
@@ -179,7 +179,7 @@ dependencies = [
 
 [[package]]
 name = "cgrx-mcp"
-version = "0.1.0"
+version = "0.1.0-alpha.8"
 dependencies = [
  "cgrx-capsule",
  "cgrx-core",
@@ -190,7 +190,7 @@ dependencies = [
 
 [[package]]
 name = "cgrx-metrics"
-version = "0.1.0"
+version = "0.1.0-alpha.8"
 dependencies = [
  "serde",
  "serde_json",
@@ -198,7 +198,7 @@ dependencies = [
 
 [[package]]
 name = "cgrx-retrieval"
-version = "0.1.0"
+version = "0.1.0-alpha.8"
 dependencies = [
  "blake3",
  "cgrx-core",
@@ -209,7 +209,7 @@ dependencies = [
 
 [[package]]
 name = "cgrx-store"
-version = "0.1.0"
+version = "0.1.0-alpha.8"
 dependencies = [
  "blake3",
  "cgrx-core",

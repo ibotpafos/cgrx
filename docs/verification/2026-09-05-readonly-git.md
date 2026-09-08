@@ -19,7 +19,7 @@ metadata-only changes; this is a read-only behavior fix, not a speed claim.
 
 ## Phase replay
 
-Four preregistered three-arm permutations, eight unchanged VEX train CALLS
+Four preregistered three-arm permutations, eight unchanged private-corpus-B train CALLS
 assertions, one warmup and five timed requests per task: 160 requests per arm.
 Git Trace2 was enabled for every arm. Each request had exactly one successful
 Git status exit; source and binary hashes stayed unchanged. No task-owned

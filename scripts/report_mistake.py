@@ -80,7 +80,7 @@ def main() -> int:
         "caller": {"symbol": refs["caller"]["symbol"], "path": refs["caller"]["path"]},
         "target": {"symbol": refs["target"]["symbol"], "path": refs["target"]["path"]},
         "reported_from": args.reported_from,
-        "cgrx_version": "v0.1.0-alpha.7",
+        "cgrx_version": "v0.1.0-alpha.8",
         "extraction_revision": 28,
         "date": datetime.date.today().isoformat(),
     }

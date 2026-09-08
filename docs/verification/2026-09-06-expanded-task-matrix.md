@@ -8,9 +8,9 @@ either engine was run:
 
 | Added slice | Assertions | Split | Evidence form |
 | --- | ---: | --- | --- |
-| Vocal School TypeScript | 38 | heldout | `this.<readonly constructor service>.<method>()` |
+| Private corpus C TypeScript | 38 | heldout | `this.<readonly constructor service>.<method>()` |
 | CGRX Rust | 18 | train | direct, method and recursive repository-local calls |
-| VEX Go | 22 | heldout | package-local and receiver calls |
+| Private corpus B Go | 22 | heldout | package-local and receiver calls |
 
 Each source, target and call site is pinned to a committed revision with a
 full-file SHA-256 and an inclusive raw-line SHA-256. The validator also enforces
@@ -51,7 +51,7 @@ for implementation and regression tests without changing the heldout answers.
 
 The frozen configuration, raw collector log and JSON measurements are under
 `local/evidence/IBO-271-EXPANDED-20260906/` in the primary checkout. The corpus
-validator passed all 195 assertions. The comparison also left the Vocal, VEX
+validator passed all 195 assertions. The comparison also left private corpora C and B
 and CGRX snapshot working trees unchanged.
 
 This records local corpus and paired-tool evidence only. The branch is not

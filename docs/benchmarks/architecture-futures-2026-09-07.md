@@ -14,10 +14,10 @@ drift, or any `llm_used` value other than `false`.
 | Project | Revision | Issues | Validated futures | Median ms | Visible tokens |
 | --- | --- | ---: | ---: | ---: | ---: |
 | CGRX | `e5501849` | 100 | 300 | 221.4 | 5,957 |
-| General Digits | `9d77eb9b` | 100 | 300 | 4,707.9 | 6,268 |
-| VEX | `da5cd1a2` | 100 | 300 | 1,721.1 | 9,491 |
-| Vocal School | `8613b9fc` | 20 | 60 | 169.7 | 4,924 |
-| Pyramid Agent | `dbca43c5` | 9 | 27 | 97.9 | 4,118 |
+| Private corpus A | `9d77eb9b` | 100 | 300 | 4,707.9 | 6,268 |
+| Private corpus B | `da5cd1a2` | 100 | 300 | 1,721.1 | 9,491 |
+| Private corpus C | `8613b9fc` | 20 | 60 | 169.7 | 4,924 |
+| Private corpus D | `dbca43c5` | 9 | 27 | 97.9 | 4,118 |
 | **Total** | | **329** | **987** | | **30,758** |
 
 All five frozen repositories have explicit coverage gaps, so all 329 safe
@@ -33,11 +33,11 @@ Reproduce with:
 ```bash
 python3 scripts/benchmark_architecture.py \
   --binary target/release/cgrx --repeat 3 \
-  --repo cgrx=/Volumes/D/Projects/cgrx-opensource/.worktrees/benchmark-e55018497074 \
-  --repo gd=/Volumes/D/Projects/cgrx-opensource/local/evidence/SAME-SNAPSHOT-CBM/snapshots/gd \
-  --repo vex=/Volumes/D/Projects/cgrx-opensource/local/evidence/SAME-SNAPSHOT-CBM/snapshots/vex \
-  --repo vocal=/Volumes/D/Projects/cgrx-opensource/local/evidence/IBO-271-MULTIPROJECT-20260905/vocal-snapshot \
-  --repo pyramid=/Volumes/D/Projects/cgrx-opensource/local/evidence/EXPANDED-GRAPH-CORPUS/snapshots/pyramid
+  --repo cgrx=. \
+  --repo corpus-a=<path-to-private-corpus-a> \
+  --repo corpus-b=<path-to-private-corpus-b> \
+  --repo corpus-c=<path-to-private-corpus-c> \
+  --repo corpus-d=<path-to-private-corpus-d>
 ```
 
 ## Competitor boundary

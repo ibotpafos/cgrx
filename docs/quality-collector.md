@@ -25,11 +25,10 @@ extension fails closed. This proves the declared matrix is populated; it does
 not claim every construct in a language grammar has a semantic oracle.
 
 Discover CBM from the installed purpose-built MCP registration/launcher, **not**
-by guessing a binary name. On the development host the `codebase-memory-mcp`
-registration identified `/Users/ila/.local/bin/codebase-memory-mcp`; `--help`
-confirmed stdio and `cli` surfaces and initialization reported 0.10.8. CGRX's
-registered launcher was `/Users/ila/.local/share/cgrx/bin/cgrx-mcp`. Inspect/pin
-launcher targets too. The collector never installs, replaces, stops an existing
+by guessing a binary name. Verify the resolved executable with `--help`, then
+record its stdio/CLI surfaces and initialization version. Resolve the CGRX
+launcher the same way and inspect/pin both launcher targets. The collector never
+installs, replaces, stops an existing
 daemon, or edits MCP configuration. `argv[0]` must be an explicit absolute file;
 all commands use subprocess argv, not a shell.
 
