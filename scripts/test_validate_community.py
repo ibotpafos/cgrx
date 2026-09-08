@@ -1,3 +1,4 @@
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -184,6 +185,18 @@ Maintainer help: ask in the issue. Availability: unclaimed.
             or ".github/pull_request_template.md" in error
         ]
         self.assertEqual([], template_errors)
+
+    def test_real_repository_has_first_issue_backlog(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        errors = validate(root)
+        backlog_errors = [
+            error
+            for error in errors
+            if "first-issue backlog" in error
+            or "docs/contributing/first-issues" in error
+            or re.match(r"\d\d-.*\.md:", error)
+        ]
+        self.assertEqual([], backlog_errors)
 
 if __name__ == "__main__":
     unittest.main()
