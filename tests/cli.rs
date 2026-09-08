@@ -2070,6 +2070,42 @@ fn ci_command_runs_change_gates_on_clean_repo() {
 }
 
 #[test]
+fn ci_command_blocks_a_broken_working_tree_change() {
+    let repository = TestDirectory::new("ci-change-gates-fail");
+    git(repository.path(), &["init", "-q"]);
+    git(
+        repository.path(),
+        &["config", "user.email", "test@example.invalid"],
+    );
+    git(repository.path(), &["config", "user.name", "CGRX Test"]);
+    fs::write(
+        repository.path().join("main.rs"),
+        "fn target() {}\nfn caller() { target(); }\n",
+    )
+    .expect("write baseline");
+    git(repository.path(), &["add", "main.rs"]);
+    git(repository.path(), &["commit", "-q", "-m", "initial"]);
+    fs::write(
+        repository.path().join("main.rs"),
+        "fn caller() { target(); }\n",
+    )
+    .expect("write broken change");
+
+    let output = cli()
+        .args(["ci", "--repo"])
+        .arg(repository.path())
+        .args(["--format", "human", "--gate", "change"])
+        .output()
+        .expect("ci command executes");
+    assert_eq!(output.status.code(), Some(1), "{output:?}");
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("CGRX CI: FAILED"),
+        "{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+}
+
+#[test]
 fn ci_command_runs_repository_gates_on_clean_repo() {
     let repository = TestDirectory::new("ci-repository-gates");
     git(repository.path(), &["init", "-q"]);
