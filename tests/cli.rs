@@ -1818,3 +1818,138 @@ fn fixture_clock_parallel_allocations_are_unique() {
     let paths: std::collections::BTreeSet<_> = directories.iter().map(|d| d.path()).collect();
     assert_eq!(paths.len(), 16);
 }
+
+fn daemon_once(repository: &Path, state: &Path) -> std::process::Output {
+    cli()
+        .args(["daemon", "--root"])
+        .arg(repository)
+        .arg("--state")
+        .arg(state)
+        .args(["--json", "--once"])
+        .output()
+        .expect("daemon executes")
+}
+
+fn daemon_fixture(label: &str) -> (TestDirectory, TestDirectory) {
+    let repository = TestDirectory::new(label);
+    let state = TestDirectory::new(label);
+    git(repository.path(), &["init", "-q"]);
+    git(
+        repository.path(),
+        &["config", "user.email", "test@example.invalid"],
+    );
+    git(repository.path(), &["config", "user.name", "CGRX Test"]);
+    fs::write(
+        repository.path().join("main.ts"),
+        b"export function oldTarget() { return 1; }\n",
+    )
+    .expect("write fixture");
+    git(repository.path(), &["add", "main.ts"]);
+    git(repository.path(), &["commit", "-qm", "fixture"]);
+    let indexed = cli()
+        .args(["index", "--root"])
+        .arg(repository.path())
+        .arg("--state")
+        .arg(state.path())
+        .arg("--json")
+        .output()
+        .expect("index executes");
+    assert!(indexed.status.success());
+    (repository, state)
+}
+
+#[test]
+fn daemon_once_reports_a_changed_tracked_file_and_recovers_on_revert() {
+    let (repository, state) = daemon_fixture("daemon-repo");
+    let indexed = cli()
+        .args(["index", "--root"])
+        .arg(repository.path())
+        .arg("--state")
+        .arg(state.path())
+        .arg("--json")
+        .output()
+        .expect("index executes");
+    let base: serde_json::Value =
+        serde_json::from_slice(&indexed.stdout).expect("index emits JSON");
+
+    let fresh = daemon_once(repository.path(), state.path());
+    assert!(fresh.status.success());
+    let event: serde_json::Value =
+        serde_json::from_slice(&fresh.stdout).expect("daemon emits JSON");
+    assert_eq!(event["changed"], serde_json::json!(false));
+    assert_eq!(event["changed_paths"], serde_json::json!([]));
+    assert_eq!(event["snapshot"], base["snapshot"]);
+    assert!(event["error"].is_null());
+
+    fs::write(
+        repository.path().join("main.ts"),
+        b"export function newTarget() { return 2; }\n",
+    )
+    .expect("change tracked file");
+    let changed = daemon_once(repository.path(), state.path());
+    assert!(changed.status.success());
+    let event: serde_json::Value =
+        serde_json::from_slice(&changed.stdout).expect("daemon emits JSON");
+    assert_eq!(event["changed"], true);
+    assert_eq!(event["changed_paths"], serde_json::json!(["main.ts"]));
+    assert_ne!(event["snapshot"], base["snapshot"]);
+
+    fs::write(
+        repository.path().join("main.ts"),
+        b"export function oldTarget() { return 1; }\n",
+    )
+    .expect("revert tracked file");
+    let reverted = daemon_once(repository.path(), state.path());
+    assert!(reverted.status.success());
+    let event: serde_json::Value =
+        serde_json::from_slice(&reverted.stdout).expect("daemon emits JSON");
+    assert_eq!(event["changed_paths"], serde_json::json!([]));
+    assert_eq!(event["snapshot"], base["snapshot"]);
+}
+
+#[test]
+fn daemon_once_fails_closed_when_head_changes() {
+    let (repository, state) = daemon_fixture("daemon-revision-repo");
+    fs::write(
+        repository.path().join("main.ts"),
+        b"export function replacement() { return 99; }\n",
+    )
+    .expect("replace tracked source");
+    git(repository.path(), &["add", "main.ts"]);
+    git(repository.path(), &["commit", "-qm", "new revision"]);
+
+    let output = daemon_once(repository.path(), state.path());
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("revision_changed"),
+        "daemon fails closed on a new HEAD"
+    );
+}
+
+#[test]
+fn daemon_watch_emits_only_freshness_transitions() {
+    let (repository, state) = daemon_fixture("daemon-watch-repo");
+    let output = cli()
+        .args(["daemon", "--root"])
+        .arg(repository.path())
+        .arg("--state")
+        .arg(state.path())
+        .args(["--json", "--max-iterations", "2", "--interval-secs", "1"])
+        .output()
+        .expect("daemon executes");
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let lines: Vec<&str> = stdout
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .collect();
+    assert_eq!(
+        lines.len(),
+        1,
+        "an idle tree emits one event, the steady state stays silent"
+    );
+    let event: serde_json::Value = serde_json::from_str(lines[0]).expect("daemon emits JSON lines");
+    assert_eq!(event["iteration"], 1);
+    assert_eq!(event["changed"], serde_json::json!(false));
+    assert!(event["error"].is_null());
+}

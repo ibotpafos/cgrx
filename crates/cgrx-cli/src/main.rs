@@ -32,7 +32,7 @@ fn main() {
 fn run(args: Vec<String>) -> Result<(), String> {
     let Some(command) = args.first().map(String::as_str) else {
         return Err(
-            "expected init, index, observe, serve, visualize, orient, expand, status, schema, skill, usage-report, or bench"
+            "expected init, index, daemon, observe, serve, visualize, orient, expand, status, schema, skill, usage-report, or bench"
                 .to_owned(),
         );
     };
@@ -45,6 +45,7 @@ fn run(args: Vec<String>) -> Result<(), String> {
         }
         "init" => init(args.get(1).map(PathBuf::from))?,
         "index" => index(&args[1..])?,
+        "daemon" => daemon(&args[1..])?,
         "observe" => observe(&args[1..])?,
         "serve" => serve(&args[1..])?,
         "visualize" => visualize::run(&args[1..])?,
@@ -207,7 +208,7 @@ fn read_observation_input(path: &str) -> Result<Vec<u8>, String> {
 }
 
 fn validate_flags(args: &[String], allowed: &[&str]) -> Result<(), String> {
-    let boolean = ["--json", "--dry-run", "--apply"];
+    let boolean = ["--json", "--dry-run", "--apply", "--once"];
     let mut cursor = 0;
     while cursor < args.len() {
         let flag = args[cursor].as_str();
@@ -370,6 +371,95 @@ fn bench(args: &[String]) -> Result<(), String> {
             "measurement":"wall_clock_monotonic"
         })
     );
+    Ok(())
+}
+
+fn daemon(args: &[String]) -> Result<(), String> {
+    validate_flags(
+        args,
+        &[
+            "--root",
+            "--state",
+            "--json",
+            "--once",
+            "--interval-secs",
+            "--max-iterations",
+        ],
+    )?;
+    if !args.iter().any(|argument| argument == "--json") {
+        return Err("daemon requires --json".to_owned());
+    }
+    let root = Path::new(flag(args, "--root")?)
+        .canonicalize()
+        .map_err(|error| error.to_string())?;
+    let state = PathBuf::from(flag(args, "--state")?);
+    let once = args.iter().any(|argument| argument == "--once");
+    let interval_secs = optional_flag(args, "--interval-secs")
+        .map(|value| parse_u32(value, "interval-secs"))
+        .transpose()?
+        .unwrap_or(2);
+    if !(1..=3600).contains(&interval_secs) {
+        return Err("interval-secs must be between 1 and 3600".to_owned());
+    }
+    let max_iterations = optional_flag(args, "--max-iterations")
+        .map(|value| parse_u32(value, "max-iterations"))
+        .transpose()?;
+    if max_iterations.is_some_and(|value| value == 0) {
+        return Err("max-iterations must be at least 1".to_owned());
+    }
+    if once && max_iterations.is_some() {
+        return Err("daemon --once cannot be combined with --max-iterations".to_owned());
+    }
+    let mut runtime = Runtime::open(&state).map_err(|error| error.to_string())?;
+    // The hot loop never polls: each iteration blocks inside
+    // `Runtime::refresh` (one git batch + only the changed files are
+    // re-read), then sleeps. An event is printed only when the freshness
+    // signature changes, so an idle tree stays silent.
+    let mut last_signature: Option<String> = None;
+    let mut iteration: u64 = 0;
+    loop {
+        iteration += 1;
+        let started = Instant::now();
+        let (changed, error) = match runtime.refresh(&root) {
+            Ok(changed) => (changed, None),
+            Err(error) => (
+                false,
+                Some(json!({"code": error.code(), "message": error.to_string()})),
+            ),
+        };
+        let changed_paths = runtime.changed_paths();
+        let event = json!({
+            "schema_version": 1,
+            "command": "daemon",
+            "engine_version": env!("CARGO_PKG_VERSION"),
+            "iteration": iteration,
+            "changed": changed,
+            "changed_paths": changed_paths,
+            "snapshot": runtime.snapshot(),
+            "refresh_us": started.elapsed().as_micros() as u64,
+            "error": error,
+            "measurement": "wall_clock_monotonic"
+        });
+        let signature = format!(
+            "{changed}|{}|{}",
+            changed_paths.join(","),
+            event["error"]["code"].as_str().unwrap_or("")
+        );
+        if last_signature.as_ref() != Some(&signature) {
+            println!("{event}");
+            last_signature = Some(signature);
+        }
+        if !event["error"].is_null() && once {
+            return Err(format!(
+                "daemon refresh failed: {}",
+                event["error"]["code"].as_str().unwrap_or("unknown")
+            ));
+        }
+        if once || max_iterations.is_some_and(|max| iteration >= u64::from(max)) {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_secs(u64::from(interval_secs)));
+    }
     Ok(())
 }
 
