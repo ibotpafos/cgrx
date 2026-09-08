@@ -2047,3 +2047,125 @@ fn metrics_summary_requires_json_flag() {
         String::from_utf8_lossy(&output.stderr)
     );
 }
+
+#[test]
+fn ci_command_runs_change_gates_on_clean_repo() {
+    let repository = TestDirectory::new("ci-change-gates");
+    git(repository.path(), &["init", "-q"]);
+    git(
+        repository.path(),
+        &["config", "user.email", "test@example.invalid"],
+    );
+    git(repository.path(), &["config", "user.name", "CGRX Test"]);
+    fs::write(
+        repository.path().join("main.rs"),
+        "fn target() {}\nfn caller() { target(); }\n",
+    )
+    .expect("write source");
+    git(repository.path(), &["add", "main.rs"]);
+    git(repository.path(), &["commit", "-q", "-m", "initial"]);
+
+    let output = cli()
+        .args(["ci", "--repo"])
+        .arg(repository.path())
+        .args(["--format", "human", "--gate", "change"])
+        .output()
+        .expect("ci command executes");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("Change Quality Gates"),
+        "expected change gates report, got: {stdout}"
+    );
+    assert!(
+        stdout.contains("verdict:"),
+        "expected verdict in output, got: {stdout}"
+    );
+}
+
+#[test]
+fn ci_command_runs_repository_gates_on_clean_repo() {
+    let repository = TestDirectory::new("ci-repository-gates");
+    git(repository.path(), &["init", "-q"]);
+    git(
+        repository.path(),
+        &["config", "user.email", "test@example.invalid"],
+    );
+    git(repository.path(), &["config", "user.name", "CGRX Test"]);
+    fs::write(
+        repository.path().join("main.rs"),
+        "fn target() {}\nfn caller() { target(); }\n",
+    )
+    .expect("write source");
+    git(repository.path(), &["add", "main.rs"]);
+    git(repository.path(), &["commit", "-q", "-m", "initial"]);
+
+    let output = cli()
+        .args(["ci", "--repo"])
+        .arg(repository.path())
+        .args(["--format", "human", "--gate", "repository"])
+        .output()
+        .expect("ci command executes");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("Repository Quality Gates"),
+        "expected repository gates report, got: {stdout}"
+    );
+}
+
+#[test]
+fn ci_command_github_format_emits_notice() {
+    let repository = TestDirectory::new("ci-github-format");
+    git(repository.path(), &["init", "-q"]);
+    git(
+        repository.path(),
+        &["config", "user.email", "test@example.invalid"],
+    );
+    git(repository.path(), &["config", "user.name", "CGRX Test"]);
+    fs::write(
+        repository.path().join("main.rs"),
+        "fn target() {}\nfn caller() { target(); }\n",
+    )
+    .expect("write source");
+    git(repository.path(), &["add", "main.rs"]);
+    git(repository.path(), &["commit", "-q", "-m", "initial"]);
+
+    let output = cli()
+        .args(["ci", "--repo"])
+        .arg(repository.path())
+        .args(["--format", "github", "--gate", "change"])
+        .output()
+        .expect("ci command executes");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("::notice::"),
+        "expected github notice annotation, got: {stdout}"
+    );
+}
+
+#[test]
+fn ci_command_requires_repo_flag() {
+    let output = cli()
+        .args(["ci", "--format", "human"])
+        .output()
+        .expect("ci command executes");
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("--repo"),
+        "expected --repo error, got: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn ci_command_rejects_unknown_format() {
+    let output = cli()
+        .args(["ci", "--repo", ".", "--format", "xml"])
+        .output()
+        .expect("ci command executes");
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("unknown format"),
+        "expected unknown format error, got: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}

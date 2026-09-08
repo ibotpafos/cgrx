@@ -1,3 +1,4 @@
+mod ci;
 mod multi_repo;
 mod skill;
 mod visualize;
@@ -81,6 +82,7 @@ fn run(args: Vec<String>) -> Result<(), String> {
         "usage-report" => usage_report(&args[1..])?,
         "metrics" => metrics_summary(&args[1..])?,
         "bench" => bench(&args[1..])?,
+        "ci" => ci::run(&args[1..])?,
         other => return Err(format!("unknown command {other}")),
     }
     Ok(())
