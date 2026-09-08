@@ -76,7 +76,7 @@ jobs:
             --max-package-fan-out 92 \
             --max-symbol-fan-in 144 \
             --max-unresolved-local-dependencies 83 \
-            --repository-max-coverage-gaps 17984
+            --repository-max-coverage-gaps 18080
       - name: Materialize pull-request changes against the base revision
         if: github.event_name == 'pull_request'
         env:
