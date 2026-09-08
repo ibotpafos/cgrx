@@ -1,13 +1,81 @@
 # CGRX
 
-**Local, evidence-oriented code intelligence for AI coding agents.**
+**Give coding agents a local, evidence-backed map of what a change can affect.**
 
 One Rust executable. One stdio MCP server. Multiple Git repositories selected
 explicitly on each request. No embedding service, hosted index or API key.
+Your source stays on your machine; CGRX reports recorded coverage gaps instead
+of turning an unknown relationship into a confident guess.
 
 [Русская инструкция](docs/installation.md) ·
 [Releases](https://github.com/ibotpafos/cgrx/releases) ·
-[Agent skill](docs/agent-usage.md) · [Contributing](CONTRIBUTING.md)
+[Agent skill](docs/agent-usage.md) · [Contributing](CONTRIBUTING.md) ·
+[Discussions](https://github.com/ibotpafos/cgrx/discussions)
+
+## Who CGRX is for
+
+CGRX is for developers building AI coding agents and maintainers working in
+large Rust, Go, Java, TypeScript, JavaScript, TSX, Python, or polyglot
+repositories. It helps when text search finds matching names but cannot prove
+which definition, caller, test, or working-tree change is actually related.
+
+Use it to:
+
+- inspect the proven callers and callees affected by a change;
+- give an agent candidate tests together with the evidence and coverage gaps;
+- retrieve a bounded, token-budgeted slice instead of sending an entire
+  repository into the prompt.
+
+Resolution depth varies by language and construct. CGRX complements compilers
+and language servers; it does not claim that an unrecorded edge is absent. See
+[Maturity and privacy](#maturity-and-privacy) and the coverage tools below.
+
+## See the difference
+
+Suppose an agent is asked to change `apply_policy`. A text match can find every
+occurrence of that spelling, but it cannot distinguish a proven caller from an
+unrelated namesake or tell you which relationships were not indexed. CGRX keeps
+those states separate:
+
+~~~text
+Question: What can a change to apply_policy affect, and what should I test?
+
+search_graph         -> exact candidate definitions with source spans
+trace_path           -> recorded caller/callee paths and their evidence
+scan_risks            -> candidate affected relationships and tests for the diff
+check_index_coverage -> parser/resolution gaps that still require source review
+~~~
+
+The transcript describes the checked-in MCP tool contracts; it is not a claim
+that CGRX resolves every dynamic call. Follow the returned evidence, inspect
+reported gaps, and verify the change with the repository's own tests.
+
+## First useful result
+
+Install the current alpha and its reusable agent workflow:
+
+~~~sh
+curl -fsSL https://raw.githubusercontent.com/ibotpafos/cgrx/v0.1.0-alpha.7/install.sh | sh
+"$HOME/.local/bin/cgrx" skill install
+~~~
+
+Connect the MCP server once (Codex example):
+
+~~~sh
+codex mcp add cgrx -- "$HOME/.local/bin/cgrx" serve --multi-repo
+~~~
+
+Restart the MCP client, open your repository, and ask it:
+
+~~~text
+Use CGRX for this repository. Find the definition of <symbol>, trace its direct
+callers and callees, and report index coverage for every file you rely on.
+~~~
+
+Replace `<symbol>` with a function or method you know. Every CGRX request uses
+the absolute worktree root, so one server can query multiple repositories. For
+OpenCode, manual configuration, troubleshooting, and uninstall instructions,
+continue to [Installation](docs/installation.md).
 
 ## Features
 

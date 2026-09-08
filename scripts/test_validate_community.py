@@ -152,5 +152,11 @@ Maintainer help: ask in the issue. Availability: unclaimed.
             errors = validate(root)
         self.assertEqual([], errors)
 
+    def test_real_readme_has_activation_path(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        errors = validate(root)
+        readme_errors = [error for error in errors if error.startswith("README.md:")]
+        self.assertEqual([], readme_errors)
+
 if __name__ == "__main__":
     unittest.main()
