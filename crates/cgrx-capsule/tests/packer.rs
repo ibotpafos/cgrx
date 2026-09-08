@@ -16,7 +16,6 @@ fn candidate(id: u64, name: &str, path: &str, score: u64) -> Candidate {
             exact: score,
             bm25: score / 2,
             graph: score / 3,
-            structural: 0,
             rrf: score,
         },
         selection_reason: "test".to_owned(),

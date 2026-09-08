@@ -19,7 +19,6 @@ mod common {
                     exact: id * 10,
                     bm25: id * 20,
                     graph: id * 30,
-                    structural: id * 40,
                     rrf: id * 100,
                 },
                 selection_reason: "fixture".to_owned(),
