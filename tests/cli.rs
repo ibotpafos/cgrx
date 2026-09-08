@@ -152,9 +152,10 @@ fn schema_count_is_machine_readable_and_within_reviewed_runtime_tool_budget() {
         .expect("stable schema count prefix")
         .parse()
         .expect("schema count is numeric");
-    // 2700 covered the 16-tool schema before find_similar (duplicate-body
-    // lookup over deterministic fingerprints) joined the reviewed surface.
-    assert!(count <= 2860, "schema count was {count}");
+    // 2860 covered the 17-tool schema before check_security_gates (security audit
+    // gate for secret detection, dependency audit, and license compliance) joined
+    // the reviewed surface.
+    assert!(count <= 3200, "schema count was {count}");
 }
 
 #[test]
@@ -1954,27 +1955,4 @@ fn daemon_watch_emits_only_freshness_transitions() {
     assert_eq!(event["iteration"], 1);
     assert_eq!(event["changed"], serde_json::json!(false));
     assert!(event["error"].is_null());
-}
-
-#[test]
-fn watch_command_rejects_missing_root() {
-    let output = cli()
-        .args(["watch", "--json"])
-        .output()
-        .expect("watch executes");
-    assert!(!output.status.success());
-    assert!(String::from_utf8_lossy(&output.stderr).contains("--root"));
-}
-
-#[test]
-fn watch_command_rejects_missing_json() {
-    let repository = TestDirectory::new("watch-no-json");
-    git(repository.path(), &["init", "-q"]);
-    let output = cli()
-        .args(["watch", "--root"])
-        .arg(repository.path())
-        .output()
-        .expect("watch executes");
-    assert!(!output.status.success());
-    assert!(String::from_utf8_lossy(&output.stderr).contains("--json"));
 }

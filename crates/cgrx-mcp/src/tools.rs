@@ -163,6 +163,26 @@ pub trait ToolBackend: Send + Sync {
         offset: usize,
         limit: usize,
     ) -> Result<Value, BackendError>;
+    fn security_audit(
+        &mut self,
+        fail_on: &str,
+        max_secret_findings: usize,
+        max_dependency_findings: usize,
+        max_license_findings: usize,
+        allowlist_paths: &[String],
+        allowlist_licenses: &[String],
+    ) -> Result<Value, BackendError> {
+        let _ = fail_on;
+        let _ = max_secret_findings;
+        let _ = max_dependency_findings;
+        let _ = max_license_findings;
+        let _ = allowlist_paths;
+        let _ = allowlist_licenses;
+        Err(BackendError::new(
+            "cgrx.security_audit_unavailable",
+            "security audit requires a managed repository backend",
+        ))
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -554,6 +574,60 @@ impl Server {
             "suggest_refactors" => self.suggest_refactors(from_value(call.arguments)?)?,
             "get_code_snippet" => self.get_code_snippet(from_value(call.arguments)?)?,
             "check_index_coverage" => self.check_index_coverage(from_value(call.arguments)?)?,
+            "check_security_gates" => {
+                #[derive(Deserialize)]
+                #[serde(deny_unknown_fields)]
+                struct Args {
+                    #[serde(default)]
+                    fail_on: Option<String>,
+                    #[serde(default)]
+                    max_secret_findings: Option<usize>,
+                    #[serde(default)]
+                    max_dependency_findings: Option<usize>,
+                    #[serde(default)]
+                    max_license_findings: Option<usize>,
+                    #[serde(default)]
+                    allowlist_paths: Option<Vec<String>>,
+                    #[serde(default)]
+                    allowlist_licenses: Option<Vec<String>>,
+                }
+                let args: Args = from_value(call.arguments)?;
+                let fail_on = args.fail_on.as_deref().unwrap_or("error");
+                if !matches!(fail_on, "error" | "warning" | "none")
+                    || [
+                        args.max_secret_findings,
+                        args.max_dependency_findings,
+                        args.max_license_findings,
+                    ]
+                    .into_iter()
+                    .flatten()
+                    .any(|threshold| threshold > 10_000)
+                {
+                    return Err(JsonRpcError::typed(
+                        -32602,
+                        "cgrx.invalid_arguments",
+                        "fail_on must be error, warning, or none; thresholds must be 0..10000",
+                    ));
+                }
+                self.backend
+                    .as_mut()
+                    .ok_or_else(|| {
+                        JsonRpcError::typed(
+                            -32602,
+                            "cgrx.security_audit_unavailable",
+                            "managed repository required",
+                        )
+                    })?
+                    .security_audit(
+                        fail_on,
+                        args.max_secret_findings.unwrap_or(0),
+                        args.max_dependency_findings.unwrap_or(0),
+                        args.max_license_findings.unwrap_or(0),
+                        &args.allowlist_paths.unwrap_or_default(),
+                        &args.allowlist_licenses.unwrap_or_default(),
+                    )
+                    .map_err(backend_error)?
+            }
             "expand" => self.expand(from_value(call.arguments)?)?,
             "status" => self.status(from_value(call.arguments)?)?,
             _ => {
@@ -871,6 +945,7 @@ fn model_visible_result(tool: &str, structured: &Value) -> Value {
         "scan_risks" => compact_risks(structured),
         "check_change_gates" => compact_change_gates(structured),
         "check_repository_gates" => compact_repository_gates(structured),
+        "check_security_gates" => compact_security_gates(structured),
         "orient" => compact_orient(structured),
         "ingest_runtime_evidence" => compact_runtime_import(structured),
         "expand" => compact_expand(structured),
@@ -1152,6 +1227,70 @@ fn compact_repository_gates(value: &Value) -> Value {
         "would_block":value.get("would_block"),"fail_on":value.get("fail_on"),
         "rules":value.get("rules"),"partial":value.get("partial"),
         "gaps":value.get("coverage_gap_count"),"agent_handoff":value.get("agent_handoff")
+    })
+}
+
+fn compact_security_gates(value: &Value) -> Value {
+    let secret_findings = value
+        .get("secret_findings")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .map(|item| {
+            json!([
+                item.get("path"),
+                item.get("line"),
+                item.get("rule"),
+                item.get("severity"),
+                item.get("confidence")
+            ])
+        })
+        .collect::<Vec<_>>();
+    let dependency_findings = value
+        .get("dependency_findings")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .map(|item| {
+            json!([
+                item.get("package"),
+                item.get("version"),
+                item.get("rule"),
+                item.get("severity")
+            ])
+        })
+        .collect::<Vec<_>>();
+    let license_findings = value
+        .get("license_findings")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .map(|item| {
+            json!([
+                item.get("package"),
+                item.get("version"),
+                item.get("license"),
+                item.get("status")
+            ])
+        })
+        .collect::<Vec<_>>();
+    json!({
+        "at": snapshot_tag(value.get("snapshot")),
+        "algorithm": value.get("algorithm"),
+        "llm_used": value.get("llm_used"),
+        "verdict": value.get("verdict"),
+        "would_block": value.get("would_block"),
+        "fail_on": value.get("fail_on"),
+        "rules": value.get("rules"),
+        "partial": value.get("partial"),
+        "gaps": value.get("coverage_gap_count"),
+        "secret_finding_cols": ["path", "line", "rule", "severity", "confidence"],
+        "secret_findings": secret_findings,
+        "dependency_finding_cols": ["package", "version", "rule", "severity"],
+        "dependency_findings": dependency_findings,
+        "license_finding_cols": ["package", "version", "license", "status"],
+        "license_findings": license_findings,
+        "agent_handoff": value.get("agent_handoff")
     })
 }
 
@@ -2058,6 +2197,7 @@ fn model_visible_schema() -> Value {
         {"name":"scan_risks","description":"Change risks, candidate tests and deterministic parallel agent missions; no tests or LLM executed.","inputSchema":{"type":"object","properties":{"mode":{"enum":["changes"]},"limit":{"type":"integer","minimum":1,"maximum":50},"runs":{"type":"array","items":{"type":"object","properties":{"runner_command":{"type":"string"},"revision":{"type":"string"},"results":{"type":"array","items":{"type":"object","properties":{"path":{"type":"string"},"symbol":{"type":"string"},"status":{"enum":["passed","failed"]},"source_hash":{"type":"string"}}}}}}}}}},
         {"name":"check_change_gates","description":"Snapshot-bound conservative change gate over findings, impacts, missions and graph coverage; no tests or LLM executed.","inputSchema":{"type":"object","properties":{"limit":{"type":"integer","minimum":1,"maximum":50},"fail_on":{"enum":["error","warning","none"],"default":"error"},"max_warning_findings":{"type":"integer","minimum":0,"maximum":10000,"default":0},"max_blocked_missions":{"type":"integer","minimum":0,"maximum":10000,"default":0},"max_coverage_gaps":{"type":"integer","minimum":0,"maximum":10000,"default":0},"max_unverified_impacts":{"type":"integer","minimum":0,"maximum":10000,"default":0},"runs":{"type":"array","items":{"type":"object","properties":{"runner_command":{"type":"string"},"revision":{"type":"string"},"results":{"type":"array","items":{"type":"object","properties":{"path":{"type":"string"},"symbol":{"type":"string"},"status":{"enum":["passed","failed"]},"source_hash":{"type":"string"}}}}}}}}}},
         {"name":"check_repository_gates","description":"Snapshot-bound architecture gate over package cycles, graph coupling, unresolved local dependencies and coverage; no LLM executed.","inputSchema":{"type":"object","properties":{"scope":path_or_scope.clone(),"package_depth":{"type":"integer","minimum":1,"maximum":4,"default":2},"fail_on":{"enum":["error","warning","none"],"default":"error"},"max_package_cycles":{"type":"integer","minimum":0,"maximum":1000000,"default":0},"max_package_fan_out":{"type":"integer","minimum":0,"maximum":1000000,"default":20},"max_symbol_fan_in":{"type":"integer","minimum":0,"maximum":1000000,"default":50},"max_unresolved_local_dependencies":{"type":"integer","minimum":0,"maximum":1000000,"default":0},"max_coverage_gaps":{"type":"integer","minimum":0,"maximum":1000000,"default":0}}}},
+        {"name":"check_security_gates","description":"Snapshot-bound security gate over secret detection in diff, dependency audit, and license compliance; no LLM executed.","inputSchema":{"type":"object","properties":{"fail_on":{"enum":["error","warning","none"],"default":"error"},"max_secret_findings":{"type":"integer","minimum":0,"maximum":10000,"default":0},"max_dependency_findings":{"type":"integer","minimum":0,"maximum":10000,"default":0},"max_license_findings":{"type":"integer","minimum":0,"maximum":10000,"default":0},"allowlist_paths":{"type":"array","items":{"type":"string"}},"allowlist_licenses":{"type":"array","items":{"type":"string"}}}}},
         {"name":"ingest_runtime_evidence","description":"Import revision-pinned runtime call evidence from a local file.","inputSchema":{"type":"object","required":["input_path"],"properties":{"input_path":{"type":"string"},"format":{"enum":["auto","ndjson","otlp-json"],"default":"auto"},"revision":{"type":"string"},"environment":{"type":"string"}}}},
         {"name":"orient","description":"Context","inputSchema":{"type":"object","required":["task","budget","mode","scope"],"properties":{"task":{"type":"string"},"budget":{"type":"integer","minimum":1},"mode":{"enum":["FAST","PRECISE","BOUNDED"]},"scope":bounded_scope.clone()}}},
         {"name":"search_graph","description":"Symbols or bodies","inputSchema":{"type":"object","required":["query"],"properties":{"query":{"type":"string"},"language":{"enum":["typescript","go","java","python","rust"]},"include_body":{"type":"boolean"},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":50}}}},
@@ -2084,6 +2224,10 @@ fn model_visible_schema() -> Value {
         (
             "Check repository quality gates",
             "Evaluate proven repository architecture with explicit cycle, coupling, unresolved-dependency and coverage policies.",
+        ),
+        (
+            "Check security gates",
+            "Evaluate secret detection in diff, dependency audit, and license compliance with explicit pass, warning, fail or inconclusive semantics.",
         ),
         (
             "Import runtime evidence",
@@ -2147,7 +2291,7 @@ fn model_visible_schema() -> Value {
             json!({"readOnlyHint":false,"destructiveHint":false,"openWorldHint":false});
         tool["outputSchema"] = json!({"type":"object","additionalProperties":true});
     }
-    tools[15]["inputSchema"]["properties"]["paths_or_scope"] = path_or_scope;
+    tools[16]["inputSchema"]["properties"]["paths_or_scope"] = path_or_scope;
     tools
 }
 
@@ -2177,7 +2321,7 @@ mod openai_metadata_tests {
     #[test]
     fn openai_tool_contract() {
         let tools = model_visible_schema();
-        assert_eq!(tools.as_array().unwrap().len(), 16);
+        assert_eq!(tools.as_array().unwrap().len(), 17);
         for tool in tools.as_array().unwrap() {
             assert!(tool["title"].as_str().is_some_and(|s| !s.is_empty()));
             assert!(tool["description"].as_str().is_some_and(|s| s.len() > 20));

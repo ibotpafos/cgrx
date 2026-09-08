@@ -3,6 +3,7 @@ mod graph_view;
 mod observations;
 mod refactors;
 mod risks;
+pub mod security;
 mod ts_config;
 pub use graph_view::{GraphDirection, GraphViewRequest};
 pub use observations::{
