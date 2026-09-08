@@ -152,10 +152,60 @@ fn schema_count_is_machine_readable_and_within_reviewed_runtime_tool_budget() {
         .expect("stable schema count prefix")
         .parse()
         .expect("schema count is numeric");
-    // 2860 covered the 17-tool schema before check_security_gates (security audit
-    // gate for secret detection, dependency audit, and license compliance) joined
-    // the reviewed surface.
-    assert!(count <= 3200, "schema count was {count}");
+    // The budget covers the reviewed 18-tool schema, including find_similar and
+    // check_security_gates, while retaining a small allowance for descriptions.
+    assert!(count <= 3400, "schema count was {count}");
+}
+
+#[test]
+fn check_gates_repository_emits_sarif() {
+    let repository = TestDirectory::new("check-gates-sarif-repo");
+    git(repository.path(), &["init", "-q"]);
+    git(
+        repository.path(),
+        &["config", "user.email", "test@example.invalid"],
+    );
+    git(repository.path(), &["config", "user.name", "CGRX Test"]);
+    fs::write(
+        repository.path().join("main.rs"),
+        b"pub fn target() -> u8 { 42 }\n",
+    )
+    .expect("write fixture");
+    git(repository.path(), &["add", "main.rs"]);
+    git(repository.path(), &["commit", "-qm", "fixture"]);
+
+    let output = cli()
+        .args(["check-gates", "--root"])
+        .arg(repository.path())
+        .args([
+            "--gate",
+            "repository",
+            "--format",
+            "sarif",
+            "--fail-on",
+            "none",
+        ])
+        .output()
+        .expect("check-gates executes");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("check-gates emits JSON");
+    assert_eq!(report["version"], "2.1.0");
+    assert_eq!(report["runs"][0]["tool"]["driver"]["name"], "cgrx");
+}
+
+#[test]
+fn check_gates_rejects_unknown_format_before_indexing() {
+    let output = cli()
+        .args(["check-gates", "--gate", "repository", "--format", "xml"])
+        .output()
+        .expect("check-gates executes");
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("json or sarif"));
 }
 
 #[test]

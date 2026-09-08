@@ -1,9 +1,8 @@
-//! Revision-pinned graph views used by retrieval lanes.
-
 mod bm25;
 mod exact;
 mod fusion;
 mod graph;
+mod structural;
 
 pub use fusion::{
     Candidate, CandidateSet, FusionProfile, RetrievalEngine, RetrievalError, ScoreComponents,

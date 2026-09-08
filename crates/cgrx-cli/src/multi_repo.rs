@@ -231,11 +231,17 @@ impl Router {
             self.entries.insert(
                 root.clone(),
                 Entry {
-                    server: Server::with_backend(RuntimeMcpBackend::managed(
-                        runtime,
-                        root.clone(),
-                        state,
-                    )),
+                    server: {
+                        let mut server = Server::with_backend(RuntimeMcpBackend::managed(
+                            runtime,
+                            root.clone(),
+                            state,
+                        ));
+                        if let Ok(store) = cgrx_store::MemoryStore::open(&root) {
+                            server.set_memory_store(store);
+                        }
+                        server
+                    },
                     repo_id: identity,
                     incarnation: format!("{}-{}", self.nonce, self.clock),
                     accessed: self.clock,

@@ -10,8 +10,8 @@ contract instead of adding another always-visible MCP tool:
 
 - `include_body: true` searches a symbol's indexed body after higher-priority
   exact, prefix, and substring symbol-name matches;
-- `language` accepts every CGRX language pack: `typescript`, `go`, `python`, and
-  `java`, and `rust`; TypeScript includes `.ts` and `.tsx`;
+- `language` accepts every CGRX language pack: `typescript`, `go`, `java`, `c`,
+  `kotlin`, `python`, and `rust`; TypeScript includes `.ts` and `.tsx`;
 - each result reports `matched_by: symbol | body`, so callers can distinguish
   direct symbol discovery from content discovery;
 - the default remains name-only for stable precision and response cost.
@@ -25,9 +25,9 @@ contract instead of adding another always-visible MCP tool:
   `hop` and the immediate `via` target, keeping a transitive impact chain auditable.
 
 The coverage tests exercise body discovery and file outlines across `.ts`,
-`.tsx`, `.go`, `.java`, `.py`, and `.rs`, including language rejection, deterministic
-source order, truncation, and missing-path errors.
-Usage-site tests cover direct calls in all five extensions, a two-hop reverse
+`.tsx`, `.go`, `.java`, `.c`, `.h`, `.kt`, `.kts`, `.py`, and `.rs`, including
+language rejection, deterministic source order, truncation, and missing-path errors.
+Usage-site tests cover direct calls in all supported extensions, a two-hop reverse
 impact chain, and relation-aware deduplication between `CALLS` and `IMPLEMENTS`
 evidence.
 
@@ -51,10 +51,10 @@ existing contracts before adding another always-visible tool.
 | PR context benchmark with pinned SHAs and exact tokenizer counts | Frozen seven-project corpus exists, but current outline metric is bytes and does not measure review quality | Next measurement priority: reproduce both context arms with tokenizer counts and report truncation separately. |
 | Per-tool response-cost table and build-stamped results | MCP schema has a strict budget; `suggest_refactors` reports tokenizer-counted compact payload cost | Extend the same measurement to every tool before changing encodings or defaults. |
 | Per-shape output encoding | Compact tabular model-visible rows already coexist with full structured JSON | Keep tool-specific shaping; do not adopt TOON globally because Trace measured regressions for nested rows. |
-| Minimal/standard/full tool presets | CGRX exposes 15 focused tools rather than a framework-dependent catalog | Keep the small default surface; add a preset only when optional tools justify its fixed cost. |
+| Minimal/standard/full tool presets | CGRX exposes 17 focused tools rather than a framework-dependent catalog | Keep the small default surface; add a preset only when optional tools justify its fixed cost. |
 | Budgeted context bundles and project maps | `orient` + revision-bound `expand` return bounded task context; `get_architecture` adds packages, proven boundaries, hotspots, package cycles, package communities and symbol communities | Architecture now reports deterministic weighted-modularity clusters at package and symbol granularity, including representative symbols, binding packages, edge types, modularity, cohesion and unclustered counts. |
 | Read-only history drill-down | The graph explorer embeds a Git lane view | Commit bodies and changed-file metadata now load on demand; selecting a file requests only its bounded patch. History, file count and patch bytes have independent limits. |
-| Framework-aware routes, ORM links, DI, and tests | CGRX proves conservative `CALLS` for TypeScript/TSX, Go, Java, Python, and Rust, with deeper language-specific proof where available | Build framework packs only with frozen positive/negative relation fixtures; do not count symbol-only extraction as relationship support. |
+| Framework-aware routes, ORM links, DI, and tests | CGRX proves conservative `CALLS` for TypeScript/TSX, Go, Java, C, Kotlin, Python, and Rust, with deeper language-specific proof where available | Build framework packs only with frozen positive/negative relation fixtures; do not count symbol-only extraction as relationship support. |
 | Calibrated quality gates | `check_change_gates` covers working-tree evidence; `check_repository_gates` covers package cycles, package fan-out, symbol fan-in, unresolved local dependencies and graph coverage with explicit `PASS` / `WARN` / `FAIL` / `INCONCLUSIVE` results | Unlike Trace's documented gate, both CGRX gates make missing coverage first-class and partial evidence can never become a clean pass. Cyclomatic complexity, security and smell policies remain separate work. |
 | Agent task decomposition | `scan_risks` groups findings, impacts and candidate tests into snapshot-bound Change Missions, derives path-conflict dependencies and exposes deterministic parallel batches | Adopted as a model-free execution DAG. Coverage gaps block only affected missions, and the exact handoff stays in the compact response. |
 | Decision memory with confidence, provenance, temporal validity, and privacy tags | Outside the current code-index contract | Reuse those data-quality rules if memory is added; keep reconstructible code out of durable memory. |
@@ -62,7 +62,7 @@ existing contracts before adding another always-visible tool.
 | Multi-project daemon LRU/TTL and measured RSS attribution | Current work targets explicit repo-scoped runtimes | Measure resident cost per loaded project before introducing a daemon cache or eviction policy. |
 | Automated client hooks and prompt rewrites | Repository instructions already route discovery through CGRX | Do not patch client prompts from the core binary; keep setup changes explicit and reversible. |
 | Runtime/static overlays and agent guidance | Revision-pinned observed calls can be viewed alone or merged with proven static edges, filtered by environment, and copied as a snapshot-bound agent handoff | Adopted with deterministic hot-path/divergence/blast-radius ranking; no LLM, embedding runtime, model weights, or external AI API. |
-| Counterfactual refactor planning | Three future graphs are ranked from duplication benefit, graph simplification, runtime change cost and coverage risk; compact MCP rows expose the winner and reason codes | CGRX-specific combined capability. Refactor futures support all five languages; the earlier seven-project run validated 129 futures across the four languages supported at that time. No common-corpus competitor accuracy or speed claim is made. |
+| Counterfactual refactor planning | Three future graphs are ranked from duplication benefit, graph simplification, runtime change cost and coverage risk; compact MCP rows expose the winner and reason codes | CGRX-specific combined capability. Refactor futures support all seven languages; the earlier seven-project run validated 129 futures across the four languages supported at that time. No common-corpus competitor accuracy or speed claim is made. |
 
 The next measurement priorities are the PR context benchmark, response cost for
 the remaining tools, and manual review of the refactoring inventory. Framework

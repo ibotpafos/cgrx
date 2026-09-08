@@ -378,6 +378,47 @@ impl Runtime {
         self.stored.arcs.len()
     }
 
+    /// Return the current immutable syntax graph for consumers such as the LSP bridge.
+    #[must_use]
+    pub fn base_graph(&self) -> BaseGraph {
+        BaseGraph {
+            generation: self.stored.snapshot.graph_generation,
+            path_hashes: self.stored.path_hashes.clone(),
+            edges: Vec::new(),
+            documents: self
+                .stored
+                .documents
+                .iter()
+                .filter(|document| document.provenance == "SYNTAX")
+                .map(|document| GraphDocument {
+                    node_id: document.node_id,
+                    qualified_name: document.qualified_name.clone(),
+                    path: document.path.clone(),
+                    text: document.text.clone(),
+                    span: Span {
+                        start: document.span_start,
+                        end: document.span_end,
+                    },
+                    provenance: CandidateProvenance::Syntax,
+                    semantic_fingerprint: document.semantic_fingerprint.clone(),
+                })
+                .collect(),
+            arcs: self
+                .stored
+                .arcs
+                .iter()
+                .filter_map(|arc| {
+                    Some(GraphArc {
+                        source: arc.source,
+                        target: arc.target,
+                        kind: arc.kind,
+                        evidence: arc.evidence.clone()?,
+                    })
+                })
+                .collect(),
+        }
+    }
+
     pub fn search_graph(
         &self,
         query: &str,
@@ -397,11 +438,14 @@ impl Runtime {
     ) -> Result<Value, RuntimeError> {
         let language = language.map(str::trim);
         if language.is_some_and(|language| {
-            !matches!(language, "typescript" | "go" | "java" | "python" | "rust")
+            !matches!(
+                language,
+                "typescript" | "go" | "java" | "c" | "kotlin" | "python" | "rust"
+            )
         }) {
             return Err(RuntimeError::new(
                 "cgrx.invalid_arguments",
-                "language must be one of typescript, go, java, python, or rust",
+                "language must be one of typescript, go, java, c, kotlin, python, or rust",
             ));
         }
         self.search_graph_with_matcher(query, scope, limit, language, include_body, path_in_scope)
