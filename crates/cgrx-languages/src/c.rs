@@ -2,7 +2,7 @@ use crate::pack::{
     Edge, ExtractError, Extraction, LanguagePack, Provenance, RelationKind, Span, Symbol,
     UnresolvedKind, evidence_span, normalize_extraction, symbol, text, unresolved, walk_with,
 };
-use std::collections::BTreeSet;
+use std::collections::BTreeMap;
 use tree_sitter::{Language, Node, Parser};
 
 pub(crate) static C_PACK: C = C;
@@ -54,13 +54,15 @@ impl LanguagePack for C {
 }
 
 struct CContext {
-    declared_functions: BTreeSet<String>,
+    declared_functions: BTreeMap<String, usize>,
+    declared_types: BTreeMap<String, usize>,
 }
 
 impl CContext {
     fn default() -> Self {
         Self {
-            declared_functions: BTreeSet::new(),
+            declared_functions: BTreeMap::new(),
+            declared_types: BTreeMap::new(),
         }
     }
 
@@ -69,9 +71,32 @@ impl CContext {
         visit(root, &mut |node| {
             if node.kind() == "function_definition"
                 && let Some(declarator) = node.child_by_field_name("declarator")
-                && let Some(name) = declarator.child_by_field_name("declarator")
+                && let Some(name) = declarator_name(declarator)
             {
-                context.declared_functions.insert(text(name, source));
+                *context
+                    .declared_functions
+                    .entry(text(name, source))
+                    .or_default() += 1;
+            }
+            if matches!(
+                node.kind(),
+                "struct_specifier" | "union_specifier" | "enum_specifier"
+            ) && node.child_by_field_name("body").is_some()
+                && let Some(name) = node.child_by_field_name("name")
+            {
+                *context
+                    .declared_types
+                    .entry(text(name, source))
+                    .or_default() += 1;
+            }
+            if node.kind() == "type_definition"
+                && let Some(declarator) = node.child_by_field_name("declarator")
+                && let Some(name) = declarator_name(declarator)
+            {
+                *context
+                    .declared_types
+                    .entry(text(name, source))
+                    .or_default() += 1;
             }
         });
         context
@@ -82,7 +107,7 @@ fn classify(node: Node<'_>, source: &[u8], extraction: &mut Extraction, context:
     match node.kind() {
         "function_definition" => {
             if let Some(declarator) = node.child_by_field_name("declarator")
-                && let Some(name) = declarator.child_by_field_name("declarator")
+                && let Some(name) = declarator_name(declarator)
             {
                 extraction.symbols.push(Symbol {
                     name: text(name, source),
@@ -91,8 +116,21 @@ fn classify(node: Node<'_>, source: &[u8], extraction: &mut Extraction, context:
                 });
             }
         }
-        "struct_specifier" | "union_specifier" | "enum_specifier" | "type_definition" => {
+        "struct_specifier" | "union_specifier" | "enum_specifier"
+            if node.child_by_field_name("body").is_some() =>
+        {
             symbol(node, source, extraction);
+        }
+        "type_definition" => {
+            if let Some(declarator) = node.child_by_field_name("declarator")
+                && let Some(name) = declarator_name(declarator)
+            {
+                extraction.symbols.push(Symbol {
+                    name: text(name, source),
+                    span: Span::from(name),
+                    search_span: Span::from(node),
+                });
+            }
         }
         "preproc_include" => extraction.edges.push(Edge {
             relation: RelationKind::Imports,
@@ -101,13 +139,34 @@ fn classify(node: Node<'_>, source: &[u8], extraction: &mut Extraction, context:
             context_span: Span::from(node),
             provenance: Provenance::Syntax,
         }),
+        "type_identifier" if !is_type_declaration_name(node) => {
+            let name = text(node, source);
+            if context.declared_types.get(&name) == Some(&1) {
+                extraction.edges.push(Edge {
+                    relation: RelationKind::References,
+                    target: name,
+                    span: Span::from(node),
+                    context_span: evidence_span(
+                        node,
+                        &[
+                            "declaration",
+                            "field_declaration",
+                            "function_definition",
+                            "parameter_declaration",
+                            "type_definition",
+                        ],
+                    ),
+                    provenance: Provenance::Syntax,
+                });
+            }
+        }
         "call_expression" => {
             let Some(function) = node.child_by_field_name("function") else {
                 return;
             };
             if function.kind() == "identifier" {
                 let name = text(function, source);
-                if context.declared_functions.contains(&name) {
+                if context.declared_functions.get(&name) == Some(&1) {
                     extraction.edges.push(Edge {
                         relation: RelationKind::Calls,
                         target: name,
@@ -132,6 +191,45 @@ fn classify(node: Node<'_>, source: &[u8], extraction: &mut Extraction, context:
         }
         _ => {}
     }
+}
+
+fn declarator_name(mut node: Node<'_>) -> Option<Node<'_>> {
+    loop {
+        if matches!(node.kind(), "identifier" | "type_identifier") {
+            return Some(node);
+        }
+        node = node
+            .child_by_field_name("declarator")
+            .or_else(|| node.child_by_field_name("name"))?;
+    }
+}
+
+fn is_type_declaration_name(node: Node<'_>) -> bool {
+    let Some(parent) = node.parent() else {
+        return false;
+    };
+    if matches!(
+        parent.kind(),
+        "struct_specifier" | "union_specifier" | "enum_specifier"
+    ) && parent.child_by_field_name("body").is_some()
+        && parent.child_by_field_name("name").map(|name| name.id()) == Some(node.id())
+    {
+        return true;
+    }
+
+    let mut current = node;
+    while let Some(ancestor) = current.parent() {
+        if ancestor.kind() == "type_definition" {
+            return ancestor
+                .child_by_field_name("declarator")
+                .is_some_and(|declarator| {
+                    declarator.start_byte() <= node.start_byte()
+                        && node.end_byte() <= declarator.end_byte()
+                });
+        }
+        current = ancestor;
+    }
+    false
 }
 
 fn visit(node: Node<'_>, apply: &mut impl FnMut(Node<'_>)) {

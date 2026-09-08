@@ -57,16 +57,16 @@
       "extensions": ["c", "h"],
       "cells": {
         "c": {
-          "CALLS": ["c-direct-call-add"],
-          "IMPORTS": ["c-direct-call-stdio-import"],
-          "REFERENCE": [],
-          "UNRESOLVED": ["c-function-pointer-dispatch"]
+          "CALLS": ["c-main-call-read-item"],
+          "IMPORTS": ["c-main-import-item-header"],
+          "REFERENCE": ["c-main-reference-item"],
+          "UNRESOLVED": ["c-main-unresolved-emit-value"]
         },
         "h": {
-          "CALLS": [],
-          "IMPORTS": [],
-          "REFERENCE": [],
-          "UNRESOLVED": []
+          "CALLS": ["c-header-call-buffer-length"],
+          "IMPORTS": ["c-header-import-support"],
+          "REFERENCE": ["c-header-reference-buffer"],
+          "UNRESOLVED": ["c-header-unresolved-audit-buffer"]
         }
       }
     },
@@ -77,16 +77,16 @@
       "extensions": ["kt", "kts"],
       "cells": {
         "kt": {
-          "CALLS": ["kotlin-direct-call-greet"],
-          "IMPORTS": ["kotlin-direct-call-import-list"],
-          "REFERENCE": [],
-          "UNRESOLVED": ["kotlin-method-dispatch"]
+          "CALLS": ["kotlin-main-call-label"],
+          "IMPORTS": ["kotlin-main-import-clock"],
+          "REFERENCE": ["kotlin-main-reference-clock"],
+          "UNRESOLVED": ["kotlin-main-unresolved-println"]
         },
         "kts": {
-          "CALLS": [],
-          "IMPORTS": [],
-          "REFERENCE": [],
-          "UNRESOLVED": []
+          "CALLS": ["kotlin-script-call-make"],
+          "IMPORTS": ["kotlin-script-import-clock"],
+          "REFERENCE": ["kotlin-script-reference-clock"],
+          "UNRESOLVED": ["kotlin-script-unresolved-println"]
         }
       }
     },

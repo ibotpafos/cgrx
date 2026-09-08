@@ -1841,6 +1841,53 @@ void run(struct Ops* ops) {
 }
 
 #[test]
+fn c_header_covers_calls_imports_references_and_unresolved() {
+    let source = br#"#include <stddef.h>
+
+typedef struct {
+    int value;
+} Item;
+
+static inline int read(Item *item) { return item->value; }
+static inline int use(Item *item) { return read(item) + external(item); }
+"#;
+    let path = Path::new("include/item.h");
+    let extraction = pack_for_path(path)
+        .expect("C header has a language pack")
+        .extract(path, source)
+        .expect("C header extracts");
+
+    assert!(
+        extraction
+            .edges
+            .iter()
+            .any(|edge| { edge.relation == RelationKind::Calls && edge.target == "read" })
+    );
+    assert!(extraction.edges.iter().any(|edge| {
+        edge.relation == RelationKind::Imports && edge.target == "#include <stddef.h>"
+    }));
+    assert!(
+        extraction
+            .edges
+            .iter()
+            .any(|edge| { edge.relation == RelationKind::References && edge.target == "Item" })
+    );
+    assert!(extraction.unresolved.iter().any(|candidate| {
+        candidate.kind == UnresolvedKind::Dispatch && candidate.text == "external(item)"
+    }));
+
+    let item_symbols = extraction
+        .symbols
+        .iter()
+        .filter(|symbol| symbol.name == "Item")
+        .count();
+    assert_eq!(
+        item_symbols, 1,
+        "type uses are references, not declarations"
+    );
+}
+
+#[test]
 fn c_parser_errors_are_explicit_coverage_gaps() {
     let (path, source) = fixture("c-parser-error-range/repo/src/main.c");
     let extraction = pack_for_path(&path)
@@ -1954,6 +2001,72 @@ fun process() {
 
     assert!(dispatches.contains(&"list.add(\"item\")"));
     assert!(dispatches.contains(&"list.forEach { println(it) }"));
+}
+
+#[test]
+fn kotlin_member_and_overloaded_functions_do_not_resolve_by_name_only() {
+    let source = br#"class Service {
+    fun execute(): String = "member"
+}
+
+fun choose(value: Int): String = value.toString()
+fun choose(value: String): String = value
+
+fun caller(): String {
+    execute()
+    return choose(1)
+}
+"#;
+    let path = Path::new("src/main.kt");
+    let extraction = pack_for_path(path)
+        .expect("Kotlin source has a language pack")
+        .extract(path, source)
+        .expect("Kotlin source extracts");
+
+    assert!(!extraction.edges.iter().any(|edge| {
+        edge.relation == RelationKind::Calls
+            && (edge.target == "execute" || edge.target == "choose")
+    }));
+    for expected in ["execute()", "choose(1)"] {
+        assert!(extraction.unresolved.iter().any(|candidate| {
+            candidate.kind == UnresolvedKind::Dispatch && candidate.text == expected
+        }));
+    }
+}
+
+#[test]
+fn kotlin_script_covers_calls_imports_references_and_unresolved() {
+    let source = br#"import java.time.Instant
+
+class Job(val createdAt: Instant)
+
+fun make(): Job = Job(Instant.now())
+fun run(): Job = make()
+
+println(run())
+"#;
+    let path = Path::new("scripts/report.kts");
+    let extraction = pack_for_path(path)
+        .expect("Kotlin script has a language pack")
+        .extract(path, source)
+        .expect("Kotlin script extracts");
+
+    assert!(
+        extraction
+            .edges
+            .iter()
+            .any(|edge| { edge.relation == RelationKind::Calls && edge.target == "make" })
+    );
+    assert!(extraction.edges.iter().any(|edge| {
+        edge.relation == RelationKind::Imports && edge.target == "import java.time.Instant"
+    }));
+    assert!(extraction.edges.iter().any(|edge| {
+        edge.relation == RelationKind::References
+            && (edge.target == "Job" || edge.target == "java.time.Instant")
+    }));
+    assert!(extraction.unresolved.iter().any(|candidate| {
+        candidate.kind == UnresolvedKind::Dispatch && candidate.text == "Instant.now()"
+    }));
 }
 
 #[test]

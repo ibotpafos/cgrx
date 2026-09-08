@@ -1,0 +1,32 @@
+{
+  "expected_cgcr_status": "PARTIAL",
+  "expected_graph_only": false,
+  "gold_spans": [
+    {
+      "end_byte": 44,
+      "path": "repo/src/main.kt",
+      "relation_kind": "CALLS",
+      "risk_class": "high",
+      "source_sha256": "bdf722a238fe1e2163d70035381a6feb3d11c51410176792441787ed731edeac",
+      "start_byte": 23,
+      "text": "val before = stable()"
+    }
+  ],
+  "id": "kotlin-parser-error-range",
+  "language": "kotlin",
+  "query": "What call remains before the parser error range?",
+  "required_uncertainty": [
+    "parser_error_range"
+  ],
+  "scope": {
+    "exclude": [],
+    "include": [
+      "repo/**"
+    ],
+    "max_depth": 4,
+    "relation_kinds": [
+      "CALLS"
+    ]
+  },
+  "scorer_type": "unsupported"
+}

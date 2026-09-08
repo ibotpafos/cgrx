@@ -2,7 +2,7 @@ use crate::pack::{
     Edge, ExtractError, Extraction, LanguagePack, Provenance, RelationKind, Span, Symbol,
     UnresolvedKind, evidence_span, normalize_extraction, symbol, text, unresolved, walk_with,
 };
-use std::collections::BTreeSet;
+use std::collections::BTreeMap;
 use tree_sitter::{Language, Node, Parser};
 
 pub(crate) static KOTLIN: Kotlin = Kotlin;
@@ -54,13 +54,19 @@ impl LanguagePack for Kotlin {
 }
 
 struct KotlinContext {
-    declared_functions: BTreeSet<String>,
+    declared_functions: BTreeMap<String, usize>,
+    top_level_functions: BTreeMap<String, usize>,
+    declared_types: BTreeMap<String, usize>,
+    imported_types: BTreeMap<String, Vec<String>>,
 }
 
 impl KotlinContext {
     fn default() -> Self {
         Self {
-            declared_functions: BTreeSet::new(),
+            declared_functions: BTreeMap::new(),
+            top_level_functions: BTreeMap::new(),
+            declared_types: BTreeMap::new(),
+            imported_types: BTreeMap::new(),
         }
     }
 
@@ -71,10 +77,36 @@ impl KotlinContext {
                 let mut cursor = node.walk();
                 for child in node.named_children(&mut cursor) {
                     if child.kind() == "identifier" {
-                        context.declared_functions.insert(text(child, source));
+                        let name = text(child, source);
+                        *context.declared_functions.entry(name.clone()).or_default() += 1;
+                        if !has_enclosing_declaration(node) {
+                            *context.top_level_functions.entry(name).or_default() += 1;
+                        }
                         break;
                     }
                 }
+            }
+            if matches!(
+                node.kind(),
+                "class_declaration"
+                    | "object_declaration"
+                    | "enum_class_declaration"
+                    | "type_alias"
+            ) && let Some(name) = declaration_name(node)
+            {
+                *context
+                    .declared_types
+                    .entry(text(name, source))
+                    .or_default() += 1;
+            }
+            if node.kind() == "import"
+                && let Some((binding, target)) = imported_type(node, source)
+            {
+                context
+                    .imported_types
+                    .entry(binding)
+                    .or_default()
+                    .push(target);
             }
         });
         context
@@ -119,6 +151,43 @@ fn classify(node: Node<'_>, source: &[u8], extraction: &mut Extraction, context:
             context_span: Span::from(node),
             provenance: Provenance::Syntax,
         }),
+        "user_type" => {
+            let mut cursor = node.walk();
+            let Some(identifier) = node
+                .named_children(&mut cursor)
+                .find(|child| child.kind() == "identifier")
+            else {
+                return;
+            };
+            let name = text(identifier, source);
+            let target = if context.declared_types.get(&name) == Some(&1) {
+                Some(name)
+            } else {
+                context
+                    .imported_types
+                    .get(&name)
+                    .and_then(|targets| targets.as_slice().first().filter(|_| targets.len() == 1))
+                    .cloned()
+            };
+            if let Some(target) = target {
+                extraction.edges.push(Edge {
+                    relation: RelationKind::References,
+                    target,
+                    span: Span::from(node),
+                    context_span: evidence_span(
+                        node,
+                        &[
+                            "class_parameter",
+                            "function_declaration",
+                            "parameter",
+                            "property_declaration",
+                            "type_alias",
+                        ],
+                    ),
+                    provenance: Provenance::Syntax,
+                });
+            }
+        }
         "call_expression" => {
             let mut cursor = node.walk();
             let function = node
@@ -126,7 +195,10 @@ fn classify(node: Node<'_>, source: &[u8], extraction: &mut Extraction, context:
                 .find(|n| n.kind() == "identifier");
             if let Some(function) = function {
                 let name = text(function, source);
-                if context.declared_functions.contains(&name) {
+                if context.declared_functions.get(&name) == Some(&1)
+                    && context.top_level_functions.get(&name) == Some(&1)
+                    && !has_enclosing_type(node)
+                {
                     extraction.edges.push(Edge {
                         relation: RelationKind::Calls,
                         target: name,
@@ -151,6 +223,62 @@ fn classify(node: Node<'_>, source: &[u8], extraction: &mut Extraction, context:
         }
         _ => {}
     }
+}
+
+fn declaration_name(node: Node<'_>) -> Option<Node<'_>> {
+    if let Some(name) = node.child_by_field_name("name") {
+        return Some(name);
+    }
+    let mut cursor = node.walk();
+    node.named_children(&mut cursor)
+        .find(|child| child.kind() == "identifier")
+}
+
+fn has_enclosing_declaration(mut node: Node<'_>) -> bool {
+    while let Some(parent) = node.parent() {
+        if matches!(
+            parent.kind(),
+            "class_declaration"
+                | "object_declaration"
+                | "enum_class_declaration"
+                | "function_declaration"
+        ) {
+            return true;
+        }
+        node = parent;
+    }
+    false
+}
+
+fn has_enclosing_type(mut node: Node<'_>) -> bool {
+    while let Some(parent) = node.parent() {
+        if matches!(
+            parent.kind(),
+            "class_declaration" | "object_declaration" | "enum_class_declaration"
+        ) {
+            return true;
+        }
+        node = parent;
+    }
+    false
+}
+
+fn imported_type(node: Node<'_>, source: &[u8]) -> Option<(String, String)> {
+    let value = text(node, source);
+    let body = value.trim().strip_prefix("import ")?.trim();
+    if body.contains('*') {
+        return None;
+    }
+    let (target, alias) = body
+        .rsplit_once(" as ")
+        .map_or((body, None), |(target, alias)| {
+            (target.trim(), Some(alias.trim()))
+        });
+    let binding = alias.or_else(|| target.rsplit('.').next())?;
+    if binding.is_empty() || target.is_empty() {
+        return None;
+    }
+    Some((binding.to_owned(), target.to_owned()))
 }
 
 fn visit(node: Node<'_>, apply: &mut impl FnMut(Node<'_>)) {
