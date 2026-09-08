@@ -8,6 +8,7 @@ use std::fs;
 use std::io::{self, BufRead, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::Instant;
 
 use cgrx_capsule::Tokenizer;
 use cgrx_cli::{Runtime, RuntimeEvidenceFormat};
@@ -68,7 +69,7 @@ fn run(args: Vec<String>) -> Result<(), String> {
         "schema" => schema(&args[1..])?,
         "skill" => skill::run(&args[1..])?,
         "usage-report" => usage_report(&args[1..])?,
-        "bench" => println!("{}", json!({"status":"DELEGATED_TO_BENCH_HARNESS"})),
+        "bench" => bench(&args[1..])?,
         other => return Err(format!("unknown command {other}")),
     }
     Ok(())
@@ -302,6 +303,74 @@ fn sample_summary(samples: &[u64]) -> Value {
 fn nearest_rank(sorted: &[u64], percentile: usize) -> u64 {
     let rank = sorted.len().saturating_mul(percentile).div_ceil(100);
     sorted[rank.saturating_sub(1).min(sorted.len() - 1)]
+}
+
+fn bench(args: &[String]) -> Result<(), String> {
+    if args.first().map(String::as_str) != Some("refresh") {
+        return Err("bench requires the refresh scenario".to_owned());
+    }
+    let mut seen = BTreeSet::new();
+    let mut cursor = 1;
+    while cursor < args.len() {
+        let argument = args[cursor].as_str();
+        if !seen.insert(argument.to_owned()) {
+            return Err(format!("duplicate {argument}"));
+        }
+        match argument {
+            "--json" => cursor += 1,
+            "--root" | "--samples" => {
+                if cursor + 1 >= args.len() {
+                    return Err(format!("missing value for {argument}"));
+                }
+                cursor += 2;
+            }
+            _ => return Err(format!("unknown bench refresh argument {argument}")),
+        }
+    }
+    if !args.iter().any(|argument| argument == "--json") {
+        return Err("bench refresh requires --json".to_owned());
+    }
+    let samples = optional_flag(args, "--samples")
+        .map(|value| parse_u32(value, "samples"))
+        .transpose()?
+        .unwrap_or(20);
+    if !(3..=1_000).contains(&samples) {
+        return Err("samples must be between 3 and 1000".to_owned());
+    }
+    let root = Path::new(optional_flag(args, "--root").unwrap_or("."))
+        .canonicalize()
+        .map_err(|error| error.to_string())?;
+    let state = managed_state_path(&root)?;
+    let cold_started = Instant::now();
+    let mut runtime = open_managed_runtime(&root, &state)?;
+    let cold_open_us = cold_started.elapsed().as_micros() as u64;
+    let warmup_started = Instant::now();
+    let warmup_changed = runtime.refresh(&root).map_err(|error| error.to_string())?;
+    let warmup_us = warmup_started.elapsed().as_micros() as u64;
+    let mut warm_refresh_us = Vec::with_capacity(samples as usize);
+    let mut changed_samples = 0_u32;
+    for _ in 0..samples {
+        let started = Instant::now();
+        changed_samples += u32::from(runtime.refresh(&root).map_err(|error| error.to_string())?);
+        warm_refresh_us.push(started.elapsed().as_micros() as u64);
+    }
+    println!(
+        "{}",
+        json!({
+            "schema_version":1,
+            "scenario":"refresh",
+            "engine_version":env!("CARGO_PKG_VERSION"),
+            "snapshot":runtime.snapshot(),
+            "samples":samples,
+            "changed_samples":changed_samples,
+            "cold_open_us":cold_open_us,
+            "warmup_us":warmup_us,
+            "warmup_changed":warmup_changed,
+            "warm_refresh_us":sample_summary(&warm_refresh_us),
+            "measurement":"wall_clock_monotonic"
+        })
+    );
+    Ok(())
 }
 
 fn usage_report(args: &[String]) -> Result<(), String> {

@@ -304,6 +304,18 @@ refactor futures and the visualizer without an LSP or model runtime.
 See [the Trace MCP reference comparison](docs/reference-trace-mcp.md) for the
 evidence behind this search slice and the capabilities that remain separate.
 
+For repeatable local refresh measurements, run:
+
+```bash
+cgrx bench refresh --root /absolute/repository --samples 20 --json
+```
+
+The report separates managed-runtime open time and one cache-warming refresh
+from the measured warm refreshes. It includes p50, p95, maximum, sample count,
+snapshot identity, and whether the warmup or any measured sample observed a
+graph change. It is a tool microbenchmark; compare identical repositories,
+revisions, build profiles, and sample counts.
+
 ## Maturity and privacy
 
 **Alpha.** Rust Cargo-root resolution covers bounded same-package lib/bin/module
