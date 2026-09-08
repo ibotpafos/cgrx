@@ -51,6 +51,46 @@
       }
     },
     {
+      "id": "c",
+      "module": "c",
+      "source": "crates/cgrx-languages/src/c.rs",
+      "extensions": ["c", "h"],
+      "cells": {
+        "c": {
+          "CALLS": ["c-direct-call-add"],
+          "IMPORTS": ["c-direct-call-stdio-import"],
+          "REFERENCE": [],
+          "UNRESOLVED": ["c-function-pointer-dispatch"]
+        },
+        "h": {
+          "CALLS": [],
+          "IMPORTS": [],
+          "REFERENCE": [],
+          "UNRESOLVED": []
+        }
+      }
+    },
+    {
+      "id": "kotlin",
+      "module": "kotlin",
+      "source": "crates/cgrx-languages/src/kotlin.rs",
+      "extensions": ["kt", "kts"],
+      "cells": {
+        "kt": {
+          "CALLS": ["kotlin-direct-call-greet"],
+          "IMPORTS": ["kotlin-direct-call-import-list"],
+          "REFERENCE": [],
+          "UNRESOLVED": ["kotlin-method-dispatch"]
+        },
+        "kts": {
+          "CALLS": [],
+          "IMPORTS": [],
+          "REFERENCE": [],
+          "UNRESOLVED": []
+        }
+      }
+    },
+    {
       "id": "python",
       "module": "python",
       "source": "crates/cgrx-languages/src/python.rs",
