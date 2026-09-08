@@ -1712,3 +1712,296 @@ fn go_concrete_field_unsupported_shapes_retain_dispatch_gaps() {
         );
     }
 }
+
+#[test]
+fn c_direct_call_has_span_and_syntax_provenance() {
+    let (path, source) = fixture("c-direct-call/repo/src/main.c");
+    let pack = pack_for_path(&path).expect("C language pack registered");
+    let extraction = pack.extract(&path, &source).expect("fixture parses");
+
+    let edge = extraction
+        .edges
+        .iter()
+        .find(|edge| edge.relation == RelationKind::Calls && edge.target == "add")
+        .expect("direct call edge");
+    assert_eq!(&source[edge.span.start..edge.span.end], b"add(1, 2)");
+    assert_eq!(
+        &source[edge.context_span.start..edge.context_span.end],
+        b"int result = add(1, 2);"
+    );
+    assert_eq!(edge.provenance, Provenance::Syntax);
+    assert!(extraction.parser_error_ranges.is_empty());
+}
+
+#[test]
+fn c_symbols_imports_calls_and_dispatch_are_fail_closed() {
+    let source = br#"#include <stdio.h>
+#include "myheader.h"
+
+struct Point {
+    int x;
+    int y;
+};
+
+int add(int a, int b) { return a + b; }
+
+int caller() {
+    int result = add(1, 2);
+    printf("result: %d\n", result);
+    return result;
+}
+"#;
+    let path = Path::new("src/main.c");
+    let pack = pack_for_path(path).expect("C source has a language pack");
+    let extraction = pack.extract(path, source).expect("C source extracts");
+
+    let names: Vec<_> = extraction
+        .symbols
+        .iter()
+        .map(|symbol| symbol.name.as_str())
+        .collect();
+    assert_eq!(names, ["Point", "add", "caller"]);
+    assert!(extraction.edges.iter().any(|edge| {
+        edge.relation == RelationKind::Imports && edge.target == "#include <stdio.h>"
+    }));
+    assert!(extraction.edges.iter().any(|edge| {
+        edge.relation == RelationKind::Calls
+            && edge.target == "add"
+            && &source[edge.span.start..edge.span.end] == b"add(1, 2)"
+    }));
+    // printf is imported, not declared in this file - stays dispatch
+    let calls: Vec<_> = extraction
+        .edges
+        .iter()
+        .filter(|e| e.relation == RelationKind::Calls)
+        .map(|e| e.target.as_str())
+        .collect();
+    assert_eq!(calls, ["add"]);
+    assert!(extraction.unresolved.iter().any(
+        |c| c.text == "printf(\"result: %d\\n\", result)" && c.kind == UnresolvedKind::Dispatch
+    ));
+    assert!(extraction.parser_error_ranges.is_empty());
+}
+
+#[test]
+fn c_function_pointer_call_is_dispatch() {
+    let source = br#"#include <stdio.h>
+
+void process(void (*callback)(int)) {
+    callback(42);
+}
+
+void handler(int x) {
+    printf("%d\n", x);
+}
+"#;
+    let path = Path::new("src/main.c");
+    let extraction = pack_for_path(path)
+        .expect("C language pack registered")
+        .extract(path, source)
+        .expect("C source extracts");
+
+    let dispatches: Vec<_> = extraction
+        .unresolved
+        .iter()
+        .filter(|candidate| candidate.kind == UnresolvedKind::Dispatch)
+        .map(|candidate| candidate.text.as_str())
+        .collect();
+
+    assert!(dispatches.contains(&"callback(42)"));
+    assert!(dispatches.contains(&"printf(\"%d\\n\", x)"));
+}
+
+#[test]
+fn c_struct_member_call_is_dispatch() {
+    let source = br#"#include <stdio.h>
+
+struct Ops {
+    void (*execute)(int);
+};
+
+void run(struct Ops* ops) {
+    ops->execute(1);
+}
+"#;
+    let path = Path::new("src/main.c");
+    let extraction = pack_for_path(path)
+        .expect("C language pack registered")
+        .extract(path, source)
+        .expect("C source extracts");
+
+    let dispatches: Vec<_> = extraction
+        .unresolved
+        .iter()
+        .filter(|candidate| candidate.kind == UnresolvedKind::Dispatch)
+        .map(|candidate| candidate.text.as_str())
+        .collect();
+
+    assert_eq!(dispatches, ["ops->execute(1)"]);
+}
+
+#[test]
+fn c_parser_errors_are_explicit_coverage_gaps() {
+    let (path, source) = fixture("c-parser-error-range/repo/src/main.c");
+    let extraction = pack_for_path(&path)
+        .expect("C language pack registered")
+        .extract(&path, &source)
+        .expect("partial C extraction succeeds");
+
+    assert!(!extraction.parser_error_ranges.is_empty());
+    assert!(
+        extraction
+            .unresolved
+            .iter()
+            .any(|candidate| candidate.kind == UnresolvedKind::ParserError)
+    );
+}
+
+#[test]
+fn kotlin_direct_call_has_span_and_syntax_provenance() {
+    let (path, source) = fixture("kotlin-direct-call/repo/src/main.kt");
+    let pack = pack_for_path(&path).expect("Kotlin language pack registered");
+    let extraction = pack.extract(&path, &source).expect("fixture parses");
+
+    let edge = extraction
+        .edges
+        .iter()
+        .find(|edge| edge.relation == RelationKind::Calls && edge.target == "greet")
+        .expect("direct call edge");
+    assert_eq!(&source[edge.span.start..edge.span.end], b"greet()");
+    assert_eq!(
+        &source[edge.context_span.start..edge.context_span.end],
+        b"val message = greet()"
+    );
+    assert_eq!(edge.provenance, Provenance::Syntax);
+    assert!(extraction.parser_error_ranges.is_empty());
+}
+
+#[test]
+fn kotlin_symbols_imports_calls_and_dispatch_are_fail_closed() {
+    let source = br#"import java.util.List
+import kotlin.collections.Map
+
+data class User(val name: String, val age: Int)
+
+fun greet(): String = "hello"
+
+fun caller(): String {
+    val message = greet()
+    println(message)
+    return message
+}
+"#;
+    let path = Path::new("src/main.kt");
+    let pack = pack_for_path(path).expect("Kotlin source has a language pack");
+    let extraction = pack.extract(path, source).expect("Kotlin source extracts");
+
+    let names: Vec<_> = extraction
+        .symbols
+        .iter()
+        .map(|symbol| symbol.name.as_str())
+        .collect();
+    assert_eq!(names, ["User", "caller", "greet"]);
+    assert!(extraction.edges.iter().any(|edge| {
+        edge.relation == RelationKind::Imports && edge.target == "import java.util.List"
+    }));
+    // greet is declared in this file - should be a call
+    assert!(
+        extraction
+            .edges
+            .iter()
+            .any(|edge| { edge.relation == RelationKind::Calls && edge.target == "greet" })
+    );
+    // println is imported, not declared in this file - stays dispatch
+    let calls: Vec<_> = extraction
+        .edges
+        .iter()
+        .filter(|e| e.relation == RelationKind::Calls)
+        .map(|e| e.target.as_str())
+        .collect();
+    assert_eq!(calls, ["greet"]);
+    assert!(
+        extraction
+            .unresolved
+            .iter()
+            .any(|c| c.text == "println(message)" && c.kind == UnresolvedKind::Dispatch)
+    );
+    assert!(extraction.parser_error_ranges.is_empty());
+}
+
+#[test]
+fn kotlin_method_call_on_object_is_dispatch() {
+    let source = br#"import java.util.ArrayList
+
+fun process() {
+    val list = ArrayList<String>()
+    list.add("item")
+    list.forEach { println(it) }
+}
+"#;
+    let path = Path::new("src/main.kt");
+    let extraction = pack_for_path(path)
+        .expect("Kotlin language pack registered")
+        .extract(path, source)
+        .expect("Kotlin source extracts");
+
+    let dispatches: Vec<_> = extraction
+        .unresolved
+        .iter()
+        .filter(|candidate| candidate.kind == UnresolvedKind::Dispatch)
+        .map(|candidate| candidate.text.as_str())
+        .collect();
+
+    assert!(dispatches.contains(&"list.add(\"item\")"));
+    assert!(dispatches.contains(&"list.forEach { println(it) }"));
+}
+
+#[test]
+fn kotlin_class_and_object_symbols() {
+    let source = br#"class Service {
+    fun execute(): String = "done"
+}
+
+object Singleton {
+    fun instance(): Singleton = this
+}
+
+enum class Status {
+    ACTIVE, INACTIVE
+}
+
+typealias Handler = (String) -> Unit
+"#;
+    let path = Path::new("src/main.kt");
+    let extraction = pack_for_path(path)
+        .expect("Kotlin language pack registered")
+        .extract(path, source)
+        .expect("Kotlin source extracts");
+
+    let names: Vec<_> = extraction
+        .symbols
+        .iter()
+        .map(|symbol| symbol.name.as_str())
+        .collect();
+    assert!(names.contains(&"Service"));
+    assert!(names.contains(&"Singleton"));
+    assert!(names.contains(&"Status"));
+    assert!(names.contains(&"Handler"));
+}
+
+#[test]
+fn kotlin_parser_errors_are_explicit_coverage_gaps() {
+    let (path, source) = fixture("kotlin-parser-error-range/repo/src/main.kt");
+    let extraction = pack_for_path(&path)
+        .expect("Kotlin language pack registered")
+        .extract(&path, &source)
+        .expect("partial Kotlin extraction succeeds");
+
+    assert!(!extraction.parser_error_ranges.is_empty());
+    assert!(
+        extraction
+            .unresolved
+            .iter()
+            .any(|candidate| candidate.kind == UnresolvedKind::ParserError)
+    );
+}

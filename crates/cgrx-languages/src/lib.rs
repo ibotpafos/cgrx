@@ -1,7 +1,9 @@
-//! Narrow, deterministic Go, Java, TypeScript, Python, and Rust extraction packs.
+//! Narrow, deterministic C, Go, Java, Kotlin, TypeScript, Python, and Rust extraction packs.
 
+mod c;
 mod go;
 mod java;
+mod kotlin;
 mod pack;
 mod python;
 mod rust;
