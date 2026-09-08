@@ -9,12 +9,13 @@ name = "cgrx-lsp"
 path = "src/main.rs"
 
 [dependencies]
-cgrx-core = { path = "../cgrx-core" }
+cgrx-cli = { path = "../cgrx-cli" }
 cgrx-languages = { path = "../cgrx-languages" }
 cgrx-retrieval = { path = "../cgrx-retrieval" }
-cgrx-store = { path = "../cgrx-store" }
+lsp-server = "0.10.0"
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.143"
+url = "2.5.7"
 
 [dev-dependencies]
 serde_json = "1.0.143"

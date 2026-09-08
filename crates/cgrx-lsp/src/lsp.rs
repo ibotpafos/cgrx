@@ -13,10 +13,10 @@ use crate::protocol::{
 };
 use cgrx_languages::{Edge, Span, Symbol, pack_for_path};
 use cgrx_retrieval::BaseGraph;
-use cgrx_store::DeltaOverlay;
 use std::collections::BTreeMap;
 use std::fmt;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use url::Url;
 
 /// Errors that can occur during LSP operations.
 #[derive(Debug)]
@@ -89,22 +89,32 @@ impl Document {
     }
 
     /// Updates the document content and re-extracts symbols.
-    pub fn update(&mut self, changes: &[TextDocumentContentChangeEvent], version: i32) {
+    pub fn update(
+        &mut self,
+        changes: &[TextDocumentContentChangeEvent],
+        version: i32,
+    ) -> LspResult<()> {
         for change in changes {
             if let Some(range) = &change.range {
-                // Apply range-based change
-                let start = self.position_to_offset(&range.start);
-                let end = self.position_to_offset(&range.end);
-                if start <= end && end <= self.content.len() {
-                    self.content.replace_range(start..end, &change.text);
+                let start = self.position_to_offset(&range.start).ok_or_else(|| {
+                    LspError::InvalidParams("change start is outside the document".to_string())
+                })?;
+                let end = self.position_to_offset(&range.end).ok_or_else(|| {
+                    LspError::InvalidParams("change end is outside the document".to_string())
+                })?;
+                if start > end {
+                    return Err(LspError::InvalidParams(
+                        "change range starts after it ends".to_string(),
+                    ));
                 }
+                self.content.replace_range(start..end, &change.text);
             } else {
-                // Full document replacement
                 self.content = change.text.clone();
             }
         }
         self.version = version;
         self.extract_symbols();
+        Ok(())
     }
 
     /// Extracts symbols from the document content using the appropriate language pack.
@@ -112,11 +122,15 @@ impl Document {
         self.symbols.clear();
         self.edges.clear();
 
-        let path = Path::new(&self.uri);
+        let uri_path = Url::parse(&self.uri)
+            .ok()
+            .and_then(|uri| uri.to_file_path().ok());
+        let path = uri_path.as_deref().unwrap_or_else(|| Path::new(&self.uri));
+        let extraction_path = path.file_name().map(Path::new).unwrap_or(path);
         let content = self.content.as_bytes();
 
-        if let Some(pack) = pack_for_path(path) {
-            match pack.extract(path, content) {
+        if let Some(pack) = pack_for_path(extraction_path) {
+            match pack.extract(extraction_path, content) {
                 Ok(extraction) => {
                     self.symbols = extraction.symbols;
                     self.edges = extraction.edges;
@@ -129,37 +143,26 @@ impl Document {
     }
 
     /// Converts a Position to a byte offset in the document content.
-    fn position_to_offset(&self, pos: &Position) -> usize {
-        let mut offset = 0;
-        let target_line = pos.line as usize;
-        let target_char = pos.character as usize;
-
-        for (line_idx, line) in self.content.lines().enumerate() {
-            if line_idx == target_line {
-                // Find the character position in this line
-                let mut char_offset = 0;
-                for (char_idx, ch) in line.char_indices() {
-                    if char_idx >= target_char {
-                        break;
-                    }
-                    char_offset = char_idx + ch.len_utf8();
-                }
-                // If target_char is beyond the line length, clamp to end of line
-                if target_char > line.chars().count() {
-                    char_offset = line.len();
-                }
-                offset += char_offset;
-                break;
+    fn position_to_offset(&self, pos: &Position) -> Option<usize> {
+        let (line_start, line_end) = line_bounds(&self.content, pos.line)?;
+        let line = &self.content[line_start..line_end];
+        let target = usize::try_from(pos.character).ok()?;
+        let mut utf16_offset = 0;
+        for (byte_offset, character) in line.char_indices() {
+            if utf16_offset == target {
+                return Some(line_start + byte_offset);
             }
-            offset += line.len() + 1; // +1 for newline
+            utf16_offset += character.len_utf16();
+            if utf16_offset > target {
+                return None;
+            }
         }
-
-        offset.min(self.content.len())
+        (utf16_offset == target).then_some(line_end)
     }
 
     /// Returns the symbol at the given position, if any.
     pub fn symbol_at(&self, pos: &Position) -> Option<&Symbol> {
-        let offset = self.position_to_offset(pos);
+        let offset = self.position_to_offset(pos)?;
         self.symbols
             .iter()
             .find(|s| s.span.start <= offset && offset <= s.span.end)
@@ -167,7 +170,7 @@ impl Document {
 
     /// Returns the word at the given position.
     pub fn word_at(&self, pos: &Position) -> Option<String> {
-        let offset = self.position_to_offset(pos);
+        let offset = self.position_to_offset(pos)?;
         let content = &self.content;
 
         // Find word boundaries
@@ -192,6 +195,39 @@ impl Document {
     }
 }
 
+fn line_bounds(content: &str, target_line: u32) -> Option<(usize, usize)> {
+    let mut start = 0;
+    for line in 0..=target_line {
+        let end = content[start..]
+            .find('\n')
+            .map_or(content.len(), |offset| start + offset);
+        if line == target_line {
+            let logical_end = if end > start && content.as_bytes()[end - 1] == b'\r' {
+                end - 1
+            } else {
+                end
+            };
+            return Some((start, logical_end));
+        }
+        if end == content.len() {
+            return None;
+        }
+        start = end + 1;
+    }
+    None
+}
+
+fn offset_to_position(content: &str, offset: usize) -> Option<Position> {
+    if offset > content.len() || !content.is_char_boundary(offset) {
+        return None;
+    }
+    let prefix = &content[..offset];
+    let line = u32::try_from(prefix.bytes().filter(|byte| *byte == b'\n').count()).ok()?;
+    let line_start = prefix.rfind('\n').map_or(0, |index| index + 1);
+    let character = u32::try_from(content[line_start..offset].encode_utf16().count()).ok()?;
+    Some(Position { line, character })
+}
+
 /// Checks if a character is a word character (identifier character).
 fn is_word_char(c: char) -> bool {
     c.is_alphanumeric() || c == '_'
@@ -207,8 +243,8 @@ pub struct LspServer {
     documents: BTreeMap<String, Document>,
     /// The CGRX base graph.
     graph: Option<BaseGraph>,
-    /// The delta overlay for the graph.
-    _overlay: Option<DeltaOverlay>,
+    /// Canonical repository root used to resolve graph paths.
+    workspace_root: Option<PathBuf>,
 }
 
 impl LspServer {
@@ -227,7 +263,7 @@ impl LspServer {
             },
             documents: BTreeMap::new(),
             graph: None,
-            _overlay: None,
+            workspace_root: None,
         }
     }
 
@@ -246,8 +282,15 @@ impl LspServer {
             },
             documents: BTreeMap::new(),
             graph: Some(graph),
-            _overlay: None,
+            workspace_root: None,
         }
+    }
+
+    /// Creates a server backed by a graph whose paths are relative to `workspace_root`.
+    pub fn with_graph_at_root(graph: BaseGraph, workspace_root: PathBuf) -> Self {
+        let mut server = Self::with_graph(graph);
+        server.workspace_root = Some(workspace_root);
+        server
     }
 
     /// Returns whether the server has been initialized.
@@ -271,7 +314,14 @@ impl LspServer {
     }
 
     /// Handles an initialize request.
-    pub fn initialize(&mut self, _params: InitializeParams) -> LspResult<InitializeResult> {
+    pub fn initialize(&mut self, params: InitializeParams) -> LspResult<InitializeResult> {
+        if self.workspace_root.is_none() {
+            self.workspace_root = params
+                .root_uri
+                .as_deref()
+                .and_then(|uri| Url::parse(uri).ok())
+                .and_then(|uri| uri.to_file_path().ok());
+        }
         self.initialized = true;
         Ok(InitializeResult {
             capabilities: self.capabilities.clone(),
@@ -297,10 +347,13 @@ impl LspServer {
 
     /// Handles a textDocument/didChange notification.
     pub fn did_change(&mut self, params: DidChangeTextDocumentParams) -> LspResult<()> {
-        if let Some(doc) = self.documents.get_mut(&params.text_document.uri) {
-            doc.update(&params.content_changes, params.text_document.version);
-        }
-        Ok(())
+        let doc = self
+            .documents
+            .get_mut(&params.text_document.uri)
+            .ok_or_else(|| {
+                LspError::InvalidParams(format!("document not found: {}", params.text_document.uri))
+            })?;
+        doc.update(&params.content_changes, params.text_document.version)
     }
 
     /// Handles a textDocument/didClose notification.
@@ -369,23 +422,10 @@ impl LspServer {
         // First, check the documents in the graph
         if let Some(graph) = &self.graph {
             for doc in &graph.documents {
-                if doc.qualified_name == name {
-                    let range = self.span_to_lsp_range(&doc.span);
-                    locations.push(Location {
-                        uri: doc.path.clone(),
-                        range,
-                    });
-                }
-            }
-
-            // Also check edges for call targets
-            for edge in &graph.edges {
-                if edge.edge.target == name {
-                    let range = self.span_to_lsp_range(&edge.edge.span);
-                    locations.push(Location {
-                        uri: edge.path.clone(),
-                        range,
-                    });
+                if graph_name_matches(&doc.qualified_name, name)
+                    && let Some(location) = self.location_for_span(&doc.path, &doc.span)
+                {
+                    locations.push(location);
                 }
             }
         }
@@ -393,12 +433,10 @@ impl LspServer {
         // Check open documents for symbol definitions
         for (uri, doc) in &self.documents {
             for symbol in &doc.symbols {
-                if symbol.name == name {
-                    let range = self.span_to_lsp_range(&symbol.span);
-                    locations.push(Location {
-                        uri: uri.clone(),
-                        range,
-                    });
+                if symbol.name == name
+                    && let Some(location) = self.location_for_span(uri, &symbol.span)
+                {
+                    locations.push(location);
                 }
             }
         }
@@ -411,7 +449,7 @@ impl LspServer {
                 b.range.start.character,
             ))
         });
-        locations.dedup_by(|a, b| a.uri == b.uri && a.range.start.line == b.range.start.line);
+        locations.dedup_by(|a, b| a.uri == b.uri && a.range == b.range);
 
         Ok(locations)
     }
@@ -427,13 +465,23 @@ impl LspServer {
 
         // Check edges in the graph for references
         if let Some(graph) = &self.graph {
-            for edge in &graph.edges {
-                if edge.edge.target == name {
-                    let range = self.span_to_lsp_range(&edge.edge.span);
-                    locations.push(Location {
-                        uri: edge.path.clone(),
-                        range,
-                    });
+            let targets: std::collections::BTreeSet<_> = graph
+                .documents
+                .iter()
+                .filter(|document| graph_name_matches(&document.qualified_name, name))
+                .map(|document| document.node_id)
+                .collect();
+            for arc in &graph.arcs {
+                if targets.contains(&arc.target)
+                    && let Some(location) = self.location_for_span(
+                        &arc.evidence.path,
+                        &Span {
+                            start: arc.evidence.span.start,
+                            end: arc.evidence.span.end,
+                        },
+                    )
+                {
+                    locations.push(location);
                 }
             }
         }
@@ -441,12 +489,10 @@ impl LspServer {
         // Check open documents for references
         for (uri, doc) in &self.documents {
             for edge in &doc.edges {
-                if edge.target == name {
-                    let range = self.span_to_lsp_range(&edge.span);
-                    locations.push(Location {
-                        uri: uri.clone(),
-                        range,
-                    });
+                if edge.target == name
+                    && let Some(location) = self.location_for_span(uri, &edge.span)
+                {
+                    locations.push(location);
                 }
             }
         }
@@ -456,12 +502,10 @@ impl LspServer {
             && let Some(graph) = &self.graph
         {
             for doc in &graph.documents {
-                if doc.qualified_name == name {
-                    let range = self.span_to_lsp_range(&doc.span);
-                    locations.push(Location {
-                        uri: doc.path.clone(),
-                        range,
-                    });
+                if graph_name_matches(&doc.qualified_name, name)
+                    && let Some(location) = self.location_for_span(&doc.path, &doc.span)
+                {
+                    locations.push(location);
                 }
             }
         }
@@ -474,24 +518,44 @@ impl LspServer {
                 b.range.start.character,
             ))
         });
-        locations.dedup_by(|a, b| a.uri == b.uri && a.range.start.line == b.range.start.line);
+        locations.dedup_by(|a, b| a.uri == b.uri && a.range == b.range);
 
         Ok(locations)
     }
 
-    /// Converts a CGRX Span to an LSP Range.
-    fn span_to_lsp_range(&self, span: &Span) -> Range {
-        Range {
-            start: Position {
-                line: span.start as u32,
-                character: 0,
-            },
-            end: Position {
-                line: span.end as u32,
-                character: 0,
-            },
-        }
+    fn location_for_span(&self, path_or_uri: &str, span: &Span) -> Option<Location> {
+        let (uri, source) = if let Some(document) = self.documents.get(path_or_uri) {
+            (path_or_uri.to_owned(), document.content.clone())
+        } else {
+            let path = if let Ok(uri) = Url::parse(path_or_uri) {
+                uri.to_file_path().ok()?
+            } else {
+                let path = Path::new(path_or_uri);
+                if path.is_absolute() {
+                    path.to_path_buf()
+                } else {
+                    self.workspace_root.as_ref()?.join(path)
+                }
+            };
+            let uri = Url::from_file_path(&path).ok()?.to_string();
+            let source = std::fs::read_to_string(path).ok()?;
+            (uri, source)
+        };
+        let start = offset_to_position(&source, span.start)?;
+        let end = offset_to_position(&source, span.end)?;
+        Some(Location {
+            uri,
+            range: Range { start, end },
+        })
     }
+}
+
+fn graph_name_matches(qualified_name: &str, name: &str) -> bool {
+    qualified_name == name
+        || qualified_name
+            .rsplit([':', '.', '#', '/'])
+            .find(|part| !part.is_empty())
+            == Some(name)
 }
 
 impl Default for LspServer {
@@ -533,6 +597,44 @@ mod tests {
         };
         let word = doc.word_at(&pos);
         assert_eq!(word, Some("hello".to_string()));
+    }
+
+    #[test]
+    fn document_positions_use_utf16_code_units() {
+        let item = TextDocumentItem {
+            uri: "file:///test.rs".to_string(),
+            language_id: "rust".to_string(),
+            version: 1,
+            text: "😀 alpha".to_string(),
+        };
+
+        let doc = Document::new(&item);
+        assert_eq!(
+            doc.word_at(&Position {
+                line: 0,
+                character: 3,
+            }),
+            Some("alpha".to_string())
+        );
+    }
+
+    #[test]
+    fn document_rejects_positions_beyond_the_last_line() {
+        let item = TextDocumentItem {
+            uri: "file:///test.rs".to_string(),
+            language_id: "rust".to_string(),
+            version: 1,
+            text: "fn last_word() {}".to_string(),
+        };
+
+        let doc = Document::new(&item);
+        assert_eq!(
+            doc.word_at(&Position {
+                line: 99,
+                character: 0,
+            }),
+            None
+        );
     }
 
     #[test]
@@ -579,6 +681,42 @@ mod tests {
     }
 
     #[test]
+    fn definition_range_uses_source_lines_not_byte_offsets() {
+        let mut server = LspServer::new();
+        server.initialize(InitializeParams::default()).unwrap();
+        let uri = "file:///test.rs".to_string();
+        server
+            .did_open(DidOpenTextDocumentParams {
+                text_document: TextDocumentItem {
+                    uri: uri.clone(),
+                    language_id: "rust".to_string(),
+                    version: 1,
+                    text: "fn first() {}\nfn target() {}\nfn caller() { target(); }".to_string(),
+                },
+            })
+            .unwrap();
+
+        let response = server
+            .goto_definition(GotoDefinitionParams {
+                text_document: TextDocumentIdentifier { uri: uri.clone() },
+                position: Position {
+                    line: 2,
+                    character: 15,
+                },
+            })
+            .unwrap()
+            .unwrap();
+        let GotoDefinitionResponse::Array(locations) = response else {
+            panic!("definition returns a location array");
+        };
+        assert!(locations.iter().any(|location| {
+            location.uri == uri
+                && location.range.start.line == 1
+                && location.range.start.character == 3
+        }));
+    }
+
+    #[test]
     fn server_find_references() {
         let mut server = LspServer::new();
         server.initialize(InitializeParams::default()).unwrap();
@@ -612,5 +750,46 @@ mod tests {
 
         let result = server.find_references(params).unwrap();
         assert!(result.is_some());
+    }
+
+    #[test]
+    fn references_keep_distinct_calls_on_the_same_line() {
+        let mut server = LspServer::new();
+        server.initialize(InitializeParams::default()).unwrap();
+        let uri = "file:///test.rs".to_string();
+        server
+            .did_open(DidOpenTextDocumentParams {
+                text_document: TextDocumentItem {
+                    uri: uri.clone(),
+                    language_id: "rust".to_string(),
+                    version: 1,
+                    text: "fn target() {}\nfn caller() { target(); target(); }".to_string(),
+                },
+            })
+            .unwrap();
+
+        let locations = server
+            .find_references(ReferenceParams {
+                text_document: TextDocumentIdentifier { uri },
+                position: Position {
+                    line: 0,
+                    character: 4,
+                },
+                context: ReferenceContext {
+                    include_declaration: false,
+                },
+            })
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            locations.len(),
+            2,
+            "extracted edges: {:?}",
+            server.documents["file:///test.rs"].edges
+        );
+        assert_ne!(
+            locations[0].range.start.character,
+            locations[1].range.start.character
+        );
     }
 }

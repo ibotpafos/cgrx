@@ -169,6 +169,7 @@ impl ErrorCode {
 
 /// The initialize request is sent from the client to the server.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct InitializeParams {
     /// The process Id of the parent process that started the server.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -201,6 +202,7 @@ pub struct InitializeParams {
 
 /// Information about the client.
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ClientInfo {
     /// The name of the client.
     pub name: String,
@@ -211,6 +213,7 @@ pub struct ClientInfo {
 
 /// The capabilities provided by the client.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ClientCapabilities {
     /// Text document specific client capabilities.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -222,6 +225,7 @@ pub struct ClientCapabilities {
 
 /// Text document specific client capabilities.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TextDocumentClientCapabilities {
     /// Capabilities specific to the `textDocument/definition` request.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -233,6 +237,7 @@ pub struct TextDocumentClientCapabilities {
 
 /// Capabilities specific to the `textDocument/definition` request.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DefinitionClientCapabilities {
     /// Whether declaration supports dynamic registration.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -244,6 +249,7 @@ pub struct DefinitionClientCapabilities {
 
 /// Capabilities specific to the `textDocument/references` request.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ReferencesClientCapabilities {
     /// Whether references supports dynamic registration.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -252,6 +258,7 @@ pub struct ReferencesClientCapabilities {
 
 /// Workspace specific client capabilities.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct WorkspaceClientCapabilities {
     /// The client supports workspace folders.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -263,6 +270,7 @@ pub struct WorkspaceClientCapabilities {
 
 /// A workspace folder.
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct WorkspaceFolder {
     /// The associated URI for this workspace folder.
     pub uri: String,
@@ -272,6 +280,7 @@ pub struct WorkspaceFolder {
 
 /// The result of the initialize request.
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct InitializeResult {
     /// The capabilities the language server provides.
     pub capabilities: ServerCapabilities,
@@ -282,6 +291,7 @@ pub struct InitializeResult {
 
 /// Information about the server.
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ServerInfo {
     /// The name of the server.
     pub name: String,
@@ -292,6 +302,7 @@ pub struct ServerInfo {
 
 /// The capabilities the language server provides.
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ServerCapabilities {
     /// The position encoding the server picked.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -309,6 +320,7 @@ pub struct ServerCapabilities {
 
 /// Defines how text documents are synced.
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TextDocumentSyncOptions {
     /// Open and close notifications are sent to the server.
     #[serde(default, skip_serializing_if = "Option::is_none")]

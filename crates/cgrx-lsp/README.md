@@ -40,8 +40,8 @@ Language Server Protocol (LSP) сервер для CGRX, обеспечиваю�
 # Сборка
 cargo build -p cgrx-lsp
 
-# Запуск (stdio)
-cargo run -p cgrx-lsp
+# Запуск (стандартный LSP stdio transport)
+cargo run -p cgrx-lsp -- --root /absolute/path/to/repository
 ```
 
 ## Конфигурация IDE
@@ -52,7 +52,7 @@ cargo run -p cgrx-lsp
 {
   "name": "cgrx-lsp",
   "command": "cargo",
-  "args": ["run", "-p", "cgrx-lsp"],
+  "args": ["run", "-p", "cgrx-lsp", "--", "--root", "/absolute/path/to/repository"],
   "languageId": "rust"
 }
 ```
@@ -61,9 +61,15 @@ cargo run -p cgrx-lsp
 
 ```lua
 require'lspconfig'.cgrx_lsp.setup{
-  cmd = { "cargo", "run", "-p", "cgrx-lsp" },
+  cmd = { "cargo", "run", "-p", "cgrx-lsp", "--", "--root", "/absolute/path/to/repository" },
 }
 ```
+
+Сервер использует стандартное LSP framing `Content-Length`, загружает
+revision-pinned CGRX graph для committed `HEAD`, а несохранённый текст открытых
+документов извлекает заново из `didOpen`/`didChange`. Пути из графа возвращаются
+как корректные `file://` URI; позиции и диапазоны кодируются в UTF-16, как
+объявлено в server capabilities.
 
 ## Тесты
 
@@ -80,10 +86,11 @@ cargo test -p cgrx-lsp --test mock_client
 
 ## Зависимости
 
-- `cgrx-core` — основные типы CGRX
+- `cgrx-cli` — загрузка revision-pinned runtime graph
 - `cgrx-languages` — извлечение символов из исходного кода
 - `cgrx-retrieval` — граф CGRX
-- `cgrx-store` — хранение графа
+- `lsp-server` — стандартный JSON-RPC/LSP stdio transport
+- `url` — безопасное преобразование filesystem path ↔ file URI
 - `serde`, `serde_json` — сериализация
 
 ## Лицензия
