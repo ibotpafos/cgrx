@@ -805,10 +805,10 @@ fn serve(args: &[String]) -> Result<(), String> {
             memory_root,
         )
     };
-    if let Some(dir) = memory_root {
-        if let Ok(store) = cgrx_store::MemoryStore::open(dir) {
-            server.set_memory_store(store);
-        }
+    if let Some(dir) = memory_root
+        && let Ok(store) = cgrx_store::MemoryStore::open(dir)
+    {
+        server.set_memory_store(store);
     }
     if let Ok(path) = env::var("CGRX_USAGE_LOG") {
         let client = env::var("CGRX_CLIENT").unwrap_or_else(|_| "unknown".to_owned());
