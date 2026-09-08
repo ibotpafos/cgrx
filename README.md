@@ -355,6 +355,20 @@ queries/source. Treat indexes and logs as private repository data. The local
 stdio server trusts its client and can read repositories accessible to the OS
 account; it is not a remote authenticated hosting service.
 
+### Session metrics (opt-in)
+
+A second, independent opt-in log (`CGRX_METRICS_LOG`) records per-tool latency,
+error, and response-size samples as JSONL alongside the usage log. Nothing is
+written unless the variable is set, and no network calls are ever made.
+
+~~~sh
+CGRX_METRICS_LOG=./cgrx-metrics.jsonl cgrx serve --root .
+cgrx metrics --log ./cgrx-metrics.jsonl --json --summary
+~~~
+
+The summary reports p50/p95 latency, error rate, and the top tools by response
+bytes — all aggregated locally from the log file.
+
 ## Development
 
 ~~~sh
