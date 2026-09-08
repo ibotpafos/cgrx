@@ -174,5 +174,16 @@ Maintainer help: ask in the issue. Availability: unclaimed.
         ]
         self.assertEqual([], document_errors)
 
+    def test_real_repository_has_github_templates(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        errors = validate(root)
+        template_errors = [
+            error
+            for error in errors
+            if ".github/ISSUE_TEMPLATE/" in error
+            or ".github/pull_request_template.md" in error
+        ]
+        self.assertEqual([], template_errors)
+
 if __name__ == "__main__":
     unittest.main()

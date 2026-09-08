@@ -1,0 +1,57 @@
+name: Bug report
+description: Report reproducible incorrect or unexpected CGRX behavior
+title: "[Bug]: "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for helping improve CGRX. Use a minimal synthetic or public reproducer.
+        Do not submit credentials, production logs, private source, or unredacted repository data.
+  - type: input
+    id: version
+    attributes:
+      label: CGRX version
+      placeholder: v0.1.0-alpha.7 or commit SHA
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Platform
+      placeholder: macOS 15 arm64 or Ubuntu 24.04 x86_64
+    validations:
+      required: true
+  - type: textarea
+    id: reproducer
+    attributes:
+      label: Minimal synthetic reproducer
+      description: Include the smallest public code fixture and exact command or MCP arguments.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected result
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual result
+    validations:
+      required: true
+  - type: textarea
+    id: coverage
+    attributes:
+      label: Coverage status
+      description: Paste the relevant check_index_coverage result after removing private paths.
+    validations:
+      required: true
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy check
+      options:
+        - label: I verified that this report contains no private repository source or sensitive data.
+          required: true

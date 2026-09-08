@@ -1,0 +1,63 @@
+name: Missing or wrong relationship
+description: Report a reproducible missing edge, false edge, or ambiguous resolution
+title: "[Relationship]: "
+labels: ["relationship", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Relationship reports become permanent regression cases when confirmed.
+        Do not submit credentials, production logs, private source, or unredacted repository data.
+  - type: input
+    id: version
+    attributes:
+      label: CGRX version
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Platform and language
+      placeholder: Ubuntu 24.04, Go 1.25 fixture
+    validations:
+      required: true
+  - type: dropdown
+    id: relationship
+    attributes:
+      label: Relationship type
+      options: ["Missing edge", "Wrong edge", "Ambiguous target guessed", "Coverage gap unclear"]
+    validations:
+      required: true
+  - type: textarea
+    id: reproducer
+    attributes:
+      label: Minimal synthetic reproducer
+      description: Include all small fixture files plus exact search_graph or trace_path arguments.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected relationship
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual relationship
+    validations:
+      required: true
+  - type: textarea
+    id: coverage
+    attributes:
+      label: Coverage status
+      description: Include check_index_coverage for every fixture file relied on.
+    validations:
+      required: true
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy check
+      options:
+        - label: I used synthetic or public code and removed private paths and sensitive data.
+          required: true
