@@ -11,3 +11,5 @@ dist/
 *.jsonl
 .env
 .env.*
+*.bak
+tmp_src/
