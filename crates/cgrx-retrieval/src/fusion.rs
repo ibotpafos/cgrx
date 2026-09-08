@@ -1,5 +1,5 @@
 use crate::graph::{CandidateProvenance, GraphDocument, SnapshotView};
-use crate::{bm25, exact};
+use crate::{bm25, exact, structural};
 use cgrx_core::{QueryRequest, RelationKind, Scope};
 use cgrx_languages::Span;
 use std::collections::{BTreeMap, BTreeSet};
@@ -11,6 +11,7 @@ pub struct FusionProfile {
     pub exact_weight: u32,
     pub bm25_weight: u32,
     pub graph_weight: u32,
+    pub structural_weight: u32,
     pub max_candidates: usize,
 }
 
@@ -21,6 +22,7 @@ impl Default for FusionProfile {
             exact_weight: 4,
             bm25_weight: 1,
             graph_weight: 2,
+            structural_weight: 3,
             max_candidates: 50,
         }
     }
@@ -31,6 +33,7 @@ pub struct ScoreComponents {
     pub exact: u64,
     pub bm25: u64,
     pub graph: u64,
+    pub structural: u64,
     pub rrf: u64,
 }
 
@@ -111,11 +114,17 @@ impl RetrievalEngine {
             &request.scope.relation_kinds,
             request.scope.max_depth,
         );
+        let structural_hits = if hybrid_enabled() {
+            structural::rank(&request.task, &documents)
+        } else {
+            Vec::new()
+        };
         Ok(fuse(
             &documents,
             &exact_hits,
             &bm25_hits,
             &graph_hits,
+            &structural_hits,
             uncertainties,
             self.profile,
         ))
@@ -128,11 +137,18 @@ pub(crate) struct LaneHit {
     pub raw_score: u64,
 }
 
+fn hybrid_enabled() -> bool {
+    std::env::var_os("CGRX_HYBRID")
+        .map(|v| v == "1")
+        .unwrap_or(false)
+}
+
 fn fuse(
     documents: &[GraphDocument],
     exact: &[LaneHit],
     bm25: &[LaneHit],
     graph: &[LaneHit],
+    structural_hits: &[LaneHit],
     uncertainties: Vec<Uncertainty>,
     profile: FusionProfile,
 ) -> CandidateSet {
@@ -166,6 +182,15 @@ fn fuse(
         "bounded_graph",
         |score, value| score.graph = value,
     );
+    add_lane(
+        structural_hits,
+        profile.structural_weight,
+        profile.rrf_k,
+        &mut scores,
+        &mut reasons,
+        "structural_fingerprint",
+        |score, value| score.structural = value,
+    );
     let mut candidates: Vec<_> = scores
         .into_iter()
         .filter_map(|(node_id, scores)| {
@@ -193,6 +218,7 @@ fn fuse(
             .cmp(&left.scores.rrf)
             .then_with(|| right.scores.exact.cmp(&left.scores.exact))
             .then_with(|| right.scores.bm25.cmp(&left.scores.bm25))
+            .then_with(|| right.scores.structural.cmp(&left.scores.structural))
             .then_with(|| right.scores.graph.cmp(&left.scores.graph))
             .then_with(|| left.path.cmp(&right.path))
             .then_with(|| left.node_id.cmp(&right.node_id))
@@ -314,8 +340,6 @@ pub fn path_in_scope(path: &str, scope: &Scope) -> bool {
 }
 
 fn path_matches(path: &str, pattern: &str) -> bool {
-    // Literal scopes select an exact path or its descendants, at a segment
-    // boundary. Keep wildcard matching separate so `src/*` stays one level.
     let mut pattern = pattern;
     while let Some(relative) = pattern.strip_prefix("./") {
         pattern = relative;
@@ -377,4 +401,150 @@ fn path_matches(path: &str, pattern: &str) -> bool {
         0,
         &mut BTreeMap::new(),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::graph::{BaseGraph, GraphDocument};
+    use cgrx_core::{Mode, Scope};
+    use cgrx_languages::Span;
+    use std::sync::Mutex;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    fn doc(node_id: u64, name: &str, text: &str) -> GraphDocument {
+        GraphDocument {
+            node_id,
+            qualified_name: name.to_string(),
+            path: "src/lib.rs".to_string(),
+            text: text.to_string(),
+            span: Span { start: 0, end: 10 },
+            provenance: CandidateProvenance::Syntax,
+            semantic_fingerprint: None,
+        }
+    }
+
+    fn base_scope() -> Scope {
+        Scope {
+            include: Vec::new(),
+            exclude: Vec::new(),
+            relation_kinds: Vec::new(),
+            max_depth: 2,
+        }
+    }
+
+    #[test]
+    fn hybrid_disabled_by_default() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        unsafe { std::env::remove_var("CGRX_HYBRID") };
+        assert!(!hybrid_enabled());
+    }
+
+    #[test]
+    fn hybrid_enabled_with_env() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        unsafe { std::env::set_var("CGRX_HYBRID", "1") };
+        assert!(hybrid_enabled());
+        unsafe { std::env::remove_var("CGRX_HYBRID") };
+    }
+
+    #[test]
+    fn structural_finds_renamed_symbol() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        unsafe { std::env::set_var("CGRX_HYBRID", "1") };
+        let docs = vec![
+            doc(1, "processData", "let x = 1; let y = 2; return x + y;"),
+            doc(2, "transformValue", "let x = 1; let y = 2; return x + y;"),
+            doc(3, "unrelated", "fn nothing() {}"),
+        ];
+        let base = BaseGraph {
+            generation: 1,
+            path_hashes: BTreeMap::new(),
+            edges: Vec::new(),
+            documents: docs.clone(),
+            arcs: Vec::new(),
+        };
+        let overlay = cgrx_store::DeltaOverlay::new(1);
+        let view = SnapshotView::new(&base, &overlay).unwrap();
+        let request = QueryRequest {
+            task: "transformValue".to_string(),
+            scope: base_scope(),
+            mode: Mode::Precise,
+            token_budget: 1000,
+        };
+        let engine = RetrievalEngine::new(FusionProfile::default());
+        let result = engine.retrieve(&request, &view).unwrap();
+        let ids: Vec<u64> = result.candidates.iter().map(|c| c.node_id).collect();
+        assert!(ids.contains(&2), "exact match should be present");
+        assert!(
+            ids.contains(&1),
+            "renamed symbol with same body should be present"
+        );
+        unsafe { std::env::remove_var("CGRX_HYBRID") };
+    }
+
+    #[test]
+    fn structural_negative_no_match() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        unsafe { std::env::set_var("CGRX_HYBRID", "1") };
+        let docs = vec![
+            doc(1, "calculateTotal", "let a = 5; return a * 2;"),
+            doc(2, "printMessage", "console.log('hello');"),
+        ];
+        let base = BaseGraph {
+            generation: 1,
+            path_hashes: BTreeMap::new(),
+            edges: Vec::new(),
+            documents: docs.clone(),
+            arcs: Vec::new(),
+        };
+        let overlay = cgrx_store::DeltaOverlay::new(1);
+        let view = SnapshotView::new(&base, &overlay).unwrap();
+        let request = QueryRequest {
+            task: "calculateTotal".to_string(),
+            scope: base_scope(),
+            mode: Mode::Precise,
+            token_budget: 1000,
+        };
+        let engine = RetrievalEngine::new(FusionProfile::default());
+        let result = engine.retrieve(&request, &view).unwrap();
+        let ids: Vec<u64> = result.candidates.iter().map(|c| c.node_id).collect();
+        assert!(ids.contains(&1), "exact match should be present");
+        assert!(!ids.contains(&2), "unrelated symbol should not match");
+        unsafe { std::env::remove_var("CGRX_HYBRID") };
+    }
+
+    #[test]
+    fn structural_lane_not_used_when_disabled() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        unsafe { std::env::remove_var("CGRX_HYBRID") };
+        let docs = vec![
+            doc(1, "processData", "let x = 1; let y = 2; return x + y;"),
+            doc(2, "transformValue", "let x = 1; let y = 2; return x + y;"),
+        ];
+        let base = BaseGraph {
+            generation: 1,
+            path_hashes: BTreeMap::new(),
+            edges: Vec::new(),
+            documents: docs.clone(),
+            arcs: Vec::new(),
+        };
+        let overlay = cgrx_store::DeltaOverlay::new(1);
+        let view = SnapshotView::new(&base, &overlay).unwrap();
+        let request = QueryRequest {
+            task: "transformValue".to_string(),
+            scope: base_scope(),
+            mode: Mode::Precise,
+            token_budget: 1000,
+        };
+        let engine = RetrievalEngine::new(FusionProfile::default());
+        let result = engine.retrieve(&request, &view).unwrap();
+        let ids: Vec<u64> = result.candidates.iter().map(|c| c.node_id).collect();
+        assert!(ids.contains(&2), "exact match should be present");
+        assert!(
+            !ids.contains(&1),
+            "structural should not match when disabled"
+        );
+    }
 }

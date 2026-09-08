@@ -154,6 +154,14 @@ fn refactor_repository() -> TestDirectory {
             "fn save_rs(value: i32) {}\nfn first_rs(input: i32) -> i32 { let prepared = input + 1; save_rs(prepared); prepared }\nfn second_rs(value: i32) -> i32 { let output = value + 9; save_rs(output); output }\n",
         ),
         (
+            "similar.c",
+            "void save_c(int value) {}\nint first_c(int input) { int prepared = input + 1; save_c(prepared); return prepared; }\nint second_c(int value) { int output = value + 9; save_c(output); return output; }\n",
+        ),
+        (
+            "similar.kt",
+            "fun saveKotlin(value: Int) {}\nfun firstKotlin(input: Int): Int { val prepared = input + 1; saveKotlin(prepared); return prepared }\nfun secondKotlin(value: Int): Int { val output = value + 9; saveKotlin(output); return output }\n",
+        ),
+        (
             "negative.py",
             "def tiny(value):\n    return value\n\ndef same_name(value):\n    if value:\n        save_left(value)\n        return value\n\ndef same_name(value):\n    for item in value:\n        transform(item)\n    raise RuntimeError(value)\n",
         ),
@@ -205,6 +213,8 @@ fn suggest_refactors_projects_shared_helper_for_every_supported_extension() {
         ("similar.java", "java", "saveJava"),
         ("similar.py", "python", "save_py"),
         ("similar.rs", "rust", "save_rs"),
+        ("similar.c", "c", "save_c"),
+        ("similar.kt", "kotlin", "saveKotlin"),
     ] {
         let result = runtime
             .suggest_refactors(&calls_scope(path), Some(language), 760, 20)
@@ -265,7 +275,7 @@ fn suggest_refactors_rejects_invalid_arguments_and_weak_pairs() {
     assert_eq!(negative["total"], 0, "{negative}");
 
     for (language, score, limit) in [
-        (Some("kotlin"), 760, 20),
+        (Some("ruby"), 760, 20),
         (Some("rust"), 1001, 20),
         (Some("rust"), 760, 0),
         (Some("rust"), 760, 51),
@@ -1626,6 +1636,14 @@ fn search_graph_can_search_bodies_and_filter_every_supported_language() {
             "Feature.java",
             "final class Feature { String javaFeature() { return \"body_token_java\"; } }\n",
         ),
+        (
+            "feature.c",
+            "int c_feature(void) { return 42; /* body_token_c */ }\n",
+        ),
+        (
+            "Feature.kt",
+            "fun kotlinFeature(): String = \"body_token_kotlin\"\n",
+        ),
     ];
     for (path, source) in fixtures {
         fs::write(repository.path().join(path), source).expect("write language fixture");
@@ -1648,6 +1666,8 @@ fn search_graph_can_search_bodies_and_filter_every_supported_language() {
         ("python", "body_token_py", 1),
         ("java", "body_token_java", 2),
         ("rust", "body_token_rs", 1),
+        ("c", "body_token_c", 1),
+        ("kotlin", "body_token_kotlin", 1),
     ];
     for (language, query, expected) in cases {
         let result = runtime
@@ -1669,7 +1689,7 @@ fn search_graph_can_search_bodies_and_filter_every_supported_language() {
         .expect("search names only");
     assert_eq!(names_only["total"], 0);
     let error = runtime
-        .search_graph_filtered("anything", &scope, 10, Some("kotlin"), true)
+        .search_graph_filtered("anything", &scope, 10, Some("ruby"), true)
         .expect_err("unsupported language fails closed");
     assert_eq!(error.code(), "cgrx.invalid_arguments");
 }
