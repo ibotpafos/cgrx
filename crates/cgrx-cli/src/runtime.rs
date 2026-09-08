@@ -8,7 +8,7 @@ pub use graph_view::{GraphDirection, GraphViewRequest};
 pub use observations::{
     ImportRuntimeEvidenceReport, RuntimeEvidenceFormat, RuntimeInsight, RuntimeInsightsReport,
 };
-pub use risks::RiskBaseline;
+pub use risks::{RiskBaseline, TestCaseResult, TestOutcome, TestRunRecord};
 use ts_config::TsResolutionConfig;
 
 use std::collections::{BTreeMap, BTreeSet};

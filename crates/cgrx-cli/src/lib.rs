@@ -7,7 +7,7 @@ mod runtime;
 pub use runtime::{
     GraphDirection, GraphViewRequest, ImportRuntimeEvidenceReport, IndexReport, OrientReport,
     RiskBaseline, Runtime, RuntimeError, RuntimeEvidenceFormat, RuntimeInsight,
-    RuntimeInsightsReport,
+    RuntimeInsightsReport, TestCaseResult, TestOutcome, TestRunRecord,
 };
 
 /// Git executable used by all runtime subprocesses.
