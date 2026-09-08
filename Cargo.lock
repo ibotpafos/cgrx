@@ -149,6 +149,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "cgrx-lsp"
+version = "0.1.0"
+dependencies = [
+ "cgrx-core",
+ "cgrx-languages",
+ "cgrx-retrieval",
+ "cgrx-store",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "cgrx-mcp"
 version = "0.1.0"
 dependencies = [
