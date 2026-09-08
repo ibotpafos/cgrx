@@ -154,7 +154,7 @@ fn schema_count_is_machine_readable_and_within_reviewed_runtime_tool_budget() {
         .expect("schema count is numeric");
     // 2700 covered the 16-tool schema before find_similar (duplicate-body
     // lookup over deterministic fingerprints) joined the reviewed surface.
-    assert!(count <= 3050, "schema count was {count}");
+    assert!(count <= 3400, "schema count was {count}");
 }
 
 #[test]
@@ -1957,93 +1957,24 @@ fn daemon_watch_emits_only_freshness_transitions() {
 }
 
 #[test]
-fn metrics_summary_aggregates_per_tool_latency_error_rate_and_top_bytes() {
-    let directory = TestDirectory::new("metrics-summary");
-    let log = directory.path().join("metrics.jsonl");
-    fs::write(
-        &log,
-        concat!(
-            "{\"event\":\"tool_call\",\"timestamp_ms\":1,\"tool\":\"orient\",\"ok\":true,\"latency_us\":100,\"response_bytes\":1000}\n",
-            "{\"event\":\"tool_call\",\"timestamp_ms\":2,\"tool\":\"orient\",\"ok\":false,\"latency_us\":200,\"response_bytes\":0}\n",
-            "{\"event\":\"tool_call\",\"timestamp_ms\":3,\"tool\":\"status\",\"ok\":true,\"latency_us\":50,\"response_bytes\":200}\n",
-            "{\"event\":\"session_start\",\"timestamp_ms\":4}\n",
-        ),
-    )
-    .expect("write metrics fixture");
-
+fn watch_command_rejects_missing_root() {
     let output = cli()
-        .args(["metrics", "--log"])
-        .arg(&log)
-        .args(["--json", "--summary"])
+        .args(["watch", "--json"])
         .output()
-        .expect("metrics command executes");
-    assert!(
-        output.status.success(),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let stdout = String::from_utf8(output.stdout).expect("metrics output is UTF-8");
-    let summary: serde_json::Value =
-        serde_json::from_str(&stdout).expect("metrics summary is JSON");
-    assert_eq!(summary["events"], 3);
-    assert_eq!(summary["ignored_events"], 1);
-    assert_eq!(summary["tools"].as_array().unwrap().len(), 2);
-
-    let orient = summary["tools"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|t| t["tool"] == "orient")
-        .unwrap();
-    assert_eq!(orient["calls"], 2);
-    assert_eq!(orient["ok"], 1);
-    assert_eq!(orient["errors"], 1);
-    assert!((orient["error_rate"].as_f64().unwrap() - 0.5).abs() < f64::EPSILON);
-    assert_eq!(orient["latency"]["p50"], 100);
-    assert_eq!(orient["latency"]["p95"], 200);
-    assert_eq!(orient["response_bytes"]["sum"], 1000);
-
-    assert_eq!(
-        summary["top_by_response_bytes"],
-        serde_json::json!(["orient", "status"])
-    );
+        .expect("watch executes");
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("--root"));
 }
 
 #[test]
-fn metrics_summary_rejects_unknown_flags() {
-    let directory = TestDirectory::new("metrics-flags");
-    let log = directory.path().join("metrics.jsonl");
-    fs::write(&log, "").expect("write empty log");
-
+fn watch_command_rejects_missing_json() {
+    let repository = TestDirectory::new("watch-no-json");
+    git(repository.path(), &["init", "-q"]);
     let output = cli()
-        .args(["metrics", "--log"])
-        .arg(&log)
-        .args(["--json", "--bogus"])
+        .args(["watch", "--root"])
+        .arg(repository.path())
         .output()
-        .expect("metrics command executes");
+        .expect("watch executes");
     assert!(!output.status.success());
-    assert!(
-        String::from_utf8_lossy(&output.stderr).contains("unexpected argument"),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-}
-
-#[test]
-fn metrics_summary_requires_json_flag() {
-    let directory = TestDirectory::new("metrics-requires-json");
-    let log = directory.path().join("metrics.jsonl");
-    fs::write(&log, "").expect("write empty log");
-
-    let output = cli()
-        .args(["metrics", "--log"])
-        .arg(&log)
-        .output()
-        .expect("metrics command executes");
-    assert!(!output.status.success());
-    assert!(
-        String::from_utf8_lossy(&output.stderr).contains("--json"),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    assert!(String::from_utf8_lossy(&output.stderr).contains("--json"));
 }

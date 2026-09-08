@@ -1,17 +1,20 @@
 use std::io::Write;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use cgrx_metrics::{Summarize, parse_events_from_path};
 
 fn metrics_dir() -> PathBuf {
+    static NEXT_DIR: AtomicU64 = AtomicU64::new(0);
     let nonce = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_nanos();
     let path = std::env::temp_dir().join(format!(
-        "cgrx-metrics-test-{}-{}",
+        "cgrx-metrics-test-{}-{}-{}",
         std::process::id(),
-        nonce
+        nonce,
+        NEXT_DIR.fetch_add(1, Ordering::Relaxed),
     ));
     std::fs::create_dir(&path).unwrap();
     path

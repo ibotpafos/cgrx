@@ -1,6 +1,9 @@
 //! Executable CGRX runtime shared by the CLI and real-execution benchmark.
 
 mod cargo_roots;
+pub mod file_watcher;
+
+pub use file_watcher::{FileWatcher, FileWatcherEvent, NotifyWatcher};
 mod intent;
 mod runtime;
 

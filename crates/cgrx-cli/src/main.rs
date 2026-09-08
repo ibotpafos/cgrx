@@ -1,3 +1,4 @@
+mod file_watcher;
 mod multi_repo;
 mod skill;
 mod visualize;
@@ -11,6 +12,7 @@ use std::process::Command;
 use std::time::Instant;
 
 use cgrx_capsule::Tokenizer;
+use cgrx_cli::file_watcher::{FileWatcher, NotifyWatcher};
 use cgrx_cli::{Runtime, RuntimeEvidenceFormat};
 use cgrx_core::{
     CapsuleStatus, EvidenceSelector, Hash32, QueryRequest, RelationKind, RepoSnapshot, Scope,
@@ -47,6 +49,7 @@ fn run(args: Vec<String>) -> Result<(), String> {
         "init" => init(args.get(1).map(PathBuf::from))?,
         "index" => index(&args[1..])?,
         "daemon" => daemon(&args[1..])?,
+        "watch" => watch(&args[1..])?,
         "observe" => observe(&args[1..])?,
         "serve" => serve(&args[1..])?,
         "visualize" => visualize::run(&args[1..])?,
@@ -473,6 +476,89 @@ fn daemon(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+fn watch(args: &[String]) -> Result<(), String> {
+    validate_flags(args, &["--root", "--state", "--json"])?;
+    if !args.iter().any(|argument| argument == "--json") {
+        return Err("watch requires --json".to_owned());
+    }
+    let root = Path::new(flag(args, "--root")?)
+        .canonicalize()
+        .map_err(|error| error.to_string())?;
+    let state = if let Some(state) = optional_flag(args, "--state") {
+        PathBuf::from(state)
+    } else {
+        managed_state_path(&root)?
+    };
+    let mut runtime = open_managed_runtime(&root, &state)?;
+    let watcher = NotifyWatcher::new(&root)?;
+    let mut last_signature: Option<String> = None;
+    let mut iteration: u64 = 0;
+    loop {
+        iteration += 1;
+        let started = Instant::now();
+        let mut changed = false;
+        let mut error_event = None;
+        while let Some(event) = watcher.next_event() {
+            let changed_paths = event.changed_paths;
+            let refresh_result = runtime.refresh(&root);
+            match refresh_result {
+                Ok(did_change) => {
+                    changed = changed || did_change;
+                    let signature = format!(
+                        "{}|{}",
+                        changed_paths.join(","),
+                        runtime.changed_paths().join(",")
+                    );
+                    let event_json = json!({
+                        "schema_version": 1,
+                        "command": "watch",
+                        "engine_version": env!("CARGO_PKG_VERSION"),
+                        "iteration": iteration,
+                        "changed": did_change,
+                        "watched_paths": changed_paths,
+                        "changed_paths": runtime.changed_paths(),
+                        "snapshot": runtime.snapshot(),
+                        "refresh_us": started.elapsed().as_micros() as u64,
+                        "error": null,
+                        "measurement": "wall_clock_monotonic"
+                    });
+                    if last_signature.as_ref() != Some(&signature) {
+                        println!("{event_json}");
+                        last_signature = Some(signature);
+                    }
+                }
+                Err(error) => {
+                    error_event = Some(json!({"code": error.code(), "message": error.to_string()}));
+                    break;
+                }
+            }
+        }
+        if let Some(error) = error_event {
+            return Err(format!(
+                "watch refresh failed: {}",
+                error["code"].as_str().unwrap_or("unknown")
+            ));
+        }
+        let empty: Vec<String> = Vec::new();
+        if !changed {
+            let event_json = json!({
+                "schema_version": 1,
+                "command": "watch",
+                "engine_version": env!("CARGO_PKG_VERSION"),
+                "iteration": iteration,
+                "changed": false,
+                "watched_paths": empty,
+                "changed_paths": empty,
+                "snapshot": runtime.snapshot(),
+                "refresh_us": started.elapsed().as_micros() as u64,
+                "error": null,
+                "measurement": "wall_clock_monotonic"
+            });
+            println!("{event_json}");
+        }
+    }
+}
+
 fn usage_report(args: &[String]) -> Result<(), String> {
     if !args.iter().any(|argument| argument == "--json") {
         return Err("usage-report requires --json".to_owned());
@@ -695,25 +781,35 @@ fn serve(args: &[String]) -> Result<(), String> {
     {
         return Err("serve --root cannot be combined with --state or --watch-root".to_owned());
     }
-    let mut server = if let Some(state) = optional_flag(args, "--state") {
+    let (mut server, memory_root) = if let Some(state) = optional_flag(args, "--state") {
         let mut runtime = Runtime::open(Path::new(state)).map_err(|error| error.to_string())?;
         let watch_root = optional_flag(args, "--watch-root").map(PathBuf::from);
         if let Some(root) = &watch_root {
             runtime.refresh(root).map_err(|error| error.to_string())?;
         }
+        let memory_root = watch_root.clone();
         let backend = if let Some(root) = watch_root {
             RuntimeMcpBackend::managed(runtime, root, PathBuf::from(state))
         } else {
             RuntimeMcpBackend::new(runtime, None)
         };
-        Server::with_backend(backend)
+        (Server::with_backend(backend), memory_root)
     } else {
         let root = root.unwrap_or_else(|| PathBuf::from("."));
         let root = root.canonicalize().map_err(|error| error.to_string())?;
         let state = managed_state_path(&root)?;
         let runtime = open_managed_runtime(&root, &state)?;
-        Server::with_backend(RuntimeMcpBackend::managed(runtime, root, state))
+        let memory_root = Some(root.clone());
+        (
+            Server::with_backend(RuntimeMcpBackend::managed(runtime, root, state)),
+            memory_root,
+        )
     };
+    if let Some(dir) = memory_root
+        && let Ok(store) = cgrx_store::MemoryStore::open(dir)
+    {
+        server.set_memory_store(store);
+    }
     if let Ok(path) = env::var("CGRX_USAGE_LOG") {
         let client = env::var("CGRX_CLIENT").unwrap_or_else(|_| "unknown".to_owned());
         let session = env::var("CGRX_USAGE_SESSION")

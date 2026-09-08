@@ -11,6 +11,10 @@ fn language_extraction_hash_is_stable_across_one_hundred_replays() {
         "py-parser-error-range/repo/src/main.py",
         "go-direct-call/repo/backend/service.go",
         "go-parser-error-range/repo/backend/broken.go",
+        "c-direct-call/repo/src/main.c",
+        "c-parser-error-range/repo/src/main.c",
+        "kotlin-direct-call/repo/src/main.kt",
+        "kotlin-parser-error-range/repo/src/main.kt",
     ] {
         let source_path = root.join(relative);
         let source = std::fs::read(&source_path).unwrap();
