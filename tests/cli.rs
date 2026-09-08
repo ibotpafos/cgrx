@@ -152,8 +152,8 @@ fn schema_count_is_machine_readable_and_within_reviewed_runtime_tool_budget() {
         .expect("stable schema count prefix")
         .parse()
         .expect("schema count is numeric");
-    // 2700 covered the 16-tool schema before find_similar (duplicate-body
-    // lookup over deterministic fingerprints) joined the reviewed surface.
+    // The budget covers the reviewed 18-tool schema, including find_similar and
+    // check_security_gates, while retaining a small allowance for descriptions.
     assert!(count <= 3400, "schema count was {count}");
 }
 

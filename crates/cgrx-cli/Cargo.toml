@@ -31,3 +31,6 @@ path = "../../tests/cli.rs"
 [[test]]
 name = "multi_repo"
 path = "../../tests/multi_repo.rs"
+
+[dev-dependencies]
+tempfile = "3"

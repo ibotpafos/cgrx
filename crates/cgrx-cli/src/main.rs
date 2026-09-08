@@ -13,7 +13,7 @@ use std::time::Instant;
 
 use cgrx_capsule::Tokenizer;
 use cgrx_cli::file_watcher::{FileWatcher, NotifyWatcher};
-use cgrx_cli::{Runtime, RuntimeEvidenceFormat};
+use cgrx_cli::{Runtime, RuntimeEvidenceFormat, SecurityAuditConfig, evaluate_security_gates};
 use cgrx_core::{
     CapsuleStatus, EvidenceSelector, Hash32, QueryRequest, RelationKind, RepoSnapshot, Scope,
     canonical_hash,
@@ -1325,6 +1325,38 @@ impl ToolBackend for RuntimeMcpBackend {
         self.runtime
             .check_index_coverage(paths, scopes, offset, limit)
             .map_err(|error| BackendError::new(error.code(), error.to_string()))
+    }
+
+    fn security_audit(
+        &mut self,
+        fail_on: &str,
+        max_secret_findings: usize,
+        max_dependency_findings: usize,
+        max_license_findings: usize,
+        allowlist_paths: &[String],
+        allowlist_licenses: &[String],
+    ) -> Result<Value, BackendError> {
+        self.refresh()?;
+        let (Some(root), Some(_state)) = (&self.watch_root, &self.managed_state) else {
+            return Err(BackendError::new(
+                "cgrx.security_audit_unavailable",
+                "security audit requires serve --root or --multi-repo",
+            ));
+        };
+        let config = SecurityAuditConfig {
+            snapshot_path: root.to_string_lossy().to_string(),
+            fail_on: fail_on.to_owned(),
+            allowlist_paths: allowlist_paths.to_vec(),
+            allowlist_licenses: allowlist_licenses.to_vec(),
+            max_secret_findings,
+            max_dependency_findings,
+            max_license_findings,
+        };
+        let snapshot = self.runtime.snapshot();
+        let result =
+            evaluate_security_gates(&config, &serde_json::to_value(snapshot).unwrap_or_default())
+                .map_err(|error| BackendError::new(error.code(), error.to_string()))?;
+        serde_json::to_value(result).map_err(|e| BackendError::new("cgrx.serialize", e.to_string()))
     }
 
     fn status(&mut self, paths_or_scope: Value) -> Result<Value, BackendError> {
