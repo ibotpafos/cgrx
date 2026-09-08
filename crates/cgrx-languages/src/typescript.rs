@@ -46,6 +46,7 @@ impl LanguagePack for TypeScript {
             .ok_or(ExtractError::ParseFailed)?;
         let context = LexicalContext::new(tree.root_node(), source);
         let reference_imports = type_reference_imports(tree.root_node(), source);
+        let classes = class_declaration_spans(tree.root_node(), source);
         let mut extraction = Extraction::default();
         walk_with(
             tree.root_node(),
@@ -78,6 +79,35 @@ impl LanguagePack for TypeScript {
                     extraction
                         .lexical_arrows
                         .push(Span::from(node.child_by_field_name("name").unwrap()));
+                }
+                if node.kind() == "new_expression"
+                    && !has_ancestor(node, "decorator")
+                    && let Some(constructor) = node
+                        .child_by_field_name("constructor")
+                        .filter(|constructor| constructor.kind() == "identifier")
+                    && let Some([target_span]) = classes
+                        .get(text(constructor, source).as_str())
+                        .map(Vec::as_slice)
+                    && let Some(caller_span) = enclosing_named_function_span(node)
+                {
+                    extraction.edges.push(Edge {
+                        relation: RelationKind::Calls,
+                        target: text(constructor, source),
+                        span: Span::from(node),
+                        context_span: evidence_span(
+                            node,
+                            &[
+                                "lexical_declaration",
+                                "expression_statement",
+                                "return_statement",
+                            ],
+                        ),
+                        provenance: Provenance::TsConstructor {
+                            target: *target_span,
+                            caller: caller_span,
+                        },
+                    });
+                    return;
                 }
                 if node.kind() == "call_expression"
                     && !has_ancestor(node, "decorator")
@@ -166,6 +196,48 @@ impl LanguagePack for TypeScript {
             _ => {}
         }
     }
+}
+
+/// Spans of plain same-file class declaration names keyed by class name.
+/// Error subtrees are skipped, mirroring walk_with classification bounds.
+/// Multiple declarations of one name keep every span so callers can treat
+/// the name as ambiguous instead of guessing a constructor target.
+fn class_declaration_spans(root: Node<'_>, source: &[u8]) -> BTreeMap<String, Vec<Span>> {
+    let mut classes = BTreeMap::<String, Vec<Span>>::new();
+    let mut stack = vec![root];
+    while let Some(node) = stack.pop() {
+        if node.has_error() {
+            continue;
+        }
+        if node.kind() == "class_declaration"
+            && let Some(name) = node.child_by_field_name("name")
+        {
+            classes
+                .entry(text(name, source))
+                .or_default()
+                .push(Span::from(name));
+        }
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            stack.push(child);
+        }
+    }
+    classes
+}
+
+/// Span of the nearest enclosing named function-like declaration. The span is
+/// the declaration's name node, matching the SYNTAX document identity used by
+/// runtime arc resolution.
+fn enclosing_named_function_span(mut node: Node<'_>) -> Option<Span> {
+    while let Some(parent) = node.parent() {
+        match parent.kind() {
+            "function_declaration" | "method_definition" | "generator_function_declaration" => {
+                return parent.child_by_field_name("name").map(Span::from);
+            }
+            _ => node = parent,
+        }
+    }
+    None
 }
 
 fn type_reference_imports(root: Node<'_>, source: &[u8]) -> BTreeMap<String, String> {

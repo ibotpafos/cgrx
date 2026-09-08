@@ -160,6 +160,7 @@ impl Runtime {
                         last_seen_unix_nanos: observation.last_seen_unix_nanos,
                         source_resolution,
                         target_resolution,
+                        semantic_fingerprint: None,
                     });
                 }
                 (Resolution::Ambiguous, _) => {

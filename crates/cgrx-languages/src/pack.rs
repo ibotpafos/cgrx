@@ -78,6 +78,21 @@ pub enum Provenance {
         receiver_type: Span,
         target: Span,
     },
+    /// Same-file construction site with exact target class and enclosing
+    /// caller name spans. Runtime resolution revalidates class uniqueness
+    /// before this becomes a graph edge.
+    TsConstructor {
+        target: Span,
+        caller: Span,
+    },
+    /// Same-file struct literal / `Foo::new()` constructor call with exact
+    /// target struct/enum name span and enclosing caller name span.
+    /// Runtime revalidates that the target struct/enum has exactly one constructor
+    /// declaration (or an implicit default) in this file before this becomes a graph edge.
+    RustConstructor {
+        target: Span,
+        caller: Span,
+    },
     /// Same-file construction site with exact caller and constructor (or
     /// defaulted class) name spans. Runtime resolution revalidates class and
     /// constructor uniqueness before this becomes a graph edge.
@@ -220,6 +235,14 @@ impl Extraction {
             if let Provenance::TsLexical { target, caller } = edge.provenance {
                 update(&mut hasher, b"ts_lexical_target", "", target);
                 update(&mut hasher, b"ts_lexical_caller", "", caller);
+            }
+            if let Provenance::TsConstructor { target, caller } = edge.provenance {
+                update(&mut hasher, b"ts_constructor_target", "", target);
+                update(&mut hasher, b"ts_constructor_caller", "", caller);
+            }
+            if let Provenance::RustConstructor { target, caller } = edge.provenance {
+                update(&mut hasher, b"rust_constructor_target", "", target);
+                update(&mut hasher, b"rust_constructor_caller", "", caller);
             }
             if let Provenance::GoImport {
                 import_path,

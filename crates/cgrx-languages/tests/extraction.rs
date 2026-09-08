@@ -709,11 +709,16 @@ fn dynamic_and_dispatch_candidates_are_never_upgraded_to_calls() {
             .extract(&path, &source)
             .expect("fixture extraction succeeds");
         assert!(!extraction.unresolved.is_empty(), "{relative}");
+        // Dynamic property and receiver-dispatch candidates stay unresolved
+        // (asserted above) and never gain exact-call provenance. Same-file
+        // class constructions (`new X()` with exactly one plain class) are
+        // exact proven edges, not dispatch upgrades, so TsConstructor is the
+        // only allowed non-Syntax provenance here.
         assert!(
-            extraction
-                .edges
-                .iter()
-                .all(|edge| edge.provenance == Provenance::Syntax),
+            extraction.edges.iter().all(|edge| {
+                edge.provenance == Provenance::Syntax
+                    || matches!(edge.provenance, Provenance::TsConstructor { .. })
+            }),
             "{relative}"
         );
     }

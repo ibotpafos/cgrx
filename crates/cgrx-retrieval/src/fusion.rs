@@ -41,6 +41,7 @@ pub struct Candidate {
     pub path: String,
     pub span: Span,
     pub provenance: CandidateProvenance,
+    pub semantic_fingerprint: Option<String>,
     pub scores: ScoreComponents,
     pub selection_reason: String,
 }
@@ -171,6 +172,7 @@ fn fuse(
             let document = by_id.get(&node_id)?;
             Some(Candidate {
                 node_id,
+                semantic_fingerprint: None,
                 qualified_name: document.qualified_name.clone(),
                 path: document.path.clone(),
                 span: document.span,

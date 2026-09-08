@@ -10,6 +10,7 @@ use std::path::Path;
 pub struct GraphEdge {
     pub path: String,
     pub source_hash: Hash32,
+    pub semantic_fingerprint: Option<String>,
     pub edge: Edge,
 }
 
@@ -27,6 +28,7 @@ pub struct GraphDocument {
     pub text: String,
     pub span: Span,
     pub provenance: CandidateProvenance,
+    pub semantic_fingerprint: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -127,6 +129,7 @@ impl<'a> SnapshotView<'a> {
             (is_current && edge.relation == kind).then(|| GraphEdge {
                 path: path.clone(),
                 source_hash: key.source_hash,
+                semantic_fingerprint: None,
                 edge: edge.clone(),
             })
         }));
@@ -174,6 +177,7 @@ impl<'a> SnapshotView<'a> {
                 text: node.name.clone(),
                 span: node.span,
                 provenance: CandidateProvenance::Syntax,
+                semantic_fingerprint: None,
             })
         }));
         documents.sort_by(|left, right| {
@@ -238,6 +242,7 @@ mod tests {
 
     fn edge(path: &str, source_hash: Hash32, target: &str) -> GraphEdge {
         GraphEdge {
+            semantic_fingerprint: None,
             path: path.to_owned(),
             source_hash,
             edge: Edge {

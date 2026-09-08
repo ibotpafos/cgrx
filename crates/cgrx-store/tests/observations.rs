@@ -38,6 +38,7 @@ fn observation(count: u64, first: u64, last: u64) -> ResolvedObservation {
         last_seen_unix_nanos: last,
         source_resolution: ResolutionKind::PathLine,
         target_resolution: ResolutionKind::Fqn,
+        semantic_fingerprint: None,
     }
 }
 

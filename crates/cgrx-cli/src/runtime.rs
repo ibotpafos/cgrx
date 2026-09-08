@@ -170,6 +170,8 @@ struct StoredDocument {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     ts_lexical_target: Option<TsLexicalTarget>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    ts_constructor_target: Option<TsLexicalTarget>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     go_field_target: Option<Box<GoFieldTarget>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     go_local_constructor_target: Option<GoLocalConstructorTarget>,
@@ -1653,6 +1655,7 @@ impl Runtime {
                         end: document.span_end,
                     },
                     provenance: CandidateProvenance::Syntax,
+                    semantic_fingerprint: None,
                 })
                 .collect(),
             arcs: definitive_stored_arcs(&self.stored, &request.scope)
@@ -1718,6 +1721,7 @@ impl Runtime {
                             end: document.span_end,
                         },
                         provenance: CandidateProvenance::Syntax,
+                        semantic_fingerprint: None,
                         scores: ScoreComponents {
                             graph: if required_task_anchors.contains(node_id) {
                                 0
@@ -2177,6 +2181,7 @@ fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPath, RuntimeE
             rust_module_target: None,
             rust_self_target: None,
             ts_lexical_target: None,
+            ts_constructor_target: None,
             go_field_target: None,
             go_local_constructor_target: None,
             java_constructor_target: None,
@@ -2217,6 +2222,7 @@ fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPath, RuntimeE
             rust_module_target: None,
             rust_self_target: None,
             ts_lexical_target: None,
+            ts_constructor_target: None,
             go_field_target: None,
             go_local_constructor_target: None,
             java_constructor_target: None,
@@ -2246,6 +2252,7 @@ fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPath, RuntimeE
             rust_module_target: None,
             rust_self_target: None,
             ts_lexical_target: None,
+            ts_constructor_target: None,
             go_field_target: None,
             go_local_constructor_target: None,
             java_constructor_target: None,
@@ -2294,9 +2301,11 @@ fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPath, RuntimeE
             | LanguageProvenance::GoLocalConstructor { .. }
             | LanguageProvenance::GoImport { .. }
             | LanguageProvenance::TsLexical { .. }
+            | LanguageProvenance::TsConstructor { .. }
             | LanguageProvenance::JavaConstructor { .. }
             | LanguageProvenance::RustSelf { .. }
-            | LanguageProvenance::RustModule { .. } => None,
+            | LanguageProvenance::RustModule { .. }
+            | LanguageProvenance::RustConstructor { .. } => None,
         };
         let is_go_receiver = go_receiver_target.is_some();
         let go_import_path =
@@ -2400,6 +2409,13 @@ fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPath, RuntimeE
                 }),
                 _ => None,
             },
+            ts_constructor_target: match edge.provenance {
+                LanguageProvenance::TsConstructor { target, caller } => Some(TsLexicalTarget {
+                    target: ByteRange::new(target.start, target.end),
+                    caller: ByteRange::new(caller.start, caller.end),
+                }),
+                _ => None,
+            },
             go_import_path,
             go_import_explicit_alias: matches!(
                 edge.provenance,
@@ -2436,6 +2452,10 @@ fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPath, RuntimeE
                 ]
             } else if matches!(edge.provenance, LanguageProvenance::TsLexical { .. }) {
                 vec!["EXACT_CALL".to_owned(), "TS_LEXICAL_CALL".to_owned()]
+            } else if matches!(edge.provenance, LanguageProvenance::TsConstructor { .. }) {
+                vec!["EXACT_CALL".to_owned(), "TS_CONSTRUCTOR_CALL".to_owned()]
+            } else if matches!(edge.provenance, LanguageProvenance::RustConstructor { .. }) {
+                vec!["EXACT_CALL".to_owned(), "RUST_CONSTRUCTOR_CALL".to_owned()]
             } else if matches!(edge.provenance, LanguageProvenance::JavaConstructor { .. }) {
                 vec!["EXACT_CALL".to_owned(), "JAVA_CONSTRUCTOR_CALL".to_owned()]
             } else if is_go_receiver {
@@ -2456,6 +2476,7 @@ fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPath, RuntimeE
                 rust_module_target: None,
                 rust_self_target: None,
                 ts_lexical_target: None,
+                ts_constructor_target: None,
                 go_field_target: None,
                 go_local_constructor_target: None,
                 java_constructor_target: None,
@@ -2522,6 +2543,7 @@ fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPath, RuntimeE
                 rust_module_target: None,
                 rust_self_target: None,
                 ts_lexical_target: None,
+                ts_constructor_target: None,
                 go_field_target: None,
                 go_local_constructor_target: None,
                 java_constructor_target: None,
@@ -2572,6 +2594,7 @@ fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPath, RuntimeE
                 rust_module_target: None,
                 rust_self_target: None,
                 ts_lexical_target: None,
+                ts_constructor_target: None,
                 go_field_target: None,
                 go_local_constructor_target: None,
                 java_constructor_target: None,
@@ -2628,6 +2651,7 @@ fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPath, RuntimeE
                 rust_module_target: None,
                 rust_self_target: None,
                 ts_lexical_target: None,
+                ts_constructor_target: None,
                 go_field_target: None,
                 go_local_constructor_target: None,
                 java_constructor_target: None,
@@ -2668,6 +2692,7 @@ fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPath, RuntimeE
             rust_module_target: None,
             rust_self_target: None,
             ts_lexical_target: None,
+            ts_constructor_target: None,
             go_field_target: None,
             go_local_constructor_target: None,
             java_constructor_target: None,
@@ -2694,6 +2719,7 @@ fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPath, RuntimeE
             rust_module_target: None,
             rust_self_target: None,
             ts_lexical_target: None,
+            ts_constructor_target: None,
             go_field_target: None,
             go_local_constructor_target: None,
             java_constructor_target: None,
@@ -4039,6 +4065,35 @@ fn rebuild_arcs_with_cargo(
                 let target = matches.next()?;
                 matches.next().is_none().then_some(target.node_id)
             })
+        } else if call
+            .semantic_tags
+            .iter()
+            .any(|tag| tag == "TS_CONSTRUCTOR_CALL")
+        {
+            // Same-file class construction: the proof carries the class name
+            // span and the enclosing caller name span. The target must be the
+            // unique same-file SYNTAX document at that exact span; anything
+            // else (renamed, moved, duplicated class) abstains.
+            call.ts_constructor_target.as_ref().and_then(|proof| {
+                let caller = source_document?;
+                if caller.path != call.path
+                    || caller.span_start != proof.caller.start
+                    || caller.span_end != proof.caller.end
+                {
+                    return None;
+                }
+                let mut matches =
+                    syntax_by_path
+                        .get(call.path.as_str())?
+                        .iter()
+                        .filter(|document| {
+                            document.qualified_name == call.qualified_name
+                                && document.span_start == proof.target.start
+                                && document.span_end == proof.target.end
+                        });
+                let target = matches.next()?;
+                matches.next().is_none().then_some(target.node_id)
+            })
         } else if call.semantic_tags.iter().any(|tag| tag == "GO_SELF_CALL") {
             call.go_receiver_target.as_ref().and_then(|proof| {
                 if proof.path != call.path
@@ -4944,6 +4999,7 @@ mod proof_edge_tests {
             rust_module_target: None,
             rust_self_target: None,
             ts_lexical_target: None,
+            ts_constructor_target: None,
             go_field_target: None,
             go_local_constructor_target: None,
             java_constructor_target: None,
@@ -4970,6 +5026,7 @@ mod proof_edge_tests {
             rust_module_target: None,
             rust_self_target: None,
             ts_lexical_target: None,
+            ts_constructor_target: None,
             go_field_target: None,
             go_local_constructor_target: None,
             java_constructor_target: None,

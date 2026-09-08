@@ -11,6 +11,7 @@ fn candidate(id: u64, name: &str, path: &str, score: u64) -> Candidate {
         path: path.to_owned(),
         span: Span { start: 0, end: 12 },
         provenance: CandidateProvenance::Syntax,
+        semantic_fingerprint: None,
         scores: ScoreComponents {
             exact: score,
             bm25: score / 2,

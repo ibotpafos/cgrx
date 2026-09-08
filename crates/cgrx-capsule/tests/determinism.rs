@@ -8,6 +8,8 @@ mod common {
         let mut records = Vec::new();
         for id in 1..=8_u64 {
             candidates.push(Candidate {
+                semantic_fingerprint: None,
+
                 node_id: id,
                 qualified_name: format!("graph::node{id}"),
                 path: format!("src/{id}.rs"),

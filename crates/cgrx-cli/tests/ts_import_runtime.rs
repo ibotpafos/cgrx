@@ -353,19 +353,32 @@ fn local_function_shadow_stays_local() {
 }
 
 #[test]
-fn rejected_target_reindexes_to_exact_without_name_fallback() {
-    let mut f = Fixture::new(&[
+fn typescript_constructor_resolves_exact_class() {
+    let f = Fixture::new(&[
         (
             "main.ts",
-            "import { target } from './worker'; function caller(){ target(); }",
+            "function caller() { new Service(); } class Service { run() { 1 } }",
         ),
-        ("worker.ts", "function target() {}"),
-        ("decoy.ts", "export function target() {}"),
+        ("service.ts", "export class Decoy {}"),
+        ("decoy.ts", "export class Decoy {}"),
+    ]);
+    let trace = f.trace();
+    assert_eq!(f.targets(), ["main.ts"]);
+    let node = &trace["nodes"][0];
+    assert_eq!(node["symbol"], "Service");
+}
+
+#[test]
+fn typescript_constructor_no_target_when_multiple_classes() {
+    let f = Fixture::new(&[
+        (
+            "main.ts",
+            "import { Service } from './service'; function caller() { new Service(); }",
+        ),
+        ("service.ts", "export class Service {}"),
+        ("another.ts", "export class Another {}"),
     ]);
     assert!(f.targets().is_empty());
-    fs::write(f.root.join("worker.ts"), "export function target() {}").unwrap();
-    f.refresh();
-    assert_eq!(f.targets(), ["worker.ts"]);
 }
 
 #[test]

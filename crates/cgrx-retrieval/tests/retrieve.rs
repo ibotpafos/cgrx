@@ -48,6 +48,7 @@ fn document(id: u64, qualified_name: &str, path: &str, text: &str) -> GraphDocum
             end: text.len(),
         },
         provenance: CandidateProvenance::Syntax,
+        semantic_fingerprint: None,
     }
 }
 
