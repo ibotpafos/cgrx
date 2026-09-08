@@ -39,7 +39,12 @@ pub trait ToolBackend: Send + Sync {
             "runtime evidence import requires a managed repository backend",
         ))
     }
-    fn scan_risks(&mut self, _mode: &str, _limit: usize) -> Result<Value, BackendError> {
+    fn scan_risks(
+        &mut self,
+        _mode: &str,
+        _limit: usize,
+        _runs: Option<Value>,
+    ) -> Result<Value, BackendError> {
         Err(BackendError::new(
             "cgrx.risk_scan_unavailable",
             "risk scan requires a managed repository backend",
@@ -339,6 +344,8 @@ impl Server {
                     mode: Option<String>,
                     #[serde(default)]
                     limit: Option<usize>,
+                    #[serde(default)]
+                    runs: Option<Value>,
                 }
                 let args: Args = from_value(call.arguments)?;
                 let mode = args.mode.as_deref().unwrap_or("changes");
@@ -359,7 +366,7 @@ impl Server {
                             "managed repository required",
                         )
                     })?
-                    .scan_risks(mode, limit)
+                    .scan_risks(mode, limit, args.runs)
                     .map_err(backend_error)?
             }
             "check_change_gates" => {
@@ -378,6 +385,8 @@ impl Server {
                     max_coverage_gaps: Option<usize>,
                     #[serde(default)]
                     max_unverified_impacts: Option<usize>,
+                    #[serde(default)]
+                    runs: Option<Value>,
                 }
                 let args: Args = from_value(call.arguments)?;
                 let limit = args.limit.unwrap_or(20);
@@ -410,7 +419,7 @@ impl Server {
                             "managed repository required",
                         )
                     })?
-                    .scan_risks("changes", limit)
+                    .scan_risks("changes", limit, args.runs)
                     .map_err(backend_error)?;
                 evaluate_change_gates(
                     &scan,
@@ -2003,8 +2012,8 @@ fn model_visible_schema() -> Value {
     let bounded_scope = bounded_scope_schema();
     let path_or_scope = path_or_scope_schema(&bounded_scope);
     let mut tools = json!([
-        {"name":"scan_risks","description":"Change risks, candidate tests and deterministic parallel agent missions; no tests or LLM executed.","inputSchema":{"type":"object","properties":{"mode":{"enum":["changes"]},"limit":{"type":"integer","minimum":1,"maximum":50}}}},
-        {"name":"check_change_gates","description":"Snapshot-bound conservative change gate over findings, impacts, missions and graph coverage; no tests or LLM executed.","inputSchema":{"type":"object","properties":{"limit":{"type":"integer","minimum":1,"maximum":50},"fail_on":{"enum":["error","warning","none"],"default":"error"},"max_warning_findings":{"type":"integer","minimum":0,"maximum":10000,"default":0},"max_blocked_missions":{"type":"integer","minimum":0,"maximum":10000,"default":0},"max_coverage_gaps":{"type":"integer","minimum":0,"maximum":10000,"default":0},"max_unverified_impacts":{"type":"integer","minimum":0,"maximum":10000,"default":0}}}},
+        {"name":"scan_risks","description":"Change risks, candidate tests and deterministic parallel agent missions; no tests or LLM executed.","inputSchema":{"type":"object","properties":{"mode":{"enum":["changes"]},"limit":{"type":"integer","minimum":1,"maximum":50},"runs":{"type":"array","items":{"type":"object","properties":{"runner_command":{"type":"string"},"revision":{"type":"string"},"results":{"type":"array","items":{"type":"object","properties":{"path":{"type":"string"},"symbol":{"type":"string"},"status":{"enum":["passed","failed"]},"source_hash":{"type":"string"}}}}}}}}}},
+        {"name":"check_change_gates","description":"Snapshot-bound conservative change gate over findings, impacts, missions and graph coverage; no tests or LLM executed.","inputSchema":{"type":"object","properties":{"limit":{"type":"integer","minimum":1,"maximum":50},"fail_on":{"enum":["error","warning","none"],"default":"error"},"max_warning_findings":{"type":"integer","minimum":0,"maximum":10000,"default":0},"max_blocked_missions":{"type":"integer","minimum":0,"maximum":10000,"default":0},"max_coverage_gaps":{"type":"integer","minimum":0,"maximum":10000,"default":0},"max_unverified_impacts":{"type":"integer","minimum":0,"maximum":10000,"default":0},"runs":{"type":"array","items":{"type":"object","properties":{"runner_command":{"type":"string"},"revision":{"type":"string"},"results":{"type":"array","items":{"type":"object","properties":{"path":{"type":"string"},"symbol":{"type":"string"},"status":{"enum":["passed","failed"]},"source_hash":{"type":"string"}}}}}}}}}},
         {"name":"check_repository_gates","description":"Snapshot-bound architecture gate over package cycles, graph coupling, unresolved local dependencies and coverage; no LLM executed.","inputSchema":{"type":"object","properties":{"scope":path_or_scope.clone(),"package_depth":{"type":"integer","minimum":1,"maximum":4,"default":2},"fail_on":{"enum":["error","warning","none"],"default":"error"},"max_package_cycles":{"type":"integer","minimum":0,"maximum":1000000,"default":0},"max_package_fan_out":{"type":"integer","minimum":0,"maximum":1000000,"default":20},"max_symbol_fan_in":{"type":"integer","minimum":0,"maximum":1000000,"default":50},"max_unresolved_local_dependencies":{"type":"integer","minimum":0,"maximum":1000000,"default":0},"max_coverage_gaps":{"type":"integer","minimum":0,"maximum":1000000,"default":0}}}},
         {"name":"ingest_runtime_evidence","description":"Import revision-pinned runtime call evidence from a local file.","inputSchema":{"type":"object","required":["input_path"],"properties":{"input_path":{"type":"string"},"format":{"enum":["auto","ndjson","otlp-json"],"default":"auto"},"revision":{"type":"string"},"environment":{"type":"string"}}}},
         {"name":"orient","description":"Context","inputSchema":{"type":"object","required":["task","budget","mode","scope"],"properties":{"task":{"type":"string"},"budget":{"type":"integer","minimum":1},"mode":{"enum":["FAST","PRECISE","BOUNDED"]},"scope":bounded_scope.clone()}}},

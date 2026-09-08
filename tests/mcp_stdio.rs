@@ -426,6 +426,107 @@ fn initialize_advertises_compact_evidence_workflow() {
 }
 
 #[test]
+fn scan_risks_accepts_optional_runs_parameter() {
+    let mut server = Server::new(snapshot());
+    // Without runs: still requires a managed backend.
+    let without = dispatch(
+        &mut server,
+        json!({
+            "jsonrpc":"2.0","id":1,"method":"tools/call",
+            "params":{"name":"scan_risks","arguments":{"limit":20}}
+        }),
+    );
+    assert_eq!(
+        without["error"]["data"]["code"],
+        "cgrx.risk_scan_unavailable"
+    );
+
+    // With empty runs array: same error (no backend), but passes validation.
+    let with_empty = dispatch(
+        &mut server,
+        json!({
+            "jsonrpc":"2.0","id":2,"method":"tools/call",
+            "params":{"name":"scan_risks","arguments":{"limit":20,"runs":[]}}
+        }),
+    );
+    assert_eq!(
+        with_empty["error"]["data"]["code"],
+        "cgrx.risk_scan_unavailable"
+    );
+
+    // With a sample run record: validation accepts the shape.
+    let with_runs = dispatch(
+        &mut server,
+        json!({
+            "jsonrpc":"2.0","id":3,"method":"tools/call",
+            "params":{"name":"scan_risks","arguments":{"limit":20,"runs":[
+                {"runner_command":"cargo test","revision":"abc123","results":[
+                    {"path":"tests/foo.rs","symbol":"test_foo","status":"passed","source_hash":"a1b2c3"}
+                ]}
+            ]}}
+        }),
+    );
+    assert_eq!(
+        with_runs["error"]["data"]["code"],
+        "cgrx.risk_scan_unavailable"
+    );
+}
+
+#[test]
+fn check_change_gates_accepts_optional_runs_parameter() {
+    let mut server = Server::new(snapshot());
+    let without = dispatch(
+        &mut server,
+        json!({
+            "jsonrpc":"2.0","id":1,"method":"tools/call",
+            "params":{"name":"check_change_gates","arguments":{"limit":20}}
+        }),
+    );
+    assert_eq!(
+        without["error"]["data"]["code"],
+        "cgrx.risk_scan_unavailable"
+    );
+
+    let with_runs = dispatch(
+        &mut server,
+        json!({
+            "jsonrpc":"2.0","id":2,"method":"tools/call",
+            "params":{"name":"check_change_gates","arguments":{"limit":20,"runs":[]}}
+        }),
+    );
+    assert_eq!(
+        with_runs["error"]["data"]["code"],
+        "cgrx.risk_scan_unavailable"
+    );
+}
+
+#[test]
+fn scan_risks_schema_advertises_runs_property() {
+    let mut server = Server::new(snapshot());
+    let response = dispatch(
+        &mut server,
+        json!({"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}),
+    );
+    let tools = response["result"]["tools"].as_array().expect("tools array");
+    let scan_risks = tools
+        .iter()
+        .find(|tool| tool["name"] == "scan_risks")
+        .expect("scan_risks in schema");
+    assert!(
+        scan_risks["inputSchema"]["properties"]["runs"].is_object(),
+        "runs property advertised in scan_risks schema"
+    );
+    let check_gates = tools
+        .iter()
+        .find(|tool| tool["name"] == "check_change_gates")
+        .expect("check_change_gates in schema");
+    assert!(
+        check_gates["inputSchema"]["properties"]["runs"].is_object(),
+        "runs property advertised in check_change_gates schema"
+    );
+}
+
+#[test]
 fn coverage_pagination_rejects_unbounded_limits_before_backend_access() {
     let mut server = Server::new(snapshot());
     for limit in [0, 501] {
