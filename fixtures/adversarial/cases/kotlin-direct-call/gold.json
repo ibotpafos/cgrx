@@ -1,0 +1,30 @@
+{
+  "expected_cgcr_status": "COMPLETE_BOUNDED",
+  "expected_graph_only": true,
+  "gold_spans": [
+    {
+      "end_byte": 80,
+      "path": "repo/src/main.kt",
+      "relation_kind": "CALLS",
+      "risk_class": "low",
+      "source_sha256": "78482a232142e6e9c67a49d3e60cf22cbe3000f2bb9a123913de21428a3fad20",
+      "start_byte": 53,
+      "text": "val message = greet()"
+    }
+  ],
+  "id": "kotlin-direct-call",
+  "language": "kotlin",
+  "query": "Where is greet called?",
+  "required_uncertainty": [],
+  "scope": {
+    "exclude": [],
+    "include": [
+      "repo/**"
+    ],
+    "max_depth": 4,
+    "relation_kinds": [
+      "CALLS"
+    ]
+  },
+  "scorer_type": "positive_evidence"
+}

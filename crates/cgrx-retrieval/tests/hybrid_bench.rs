@@ -8,6 +8,9 @@ use cgrx_retrieval::{
 };
 use cgrx_store::DeltaOverlay;
 use std::collections::BTreeMap;
+use std::sync::Mutex;
+
+static HYBRID_ENV_LOCK: Mutex<()> = Mutex::new(());
 
 fn doc(node_id: u64, name: &str, text: &str) -> GraphDocument {
     GraphDocument {
@@ -59,6 +62,19 @@ fn run_retrieval(
     RetrievalEngine::new(profile)
         .retrieve(&request, &view)
         .unwrap()
+}
+
+fn run_hybrid(
+    docs: &[GraphDocument],
+    base: &BaseGraph,
+    overlay: &DeltaOverlay,
+    task: &str,
+) -> CandidateSet {
+    let _guard = HYBRID_ENV_LOCK.lock().unwrap();
+    unsafe { std::env::set_var("CGRX_HYBRID", "1") };
+    let result = run_retrieval(docs, base, overlay, task, hybrid_profile());
+    unsafe { std::env::remove_var("CGRX_HYBRID") };
+    result
 }
 
 fn baseline_profile() -> FusionProfile {
@@ -114,9 +130,7 @@ fn hybrid_bench_query1_renamed_symbol_same_body() {
     let (base, overlay) = build_view(docs.clone());
 
     let baseline = run_retrieval(&docs, &base, &overlay, "transformValue", baseline_profile());
-    unsafe { std::env::set_var("CGRX_HYBRID", "1") };
-    let hybrid = run_retrieval(&docs, &base, &overlay, "transformValue", hybrid_profile());
-    unsafe { std::env::remove_var("CGRX_HYBRID") };
+    let hybrid = run_hybrid(&docs, &base, &overlay, "transformValue");
 
     println!("BM25 baseline ({} candidates):", baseline.candidates.len());
     print_results("baseline", &baseline.candidates);
@@ -151,9 +165,7 @@ fn hybrid_bench_query2_partial_name_overlap() {
     let (base, overlay) = build_view(docs.clone());
 
     let baseline = run_retrieval(&docs, &base, &overlay, "DataProcessor", baseline_profile());
-    unsafe { std::env::set_var("CGRX_HYBRID", "1") };
-    let hybrid = run_retrieval(&docs, &base, &overlay, "DataProcessor", hybrid_profile());
-    unsafe { std::env::remove_var("CGRX_HYBRID") };
+    let hybrid = run_hybrid(&docs, &base, &overlay, "DataProcessor");
 
     println!("BM25 baseline ({} candidates):", baseline.candidates.len());
     print_results("baseline", &baseline.candidates);
@@ -183,9 +195,7 @@ fn hybrid_bench_query3_rewrite_similar_body() {
     let (base, overlay) = build_view(docs.clone());
 
     let baseline = run_retrieval(&docs, &base, &overlay, "computeTotal", baseline_profile());
-    unsafe { std::env::set_var("CGRX_HYBRID", "1") };
-    let hybrid = run_retrieval(&docs, &base, &overlay, "computeTotal", hybrid_profile());
-    unsafe { std::env::remove_var("CGRX_HYBRID") };
+    let hybrid = run_hybrid(&docs, &base, &overlay, "computeTotal");
 
     println!("BM25 baseline ({} candidates):", baseline.candidates.len());
     print_results("baseline", &baseline.candidates);

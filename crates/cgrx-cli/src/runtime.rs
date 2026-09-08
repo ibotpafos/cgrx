@@ -396,11 +396,14 @@ impl Runtime {
     ) -> Result<Value, RuntimeError> {
         let language = language.map(str::trim);
         if language.is_some_and(|language| {
-            !matches!(language, "typescript" | "go" | "java" | "python" | "rust")
+            !matches!(
+                language,
+                "typescript" | "go" | "java" | "c" | "kotlin" | "python" | "rust"
+            )
         }) {
             return Err(RuntimeError::new(
                 "cgrx.invalid_arguments",
-                "language must be one of typescript, go, java, python, or rust",
+                "language must be one of typescript, go, java, c, kotlin, python, or rust",
             ));
         }
         self.search_graph_with_matcher(query, scope, limit, language, include_body, path_in_scope)
