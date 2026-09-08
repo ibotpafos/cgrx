@@ -158,5 +158,21 @@ Maintainer help: ask in the issue. Availability: unclaimed.
         readme_errors = [error for error in errors if error.startswith("README.md:")]
         self.assertEqual([], readme_errors)
 
+    def test_real_repository_has_contributor_contract(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        errors = validate(root)
+        document_prefixes = (
+            "CONTRIBUTING.md:",
+            "CODE_OF_CONDUCT.md:",
+            "GOVERNANCE.md:",
+            "missing required file: CODE_OF_CONDUCT.md",
+            "missing required file: ROADMAP.md",
+            "missing required file: GOVERNANCE.md",
+        )
+        document_errors = [
+            error for error in errors if error.startswith(document_prefixes)
+        ]
+        self.assertEqual([], document_errors)
+
 if __name__ == "__main__":
     unittest.main()
