@@ -2073,6 +2073,11 @@ fn ci_command_runs_change_gates_on_clean_repo() {
         .expect("ci command executes");
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
         stdout.contains("Change Quality Gates"),
         "expected change gates report, got: {stdout}"
     );
@@ -2107,6 +2112,11 @@ fn ci_command_runs_repository_gates_on_clean_repo() {
         .expect("ci command executes");
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
         stdout.contains("Repository Quality Gates"),
         "expected repository gates report, got: {stdout}"
     );
@@ -2137,6 +2147,11 @@ fn ci_command_github_format_emits_notice() {
         .expect("ci command executes");
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
         stdout.contains("::notice::"),
         "expected github notice annotation, got: {stdout}"
     );
@@ -2166,6 +2181,34 @@ fn ci_command_rejects_unknown_format() {
     assert!(
         String::from_utf8_lossy(&output.stderr).contains("unknown format"),
         "expected unknown format error, got: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn ci_command_requires_fail_on_value() {
+    let output = cli()
+        .args(["ci", "--repo", ".", "--fail-on"])
+        .output()
+        .expect("ci command executes");
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("--fail-on requires a value"),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn ci_command_rejects_unknown_fail_on_level() {
+    let output = cli()
+        .args(["ci", "--repo", ".", "--fail-on", "fatal"])
+        .output()
+        .expect("ci command executes");
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("unknown fail-on level"),
+        "{}",
         String::from_utf8_lossy(&output.stderr)
     );
 }

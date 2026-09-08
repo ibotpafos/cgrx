@@ -4,7 +4,7 @@ GitHub Actions workflow and CLI command for running CGRX quality gates in CI.
 
 ## Overview
 
-The CGRX CI pipeline runs three categories of checks on every PR:
+The existing CGRX CI pipeline runs four categories of checks on every PR:
 
 1. **Format** — `cargo fmt --all -- --check`
 2. **Clippy** — `cargo clippy --locked --workspace --all-targets -- -D warnings`
@@ -15,7 +15,7 @@ The quality gates job runs after the basic checks pass, using the release binary
 
 ## GitHub Action Workflow
 
-`.github/workflows/cgrx-ci.yml` defines the CI pipeline:
+`.github/workflows/ci.yml` defines the CI pipeline. The quality gates extend the existing cross-platform integration job, avoiding a second workflow that would duplicate format, Clippy, test, and build work.
 
 - **Triggers**: PRs to `main`, pushes to `main`, tags `v*`
 - **Concurrency**: cancels in-progress runs for the same ref
@@ -25,10 +25,12 @@ The quality gates job runs after the basic checks pass, using the release binary
 
 | Job | Description |
 |-----|-------------|
-| `fmt` | Format check |
-| `clippy` | Clippy with `-D warnings` |
-| `test` | Workspace tests |
-| `gates` | Quality gates (needs fmt, clippy, test) |
+| `frontend` | Web typecheck, build, CSP verification, and tests |
+| `rust-core` | Format, Clippy, workspace tests, and release build |
+| `integration` | Evaluators, smoke tests, and quality gates on Linux and macOS |
+| `python-checks` | Installer and manifest validation tests |
+
+The repository gate runs against the checked-out commit. On pull requests, the workflow then moves Git's index and HEAD baseline to the trusted base commit while leaving the checked-out files intact. This gives `scan_risks` the real pull-request working-tree delta; on pushes there is no change gate because no PR base exists.
 
 ## CLI Command
 

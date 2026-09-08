@@ -59,7 +59,10 @@ pub(super) fn run(args: &[String]) -> Result<(), String> {
             }
             "--fail-on" => {
                 i += 1;
-                fail_on = args.get(i).cloned().unwrap_or_else(|| "error".to_string());
+                fail_on = args.get(i).ok_or("--fail-on requires a value")?.to_owned();
+                if !matches!(fail_on.as_str(), "error" | "warning" | "none") {
+                    return Err(format!("unknown fail-on level: {fail_on}"));
+                }
             }
             "--max-warning-findings" => {
                 i += 1;

@@ -34,7 +34,7 @@ fn main() {
 fn run(args: Vec<String>) -> Result<(), String> {
     let Some(command) = args.first().map(String::as_str) else {
         return Err(
-            "expected init, index, daemon, observe, serve, visualize, orient, expand, status, schema, skill, usage-report, metrics, or bench"
+            "expected init, index, daemon, observe, serve, visualize, orient, expand, status, schema, skill, usage-report, metrics, ci, or bench"
                 .to_owned(),
         );
     };
