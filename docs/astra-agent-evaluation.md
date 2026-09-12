@@ -76,6 +76,42 @@ installation, external messages, deployments or source edits are requested.
 
 ## Results and limits
 
+### Completed collection: 2026-09-12
+
+The final collection used required MCP startup, disabled memory, the patched
+binary, `gpt-6-astra` at medium effort, and a 120-second timeout per arm.
+All 20 pairs completed without failures. CGRX was actually used in all 20
+treatment runs (72 CGRX calls).
+An independent comparison of all 20 retained source copies against their Git
+archives checked 54,922 files and found no missing or modified files.
+
+| Measurement | Ordinary tools | CGRX available |
+| --- | ---: | ---: |
+| Correct answers | 20/20 | 20/20 |
+| Input tokens, including cached input | 672,866 | 1,447,546 |
+| Cached input tokens | 506,880 | 1,167,872 |
+| Output tokens | 3,760 | 8,052 |
+| Tool calls | 39 | 115 |
+| Median elapsed time | 17.72 s | 52.00 s |
+| Total elapsed time across tasks | 340.44 s | 1,252.25 s |
+
+This selection shows **no accuracy gain** and 2.15 times as many input tokens
+with CGRX. Wall time includes cold index/startup work and shared-host activity;
+it is diagnostic, not a controlled speed comparison. Cached token accounting is
+shown separately and these token totals are not a dollar-cost estimate. The
+result supports using direct reads for exact known spans and evaluating CGRX
+on harder multi-file changes with independent acceptance tests next. It does
+not establish an advantage on coding tasks or other models.
+
+The public source selection hash is
+`98fa96dd92a7e0bcbd9be8ab337f97da2cdf8fe1834d80fc611a41a50921aee7`;
+the measured runner hash is
+`7f756cd1747bacf5f073766293ee9e397083bf5afd7af477fd7e183d1ea5bbca`;
+the patched binary hash is
+`da2a2297bac09243c672fde4a22de9f869b4ce8bdf5a0db5cbe8b41f74496f26`.
+The local protocol and raw records retain the remaining provenance. No model
+installation or release is implied by this collection.
+
 `summary.json` aggregates only complete pairs and separately lists failed runs.
 The collector exits nonzero if any run is incomplete; a completed incorrect
 answer remains a valid collection result and is scored separately.
