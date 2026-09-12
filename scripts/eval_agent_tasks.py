@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import signal
 import subprocess
 import tarfile
@@ -41,7 +42,7 @@ def git(repo, *args):
     return subprocess.check_output(["git", "-C", str(repo), *args], stderr=subprocess.PIPE)
 
 
-def load_tasks(selection, corpus):
+def load_tasks(selection, corpus, repo_map=None):
     selected = json.loads(Path(selection).read_text())
     if selected.get("schema_version") != 1 or selected.get("split") != "exploratory":
         raise ValueError("unsupported selection")
@@ -50,10 +51,17 @@ def load_tasks(selection, corpus):
         raise ValueError("empty or duplicate task IDs")
     source = json.loads(Path(corpus).read_text())["tasks"]
     by_id = {t["id"]: t for t in source}
-    tasks = [by_id[key] for key in ids]
+    missing = set(ids) - by_id.keys()
+    if missing:
+        raise ValueError("selection IDs absent from corpus: " + ", ".join(sorted(missing)))
+    mapping = json.loads(Path(repo_map).read_text()) if repo_map else {}
+    if not isinstance(mapping, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in mapping.items()):
+        raise ValueError("repo map must map corpus aliases to local repository paths")
+    tasks = [dict(by_id[key]) for key in ids]
     for task in tasks:
+        task["repo"] = mapping.get(task["repo"], task["repo"])
         # Validate committed blobs, allowing historical revisions without moving HEAD.
-        for anchor in task["evidence"].values():
+        for role, anchor in task["evidence"].items():
             path = Path(anchor["path"])
             if path.is_absolute() or ".." in path.parts:
                 raise ValueError("unsafe evidence path")
@@ -61,6 +69,10 @@ def load_tasks(selection, corpus):
             span = b"".join(blob.splitlines(keepends=True)[anchor["start_line"]-1:anchor["end_line"]])
             if sha(blob) != anchor["sha256"] or sha(span) != anchor["span_sha256"]:
                 raise ValueError("stale oracle: " + task["id"])
+            if (role == "target" and task["expected"]["relation"] == "IMPORTS"
+                    and path.suffix == ".go"
+                    and re.fullmatch(rb"\s*package\s+" + re.escape(anchor["symbol"].encode()) + rb"\s*", span)):
+                task["package_target"] = True
     return tasks
 
 
@@ -130,7 +142,8 @@ def command(codex, model, effort, repo, schema, answer, cgrx=None):
     cmd = [str(codex), "exec", "--ignore-user-config", "--ephemeral", "--json",
            "--skip-git-repo-check", "-m", model, "-s", "read-only", "-C", str(repo),
            "--output-schema", str(schema), "-o", str(answer)]
-    for feature in ("plugins", "apps", "chronicle", "hooks", "multi_agent"):
+    for feature in ("plugins", "apps", "chronicle", "memories", "external_agent_memory_import",
+                    "skill_search", "hooks", "multi_agent"):
         cmd += ["--disable", feature]
     for config in ('project_doc_max_bytes=0', 'web_search="disabled"',
                    'model_reasoning_effort=' + json.dumps(effort)):
@@ -160,12 +173,19 @@ def parse_events(raw):
 
 
 def score(task, answer):
+    if not isinstance(answer, dict):
+        return False
     if answer.get("relation") != task["expected"]["relation"]:
         return False
     target = task["evidence"].get("target")
     if target is None:
         return answer.get("target") is None
-    return answer.get("target") == {"symbol": target["symbol"], "path": target["path"]}
+    identities = [{"symbol": target["symbol"], "path": target["path"]}]
+    # A Go import names a package directory, not its arbitrary evidence file.
+    # Enable this only after validating an actual package-declaration span.
+    if task.get("package_target") and task["expected"]["relation"] == "IMPORTS":
+        identities.append({"symbol": target["symbol"], "path": str(Path(target["path"]).parent)})
+    return answer.get("target") in identities
 
 
 def run_one(args, task, arm, repo, directory, identity):
@@ -237,6 +257,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--selection", type=Path, default=ROOT/"contracts/agent_tasks_v1.json")
     parser.add_argument("--corpus", type=Path, default=ROOT/"contracts/real_tasks_v1.json")
+    parser.add_argument("--repo-map", type=Path, help="Private JSON mapping of corpus repo aliases to local paths")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--codex", type=Path)
     parser.add_argument("--cgrx", type=Path)
@@ -246,7 +267,7 @@ def main():
     parser.add_argument("--limit", type=int)
     parser.add_argument("--run", action="store_true")
     args = parser.parse_args()
-    tasks = load_tasks(args.selection, args.corpus)
+    tasks = load_tasks(args.selection, args.corpus, args.repo_map)
     if args.limit is not None:
         if args.limit < 1:
             parser.error("limit must be positive")
@@ -265,6 +286,8 @@ def main():
                 "timeout_seconds": args.timeout, "token_cap": None,
                 "order": "alternating baseline-first / cgrx-first", "cache": "uncontrolled OS/provider; fresh CGRX index per pair",
                 "selection_sha256": sha(args.selection.read_bytes()), "corpus_sha256": sha(args.corpus.read_bytes()),
+                "runner_sha256": sha(Path(__file__).read_bytes()),
+                "repo_map_sha256": sha(args.repo_map.read_bytes()) if args.repo_map else None,
                 "codex_sha256": sha(args.codex.read_bytes()), "cgrx_sha256": sha(args.cgrx.read_bytes())}
     (args.output/"protocol.json").write_text(json.dumps(protocol, indent=2)+"\n")
     records = []

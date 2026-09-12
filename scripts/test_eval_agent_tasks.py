@@ -33,6 +33,15 @@ class AgentEvaluationTests(unittest.TestCase):
         self.assertTrue(evaluation.score(task, {"relation": "UNRESOLVED", "target": None}))
         self.assertFalse(evaluation.score(task, {"relation": "UNRESOLVED", "target": {"symbol": "run", "path": "a.py"}}))
 
+    def test_package_import_accepts_directory_only_with_source_proof(self):
+        task = {"expected": {"relation": "IMPORTS"},
+                "evidence": {"target": {"symbol": "domain", "path": "internal/domain/types.go"}}}
+        answer = {"relation": "IMPORTS", "target": {"symbol": "domain", "path": "internal/domain"}}
+        self.assertFalse(evaluation.score(task, answer))
+        self.assertTrue(evaluation.score(dict(task, package_target=True), answer))
+        self.assertFalse(evaluation.score(dict(task, package_target=True),
+            {"relation": "IMPORTS", "target": {"symbol": "domain", "path": "other/domain"}}))
+
     def test_prompt_does_not_leak_target(self):
         task = {"question": "Which function?", "expected": {"relation": "CALLS"},
                 "evidence": {"source": {"path": "a.py", "symbol": "caller"},
@@ -78,6 +87,22 @@ class AgentEvaluationTests(unittest.TestCase):
             with patch.object(evaluation, "git", return_value=b"changed\n"):
                 with self.assertRaisesRegex(ValueError, "stale oracle"):
                     evaluation.load_tasks(selection, corpus)
+
+    def test_private_repo_mapping_keeps_source_validation(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            data = b"def f(): pass\n"
+            selection, corpus, mapping = root/"selection.json", root/"corpus.json", root/"map.json"
+            selection.write_text(json.dumps({"schema_version": 1, "split": "exploratory", "tasks": ["x"]}))
+            corpus.write_text(json.dumps({"tasks": [{"id": "x", "repo": "/private/alias", "revision": "a"*40,
+                "evidence": {"source": {"path": "a.py", "start_line": 1, "end_line": 1,
+                    "sha256": evaluation.sha(data), "span_sha256": evaluation.sha(data)}}}]}))
+            mapping.write_text(json.dumps({"/private/alias": "/local/repository"}))
+            with patch.object(evaluation, "git", return_value=data) as git:
+                tasks = evaluation.load_tasks(selection, corpus, mapping)
+                self.assertEqual(tasks[0]["repo"], "/local/repository")
+                git.assert_called_once_with("/local/repository", "show", "a"*40+":a.py")
 
     def test_snapshot_excludes_answer_manifests(self):
         with tempfile.TemporaryDirectory() as temp:
