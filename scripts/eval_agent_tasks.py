@@ -161,6 +161,7 @@ def command(codex, model, effort, repo, schema, answer, cgrx=None):
     if cgrx:
         cmd += ["-c", 'mcp_servers.cgrx.command=' + json.dumps(str(cgrx)),
                 "-c", 'mcp_servers.cgrx.args=["serve","--root",' + json.dumps(str(repo)) + ']',
+                "-c", "mcp_servers.cgrx.required=true",
                 "-c", "mcp_servers.cgrx.startup_timeout_sec=60"]
     return cmd + ["-"]
 
@@ -289,6 +290,7 @@ def main():
     protocol = {"model_requested": args.model, "effort": args.effort,
                 "timeout_seconds": args.timeout, "token_cap": None,
                 "order": "alternating baseline-first / cgrx-first", "cache": "uncontrolled OS/provider; fresh CGRX index per pair",
+                "cgrx_required": True,
                 "selection_sha256": sha(args.selection.read_bytes()), "corpus_sha256": sha(args.corpus.read_bytes()),
                 "runner_sha256": sha(Path(__file__).read_bytes()),
                 "repo_map_sha256": sha(args.repo_map.read_bytes()) if args.repo_map else None,
@@ -303,7 +305,8 @@ def main():
             records.append(record)
             (args.output/"summary.json").write_text(json.dumps(summarize(records), indent=2)+"\n")
             print(json.dumps({k: record[k] for k in ("task", "arm", "status", "correct", "latency_ms")}), flush=True)
+    return int(any(r["status"] != "completed" for r in records))
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

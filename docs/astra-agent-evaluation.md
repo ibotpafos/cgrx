@@ -60,6 +60,14 @@ Only the treatment adds CGRX MCP. The task asks the model to stay in the source
 copy; the read-only sandbox is not an independent filesystem read-isolation
 boundary. Raw tool transcripts permit auditing this constraint.
 
+The treatment sets `mcp_servers.cgrx.required=true` and a 60-second startup
+timeout. Codex otherwise gives optional MCP servers a default 1-second grace
+period for the initial tool catalog; a cold server may miss that catalog.
+See the [official MCP configuration](https://learn.chatgpt.com/docs/extend/mcp?surface=cli).
+Required startup prevents a silently unavailable treatment. It does not force
+the model to use a tool when direct reading is sufficient. Earlier optional-MCP
+collections are configuration diagnostics, not clean treatment comparisons.
+
 Both arms use the same model, effort and hard wall-clock timeout. Token usage is
 measured, **not hard-capped**. `model_requested` records the requested identifier;
 the CLI event stream does not attest an immutable provider model snapshot.
@@ -69,6 +77,8 @@ installation, external messages, deployments or source edits are requested.
 ## Results and limits
 
 `summary.json` aggregates only complete pairs and separately lists failed runs.
+The collector exits nonzero if any run is incomplete; a completed incorrect
+answer remains a valid collection result and is scored separately.
 Each arm preserves its answer, terminal status, elapsed time, token usage, tool
 counts and observed CGRX calls. Unknown usage stays unknown. Correctness requires
 the exact target declaration path/name and relation, or a justified unresolved

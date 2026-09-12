@@ -7,6 +7,16 @@ import eval_agent_tasks as evaluation
 
 
 class AgentEvaluationTests(unittest.TestCase):
+    def test_treatment_requires_mcp_startup_and_disables_memory(self):
+        cmd = evaluation.command(Path("/codex"), "gpt-6-astra", "medium", Path("/repo"),
+                                 Path("/schema"), Path("/answer"), Path("/cgrx"))
+        self.assertIn("mcp_servers.cgrx.required=true", cmd)
+        self.assertIn("memories", cmd)
+        self.assertIn("external_agent_memory_import", cmd)
+        baseline = evaluation.command(Path("/codex"), "gpt-6-astra", "medium", Path("/repo"),
+                                      Path("/schema"), Path("/answer"))
+        self.assertFalse(any("mcp_servers" in arg for arg in baseline))
+
     def test_failed_turn_is_not_successful_empty_answer(self):
         result = evaluation.parse_events(json.dumps({"type": "turn.failed"}))
         self.assertFalse(result["complete"])
@@ -55,6 +65,23 @@ class AgentEvaluationTests(unittest.TestCase):
         result = evaluation.summarize([{"task": "x", "arm": "baseline", "status": "timeout"}])
         self.assertEqual(result["complete_pairs"], 0)
         self.assertEqual(len(result["failed_runs"]), 1)
+
+    def test_incomplete_collection_returns_nonzero(self):
+        import contextlib
+        import io
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            binary = root/"binary"
+            binary.write_bytes(b"fixture")
+            args = ["eval", "--run", "--output", str(root/"output"),
+                    "--codex", str(binary), "--cgrx", str(binary)]
+            records = [{"task": "x", "arm": arm, "status": "failed", "correct": None,
+                        "latency_ms": 1} for arm in evaluation.ARMS]
+            with patch("sys.argv", args), patch.object(evaluation, "load_tasks", return_value=[{"id": "x"}]), \
+                    patch.object(evaluation, "snapshot", return_value={}), \
+                    patch.object(evaluation, "run_one", side_effect=records), contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(evaluation.main(), 1)
 
     def test_mismatched_model_rejected(self):
         base = {"task": "x", "status": "completed", "correct": True, "latency_ms": 1,
