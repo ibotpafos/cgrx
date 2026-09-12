@@ -10,6 +10,12 @@ and repository rules take precedence over this workflow.
 
 ## Bind every request
 
+Choose the tool based on the missing evidence. When the task already supplies
+an exact file and line range and only asks what that code does, read that range
+directly. Use CGRX when you need to discover symbols, cross-file relationships,
+change impacts, or index coverage. Do not run the graph workflow solely to
+repeat an answer already proven by a bounded source read.
+
 Resolve the absolute canonical Git worktree root with
 `git rev-parse --show-toplevel`. Pass that root as `repo` on every CGRX call.
 Never pass a subdirectory or another repository's root.
@@ -21,12 +27,18 @@ the refreshed graph.
 
 ## Gather evidence
 
-Use the smallest useful sequence:
+For graph discovery, use the smallest useful sequence; skip steps whose
+evidence is already available at the current snapshot:
 
 1. `search_graph` with a symbol or intent and a small limit.
 2. `trace_path` from a returned symbol and path, initially at depth 1.
 3. `get_code_snippet` for definitions behind material claims.
 4. `check_index_coverage` for every evidence path used in the conclusion.
+
+For coverage, start with a small `limit` (for example 5). Exact paths and scopes
+return total gap counts plus `has_more` and `next_offset`. A partial page is not
+complete coverage. Read the relevant source instead of retrieving every
+unrelated gap in a large file; paginate when the omitted gaps matter to the task.
 
 Use `get_outline` for file structure, `find_usages` for bounded references,
 `get_architecture` for package and symbol topology, and `suggest_refactors` for

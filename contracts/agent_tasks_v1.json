@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "split": "exploratory",
+  "scope": "Read-only relationship discovery; not patch correctness or heldout superiority",
+  "tasks": [
+    "cgrx-git-text-git-bytes",
+    "rust-tsconfig-read-parse",
+    "rust-tsimports-resolve-module",
+    "rust-pack-extract-walk",
+    "rust-typescript-import-extraction",
+    "rust-typescript-extract-reference",
+    "rust-tsconfig-read-closure-unresolved",
+    "gd-notification-preferences",
+    "gd-dedupe-envelope",
+    "gd-channel-schema",
+    "gd-envelope-payload",
+    "gd-analytics-page-dashboard",
+    "gd-analytics-page-engineers",
+    "vpn-bool-default",
+    "vpn-int64-list",
+    "vex-network-parse-sanitize",
+    "vex-config-shared-secret",
+    "vex-ratelimit-allow-shard",
+    "vex-go-networkprobe-import-domain",
+    "vex-go-context-err-unresolved"
+  ]
+}

@@ -1183,7 +1183,18 @@ impl Runtime {
                     "unknown"
                 };
                 *counts.get_mut(status).expect("known coverage status") += 1;
-                json!({"path":path,"status":status,"gaps":gaps,"gap_count":gaps.len()})
+                // Exact paths obey the same pagination contract as scopes. Keep
+                // classification based on all gaps, including on an empty page.
+                let gap_count = gaps.len();
+                let page: Vec<_> = gaps.into_iter().skip(gap_offset).take(gap_limit).collect();
+                let returned = page.len();
+                let has_more = gap_offset.saturating_add(returned) < gap_count;
+                let next_offset = has_more.then_some(gap_offset.saturating_add(returned));
+                json!({
+                    "path":path,"status":status,"gaps":page,"gap_count":gap_count,
+                    "gap_offset":gap_offset,"gap_limit":gap_limit,"returned":returned,
+                    "has_more":has_more,"next_offset":next_offset
+                })
             })
             .collect();
 

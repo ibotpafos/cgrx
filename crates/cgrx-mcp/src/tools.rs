@@ -1995,11 +1995,20 @@ fn compact_coverage(value: &Value) -> Value {
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
-        .map(|item| json!([item.get("path"), item.get("status"), item.get("gap_count")]))
+        .map(|item| {
+            json!([
+                item.get("path"),
+                item.get("status"),
+                item.get("gap_count"),
+                item.get("returned"),
+                item.get("has_more"),
+                item.get("next_offset")
+            ])
+        })
         .collect();
     json!({
         "at":snapshot_tag(value.get("snapshot")),
-        "cols":["path","status","gaps"],
+        "cols":["path","status","gaps","returned","has_more","next_offset"],
         "rows":rows,
         "scopes":value.get("scopes"),
         "summary":value.get("summary"),
