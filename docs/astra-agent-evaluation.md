@@ -97,6 +97,15 @@ does not establish model quality, saved tokens, or successful code changes.
 
 ## First actionable finding
 
+The repository CI coverage budget is 18,289, measured against 18,080 on base
+`8da8d4e` with the same binary. The 209 additional records are 110 in the new
+Python runner, 73 in its tests, 24 in the added Rust regression test, and two
+excluded manifest/document paths. Existing runtime and MCP source gap counts,
+package fan-out (92), symbol fan-in (144), and unresolved dependencies (83)
+are unchanged. These are acknowledged analysis gaps, not proven coverage.
+The Python harness tests are included in CI; the existing policy allowing
+inconclusive results within explicit budgets remains unchanged.
+
 The initial pilot returned the correct target in both arms. Ordinary reading took
 11.86 s and 22,308 input tokens; CGRX-assisted reading took 34.04 s and 72,108 input
 tokens. This one task is diagnostic only. The coverage tool returned about 150 KB
