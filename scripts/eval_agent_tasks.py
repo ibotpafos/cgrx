@@ -100,7 +100,9 @@ def snapshot(task, destination):
                     raise ValueError("unsafe archive path")
                 # Oracles and historical evaluation reports must never enter agent context.
                 if (not member.isfile() or path.parts[0] in {"contracts", "docs", "local", ".codex", ".agents"}
-                        or path.name == "AGENTS.md"):
+                        or any(part in {"artifacts", "test-results", ".superpowers"} for part in path.parts)
+                        or any(part.startswith(".") and part not in {".github", ".cargo"} for part in path.parts[:-1])
+                        or path.name == "AGENTS.md" or path.name == ".env" or path.name.startswith(".env.")):
                     if not member.isdir():
                         excluded.append(member.name)
                     continue
@@ -108,7 +110,9 @@ def snapshot(task, destination):
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 dest.write_bytes(tar.extractfile(member).read())
     git(destination, "init", "-q")
-    git(destination, "add", "--all")
+    # These files came from a committed archive: local/global ignore rules must
+    # not remove them from the inventory used for integrity verification.
+    git(destination, "add", "--force", "--all")
     git(destination, "-c", "user.name=Evaluation", "-c", "user.email=eval@localhost",
         "-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false", "commit", "-qm", "Frozen evaluation source")
     for anchor in task["evidence"].values():

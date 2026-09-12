@@ -41,13 +41,18 @@ locations; committed source and span hashes must still match exactly.
 
 Each task uses a fresh source copy at its curated revision. Oracle file and span
 hashes are verified against committed blobs. Answer manifests, documentation,
-local reports, agent instructions and symlinks are excluded from model-visible
+local reports, environment files, agent instructions and symlinks are excluded from model-visible
 copies; exclusions and the resulting source digest are recorded. Both arms use
 the same read-only source copy, checked for changes after each arm. CGRX index
 startup is included in elapsed time. OS/provider cache state is uncontrolled,
 so order alternates and a single repetition is not a significance test.
 The initial exploratory run shared the host with development/build activity;
 its wall times are diagnostics, not controlled performance acceptance.
+Retained archive files are force-added to the snapshot inventory, including
+files matching local/global ignore rules. Ignore rules must not hide source
+mutations from the integrity check. The initial collections used an earlier
+exclusion/inventory policy recorded with those runs; their retained files are
+also checked independently against the original Git archive after collection.
 
 Personal config, plugins, apps, hooks, skill entries, memory and web search are
 disabled by explicit CLI configuration. Both arms retain ordinary shell reading.

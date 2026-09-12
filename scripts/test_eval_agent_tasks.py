@@ -110,17 +110,22 @@ class AgentEvaluationTests(unittest.TestCase):
             repo = root / "original"
             repo.mkdir()
             (repo / "a.py").write_text("def f(): pass\n")
+            (repo / ".gitignore").write_text("hidden.py\n")
+            (repo / "hidden.py").write_text("original = True\n")
+            (repo / ".env").write_text("EXAMPLE=fixture\n")
             (repo / "contracts").mkdir()
             (repo / "contracts/answers.json").write_text('{"answer":"f"}')
             evaluation.git(repo, "init", "-q")
-            evaluation.git(repo, "add", ".")
+            evaluation.git(repo, "add", "--force", ".")
             evaluation.git(repo, "-c", "user.name=Test", "-c", "user.email=test@localhost",
                            "-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null", "commit", "-qm", "test")
             task = {"repo": str(repo), "revision": evaluation.git(repo, "rev-parse", "HEAD").decode().strip(), "evidence": {}}
             identity = evaluation.snapshot(task, root / "copy")
             self.assertIn("contracts/answers.json", identity["excluded"])
             self.assertFalse((root / "copy/contracts/answers.json").exists())
-            (root / "copy/a.py").write_text("modified\n")
+            self.assertFalse((root / "copy/.env").exists())
+            self.assertIn("hidden.py", evaluation.git(root / "copy", "ls-files").decode().splitlines())
+            (root / "copy/hidden.py").write_text("modified\n")
             self.assertNotEqual(identity["source_digest"], evaluation.tree_digest(root / "copy"))
 
 
