@@ -26,7 +26,10 @@ PUBLIC_TEXT_FILES = sorted(
     for path in ROOT.rglob("*")
     if path.is_file()
     and path.suffix in PUBLIC_TEXT_SUFFIXES
-    and not any(part in {".git", ".worktrees", "node_modules", "target"} for part in path.parts)
+    and not any(
+        part in {".git", ".worktrees", "node_modules", "target"}
+        for part in path.relative_to(ROOT).parts
+    )
 )
 ARCHITECTURE_BENCHMARKS = (
     ROOT / "docs/benchmarks/architecture-communities-2026-09-07.md",
@@ -37,6 +40,9 @@ PRIVATE_CORPUS_LABELS = tuple(f"Private corpus {letter}" for letter in "ABCD")
 
 
 class PublicDocsPrivacyTests(unittest.TestCase):
+    def test_public_text_inventory_includes_validator(self):
+        self.assertIn(Path(__file__).resolve(), PUBLIC_TEXT_FILES)
+
     def test_public_text_has_no_machine_specific_paths(self):
         forbidden = re.compile(r"(?:/(?:Users|Volumes)/[^\s`]+|[A-Za-z]:\\Users\\[^\s`]+)")
         violations = []

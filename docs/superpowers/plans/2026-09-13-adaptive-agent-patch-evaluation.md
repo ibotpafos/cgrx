@@ -181,7 +181,7 @@ Run: `git add contracts/agent_patch_tasks_v1.json scripts/eval_agent_patches.py 
 
 Require the new document to state optional CGRX use, hidden-test preflight,
 three repetitions, end-task correctness, resource accounting, and the limits of
-the six-task corpus. Assert it contains no `/Users/`, `/Volumes/`, private repo
+the six-task corpus. Assert it contains no machine-specific paths, private repo
 mapping, or raw patch body.
 
 - [x] **Step 2: Run the document test and verify RED**
@@ -198,7 +198,7 @@ Python CI job. Explain that model runs and historical preflight remain local.
 - [x] **Step 4: Run a one-task, one-repetition pilot**
 
 Run the official bundled Codex CLI with `gpt-6-astra`, medium effort, a
-600-second task timeout, and the merged `/Users/ila/.local/bin/cgrx`. Require
+600-second task timeout, and the merged local CGRX binary. Require
 both arms to finish and grading to distinguish the buggy and reference states.
 
 - [ ] **Step 5: Run the six-task, three-repetition diagnostic comparison**
