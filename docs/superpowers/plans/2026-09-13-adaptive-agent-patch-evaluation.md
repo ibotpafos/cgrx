@@ -31,7 +31,7 @@
 - Consumes: a version-1 selection JSON and optional repository-alias map.
 - Produces: `load_tasks(selection: Path, repo_map: Path | None) -> list[dict]`, `hidden_test_patch(task: dict) -> bytes`, and `preflight(task: dict, timeout: int, cache_root: Path) -> dict`.
 
-- [ ] **Step 1: Write failing validation tests**
+- [x] **Step 1: Write failing validation tests**
 
 Add tests named `test_load_tasks_rejects_non_direct_fix`,
 `test_load_tasks_rejects_unsafe_and_unchanged_paths`, and
@@ -39,12 +39,12 @@ Add tests named `test_load_tasks_rejects_non_direct_fix`,
 repositories with one buggy and one fixed commit; assert unsafe paths, a fix with
 the wrong parent, and unchanged declared paths raise `ValueError`.
 
-- [ ] **Step 2: Run validation tests and verify RED**
+- [x] **Step 2: Run validation tests and verify RED**
 
 Run: `python3 -m unittest scripts.test_eval_agent_patches.ContractTests -v`
 Expected: import failure because `eval_agent_patches` does not exist.
 
-- [ ] **Step 3: Implement strict task loading and patch derivation**
+- [x] **Step 3: Implement strict task loading and patch derivation**
 
 Implement path validation with `Path.is_absolute()` and `".." in path.parts`;
 resolve aliases only through the supplied map; require
@@ -52,19 +52,19 @@ resolve aliases only through the supplied map; require
 hidden-test path to appear in `git diff --name-only BUGGY FIX`; derive the hidden
 patch with `git diff --binary BUGGY FIX -- <hidden paths>`.
 
-- [ ] **Step 4: Add and pass preflight behavior tests**
+- [x] **Step 4: Add and pass preflight behavior tests**
 
 Create `test_preflight_requires_buggy_failure_and_reference_success` using a
 temporary Python project whose hidden unittest fails on the buggy commit and
 passes on the fixed commit. Assert preflight records the two exit codes and
 rejects fail/fail and pass/pass fixtures.
 
-- [ ] **Step 5: Run focused tests**
+- [x] **Step 5: Run focused tests**
 
 Run: `python3 -m unittest scripts.test_eval_agent_patches.ContractTests scripts.test_eval_agent_patches.PreflightTests -v`
 Expected: all tests pass.
 
-- [ ] **Step 6: Commit the independently useful validator**
+- [x] **Step 6: Commit the independently useful validator**
 
 Run: `git add scripts/eval_agent_patches.py scripts/test_eval_agent_patches.py && git commit -m "test(eval): Validate historical patch tasks"`
 
