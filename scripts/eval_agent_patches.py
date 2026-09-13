@@ -163,7 +163,8 @@ def run_acceptance(task, repo, timeout=None, cache_root=None):
             environment.pop(key)
     environment["CARGO_NET_OFFLINE"] = "true"
     if cache_root is not None:
-        target = Path(cache_root) / task["id"]
+        source_key = hashlib.sha256(str(Path(repo).resolve()).encode()).hexdigest()[:16]
+        target = Path(cache_root) / task["id"] / source_key
         target.mkdir(parents=True, exist_ok=True)
         environment["CARGO_TARGET_DIR"] = str(target)
     result = subprocess.run(

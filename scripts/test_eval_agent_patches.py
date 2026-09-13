@@ -139,6 +139,48 @@ class PreflightTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "buggy revision"):
                 evaluation.preflight(always_passes, root / "always-passes")
 
+    def test_preflight_isolates_cargo_builds_between_revisions(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repo = root / "repo"
+            repo.mkdir()
+            git(repo, "init", "-q")
+            write(repo / "Cargo.toml", "[package]\nname='preflight_fixture'\nversion='0.1.0'\nedition='2021'\n")
+            write(repo / "src/lib.rs", "pub fn value() -> i32 { 1 }\n")
+            git(repo, "add", ".")
+            git(repo, "-c", "user.name=Test", "-c", "user.email=test@localhost",
+                "commit", "-qm", "buggy")
+            buggy = git(repo, "rev-parse", "HEAD")
+            write(repo / "src/lib.rs", "pub fn value() -> i32 { 2 }\n")
+            write(repo / "tests/hidden.rs",
+                  "#[test]\nfn fixed_value() { assert_eq!(preflight_fixture::value(), 2); }\n")
+            git(repo, "add", ".")
+            git(repo, "-c", "user.name=Test", "-c", "user.email=test@localhost",
+                "commit", "-qm", "fixed")
+            fixed = git(repo, "rev-parse", "HEAD")
+            task = {
+                "id": "cargo-cache-isolation",
+                "repo": "/corpus/project",
+                "buggy_revision": buggy,
+                "fix_revision": fixed,
+                "prompt": "Return two.",
+                "editable_paths": ["src/lib.rs"],
+                "hidden_test_paths": ["tests/hidden.rs"],
+                "acceptance": {
+                    "argv": ["cargo", "test", "--test", "hidden"],
+                    "timeout_seconds": 60,
+                },
+            }
+            manifest, mapping = selection(root, task)
+            loaded = evaluation.load_tasks(manifest, mapping)[0]
+
+            result = evaluation.preflight(
+                loaded, root / "preflight", root / "shared-cache"
+            )
+
+            self.assertNotEqual(result["buggy_exit_code"], 0)
+            self.assertEqual(result["reference_exit_code"], 0)
+
 
 class ExecutionTests(unittest.TestCase):
     def test_command_disables_personal_state_and_only_treatment_adds_cgrx(self):
