@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "split": "exploratory",
+  "scope": "Read-only relationship discovery; not patch correctness or heldout superiority",
+  "tasks": [
+    "cgrx-git-text-git-bytes",
+    "rust-tsconfig-read-parse",
+    "rust-tsimports-resolve-module",
+    "rust-pack-extract-walk",
+    "rust-typescript-import-extraction",
+    "rust-typescript-extract-reference",
+    "rust-tsconfig-read-closure-unresolved",
+    "corpus_a-notification-preferences",
+    "corpus_a-dedupe-envelope",
+    "corpus_a-channel-schema",
+    "corpus_a-envelope-payload",
+    "corpus_a-analytics-page-dashboard",
+    "corpus_a-analytics-page-engineers",
+    "corpus_b-bool-default",
+    "corpus_b-int64-list",
+    "corpus_b-network-parse-sanitize",
+    "corpus_b-config-shared-secret",
+    "corpus_b-ratelimit-allow-shard",
+    "corpus_b-go-networkprobe-import-domain",
+    "corpus_b-go-context-err-unresolved"
+  ]
+}

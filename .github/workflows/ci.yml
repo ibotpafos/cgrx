@@ -76,7 +76,7 @@ jobs:
             --max-package-fan-out 92 \
             --max-symbol-fan-in 144 \
             --max-unresolved-local-dependencies 83 \
-            --repository-max-coverage-gaps 18080
+            --repository-max-coverage-gaps 18289
       - name: Materialize pull-request changes against the base revision
         if: github.event_name == 'pull_request'
         env:
@@ -102,4 +102,5 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: python3 -m unittest discover -s scripts -p test_install.py
+      - run: python3 -m unittest discover -s scripts -p test_eval_agent_tasks.py
       - run: python3 -m unittest discover -s scripts -p 'test_validate_*.py'

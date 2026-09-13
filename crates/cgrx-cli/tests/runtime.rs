@@ -2136,6 +2136,19 @@ fn check_index_coverage_classifies_exact_paths_and_bounded_scopes() {
     assert_eq!(second["scopes"][0]["gaps"].as_array().unwrap().len(), 1);
     assert_eq!(second["scopes"][0]["has_more"], false);
     assert_ne!(first["scopes"][0]["gaps"], second["scopes"][0]["gaps"]);
+    let path_page = runtime
+        .check_index_coverage(&["dynamic.ts".to_owned()], &[], 0, 1)
+        .expect("exact path first page");
+    let exhausted = runtime
+        .check_index_coverage(&["dynamic.ts".to_owned()], &[], 1, 1)
+        .expect("exact path exhausted page");
+    assert_eq!(path_page["paths"][0]["returned"], 1);
+    assert_eq!(path_page["paths"][0]["gap_count"], 1);
+    assert_eq!(exhausted["paths"][0]["returned"], 0);
+    assert_eq!(exhausted["paths"][0]["gap_count"], 1);
+    assert_eq!(exhausted["paths"][0]["status"], "partial");
+    assert_eq!(exhausted["paths"][0]["has_more"], false);
+    assert!(exhausted["paths"][0]["next_offset"].is_null());
     assert_eq!(
         runtime
             .check_index_coverage(&[], &["**".to_owned()], 0, 0)
@@ -2143,6 +2156,38 @@ fn check_index_coverage_classifies_exact_paths_and_bounded_scopes() {
             .code(),
         "cgrx.invalid_arguments"
     );
+}
+
+#[test]
+fn exact_path_coverage_limits_dense_gap_payloads_without_hiding_total() {
+    let repository = TestDirectory::new("coverage-dense-path");
+    git(repository.path(), &["init", "-q"]);
+    git(
+        repository.path(),
+        &["config", "user.email", "test@example.invalid"],
+    );
+    git(repository.path(), &["config", "user.name", "CGRX Test"]);
+    let source = (0..12)
+        .map(|i| {
+            format!("function run{i}(service: any, method: string) {{ service[method](); }}\n")
+        })
+        .collect::<String>();
+    fs::write(repository.path().join("dynamic.ts"), source).unwrap();
+    git(repository.path(), &["add", "."]);
+    git(repository.path(), &["commit", "-qm", "fixture"]);
+    let state = TestDirectory::new("coverage-dense-path-state");
+    Runtime::index(repository.path(), state.path()).unwrap();
+    let runtime = Runtime::open(state.path()).unwrap();
+    let paths = ["dynamic.ts".to_owned()];
+    let first = runtime.check_index_coverage(&paths, &[], 0, 2).unwrap();
+    let second = runtime.check_index_coverage(&paths, &[], 2, 2).unwrap();
+    assert_eq!(first["paths"][0]["gap_count"], 12);
+    assert_eq!(first["paths"][0]["gaps"].as_array().unwrap().len(), 2);
+    assert_eq!(first["paths"][0]["has_more"], true);
+    assert_eq!(first["paths"][0]["next_offset"], 2);
+    assert_eq!(second["paths"][0]["gap_count"], 12);
+    assert_eq!(second["paths"][0]["status"], "partial");
+    assert_ne!(first["paths"][0]["gaps"], second["paths"][0]["gaps"]);
 }
 
 #[test]

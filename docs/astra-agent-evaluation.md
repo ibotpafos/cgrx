@@ -1,0 +1,182 @@
+# Agent evaluation for GPT-6 Astra
+
+`scripts/eval_agent_tasks.py` runs the same read-only task with ordinary local
+tools and with CGRX MCP available. The default model is `gpt-6-astra`; `--model`
+permits a separate run with another explicitly selected model. There is no
+automatic model fallback.
+
+The first selection contains 20 previously curated tasks: seven CGRX, six private
+corpus A, and seven private corpus B tasks, including references, imports and two
+ambiguity cases. Published identifiers preserve the repository's corpus aliases.
+This is an **exploratory discovery benchmark**, not heldout evidence, patch
+correctness, or a claim of superiority. Exact file/site hints make many cases
+easy for direct source reading. Future multi-file bug fixes need independently
+curated acceptance tests and repetitions before measuring coding outcomes.
+
+## Run
+
+Use a recent official Codex CLI supporting `--ignore-user-config`,
+`--ephemeral` and `--output-schema`. The unrelated npm executable named
+`codex` is not sufficient. A signed-in CLI is required; no API key is embedded.
+The runner uses [Codex non-interactive execution](https://learn.chatgpt.com/docs/non-interactive-mode).
+
+```sh
+python3 scripts/eval_agent_tasks.py --repo-map /private/repo-map.json --output /tmp/agent-validation
+python3 scripts/eval_agent_tasks.py --run \
+  --codex /absolute/path/to/codex --cgrx /absolute/path/to/cgrx \
+  --model gpt-6-astra --effort medium --timeout 120 \
+  --repo-map /private/repo-map.json \
+  --output /absolute/private/output-directory
+```
+
+The validation command makes no model calls. `--limit 1` runs a pilot when
+combined with `--run`. The output directory must not exist, preventing accidental
+overwrite of evidence. The historical source repositories referenced by
+`contracts/real_tasks_v1.json` must be available locally with their Git objects.
+Public clones without those private fixtures cannot run this selection. Supply
+`--repo-map` with a private JSON object mapping `/private/cgrx-corpus/cgrx`,
+`/private/cgrx-corpus/corpus-a`, and `/private/cgrx-corpus/corpus-b` to their actual
+local Git repositories. Never commit that mapping. Overrides change only local
+locations; committed source and span hashes must still match exactly.
+
+Each task uses a fresh source copy at its curated revision. Oracle file and span
+hashes are verified against committed blobs. Answer manifests, documentation,
+local reports, environment files, agent instructions and symlinks are excluded from model-visible
+copies; exclusions and the resulting source digest are recorded. Both arms use
+the same read-only source copy, checked for changes after each arm. CGRX index
+startup is included in elapsed time. OS/provider cache state is uncontrolled,
+so order alternates and a single repetition is not a significance test.
+The initial exploratory run shared the host with development/build activity;
+its wall times are diagnostics, not controlled performance acceptance.
+Retained archive files are force-added to the snapshot inventory, including
+files matching local/global ignore rules. Ignore rules must not hide source
+mutations from the integrity check. The initial collections used an earlier
+exclusion/inventory policy recorded with those runs; their retained files are
+also checked independently against the original Git archive after collection.
+
+Personal config, plugins, apps, hooks, skill entries, memory and web search are
+disabled by explicit CLI configuration. Both arms retain ordinary shell reading.
+Only the treatment adds CGRX MCP. The task asks the model to stay in the source
+copy; the read-only sandbox is not an independent filesystem read-isolation
+boundary. Raw tool transcripts permit auditing this constraint.
+
+The treatment sets `mcp_servers.cgrx.required=true` and a 60-second startup
+timeout. Codex otherwise gives optional MCP servers a default 1-second grace
+period for the initial tool catalog; a cold server may miss that catalog.
+See the [official MCP configuration](https://learn.chatgpt.com/docs/extend/mcp?surface=cli).
+Required startup prevents a silently unavailable treatment. It does not force
+the model to use a tool when direct reading is sufficient. Earlier optional-MCP
+collections are configuration diagnostics, not clean treatment comparisons.
+
+Both arms use the same model, effort and hard wall-clock timeout. Token usage is
+measured, **not hard-capped**. `model_requested` records the requested identifier;
+the CLI event stream does not attest an immutable provider model snapshot.
+`protocol.json` records executable hashes and corpus/selection hashes. No package
+installation, external messages, deployments or source edits are requested.
+
+## Results and limits
+
+### Completed collection: 2026-09-12
+
+The final collection used required MCP startup, disabled memory, the patched
+binary, `gpt-6-astra` at medium effort, and a 120-second timeout per arm.
+All 20 pairs completed without failures. CGRX was actually used in all 20
+treatment runs (72 CGRX calls).
+An independent comparison of all 20 retained source copies against their Git
+archives checked 54,922 files and found no missing or modified files.
+
+| Measurement | Ordinary tools | CGRX available |
+| --- | ---: | ---: |
+| Correct answers | 20/20 | 20/20 |
+| Input tokens, including cached input | 672,866 | 1,447,546 |
+| Cached input tokens | 506,880 | 1,167,872 |
+| Output tokens | 3,760 | 8,052 |
+| Tool calls | 39 | 115 |
+| Median elapsed time | 17.72 s | 52.00 s |
+| Total elapsed time across tasks | 340.44 s | 1,252.25 s |
+
+This selection shows **no accuracy gain** and 2.15 times as many input tokens
+with CGRX. Wall time includes cold index/startup work and shared-host activity;
+it is diagnostic, not a controlled speed comparison. Cached token accounting is
+shown separately and these token totals are not a dollar-cost estimate. The
+result supports using direct reads for exact known spans and evaluating CGRX
+on harder multi-file changes with independent acceptance tests next. It does
+not establish an advantage on coding tasks or other models.
+
+The public source selection hash is
+`98fa96dd92a7e0bcbd9be8ab337f97da2cdf8fe1834d80fc611a41a50921aee7`;
+the measured runner hash is
+`7f756cd1747bacf5f073766293ee9e397083bf5afd7af477fd7e183d1ea5bbca`;
+the patched binary hash is
+`da2a2297bac09243c672fde4a22de9f869b4ce8bdf5a0db5cbe8b41f74496f26`.
+The local protocol and raw records retain the remaining provenance. No model
+installation or release is implied by this collection.
+
+`summary.json` aggregates only complete pairs and separately lists failed runs.
+The collector exits nonzero if any run is incomplete; a completed incorrect
+answer remains a valid collection result and is scored separately.
+Each arm preserves its answer, terminal status, elapsed time, token usage, tool
+counts and observed CGRX calls. Unknown usage stays unknown. Correctness requires
+the exact target declaration path/name and relation, or a justified unresolved
+target matching the curated oracle. Explanation quality still needs manual
+review. An incorrect answer is a completed, incorrect run; a failed process or
+timeout is incomplete and never a correct empty answer.
+
+For a Go package import, a directory is also accepted when the validated target
+span is an actual `package NAME` declaration. The representative source file is
+evidence of a package, not the package's identity. This scorer correction was
+made after the first run and is disclosed separately from its frozen raw scores.
+
+Raw answers, logs and frozen private sources stay in the chosen local output
+directory. Do not commit them to the public repository. A passing harness test
+does not establish model quality, saved tokens, or successful code changes.
+
+## First actionable finding
+
+The repository CI coverage budget is 18,289, measured against 18,080 on base
+`8da8d4e` with the same binary. The 209 additional records are 110 in the new
+Python runner, 73 in its tests, 24 in the added Rust regression test, and two
+excluded manifest/document paths. Existing runtime and MCP source gap counts,
+package fan-out (92), symbol fan-in (144), and unresolved dependencies (83)
+are unchanged. These are acknowledged analysis gaps, not proven coverage.
+The Python harness tests are included in CI; the existing policy allowing
+inconclusive results within explicit budgets remains unchanged.
+
+The initial pilot returned the correct target in both arms. Ordinary reading took
+11.86 s and 22,308 input tokens; CGRX-assisted reading took 34.04 s and 72,108 input
+tokens. This one task is diagnostic only. The coverage tool returned about 150 KB
+for one file despite `limit=2`: exact-path results ignored pagination while scope
+results already respected it.
+
+Exact-path coverage now applies `offset`/`limit`, preserves the full `gap_count`
+and `partial` status, and exposes `returned`, `has_more`, and `next_offset` in
+both structured and compact output. Exhausting a page never makes a partially
+indexed file clean. The embedded discovery skill now permits direct reading of
+an already-known source span and small coverage pages. Neither change alters
+the requirement to verify evidence actually derived from the graph.
+
+A real MCP invocation on the pilot source snapshot with `limit=2` returned
+1,284 bytes after this fix, retaining `gap_count=1674`, `returned=2`,
+`has_more=true`, and `next_offset=2`. This measures response size, not an
+end-task model improvement.
+
+The first local base had unrelated build/watch integration failures. This branch
+was subsequently rebased onto current `origin/main`; those temporary prerequisite
+repairs are not part of this change.
+
+A patched-model pilot returned the right answer but did not call CGRX, so its
+timing is not evidence of the patch's benefit. A separate explicit Astra tool
+smoke did call the patched coverage endpoint and correctly reported the total,
+page size and continuation flag. Tool availability/configuration and actual
+tool use must be distinguished when interpreting the paired run.
+
+The initial 20-pair diagnostic run completed without process failures. Frozen
+exact-file scoring gave 19/20 for both arms; source review found the remaining
+case was a correct Go package-directory answer. Source-validated package
+identity scoring gives 20/20 for both. Baseline input/output totals were
+621,610 / 3,588 tokens; configured-CGRX totals were 1,359,618 / 7,122. CGRX was
+actually called in 12 of 20 configured runs. This did not establish a quality
+gain. The separate Codex `memories` feature was not explicitly disabled in this
+first collection (no memory-file access appeared in recorded commands), so it
+is retained only as diagnostic evidence. A corrected run disables that feature
+and external memory import explicitly, as well as skill search.

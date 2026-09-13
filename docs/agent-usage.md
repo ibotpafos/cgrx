@@ -38,6 +38,14 @@ whole-program coverage or evidence of correctness.
 
 ## Small agent A/B protocol
 
+For Codex agent evaluations, set `mcp_servers.cgrx.required=true` and an adequate
+`startup_timeout_sec` (for example 60). Optional MCP startup has a default
+1-second initial-catalog grace period, so a cold index can leave the model
+without CGRX tools. Required startup fails visibly instead. This is an
+evaluation configuration, not a recommendation to require every optional
+server in an interactive workspace. See the
+[Codex MCP configuration reference](https://learn.chatgpt.com/docs/extend/mcp?surface=cli).
+
 Use a fixed task set with independently specified acceptance tests and expected
 source evidence. Pin repository revision/patch, model, prompt, tool versions,
 budget and cache policy. Run A (ordinary source discovery) and B (CGRX discovery

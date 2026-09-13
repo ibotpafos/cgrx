@@ -1654,7 +1654,7 @@ fn serve_exposes_real_search_graph_and_trace_path_tools() {
     .expect("coverage visible JSON");
     assert_eq!(
         coverage_visible["rows"][0],
-        serde_json::json!(["main.rs", "indexed", 0])
+        serde_json::json!(["main.rs", "indexed", 0, 0, false, null])
     );
 }
 
