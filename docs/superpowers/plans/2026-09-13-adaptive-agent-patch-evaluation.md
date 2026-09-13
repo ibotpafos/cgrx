@@ -177,19 +177,19 @@ Run: `git add contracts/agent_patch_tasks_v1.json scripts/eval_agent_patches.py 
 - Consumes: the committed runner/contract and local Codex/CGRX/repository paths.
 - Produces: public methodology and aggregate results with no private paths, prompts containing secrets, raw model logs, or source patches.
 
-- [ ] **Step 1: Add a failing public-document validation test**
+- [x] **Step 1: Add a failing public-document validation test**
 
 Require the new document to state optional CGRX use, hidden-test preflight,
 three repetitions, end-task correctness, resource accounting, and the limits of
 the six-task corpus. Assert it contains no `/Users/`, `/Volumes/`, private repo
 mapping, or raw patch body.
 
-- [ ] **Step 2: Run the document test and verify RED**
+- [x] **Step 2: Run the document test and verify RED**
 
 Run: `python3 -m unittest scripts.test_validate_public_docs_privacy -v`
 Expected: failure because `docs/agent-patch-evaluation.md` is absent.
 
-- [ ] **Step 3: Document commands and add harness tests to CI**
+- [x] **Step 3: Document commands and add harness tests to CI**
 
 Write validation, preflight, pilot, resume, and full-run commands. Add
 `python3 -m unittest discover -s scripts -p test_eval_agent_patches.py` to the
