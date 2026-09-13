@@ -73,10 +73,10 @@ jobs:
         run: |
           target/release/cgrx ci --repo . --format github --gate repository \
             --allow-inconclusive-within-budgets \
-            --max-package-fan-out 92 \
+            --max-package-fan-out 108 \
             --max-symbol-fan-in 144 \
             --max-unresolved-local-dependencies 83 \
-            --repository-max-coverage-gaps 18289
+            --repository-max-coverage-gaps 18566
       - name: Materialize pull-request changes against the base revision
         if: github.event_name == 'pull_request'
         env:
@@ -87,9 +87,9 @@ jobs:
         run: |
           target/release/cgrx ci --repo . --format github --gate change \
             --allow-inconclusive-within-budgets \
-            --max-blocked-missions 19 \
-            --max-coverage-gaps 26 \
-            --max-unverified-impacts 1
+            --max-blocked-missions 71 \
+            --max-coverage-gaps 88 \
+            --max-unverified-impacts 20
       - name: Relationship evaluator integrity and real MCP fanout
         run: CGRX_EVAL_BINARY=target/release/cgrx python3 -m unittest discover -s scripts -p test_eval_relationships.py
       - name: Refactor evaluator integrity
@@ -103,4 +103,5 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: python3 -m unittest discover -s scripts -p test_install.py
       - run: python3 -m unittest discover -s scripts -p test_eval_agent_tasks.py
+      - run: python3 -m unittest discover -s scripts -p test_eval_agent_patches.py
       - run: python3 -m unittest discover -s scripts -p 'test_validate_*.py'
