@@ -220,7 +220,7 @@ Run: `cargo test --locked --workspace`
 Run: `git diff --check`
 Expected: all commands pass.
 
-- [ ] **Step 7: Commit and open a draft pull request**
+- [x] **Step 7: Commit and open a draft pull request**
 
 Run: `git add .github/workflows/ci.yml docs/agent-patch-evaluation.md scripts/test_validate_public_docs_privacy.py && git commit -m "docs(eval): Publish optional CGRX patch evidence"`
 Push `feat/agent-patch-eval`, open a draft PR against `main`, link IBO-292, and
