@@ -78,7 +78,7 @@ Run: `git add scripts/eval_agent_patches.py scripts/test_eval_agent_patches.py &
 - Consumes: validated task dictionaries and the same Codex/model/effort settings for both arms.
 - Produces: `agent_command(...) -> list[str]`, `collect_patch(repo: Path) -> tuple[bytes, list[str]]`, `grade_patch(task: dict, patch: bytes, directory: Path, timeout: int, cache_root: Path) -> dict`, and `run_one(...) -> dict`.
 
-- [ ] **Step 1: Write failing command and patch-policy tests**
+- [x] **Step 1: Write failing command and patch-policy tests**
 
 Add `test_command_disables_personal_state_and_only_treatment_adds_cgrx`,
 `test_collect_patch_includes_untracked_files`, and
@@ -86,12 +86,12 @@ Add `test_command_disables_personal_state_and_only_treatment_adds_cgrx`,
 disabled web/memory/skills, required treatment MCP startup, exact changed-path
 capture, and no acceptance subprocess on a policy violation.
 
-- [ ] **Step 2: Run the new tests and verify RED**
+- [x] **Step 2: Run the new tests and verify RED**
 
 Run: `python3 -m unittest scripts.test_eval_agent_patches.ExecutionTests -v`
 Expected: failures for missing execution functions.
 
-- [ ] **Step 3: Implement minimal execution and grading**
+- [x] **Step 3: Implement minimal execution and grading**
 
 Run Codex with a JSON summary schema and a workspace-write sandbox. Stage all
 agent changes, generate `git diff --cached --binary HEAD`, reject empty or
@@ -99,19 +99,19 @@ out-of-policy patches, materialize a fresh buggy grading copy, apply the agent
 patch and hidden test patch with `git apply`, and execute argv-form commands with
 network proxy variables removed and a task-specific `CARGO_TARGET_DIR`.
 
-- [ ] **Step 4: Test alternative valid patches and hidden-test isolation**
+- [x] **Step 4: Test alternative valid patches and hidden-test isolation**
 
 Add `test_grade_accepts_alternative_patch_that_passes_hidden_test` and
 `test_model_snapshot_does_not_contain_hidden_test`. The former must use a patch
 different from the reference fix; the latter must assert the model snapshot
 lacks the hidden test file before grading.
 
-- [ ] **Step 5: Run all harness tests**
+- [x] **Step 5: Run all harness tests**
 
 Run: `python3 -m unittest scripts.test_eval_agent_patches -v`
 Expected: all tests pass.
 
-- [ ] **Step 6: Commit execution and grading**
+- [x] **Step 6: Commit execution and grading**
 
 Run: `git add scripts/eval_agent_patches.py scripts/test_eval_agent_patches.py && git commit -m "feat(eval): Grade optional CGRX patch attempts"`
 
