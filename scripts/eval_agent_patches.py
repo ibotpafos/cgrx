@@ -333,9 +333,41 @@ def sha(data):
     return hashlib.sha256(data).hexdigest()
 
 
+def prepare_attempt_directory(directory):
+    directory = Path(directory)
+    if directory.exists():
+        if (directory / "result.json").exists():
+            raise ValueError(f"completed attempt directory already exists: {directory.name}")
+        archive_root = directory.parent / "incomplete"
+        archive_root.mkdir(exist_ok=True)
+        sequence = 1
+        while True:
+            archive = archive_root / f"{directory.name}-{sequence:02d}"
+            if not archive.exists():
+                directory.rename(archive)
+                break
+            sequence += 1
+    directory.mkdir(parents=True)
+
+
+def communicate_agent(process, prompt, timeout):
+    try:
+        process.communicate(prompt, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        os.killpg(process.pid, signal.SIGKILL)
+        process.communicate()
+        return True
+    except BaseException:
+        if process.poll() is None:
+            os.killpg(process.pid, signal.SIGKILL)
+        process.communicate()
+        raise
+    return False
+
+
 def run_one(args, task, task_index, repetition, arm):
     directory = args.output / f"{task_index:02d}-r{repetition:02d}-{arm}"
-    directory.mkdir(parents=True, exist_ok=False)
+    prepare_attempt_directory(directory)
     source = model_snapshot(task, directory / "source")
     schema = directory / "schema.json"
     schema.write_text(json.dumps(PATCH_SUMMARY_SCHEMA))
@@ -367,11 +399,7 @@ def run_one(args, task, task_index, repetition, arm):
             text=True,
             start_new_session=True,
         )
-        try:
-            process.communicate(agent_prompt(task, arm), timeout=args.timeout)
-        except subprocess.TimeoutExpired:
-            os.killpg(process.pid, signal.SIGKILL)
-            process.communicate()
+        if communicate_agent(process, agent_prompt(task, arm), args.timeout):
             record["status"] = "agent_timeout"
     record["latency_ms"] = round((time.monotonic() - started) * 1000, 1)
     record["exit_code"] = process.returncode

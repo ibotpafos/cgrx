@@ -195,7 +195,7 @@ Write validation, preflight, pilot, resume, and full-run commands. Add
 `python3 -m unittest discover -s scripts -p test_eval_agent_patches.py` to the
 Python CI job. Explain that model runs and historical preflight remain local.
 
-- [ ] **Step 4: Run a one-task, one-repetition pilot**
+- [x] **Step 4: Run a one-task, one-repetition pilot**
 
 Run the official bundled Codex CLI with `gpt-6-astra`, medium effort, a
 600-second task timeout, and the merged `/Users/ila/.local/bin/cgrx`. Require
@@ -207,7 +207,11 @@ Use a new local output directory and preserve all 36 arm attempts. Do not tune
 CGRX or task grading after inspecting failures. Record exact success, usage,
 latency, policy, actual CGRX-call, and source-integrity results in the document.
 
-- [ ] **Step 6: Run repository verification**
+Deferred after six graded attempts on the first task to conserve model usage.
+The partial aggregate is published with no CGRX-effect claim; no further Astra
+attempts are authorized for this plan.
+
+- [x] **Step 6: Run repository verification**
 
 Run: `python3 -m unittest scripts.test_eval_agent_patches scripts.test_validate_public_docs_privacy -v`
 Run: `cargo fmt --all -- --check`

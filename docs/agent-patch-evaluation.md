@@ -74,6 +74,10 @@ directory resumes missing attempts only after every protocol field and content
 hash matches. A different runner, selection, mapping, executable, model, effort,
 timeout, repetition count, or task set is rejected.
 
+If a run is interrupted, the next matching resume moves the unfinished attempt
+under the local output directory's `incomplete/` archive and retries that arm.
+Completed `result.json` records are never rerun.
+
 The repository map is a private JSON object from the committed alias
 `/private/cgrx-corpus/cgrx` to a local clone. Keep it and the output directory
 outside the repository. Raw source copies, model events, stderr, patches,
@@ -95,6 +99,20 @@ dollar-cost estimate. A tie is not evidence that CGRX helps.
 
 ## First diagnostic collection
 
-The first six-task, three-repetition comparison will be recorded here after the
-preflight and pilot protocols complete. Until then, this document defines the
-method and makes no patch-quality claim.
+The six-task preflight completed: every buggy revision failed its hidden
+acceptance command and every direct reference-fix revision passed. The planned
+three-repetition comparison was then stopped after the first task to conserve
+model usage. Six of 36 planned attempts have complete grading records; one
+additional attempt was interrupted during local grading and is excluded.
+
+| Arm | Completed | Correct | Median latency | Input tokens | Cached input | Output tokens | Tool calls |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Baseline | 3 | 3 | 66.1 s | 609,981 | 487,936 | 3,910 | 25 |
+| CGRX available | 3 | 3 | 71.7 s | 710,787 | 599,168 | 3,473 | 29 |
+
+All three recorded pairs were correctness ties. There were no policy violations
+among the recorded attempts. The treatment agent made zero CGRX calls, so these
+records measure only tool availability overhead and ordinary model variance.
+They cover one Git-index task and cannot estimate CGRX's effect on patch
+correctness, other tasks, or broader coding work. The remaining comparison is
+deferred rather than treated as negative or positive evidence.

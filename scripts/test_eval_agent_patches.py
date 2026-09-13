@@ -4,6 +4,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -183,6 +184,18 @@ class PreflightTests(unittest.TestCase):
 
 
 class ExecutionTests(unittest.TestCase):
+    def test_interrupted_agent_process_is_killed_before_reraising(self):
+        process = mock.Mock(pid=1234)
+        process.communicate.side_effect = [KeyboardInterrupt(), ("", "")]
+        process.poll.return_value = None
+
+        with mock.patch.object(evaluation.os, "killpg") as killpg:
+            with self.assertRaises(KeyboardInterrupt):
+                evaluation.communicate_agent(process, "prompt", timeout=10)
+
+        killpg.assert_called_once_with(1234, evaluation.signal.SIGKILL)
+        self.assertEqual(process.communicate.call_count, 2)
+
     def test_command_disables_personal_state_and_only_treatment_adds_cgrx(self):
         baseline = evaluation.agent_command(
             Path("/codex"), "gpt-6-astra", "medium", Path("/repo"),
@@ -293,6 +306,21 @@ class ExecutionTests(unittest.TestCase):
 
 
 class SummaryTests(unittest.TestCase):
+    def test_prepare_attempt_archives_interrupted_directory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            attempt = output / "00-r00-baseline"
+            attempt.mkdir()
+            (attempt / "events.jsonl").write_text("partial\n")
+
+            evaluation.prepare_attempt_directory(attempt)
+
+            self.assertTrue(attempt.is_dir())
+            self.assertEqual(list(attempt.iterdir()), [])
+            archives = list((output / "incomplete").iterdir())
+            self.assertEqual(len(archives), 1)
+            self.assertEqual((archives[0] / "events.jsonl").read_text(), "partial\n")
+
     def test_summary_reports_per_task_rates_and_paired_outcomes(self):
         records = [
             self.record("a", 0, "baseline", True, 10, 3),
