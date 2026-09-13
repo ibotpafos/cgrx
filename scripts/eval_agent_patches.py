@@ -243,7 +243,10 @@ def agent_prompt(task, arm):
 
 
 def collect_patch(repo):
-    git(repo, "add", "--force", "--all")
+    # Every archived source file was force-added to the snapshot's initial
+    # commit. A normal add therefore keeps changes to tracked ignored files but
+    # excludes new build outputs such as Cargo's target directory.
+    git(repo, "add", "--all")
     paths = git(repo, "diff", "--cached", "--name-only", "HEAD").decode().splitlines()
     patch = git(repo, "diff", "--cached", "--binary", "HEAD")
     return patch, paths

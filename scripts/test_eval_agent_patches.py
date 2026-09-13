@@ -214,6 +214,25 @@ class ExecutionTests(unittest.TestCase):
             self.assertEqual(paths, ["new.py"])
             self.assertIn(b"new.py", patch)
 
+    def test_collect_patch_ignores_untracked_build_outputs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            _, task = fixture(root)
+            manifest, mapping = selection(root, task)
+            loaded = evaluation.load_tasks(manifest, mapping)[0]
+            source = evaluation.model_snapshot(loaded, root / "source")
+            write(source / ".gitignore", "target/\n")
+            git(source, "add", ".gitignore")
+            git(source, "-c", "user.name=Test", "-c", "user.email=test@localhost",
+                "commit", "-qm", "ignore build output")
+            write(source / "app.py", "def value():\n    return 1 + 1\n")
+            write(source / "target/debug/artifact", "compiled\n")
+
+            patch, paths = evaluation.collect_patch(source)
+
+            self.assertEqual(paths, ["app.py"])
+            self.assertNotIn(b"target/debug/artifact", patch)
+
     def test_grade_rejects_disallowed_paths_before_tests(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
