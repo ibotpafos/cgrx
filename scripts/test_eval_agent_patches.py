@@ -231,5 +231,70 @@ class ExecutionTests(unittest.TestCase):
             self.assertFalse((source / "test_hidden.py").exists())
 
 
+class SummaryTests(unittest.TestCase):
+    def test_summary_reports_per_task_rates_and_paired_outcomes(self):
+        records = [
+            self.record("a", 0, "baseline", True, 10, 3),
+            self.record("a", 0, "cgrx", False, 20, 5),
+            self.record("a", 1, "baseline", False, 30, 7),
+            self.record("a", 1, "cgrx", True, 40, 11),
+            self.record("b", 0, "baseline", True, 50, 13),
+            self.record("b", 0, "cgrx", True, 60, 17),
+        ]
+
+        summary = evaluation.summarize(records, repetitions=2)
+
+        self.assertEqual(summary["paired_outcomes"], {
+            "baseline_wins": 1, "cgrx_wins": 1, "ties": 1,
+        })
+        self.assertEqual(summary["arms"]["baseline"]["correct"], 2)
+        self.assertEqual(summary["arms"]["cgrx"]["correct"], 2)
+        self.assertEqual(summary["arms"]["baseline"]["input_tokens"], 23)
+        self.assertEqual(summary["per_task"]["a"]["baseline"]["success_rate"], 0.5)
+        self.assertEqual(summary["per_task"]["b"]["cgrx"]["success_rate"], 1.0)
+
+    def test_summary_keeps_incomplete_runs_out_of_correctness_denominator(self):
+        complete = self.record("a", 0, "baseline", True, 10, 3)
+        incomplete = self.record("a", 0, "cgrx", False, 20, 5)
+        incomplete.update(status="agent_timeout", complete=False, usage=None)
+
+        summary = evaluation.summarize([complete, incomplete], repetitions=1)
+
+        self.assertEqual(summary["arms"]["baseline"]["completed"], 1)
+        self.assertEqual(summary["arms"]["cgrx"]["completed"], 0)
+        self.assertIsNone(summary["arms"]["cgrx"]["success_rate"])
+        self.assertEqual(summary["complete_pairs"], 0)
+        self.assertEqual(summary["incomplete_runs"][0]["status"], "agent_timeout")
+
+    def test_existing_output_resumes_only_matching_protocol(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "output"
+            self.assertEqual(evaluation.ensure_output(output, {"model": "astra"}), [])
+            run = output / "00-r00-baseline"
+            run.mkdir()
+            (run / "result.json").write_text(json.dumps({"task": "a", "arm": "baseline"}))
+
+            resumed = evaluation.ensure_output(output, {"model": "astra"})
+
+            self.assertEqual(resumed, [{"task": "a", "arm": "baseline"}])
+            with self.assertRaisesRegex(ValueError, "protocol mismatch"):
+                evaluation.ensure_output(output, {"model": "other"})
+
+    @staticmethod
+    def record(task, repetition, arm, correct, latency, tokens):
+        return {
+            "task": task,
+            "repetition": repetition,
+            "arm": arm,
+            "status": "completed",
+            "complete": True,
+            "correct": correct,
+            "latency_ms": latency,
+            "usage": {"input_tokens": tokens, "output_tokens": 1},
+            "tool_calls": 2,
+            "cgrx_calls": 1 if arm == "cgrx" else 0,
+        }
+
+
 if __name__ == "__main__":
     unittest.main()

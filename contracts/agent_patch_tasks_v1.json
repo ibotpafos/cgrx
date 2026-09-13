@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "split": "historical_patch",
+  "scope": "Six frozen historical CGRX fixes for paired coding-agent evaluation; not a broad superiority claim",
+  "tasks": [
+    {
+      "id": "preserve-git-index-on-read",
+      "repo": "/private/cgrx-corpus/cgrx",
+      "buggy_revision": "be81f1d005043be3730050d496496e0613fc5839",
+      "fix_revision": "a1caa1df2a35427121f7febd07f1b487cde13efb",
+      "prompt": "Managed runtime read queries must not rewrite the repository Git index when only metadata changes. Preserve index bytes and modification time in both ordinary and linked worktrees while still refreshing CGRX metadata as needed.",
+      "editable_paths": ["crates/cgrx-cli/src/runtime.rs"],
+      "hidden_test_paths": ["crates/cgrx-cli/tests/runtime.rs"],
+      "acceptance": {"argv": ["cargo", "test", "-p", "cgrx-cli", "--test", "runtime", "refresh_does_not_rewrite"], "timeout_seconds": 600}
+    },
+    {
+      "id": "retain-proven-impact-with-gap",
+      "repo": "/private/cgrx-corpus/cgrx",
+      "buggy_revision": "38252ca8ae5a381d3ef8d3669200ac30699e9df0",
+      "fix_revision": "f076819d76580770733b84347f1af56e980a8fe4",
+      "prompt": "Risk analysis must retain a current, source-proven impact even when another changed area has an unrelated dynamic-dispatch gap. It must still abstain for a removed target or when the current target source cannot be proven across files.",
+      "editable_paths": ["crates/cgrx-cli/src/runtime/risks.rs"],
+      "hidden_test_paths": ["crates/cgrx-cli/tests/risk_explainability.rs"],
+      "acceptance": {"argv": ["cargo", "test", "-p", "cgrx-cli", "--test", "risk_explainability", "positive_impact"], "timeout_seconds": 600}
+    },
+    {
+      "id": "typescript-exported-const-arrow",
+      "repo": "/private/cgrx-corpus/cgrx",
+      "buggy_revision": "b8d828524b903abeb053db9faef5abba40fea509",
+      "fix_revision": "3974bf3a7127a4563b15a3a59e3ba49249d93652",
+      "prompt": "Resolve named imports of exported TypeScript const arrow functions to their exact declaration identity. Preserve conservative abstention for unsafe, shadowed, reassigned, or otherwise ambiguous bindings.",
+      "editable_paths": ["crates/cgrx-cli/src/runtime.rs", "crates/cgrx-languages/src/ts_imports.rs"],
+      "hidden_test_paths": ["crates/cgrx-cli/tests/ts_import_runtime.rs"],
+      "acceptance": {"argv": ["cargo", "test", "-p", "cgrx-cli", "--test", "ts_import_runtime", "exported_const_arrow"], "timeout_seconds": 600}
+    },
+    {
+      "id": "go-direct-receiver-field-conflict",
+      "repo": "/private/cgrx-corpus/cgrx",
+      "buggy_revision": "e401e3a5f96009908e92e3905990a3d765c81ef9",
+      "fix_revision": "1345bc1574b722bd305cdc8ccdd95175bf3e747c",
+      "prompt": "A Go receiver method proof should be invalidated only by a conflicting direct field of that receiver struct. Nested named-struct fields must not hide receiver methods, while field calls, interface calls, and embedding must remain conservative rather than guessing targets.",
+      "editable_paths": ["crates/cgrx-languages/src/go.rs"],
+      "hidden_test_paths": ["crates/cgrx-cli/tests/go_precision.rs"],
+      "acceptance": {"argv": ["cargo", "test", "-p", "cgrx-cli", "--test", "go_precision", "nested_named_struct_fields_do_not_hide_receiver_methods"], "timeout_seconds": 600}
+    },
+    {
+      "id": "rust-crate-module-alias-guards",
+      "repo": "/private/cgrx-corpus/cgrx",
+      "buggy_revision": "a473d1ee905fef220a510ef7c83881c5c702e3de",
+      "fix_revision": "d4baf11108fe4043aef8db663d4f508e1222d13b",
+      "prompt": "Resolve explicit Rust crate-module aliases to repository-local declarations and refresh import identity correctly. Reject unproven targets and cases where a local namespace union shadows the import.",
+      "editable_paths": ["crates/cgrx-cli/src/cargo_roots.rs", "crates/cgrx-cli/src/runtime.rs", "crates/cgrx-languages/src/rust.rs"],
+      "hidden_test_paths": ["crates/cgrx-cli/tests/runtime.rs"],
+      "acceptance": {"argv": ["cargo", "test", "-p", "cgrx-cli", "--test", "runtime", "rust_module_alias"], "timeout_seconds": 600}
+    },
+    {
+      "id": "directory-scope-boundaries",
+      "repo": "/private/cgrx-corpus/cgrx",
+      "buggy_revision": "bc97c0044cadf8216d51fe5e1390adf8f0a1a8b7",
+      "fix_revision": "e05b8a3f28660bcfc15a4ead1146126ea046e7fc",
+      "prompt": "Scope filters must accept repository root and relative directory forms using slash-bounded descendants. Preserve exclusions, exact-file and glob behavior, and do not broaden empty, absolute, or parent-directory patterns.",
+      "editable_paths": ["crates/cgrx-retrieval/src/fusion.rs"],
+      "hidden_test_paths": ["crates/cgrx-retrieval/tests/retrieve.rs"],
+      "acceptance": {"argv": ["cargo", "test", "-p", "cgrx-retrieval", "--test", "retrieve", "directory_scopes"], "timeout_seconds": 600}
+    }
+  ]
+}

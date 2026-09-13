@@ -126,19 +126,19 @@ Run: `git add scripts/eval_agent_patches.py scripts/test_eval_agent_patches.py &
 - Consumes: per-run records with task, repetition, arm, correctness, usage, latency, tool calls, CGRX calls, and grading status.
 - Produces: `summarize(records: list[dict], repetitions: int) -> dict` and resumable `result.json`, `summary.json`, `protocol.json`, patch, event, and grading artifacts under the output directory.
 
-- [ ] **Step 1: Write failing summary tests**
+- [x] **Step 1: Write failing summary tests**
 
 Add `test_summary_reports_per_task_rates_and_paired_outcomes`,
 `test_summary_keeps_incomplete_runs_out_of_correctness_denominator`, and
 `test_existing_output_resumes_only_matching_protocol`. Cover one baseline win,
 one CGRX win, one tie, unknown token usage, and a protocol-hash mismatch.
 
-- [ ] **Step 2: Run summary tests and verify RED**
+- [x] **Step 2: Run summary tests and verify RED**
 
 Run: `python3 -m unittest scripts.test_eval_agent_patches.SummaryTests -v`
 Expected: failures for missing repetition and resume behavior.
 
-- [ ] **Step 3: Implement repetition, aggregation, and safe resume**
+- [x] **Step 3: Implement repetition, aggregation, and safe resume**
 
 Default `--repetitions` to 3, alternate order by `(task_index + repetition) % 2`,
 write every run before updating the summary, and resume only when every protocol
@@ -146,7 +146,7 @@ hash and source identity matches. Report per-task success rates, paired
 wins/losses/ties, median and total latency, measured usage, failures, policy
 violations, and treatment runs with at least one CGRX call.
 
-- [ ] **Step 4: Add the six immutable task records**
+- [x] **Step 4: Add the six immutable task records**
 
 Pin the direct parent/fix pairs `be81f1d/a1caa1d`, `38252ca/f076819`,
 `b8d8285/3974bf3`, `e401e3a/1345bc1`, `a473d1e/d4baf11`, and
@@ -156,13 +156,13 @@ the focused regression-test paths as hidden. Use Cargo test filters
 `exported_const_arrow`, `nested_named_struct_fields_do_not_hide_receiver_methods`,
 `rust_module_alias`, and `directory_scopes` respectively.
 
-- [ ] **Step 5: Validate unit tests and all six contracts without model calls**
+- [x] **Step 5: Validate unit tests and all six contracts without model calls**
 
 Run: `python3 -m unittest scripts.test_eval_agent_patches -v`
 Run: `python3 scripts/eval_agent_patches.py --repo-map /tmp/cgrx-agent-patch-repo-map.json --output /tmp/cgrx-agent-patch-validation`
 Expected: tests pass and six task oracles validate without creating model runs.
 
-- [ ] **Step 6: Commit the corpus and aggregation**
+- [x] **Step 6: Commit the corpus and aggregation**
 
 Run: `git add contracts/agent_patch_tasks_v1.json scripts/eval_agent_patches.py scripts/test_eval_agent_patches.py && git commit -m "feat(eval): Freeze repeated CGRX patch comparison"`
 

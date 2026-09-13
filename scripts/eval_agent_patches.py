@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """Evaluate optional CGRX on historical coding-agent patch tasks."""
 
+import argparse
 import json
 import hashlib
 import os
 from pathlib import Path
 import subprocess
 import signal
+import statistics
 import tarfile
 import tempfile
 import time
@@ -394,7 +396,7 @@ def run_one(args, task, task_index, repetition, arm):
     return record
 
 
-def preflight(task, directory):
+def preflight(task, directory, cache_root=None):
     directory = Path(directory)
     directory.mkdir(parents=True, exist_ok=False)
     buggy = materialize(task, task["buggy_revision"], directory / "buggy")
@@ -408,8 +410,8 @@ def preflight(task, directory):
     )
     reference = materialize(task, task["fix_revision"], directory / "reference")
     try:
-        buggy_code, buggy_output = run_acceptance(task, buggy)
-        reference_code, reference_output = run_acceptance(task, reference)
+        buggy_code, buggy_output = run_acceptance(task, buggy, cache_root=cache_root)
+        reference_code, reference_output = run_acceptance(task, reference, cache_root=cache_root)
     except subprocess.TimeoutExpired as error:
         raise ValueError(f"acceptance preflight timed out: {task['id']}") from error
     if reference_code != 0:
@@ -425,3 +427,228 @@ def preflight(task, directory):
     }
     (directory / "result.json").write_text(json.dumps(result, indent=2) + "\n")
     return result
+
+
+def ensure_output(output, protocol):
+    output = Path(output)
+    protocol_path = output / "protocol.json"
+    if output.exists():
+        if not protocol_path.is_file():
+            raise ValueError("existing output has no protocol")
+        existing = json.loads(protocol_path.read_text())
+        if existing != protocol:
+            raise ValueError("protocol mismatch for existing output")
+    else:
+        output.mkdir(parents=True)
+        protocol_path.write_text(json.dumps(protocol, indent=2) + "\n")
+    records = []
+    for path in sorted(output.glob("*-r*-*/result.json")):
+        records.append(json.loads(path.read_text()))
+    return records
+
+
+def summarize(records, repetitions):
+    completed = [
+        record for record in records
+        if record.get("status") == "completed" and record.get("complete") is True
+    ]
+    tasks = sorted({record["task"] for record in records})
+    pairs = {}
+    for record in completed:
+        key = (record["task"], record["repetition"])
+        pair = pairs.setdefault(key, {})
+        if record["arm"] in pair:
+            raise ValueError("duplicate completed arm for task repetition")
+        pair[record["arm"]] = record
+    complete_pairs = [pair for pair in pairs.values() if set(pair) == set(ARMS)]
+    paired = {"baseline_wins": 0, "cgrx_wins": 0, "ties": 0}
+    for pair in complete_pairs:
+        baseline = bool(pair["baseline"]["correct"])
+        cgrx = bool(pair["cgrx"]["correct"])
+        if baseline == cgrx:
+            paired["ties"] += 1
+        elif baseline:
+            paired["baseline_wins"] += 1
+        else:
+            paired["cgrx_wins"] += 1
+
+    def arm_summary(rows):
+        usage_keys = ("input_tokens", "cached_input_tokens", "output_tokens")
+        usage = {}
+        for key in usage_keys:
+            values = [(row.get("usage") or {}).get(key) for row in rows]
+            usage[key] = (
+                sum(values) if values and all(type(value) is int for value in values)
+                else None
+            )
+        latencies = [row["latency_ms"] for row in rows]
+        correct = sum(bool(row["correct"]) for row in rows)
+        return {
+            "completed": len(rows),
+            "correct": correct,
+            "success_rate": round(correct / len(rows), 4) if rows else None,
+            "latency_ms_total": round(sum(latencies), 1) if latencies else None,
+            "latency_ms_median": round(statistics.median(latencies), 1) if latencies else None,
+            "tool_calls": sum(row.get("tool_calls", 0) for row in rows),
+            **usage,
+        }
+
+    per_task = {}
+    for task in tasks:
+        per_task[task] = {}
+        for arm in ARMS:
+            rows = [row for row in completed if row["task"] == task and row["arm"] == arm]
+            correct = sum(bool(row["correct"]) for row in rows)
+            per_task[task][arm] = {
+                "completed": len(rows),
+                "correct": correct,
+                "success_rate": round(correct / len(rows), 4) if rows else None,
+            }
+
+    return {
+        "scope": "historical patch diagnostic; optional CGRX; no broad superiority claim",
+        "repetitions_requested": repetitions,
+        "tasks_observed": len(tasks),
+        "runs_recorded": len(records),
+        "complete_pairs": len(complete_pairs),
+        "paired_outcomes": paired,
+        "arms": {
+            arm: arm_summary([row for row in completed if row["arm"] == arm])
+            for arm in ARMS
+        },
+        "per_task": per_task,
+        "cgrx_used_runs": sum(
+            row.get("cgrx_calls", 0) > 0 for row in completed if row["arm"] == "cgrx"
+        ),
+        "policy_violations": [
+            {"task": row["task"], "repetition": row["repetition"], "arm": row["arm"]}
+            for row in completed
+            if (row.get("grading") or {}).get("status") == "disallowed_paths"
+        ],
+        "incomplete_runs": [
+            {
+                "task": row["task"],
+                "repetition": row.get("repetition"),
+                "arm": row["arm"],
+                "status": row.get("status"),
+            }
+            for row in records if row not in completed
+        ],
+    }
+
+
+def file_sha(path):
+    return sha(Path(path).read_bytes())
+
+
+def protocol_for(args, tasks):
+    return {
+        "schema_version": 1,
+        "model_requested": args.model,
+        "effort": args.effort,
+        "agent_timeout_seconds": args.timeout,
+        "test_timeout_seconds": args.test_timeout,
+        "repetitions": args.repetitions,
+        "order": "alternating by task index plus repetition",
+        "cgrx_optional_to_agent": True,
+        "cgrx_required_at_startup": bool(args.run),
+        "selection_sha256": file_sha(args.selection),
+        "repo_map_sha256": file_sha(args.repo_map) if args.repo_map else None,
+        "runner_sha256": file_sha(Path(__file__)),
+        "codex_sha256": file_sha(args.codex) if args.run else None,
+        "cgrx_sha256": file_sha(args.cgrx) if args.run else None,
+        "tasks": [
+            {
+                "id": task["id"],
+                "buggy_revision": task["buggy_revision"],
+                "fix_revision": task["fix_revision"],
+            }
+            for task in tasks
+        ],
+    }
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--selection", type=Path, default=ROOT / "contracts/agent_patch_tasks_v1.json"
+    )
+    parser.add_argument("--repo-map", type=Path)
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--codex", type=Path)
+    parser.add_argument("--cgrx", type=Path)
+    parser.add_argument("--model", default="gpt-6-astra")
+    parser.add_argument("--effort", default="medium")
+    parser.add_argument("--timeout", type=int, default=600)
+    parser.add_argument("--test-timeout", type=int, default=600)
+    parser.add_argument("--repetitions", type=int, default=3)
+    parser.add_argument("--limit", type=int)
+    parser.add_argument("--preflight", action="store_true")
+    parser.add_argument("--run", action="store_true")
+    args = parser.parse_args()
+    if args.repetitions < 1 or args.timeout < 1 or args.test_timeout < 1:
+        parser.error("timeouts and repetitions must be positive")
+    tasks = load_tasks(args.selection, args.repo_map)
+    if args.limit is not None:
+        if args.limit < 1:
+            parser.error("limit must be positive")
+        tasks = tasks[:args.limit]
+    if args.run and (not args.codex or not args.cgrx):
+        parser.error("--run requires --codex and --cgrx")
+    args.output = args.output.resolve()
+    protocol = protocol_for(args, tasks)
+    records = ensure_output(args.output, protocol)
+
+    if args.preflight or args.run:
+        preflight_root = args.output / "preflight"
+        preflight_root.mkdir(exist_ok=True)
+        for task in tasks:
+            directory = preflight_root / task["id"]
+            if not (directory / "result.json").exists():
+                result = preflight(
+                    task, directory, args.output / "grading-cache" / "preflight"
+                )
+                print(json.dumps({
+                    "task": task["id"],
+                    "preflight_buggy": result["buggy_exit_code"],
+                    "preflight_reference": result["reference_exit_code"],
+                }), flush=True)
+    if not args.run:
+        print(f"Validated {len(tasks)} patch tasks; no model calls.")
+        return 0
+
+    existing = {
+        (record["task"], record["repetition"], record["arm"])
+        for record in records
+    }
+    for task_index, task in enumerate(tasks):
+        for repetition in range(args.repetitions):
+            order = ARMS if (task_index + repetition) % 2 == 0 else tuple(reversed(ARMS))
+            for arm in order:
+                key = (task["id"], repetition, arm)
+                if key in existing:
+                    continue
+                record = run_one(args, task, task_index, repetition, arm)
+                records.append(record)
+                existing.add(key)
+                summary = summarize(records, args.repetitions)
+                (args.output / "summary.json").write_text(
+                    json.dumps(summary, indent=2) + "\n"
+                )
+                print(json.dumps({
+                    "task": record["task"],
+                    "repetition": record["repetition"],
+                    "arm": record["arm"],
+                    "status": record["status"],
+                    "correct": record["correct"],
+                    "latency_ms": record["latency_ms"],
+                }), flush=True)
+    expected = len(tasks) * args.repetitions * len(ARMS)
+    return int(
+        len(records) != expected
+        or any(record.get("status") != "completed" for record in records)
+    )
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
