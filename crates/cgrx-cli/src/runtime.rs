@@ -566,6 +566,78 @@ impl Runtime {
     /// Exact duplicate-implementation lookup over structural body
     /// fingerprints. Only SYNTAX documents with a computed fingerprint match;
     /// results are scoped, sorted deterministically, and never guessed.
+    /// Detect symbols with zero incoming calls within the given scope.
+    /// Returns symbols that are defined (SYNTAX provenance) but never called
+    /// by any other symbol in the codebase, filtered to the given scope.
+    pub fn detect_dead_code(
+        &self,
+        scope: &Scope,
+        language: Option<&str>,
+        limit: usize,
+    ) -> Result<Value, RuntimeError> {
+        if !(1..=200).contains(&limit) {
+            return Err(RuntimeError::new(
+                "cgrx.invalid_arguments",
+                "limit must be between 1 and 200",
+            ));
+        }
+        let mut scoped = ScopedQuery::new(&self.stored, scope, path_in_scope);
+        let arcs = scoped.definitive_arcs(&self.stored);
+        // Count incoming calls for each SYNTAX node
+        let mut incoming: BTreeMap<u64, usize> = BTreeMap::new();
+        for arc in &arcs {
+            if arc.kind == RelationKind::Calls {
+                *incoming.entry(arc.target).or_default() += 1;
+            }
+        }
+        // Find SYNTAX documents with zero incoming calls
+        let mut candidates: Vec<_> = self
+            .stored
+            .documents
+            .iter()
+            .filter(|document| {
+                document.provenance == "SYNTAX"
+                    && scoped.contains_path(&document.path)
+                    && language.is_none_or(|lang| {
+                        pack_for_path(Path::new(&document.path))
+                            .is_some_and(|pack| pack.id() == lang)
+                    })
+                    && !incoming.contains_key(&document.node_id)
+            })
+            .map(|document| {
+                let outgoing = arcs
+                    .iter()
+                    .filter(|arc| arc.source == document.node_id && arc.kind == RelationKind::Calls)
+                    .count();
+                (document, outgoing)
+            })
+            .collect();
+        candidates.sort_by_key(|(doc, outgoing)| {
+            (doc.path.clone(), doc.span_start, *outgoing)
+        });
+        let total = candidates.len();
+        let rows: Vec<_> = candidates
+            .into_iter()
+            .take(limit)
+            .map(|(document, outgoing)| {
+                json!({
+                    "node_id": document.node_id,
+                    "symbol": document.qualified_name,
+                    "path": document.path,
+                    "span": {"start": document.span_start, "end": document.span_end},
+                    "outgoing_calls": outgoing
+                })
+            })
+            .collect();
+        Ok(json!({
+            "snapshot": self.stored.snapshot,
+            "dead_symbols": rows,
+            "total": total,
+            "truncated": total > limit,
+            "coverage_gap_count": coverage_gap_count(&scoped.coverage(&self.stored.coverage))
+        }))
+    }
+
     pub fn find_similar(
         &self,
         symbol: &str,

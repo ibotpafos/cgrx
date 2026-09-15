@@ -1098,6 +1098,36 @@ impl ToolBackend for RuntimeMcpBackend {
             .map_err(|error| BackendError::new(error.code(), error.to_string()))
     }
 
+    fn explain_symbol(
+        &mut self,
+        symbol: &str,
+        path: Option<&str>,
+        scope: Value,
+        depth: u8,
+        limit: u32,
+    ) -> Result<Value, BackendError> {
+        self.refresh()?;
+        let scope = serde_json::from_value(scope)
+            .map_err(|e| BackendError::new("cgrx.invalid_scope", e.to_string()))?;
+        self.runtime
+            .explain_symbol(symbol, path, &scope, depth, limit as usize)
+            .map_err(|error| BackendError::new(error.code(), error.to_string()))
+    }
+
+    fn detect_dead_code(
+        &mut self,
+        scope: Value,
+        language: Option<&str>,
+        limit: u32,
+    ) -> Result<Value, BackendError> {
+        self.refresh()?;
+        let scope = serde_json::from_value(scope)
+            .map_err(|e| BackendError::new("cgrx.invalid_scope", e.to_string()))?;
+        self.runtime
+            .detect_dead_code(&scope, language, limit as usize)
+            .map_err(|error| BackendError::new(error.code(), error.to_string()))
+    }
+
     fn check_index_coverage(
         &mut self,
         paths: &[String],

@@ -174,6 +174,17 @@ pub trait ToolBackend: Send + Sync {
             "find_similar requires a managed repository backend",
         ))
     }
+    fn detect_dead_code(
+        &mut self,
+        _scope: Value,
+        _language: Option<&str>,
+        _limit: u32,
+    ) -> Result<Value, BackendError> {
+        Err(BackendError::new(
+            "cgrx.dead_code_unavailable",
+            "detect_dead_code requires an indexed runtime backend",
+        ))
+    }
     fn check_index_coverage(
         &mut self,
         paths: &[String],
@@ -625,6 +636,7 @@ impl Server {
             "suggest_refactors" => self.suggest_refactors(from_value(call.arguments)?)?,
             "get_code_snippet" => self.get_code_snippet(from_value(call.arguments)?)?,
             "explain_symbol" => self.explain_symbol(from_value(call.arguments)?)?,
+            "detect_dead_code" => self.detect_dead_code(from_value(call.arguments)?)?,
             "check_index_coverage" => self.check_index_coverage(from_value(call.arguments)?)?,
             "check_framework_gates" => self.check_framework_gates(from_value(call.arguments)?)?,
             "check_security_gates" => self.check_security_gates(from_value(call.arguments)?)?,
@@ -870,6 +882,33 @@ impl Server {
             .map_err(backend_error)
     }
 
+    fn detect_dead_code(
+        &mut self,
+        arguments: DetectDeadCodeArguments,
+    ) -> Result<Value, JsonRpcError> {
+        if arguments.limit == 0 || arguments.limit > 200 {
+            return Err(JsonRpcError::typed(
+                -32602,
+                "cgrx.invalid_arguments",
+                "dead_code limit must be from 1 to 200",
+            ));
+        }
+        let Some(backend) = &mut self.backend else {
+            return Err(JsonRpcError::typed(
+                -32020,
+                "cgrx.index_adapter_not_connected",
+                "detect_dead_code requires an indexed runtime backend",
+            ));
+        };
+        backend
+            .detect_dead_code(
+                arguments.scope,
+                arguments.language.as_deref(),
+                arguments.limit,
+            )
+            .map_err(backend_error)
+    }
+
     fn check_index_coverage(
         &mut self,
         arguments: CheckIndexCoverageArguments,
@@ -1097,6 +1136,7 @@ fn model_visible_result(tool: &str, structured: &Value) -> Value {
         "suggest_refactors" => compact_refactors(structured),
         "get_code_snippet" => compact_snippet(structured),
         "explain_symbol" => compact_explain(structured),
+        "detect_dead_code" => compact_dead_code(structured),
         "check_index_coverage" => compact_coverage(structured),
         "check_framework_gates" => compact_framework_gates(structured),
         "check_security_gates" => compact_security_gates(structured),
@@ -1967,6 +2007,30 @@ fn compact_snippet(value: &Value) -> Value {
     })
 }
 
+fn compact_dead_code(value: &Value) -> Value {
+    let rows: Vec<_> = value
+        .get("dead_symbols")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .map(|item| {
+            json!([
+                item.get("symbol"),
+                item.get("path"),
+                item.get("span"),
+                item.get("outgoing_calls")
+            ])
+        })
+        .collect();
+    json!({
+        "at": snapshot_tag(value.get("snapshot")),
+        "cols": ["symbol", "path", "span", "outgoing_calls"],
+        "rows": rows,
+        "total": value.get("total"),
+        "truncated": value.get("truncated"),
+    })
+}
+
 fn compact_explain(value: &Value) -> Value {
     json!({
         "at":snapshot_tag(value.get("snapshot")),
@@ -2274,6 +2338,19 @@ fn default_explain_limit() -> u32 {
 }
 
 #[derive(Deserialize)]
+struct DetectDeadCodeArguments {
+    scope: Value,
+    #[serde(default)]
+    language: Option<String>,
+    #[serde(default = "default_dead_code_limit")]
+    limit: u32,
+}
+
+fn default_dead_code_limit() -> u32 {
+    50
+}
+
+#[derive(Deserialize)]
 struct CheckIndexCoverageArguments {
     #[serde(default)]
     paths: Vec<String>,
@@ -2501,6 +2578,7 @@ fn model_visible_schema() -> Value {
         {"name":"suggest_refactors","description":"Similar code and hypothetical graph delta","inputSchema":{"type":"object","properties":{"language":{"enum":["typescript","go","java","python","rust","c","cpp","csharp","ruby","php","swift","scala","elixir","kotlin"]},"min_score":{"type":"integer","minimum":0,"maximum":1000},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":50},"max_documents":{"type":"integer","minimum":0,"maximum":1000000,"default":0},"max_pairs":{"type":"integer","minimum":0,"maximum":1000000,"default":0}}}},
         {"name":"get_code_snippet","description":"Source","inputSchema":{"type":"object","required":["symbol"],"properties":{"symbol":{"type":"string"},"path":{"type":"string"}}}},
         {"name":"explain_symbol","description":"Explain symbol with definition, callers, callees, and usages","inputSchema":{"type":"object","required":["symbol","scope"],"properties":{"symbol":{"type":"string"},"path":{"type":"string"},"scope":path_or_scope.clone(),"depth":{"type":"integer","minimum":1,"maximum":4,"default":2},"limit":{"type":"integer","minimum":1,"maximum":50,"default":20}}}},
+{"name":"detect_dead_code","description":"Detect symbols with zero incoming calls — candidates for dead code removal. Returns SYNTAX definitions never referenced by any CALLS arc in the scope.","inputSchema":{"type":"object","required":["scope"],"properties":{"scope":path_or_scope.clone(),"language":{"type":"string","description":"Filter by language pack id (e.g. rust, typescript, python)"},"limit":{"type":"integer","minimum":1,"maximum":200,"default":50}}}},
         {"name":"check_index_coverage","description":"Coverage","inputSchema":{"type":"object","properties":{"paths":{"type":"array","items":{"type":"string"}},"scopes":{"type":"array","items":{"type":"string"}},"offset":{"type":"integer","minimum":0},"limit":{"type":"integer","minimum":1,"maximum":500}}}},
         {"name":"check_framework_gates","description":"Framework-aware detection gate for Django/FastAPI/Express with explicit PASS/WARN/FAIL/INCONCLUSIVE verdict; no LLM executed.","inputSchema":{"type":"object","properties":{"paths":{"type":"array","items":{"type":"string"}},"scopes":{"type":"array","items":{"type":"string"}},"fail_on":{"enum":["error","warning","none"],"default":"error"},"max_framework_confidence":{"type":"integer","minimum":0,"maximum":10000,"default":0},"max_false_positive_matches":{"type":"integer","minimum":0,"maximum":10000,"default":0}}}},
         {"name":"expand","description":"Expand","inputSchema":{"type":"object","required":["handle","budget"],"properties":{"handle":{"type":"string"},"budget":{"type":"integer","minimum":1}}}},
