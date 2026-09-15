@@ -655,6 +655,7 @@ fn serve_state_returns_refactor_candidates_and_compact_projection_rows() {
     let mut child = cli()
         .args(["serve", "--state"])
         .arg(state.path())
+        .args(["--toolset", "full"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()
@@ -1005,6 +1006,7 @@ fn watched_suggest_refactors_refreshes_projection_without_restart() {
         .arg(state.path())
         .arg("--watch-root")
         .arg(repository.path())
+        .args(["--toolset", "full"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()
@@ -1820,4 +1822,3 @@ fn fixture_clock_parallel_allocations_are_unique() {
     let paths: std::collections::BTreeSet<_> = directories.iter().map(|d| d.path()).collect();
     assert_eq!(paths.len(), 16);
 }
-

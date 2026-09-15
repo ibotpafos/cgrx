@@ -1,6 +1,6 @@
 //! Conservative change-risk candidates, not a whole-program bug detector.
-use super::*;
 use super::RuntimeConfig;
+use super::*;
 mod missions;
 mod review;
 mod test_runs;
@@ -32,8 +32,8 @@ impl Runtime {
         let config = RuntimeConfig::default();
         let scope = all_scope();
         let edges = definitive_stored_arcs(&self.stored, &scope);
-        let partial = self.stored.documents.len() > config.max_documents
-            || edges.len() > config.max_edges;
+        let partial =
+            self.stored.documents.len() > config.max_documents || edges.len() > config.max_edges;
         let partial_reason = if partial {
             Some("SCAN_BUDGET_EXCEEDED".to_owned())
         } else {

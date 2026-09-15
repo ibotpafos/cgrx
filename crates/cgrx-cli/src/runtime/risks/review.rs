@@ -1,6 +1,6 @@
 //! Bounded test-selection hints. Proven CALLS do not prove test discovery.
-use super::*;
 use super::RuntimeConfig;
+use super::*;
 
 pub(super) fn build(
     stored: &StoredIndex,

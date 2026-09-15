@@ -17,8 +17,8 @@ use cgrx_core::{
     canonical_hash,
 };
 use cgrx_mcp::{
-    BackendError, Server, ToolBackend, gate_to_sarif, model_visible_schema_json,
-    revision_bound_handle,
+    BackendError, Server, ToolBackend, Toolset, gate_to_sarif, model_visible_schema_json,
+    resolve_toolset, revision_bound_handle,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -567,6 +567,11 @@ fn serve(args: &[String]) -> Result<(), String> {
     if args.iter().any(|a| a == "--max-repos") {
         return Err("--max-repos requires --multi-repo".to_owned());
     }
+    // Resolve the active toolset: CGRX_TOOLSET env wins, then --toolset, else standard.
+    let toolset = resolve_toolset(
+        env::var("CGRX_TOOLSET").ok().as_deref(),
+        optional_flag(args, "--toolset"),
+    );
     let root = optional_flag(args, "--root").map(PathBuf::from);
     if root.is_some()
         && (optional_flag(args, "--state").is_some()
@@ -586,7 +591,10 @@ fn serve(args: &[String]) -> Result<(), String> {
         } else {
             RuntimeMcpBackend::new(runtime, None)
         };
-        (Server::with_backend(backend), memory_root)
+        (
+            Server::with_backend(backend).with_toolset(toolset),
+            memory_root,
+        )
     } else {
         let root = root.unwrap_or_else(|| PathBuf::from("."));
         let root = root.canonicalize().map_err(|error| error.to_string())?;
@@ -594,7 +602,8 @@ fn serve(args: &[String]) -> Result<(), String> {
         let runtime = open_managed_runtime(&root, &state)?;
         let memory_root = Some(root.clone());
         (
-            Server::with_backend(RuntimeMcpBackend::managed(runtime, root, state)),
+            Server::with_backend(RuntimeMcpBackend::managed(runtime, root, state))
+                .with_toolset(toolset),
             memory_root,
         )
     };
@@ -834,9 +843,10 @@ impl ToolBackend for RuntimeMcpBackend {
         let baseline = self.risk_baseline.as_ref().expect("baseline loaded");
         let mut result = match runs {
             Some(value) => {
-                let parsed = serde_json::from_value::<Vec<TestRunRecord>>(value).map_err(|error| {
-                    BackendError::new("cgrx.invalid_arguments", error.to_string())
-                })?;
+                let parsed =
+                    serde_json::from_value::<Vec<TestRunRecord>>(value).map_err(|error| {
+                        BackendError::new("cgrx.invalid_arguments", error.to_string())
+                    })?;
                 self.runtime
                     .scan_risks_with_test_runs(baseline, root, limit, &parsed)
                     .map_err(|e| BackendError::new(e.code(), e.to_string()))?
@@ -1251,7 +1261,8 @@ fn call_managed_tool(name: &str, arguments: Value, root: &Path) -> Result<Value,
     let root = root.canonicalize().map_err(|error| error.to_string())?;
     let state = managed_state_path(&root)?;
     let runtime = open_managed_runtime(&root, &state)?;
-    let mut server = Server::with_backend(RuntimeMcpBackend::managed(runtime, root, state));
+    let mut server = Server::with_backend(RuntimeMcpBackend::managed(runtime, root, state))
+        .with_toolset(Toolset::Full);
     let request = json!({
         "jsonrpc":"2.0",
         "id":1,
