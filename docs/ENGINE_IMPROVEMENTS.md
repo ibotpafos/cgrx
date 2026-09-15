@@ -114,7 +114,7 @@
 - orient_helpers.rs (295 lines) — task evidence, symbol matching, graph evidence
 - helpers.rs (150 lines) — body_fingerprint, stable_node_id, generation_id, declaration_span
 
-**Remaining in runtime.rs (4031 lines)**: Core types, impl Runtime, tests.
+**Remaining in runtime.rs (3798 lines)**: Core types, impl Runtime (graph queries, index, refresh, orient), tests.
 
 **Success criteria**: No file > 1500 lines. ✅ Achieved (max is architecture.rs at 1426).
 
