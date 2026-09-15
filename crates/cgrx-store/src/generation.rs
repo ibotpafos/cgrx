@@ -406,7 +406,7 @@ impl GenerationReader {
                 "invalid segment",
             ));
         }
-        fs::read(self.path.join(name))
+        segment::read_decompressed(&self.path.join(name))
     }
 }
 
