@@ -4,6 +4,7 @@ mod c;
 mod cpp;
 mod csharp;
 mod go;
+mod ruby;
 mod java;
 mod kotlin;
 mod pack;
