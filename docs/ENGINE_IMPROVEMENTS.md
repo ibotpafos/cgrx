@@ -154,14 +154,12 @@
 
 **Success criteria**: explain_symbol returns complete context.
 
-### 4.3 Dead Code Detection
+### 4.3 Dead Code Detection ✅ DONE
 **Problem**: No way to find unused code.
 
-**Solution**:
-1. Find symbols with zero callers
-2. Find unused imports
-3. Find unused variables
-4. Find unreachable code
+**Solution**: New `detect_dead_code` MCP tool (22nd tool). Finds symbols with zero incoming CALLS arcs.
+
+**Result**: Found 1649 dead symbols in CGRX codebase with language filtering support.
 
 **Success criteria**: New check_dead_code tool.
 
