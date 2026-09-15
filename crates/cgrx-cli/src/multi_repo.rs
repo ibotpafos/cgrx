@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
-const TOOLS: [&str; 15] = [
+const TOOLS: [&str; 17] = [
     "scan_risks",
     "check_change_gates",
     "check_repository_gates",
@@ -27,6 +27,8 @@ const TOOLS: [&str; 15] = [
     "suggest_refactors",
     "get_code_snippet",
     "check_index_coverage",
+    "explain_symbol",
+    "detect_dead_code",
 ];
 
 struct Entry {

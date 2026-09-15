@@ -6,9 +6,10 @@
 //! |-----------|-------------------------------------------------------------------------------------------|
 //! | `minimal` | Read/search only: `status`, `search_graph`, `get_outline`, `trace_path`, `find_usages`,   |
 //! |           | `get_code_snippet`, `check_index_coverage`, `check_framework_gates`                           |
-//! | `standard`|`minimal` + `orient`, `expand`, `get_architecture` (default)                               |
+//! | `standard`|`minimal` + `orient`, `expand`, `get_architecture`, `explain_symbol` (default)              |
 //! | `full`    | All tools including `scan_risks`, `check_change_gates`, `check_repository_gates`,          |
-//! |           | `ingest_runtime_evidence`, `find_similar`, `suggest_refactors`, `check_framework_gates`   |
+//! |           | `ingest_runtime_evidence`, `find_similar`, `suggest_refactors`, `explain_symbol`,          |
+//! |           | `detect_dead_code`                                                                        |
 
 use serde::Deserialize;
 use std::str::FromStr;
@@ -59,6 +60,7 @@ impl Toolset {
                 "get_architecture",
                 "check_framework_gates",
                 "check_security_gates",
+                "explain_symbol",
             ],
             Self::Full => &[
                 "status",
@@ -79,6 +81,8 @@ impl Toolset {
                 "suggest_refactors",
                 "check_framework_gates",
                 "check_security_gates",
+                "explain_symbol",
+                "detect_dead_code",
             ],
         }
     }
@@ -183,7 +187,7 @@ mod tests {
         assert!(names.contains(&"orient"));
         assert!(names.contains(&"expand"));
         assert!(names.contains(&"get_architecture"));
-        assert_eq!(names.len(), 12);
+        assert_eq!(names.len(), 13);
     }
 
     #[test]
@@ -198,7 +202,7 @@ mod tests {
         assert!(names.contains(&"ingest_runtime_evidence"));
         assert!(names.contains(&"find_similar"));
         assert!(names.contains(&"suggest_refactors"));
-        assert_eq!(names.len(), 18);
+        assert_eq!(names.len(), 20);
     }
 
     #[test]
