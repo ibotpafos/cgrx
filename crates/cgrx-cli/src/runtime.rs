@@ -1072,6 +1072,165 @@ impl Runtime {
         }))
     }
 
+    /// Explain a symbol: return its definition, callers, callees, and usages.
+    /// Combines get_code_snippet + find_usages + trace_path into one call.
+    pub fn explain_symbol(
+        &self,
+        symbol: &str,
+        path: Option<&str>,
+        scope: &Scope,
+        depth: u8,
+        limit: usize,
+    ) -> Result<Value, RuntimeError> {
+        let symbol = symbol.trim();
+        if symbol.is_empty() || path.is_some_and(|path| path.trim().is_empty()) {
+            return Err(RuntimeError::new(
+                "cgrx.invalid_arguments",
+                "symbol must be non-empty and path, when supplied, must be non-empty",
+            ));
+        }
+        let limit = limit.min(50);
+        let depth = depth.min(4);
+
+        // 1. Get definition
+        let mut matches: Vec<_> = self
+            .stored
+            .documents
+            .iter()
+            .filter(|document| {
+                document.provenance == "SYNTAX"
+                    && path.is_none_or(|path| document.path == path)
+                    && document.qualified_name == symbol
+            })
+            .collect();
+        if matches.is_empty() {
+            let folded = symbol.to_lowercase();
+            matches = self
+                .stored
+                .documents
+                .iter()
+                .filter(|document| {
+                    document.provenance == "SYNTAX"
+                        && path.is_none_or(|path| document.path == path)
+                        && document.qualified_name.to_lowercase() == folded
+                })
+                .collect();
+        }
+        matches.sort_by_key(|document| (&document.path, document.span_start, document.node_id));
+        let document = match matches.as_slice() {
+            [] => {
+                return Err(RuntimeError::new(
+                    "cgrx.symbol_not_found",
+                    format!("symbol {symbol} was not found"),
+                ));
+            }
+            [document] => *document,
+            _ => {
+                let candidates = matches
+                    .iter()
+                    .map(|document| format!("{}:{}", document.path, document.span_start))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                return Err(RuntimeError::new(
+                    "cgrx.ambiguous_symbol",
+                    format!("symbol {symbol} matches {candidates}; pass path"),
+                ));
+            }
+        };
+
+        let definition = json!({
+            "symbol": document.qualified_name,
+            "path": document.path,
+            "span": {"start": document.span_start, "end": document.span_end},
+            "declaration": document.text,
+            "source": document.search_text,
+        });
+
+        // 2. Get callers (incoming calls)
+        let mut scoped = ScopedQuery::new(&self.stored, scope, path_in_scope);
+        let by_id: BTreeMap<_, _> = self
+            .stored
+            .documents
+            .iter()
+            .filter(|document| {
+                document.provenance == "SYNTAX" && scoped.contains_path(&document.path)
+            })
+            .map(|document| (document.node_id, document))
+            .collect();
+
+        let mut callers = Vec::new();
+        let mut callees = Vec::new();
+
+        for arc in scoped.definitive_arcs(&self.stored) {
+            if arc.target == document.node_id {
+                if let Some(source) = by_id.get(&arc.source) {
+                    callers.push(json!({
+                        "symbol": source.qualified_name,
+                        "path": source.path,
+                        "span": {"start": source.span_start, "end": source.span_end},
+                    }));
+                }
+            }
+            if arc.source == document.node_id {
+                if let Some(target) = by_id.get(&arc.target) {
+                    callees.push(json!({
+                        "symbol": target.qualified_name,
+                        "path": target.path,
+                        "span": {"start": target.span_start, "end": target.span_end},
+                    }));
+                }
+            }
+        }
+
+        callers.truncate(limit);
+        callees.truncate(limit);
+
+        // 3. Get usages (deeper trace)
+        let mut incoming = BTreeMap::<u64, Vec<&StoredArc>>::new();
+        for arc in scoped.definitive_arcs(&self.stored) {
+            incoming.entry(arc.target).or_default().push(arc);
+        }
+
+        let mut visited = BTreeSet::from([document.node_id]);
+        let mut frontier = vec![document.node_id];
+        let mut usages = Vec::new();
+
+        for hop in 1..=depth {
+            let mut next = BTreeSet::new();
+            for target_id in &frontier {
+                for arc in incoming.get(target_id).into_iter().flatten() {
+                    if visited.contains(&arc.source) {
+                        continue;
+                    }
+                    if let Some(source) = by_id.get(&arc.source) {
+                        usages.push(json!({
+                            "symbol": source.qualified_name,
+                            "path": source.path,
+                            "span": {"start": source.span_start, "end": source.span_end},
+                            "hop": hop,
+                        }));
+                        next.insert(arc.source);
+                    }
+                }
+            }
+            visited.extend(&next);
+            frontier = next.into_iter().collect();
+        }
+
+        usages.truncate(limit);
+
+        Ok(json!({
+            "snapshot": self.stored.snapshot,
+            "definition": definition,
+            "callers": callers,
+            "callees": callees,
+            "usages": usages,
+            "callers_count": callers.len(),
+            "callees_count": callees.len(),
+            "usages_count": usages.len(),
+        }))
+    }
+
     pub fn check_index_coverage(
         &self,
         paths: &[String],

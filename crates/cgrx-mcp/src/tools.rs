@@ -149,6 +149,19 @@ pub trait ToolBackend: Send + Sync {
     }
     fn get_code_snippet(&mut self, symbol: &str, path: Option<&str>)
     -> Result<Value, BackendError>;
+    fn explain_symbol(
+        &mut self,
+        _symbol: &str,
+        _path: Option<&str>,
+        _scope: Value,
+        _depth: u8,
+        _limit: u32,
+    ) -> Result<Value, BackendError> {
+        Err(BackendError::new(
+            "cgrx.explain_unavailable",
+            "explain_symbol is not supported by this backend",
+        ))
+    }
     fn find_similar(
         &mut self,
         _symbol: &str,
@@ -611,6 +624,7 @@ impl Server {
             "find_usages" => self.find_usages(from_value(call.arguments)?)?,
             "suggest_refactors" => self.suggest_refactors(from_value(call.arguments)?)?,
             "get_code_snippet" => self.get_code_snippet(from_value(call.arguments)?)?,
+            "explain_symbol" => self.explain_symbol(from_value(call.arguments)?)?,
             "check_index_coverage" => self.check_index_coverage(from_value(call.arguments)?)?,
             "check_framework_gates" => self.check_framework_gates(from_value(call.arguments)?)?,
             "check_security_gates" => self.check_security_gates(from_value(call.arguments)?)?,
@@ -831,6 +845,28 @@ impl Server {
         };
         backend
             .get_code_snippet(&arguments.symbol, arguments.path.as_deref())
+            .map_err(backend_error)
+    }
+
+    fn explain_symbol(
+        &mut self,
+        arguments: ExplainSymbolArguments,
+    ) -> Result<Value, JsonRpcError> {
+        let Some(backend) = &mut self.backend else {
+            return Err(JsonRpcError::typed(
+                -32020,
+                "cgrx.index_adapter_not_connected",
+                "explain_symbol requires an indexed runtime backend",
+            ));
+        };
+        backend
+            .explain_symbol(
+                &arguments.symbol,
+                arguments.path.as_deref(),
+                arguments.scope,
+                arguments.depth,
+                arguments.limit,
+            )
             .map_err(backend_error)
     }
 
@@ -1060,6 +1096,7 @@ fn model_visible_result(tool: &str, structured: &Value) -> Value {
         "find_usages" => compact_usages(structured),
         "suggest_refactors" => compact_refactors(structured),
         "get_code_snippet" => compact_snippet(structured),
+        "explain_symbol" => compact_explain(structured),
         "check_index_coverage" => compact_coverage(structured),
         "check_framework_gates" => compact_framework_gates(structured),
         "check_security_gates" => compact_security_gates(structured),
@@ -1930,6 +1967,19 @@ fn compact_snippet(value: &Value) -> Value {
     })
 }
 
+fn compact_explain(value: &Value) -> Value {
+    json!({
+        "at":snapshot_tag(value.get("snapshot")),
+        "definition":value.get("definition"),
+        "callers":value.get("callers"),
+        "callees":value.get("callees"),
+        "usages":value.get("usages"),
+        "callers_count":value.get("callers_count"),
+        "callees_count":value.get("callees_count"),
+        "usages_count":value.get("usages_count"),
+    })
+}
+
 fn compact_coverage(value: &Value) -> Value {
     let rows: Vec<_> = value
         .get("paths")
@@ -2204,6 +2254,26 @@ struct GetCodeSnippetArguments {
 }
 
 #[derive(Deserialize)]
+struct ExplainSymbolArguments {
+    symbol: String,
+    #[serde(default)]
+    path: Option<String>,
+    scope: Value,
+    #[serde(default = "default_depth")]
+    depth: u8,
+    #[serde(default = "default_explain_limit")]
+    limit: u32,
+}
+
+fn default_depth() -> u8 {
+    2
+}
+
+fn default_explain_limit() -> u32 {
+    20
+}
+
+#[derive(Deserialize)]
 struct CheckIndexCoverageArguments {
     #[serde(default)]
     paths: Vec<String>,
@@ -2430,6 +2500,7 @@ fn model_visible_schema() -> Value {
         {"name":"find_usages","description":"Proven usages","inputSchema":{"type":"object","required":["symbol"],"properties":{"symbol":{"type":"string"},"path":{"type":"string"},"depth":{"type":"integer","minimum":1,"maximum":4},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":500},"evidence":{"enum":["static","observed","all"],"default":"static"}}}},
         {"name":"suggest_refactors","description":"Similar code and hypothetical graph delta","inputSchema":{"type":"object","properties":{"language":{"enum":["typescript","go","java","python","rust","c","cpp","csharp","ruby","php","swift","scala","elixir","kotlin"]},"min_score":{"type":"integer","minimum":0,"maximum":1000},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":50},"max_documents":{"type":"integer","minimum":0,"maximum":1000000,"default":0},"max_pairs":{"type":"integer","minimum":0,"maximum":1000000,"default":0}}}},
         {"name":"get_code_snippet","description":"Source","inputSchema":{"type":"object","required":["symbol"],"properties":{"symbol":{"type":"string"},"path":{"type":"string"}}}},
+        {"name":"explain_symbol","description":"Explain symbol with definition, callers, callees, and usages","inputSchema":{"type":"object","required":["symbol","scope"],"properties":{"symbol":{"type":"string"},"path":{"type":"string"},"scope":path_or_scope.clone(),"depth":{"type":"integer","minimum":1,"maximum":4,"default":2},"limit":{"type":"integer","minimum":1,"maximum":50,"default":20}}}},
         {"name":"check_index_coverage","description":"Coverage","inputSchema":{"type":"object","properties":{"paths":{"type":"array","items":{"type":"string"}},"scopes":{"type":"array","items":{"type":"string"}},"offset":{"type":"integer","minimum":0},"limit":{"type":"integer","minimum":1,"maximum":500}}}},
         {"name":"check_framework_gates","description":"Framework-aware detection gate for Django/FastAPI/Express with explicit PASS/WARN/FAIL/INCONCLUSIVE verdict; no LLM executed.","inputSchema":{"type":"object","properties":{"paths":{"type":"array","items":{"type":"string"}},"scopes":{"type":"array","items":{"type":"string"}},"fail_on":{"enum":["error","warning","none"],"default":"error"},"max_framework_confidence":{"type":"integer","minimum":0,"maximum":10000,"default":0},"max_false_positive_matches":{"type":"integer","minimum":0,"maximum":10000,"default":0}}}},
         {"name":"expand","description":"Expand","inputSchema":{"type":"object","required":["handle","budget"],"properties":{"handle":{"type":"string"},"budget":{"type":"integer","minimum":1}}}},
@@ -2486,6 +2557,10 @@ fn model_visible_schema() -> Value {
         (
             "Read source",
             "Read the definition of a discovered symbol; use path when names collide.",
+        ),
+        (
+            "Explain symbol",
+            "Explain a symbol with its definition, callers, callees, and usages in one call.",
         ),
         (
             "Check coverage",

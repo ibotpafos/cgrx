@@ -29,7 +29,7 @@ comparable on that axis.
 | Capability | CGRX | CodeQL | Sourcegraph | Trace MCP (reference) |
 | --- | --- | --- | --- | --- |
 | Local, offline execution (no API key) | ✅ One binary, no embedding/API key | ⚠️ CLI is local but needs build/extraction and a licensed runner for some flows | ❌ Centrally hosted server / Cody uses LLM APIs | ✅ Local stdio server, no API key |
-| Stdio MCP server for agents | ✅ `cgrx serve`, 19 focused tools | ❌ different scope (CI/scanning, not an agent MCP) | ❌ different scope (search UI + Cody API) | ✅ MCP tool surface |
+| Stdio MCP server for agents | ✅ `cgrx serve`, 20 focused tools | ❌ different scope (CI/scanning, not an agent MCP) | ❌ different scope (search UI + Cody API) | ✅ MCP tool surface |
 | Symbol search (name, prefix, substring, fuzzy) | ✅ `search_graph`, name-first deterministic ranking + fuzzy matching (Levenshtein) | ❌ different scope | ✅ Full-text + structural search | ✅ Full-text + language/file filters |
 | Exact source definitions | ✅ `get_code_snippet`, `get_outline` (spans, no bodies) | ❌ different scope | ✅ Go to definition | ✅ `get_code_snippet` / outline → exact |
 | Bounded caller/callee traces | ✅ `trace_path`, `find_usages` (1–4 hop, proven edges only) | ❌ different scope (data-flow, not call trace) | ✅ Find references / call graph (broader language coverage) | ✅ `find_usages` with `depth`, `via` |

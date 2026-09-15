@@ -154,7 +154,8 @@ fn schema_count_is_machine_readable_and_within_reviewed_runtime_tool_budget() {
         .expect("schema count is numeric");
     // 2700 covered the 16-tool schema before find_similar (duplicate-body
     // lookup over deterministic fingerprints) joined the reviewed surface.
-    assert!(count <= 3800, "schema count was {count}");
+    // Bumped to 4000 after adding explain_symbol and fuzzy matching.
+    assert!(count <= 4000, "schema count was {count}");
 }
 
 #[test]
