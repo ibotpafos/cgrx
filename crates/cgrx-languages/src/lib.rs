@@ -2,6 +2,7 @@
 
 mod c;
 mod cpp;
+mod csharp;
 mod go;
 mod java;
 mod kotlin;
