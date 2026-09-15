@@ -1,0 +1,114 @@
+{
+  "schema_version": 1,
+  "algorithm": "framework_detection_gate_v1",
+  "llm_used": false,
+  "frameworks": [
+    {
+      "id": "django",
+      "display_name": "Django",
+      "language": "python",
+      "positive_patterns": [
+        "@app.get(", "@app.post(", "@app.put(", "@app.delete(", "@app.patch(",
+        "@router.get(", "@router.post(", "@router.put(", "@router.delete(",
+        "@bp.get(", "@bp.post(",
+        "path(", "re_path(",
+        "models.Model",
+        ".objects.filter(", ".objects.get(", ".objects.create(",
+        ".objects.all(", ".objects.exclude(", ".objects.order_by(",
+        "from django.urls import", "from django.db import",
+        "from django.http import", "from django.shortcuts import"
+      ],
+      "negative_patterns": [
+        "def get(",
+        "def post(",
+        "class Model:"
+      ]
+    },
+    {
+      "id": "fastapi",
+      "display_name": "FastAPI",
+      "language": "python",
+      "positive_patterns": [
+        "@app.get(", "@app.post(", "@app.put(", "@app.delete(", "@app.patch(",
+        "@router.get(", "@router.post(", "@router.put(", "@router.delete(",
+        "from fastapi import",
+        "import fastapi",
+        "FastAPI("
+      ],
+      "negative_patterns": [
+        "def get(",
+        "def post("
+      ]
+    },
+    {
+      "id": "express",
+      "display_name": "Express",
+      "language": "typescript",
+      "positive_patterns": [
+        "import express from 'express'",
+        "const express = require('express')",
+        "import { Router } from 'express'",
+        "app.use(",
+        "router.use(",
+        "app.get(", "app.post(", "app.put(", "app.delete(", "app.patch(",
+        "router.get(", "router.post(", "router.put(", "router.delete(",
+        "express.json(",
+        "express.urlencoded(",
+        "express.static(",
+        "express()"
+      ],
+      "negative_patterns": [
+        "function use(",
+        "http.createServer("
+      ]
+    }
+  ],
+  "confidence_levels": {
+    "HIGH": "3+ positive matches, 0 negative matches",
+    "MEDIUM": "1-2 positive matches, 0 negative matches",
+    "LOW": "positive matches exceed negative matches",
+    "NONE": "no positive matches or negative matches >= positive matches"
+  },
+  "verdicts": {
+    "DETECTED": "HIGH confidence framework detection",
+    "SUSPECTED": "MEDIUM confidence framework detection",
+    "WEAK_SIGNAL": "LOW confidence framework detection",
+    "ABSENT": "No framework detected"
+  },
+  "fixtures": {
+    "positive": [
+      {
+        "id": "django-routes-001",
+        "framework": "django",
+        "file": "views.py",
+        "content": "from django.shortcuts import render\nfrom django.http import HttpResponse\n\n@ app.get('/api/users')\ndef get_users(request):\n    return HttpResponse('ok')\n"
+      },
+      {
+        "id": "fastapi-routes-001",
+        "framework": "fastapi",
+        "file": "main.py",
+        "content": "from fastapi import FastAPI\n\napp = FastAPI()\n\n@app.get('/items')\ndef get_items():\n    return []\n"
+      },
+      {
+        "id": "express-routes-001",
+        "framework": "express",
+        "file": "server.ts",
+        "content": "import express from 'express';\n\nconst app = express();\n\napp.get('/users', (req, res) => {\n  res.json([]);\n});\n"
+      }
+    ],
+    "negative": [
+      {
+        "id": "plain-python-001",
+        "framework": "django",
+        "file": "utils.py",
+        "content": "def get(items, key):\n    return items.get(key)\n\ndef post(data):\n    return data\n"
+      },
+      {
+        "id": "plain-typescript-001",
+        "framework": "express",
+        "file": "server.ts",
+        "content": "import http from 'http';\n\nconst server = http.createServer((req, res) => {\n  res.end('ok');\n});\n"
+      }
+    ]
+  }
+}

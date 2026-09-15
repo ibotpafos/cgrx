@@ -1820,4 +1820,3 @@ fn fixture_clock_parallel_allocations_are_unique() {
     let paths: std::collections::BTreeSet<_> = directories.iter().map(|d| d.path()).collect();
     assert_eq!(paths.len(), 16);
 }
-

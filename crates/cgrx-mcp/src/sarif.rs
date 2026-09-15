@@ -1,7 +1,8 @@
 //! Deterministic SARIF 2.1.0 rendering of CGRX quality-gate results.
 //!
 //! The converter is a pure function over the `structuredContent` JSON produced
-//! by `check_change_gates` and `check_repository_gates`. It performs no I/O,
+//! by `check_change_gates`, `check_repository_gates`, and `check_framework_gates`.
+//! It performs no I/O,
 //! runs no tests, and invokes no LLM: every string is templated from gate
 //! fields. Callers that have filesystem access may supply a line resolver
 //! that maps a repo-relative path plus byte offset to a 1-based line number;
@@ -52,6 +53,10 @@ fn rule_description(rule: &str) -> &'static str {
         "max_symbol_fan_in" => "Maximum symbol fan-in above the budget.",
         "max_unresolved_local_dependencies" => "Unresolved local dependencies above the budget.",
         "max_coverage_gaps" => "Index coverage gaps above the budget.",
+        "max_framework_confidence" => "Framework confidence above the tolerance threshold.",
+        "max_false_positive_matches" => {
+            "Framework false-positive guards above the tolerance threshold."
+        }
         _ => "CGRX quality-gate policy breached.",
     }
 }
@@ -60,6 +65,7 @@ fn gate_kind(tool: &str) -> Result<&'static str, String> {
     match tool {
         "check_change_gates" | "change" => Ok("change"),
         "check_repository_gates" | "repository" => Ok("repository"),
+        "check_framework_gates" | "framework" => Ok("framework"),
         _ => Err(format!(
             "unknown gate tool {tool}; expected check_change_gates or check_repository_gates"
         )),

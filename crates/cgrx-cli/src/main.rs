@@ -834,9 +834,10 @@ impl ToolBackend for RuntimeMcpBackend {
         let baseline = self.risk_baseline.as_ref().expect("baseline loaded");
         let mut result = match runs {
             Some(value) => {
-                let parsed = serde_json::from_value::<Vec<TestRunRecord>>(value).map_err(|error| {
-                    BackendError::new("cgrx.invalid_arguments", error.to_string())
-                })?;
+                let parsed =
+                    serde_json::from_value::<Vec<TestRunRecord>>(value).map_err(|error| {
+                        BackendError::new("cgrx.invalid_arguments", error.to_string())
+                    })?;
                 self.runtime
                     .scan_risks_with_test_runs(baseline, root, limit, &parsed)
                     .map_err(|e| BackendError::new(e.code(), e.to_string()))?
@@ -1099,6 +1100,26 @@ impl ToolBackend for RuntimeMcpBackend {
             .map_err(|error| BackendError::new(error.code(), error.to_string()))
     }
 
+    fn check_framework_gates(
+        &mut self,
+        paths: &[String],
+        scopes: &[String],
+        fail_on: &str,
+        max_framework_confidence: usize,
+        max_false_positive_matches: usize,
+    ) -> Result<Value, BackendError> {
+        self.refresh()?;
+        self.runtime
+            .check_framework_gates(
+                paths,
+                scopes,
+                fail_on,
+                max_framework_confidence,
+                max_false_positive_matches,
+            )
+            .map_err(|error| BackendError::new(error.code(), error.to_string()))
+    }
+
     fn status(&mut self, paths_or_scope: Value) -> Result<Value, BackendError> {
         const COVERAGE_OUTPUT_LIMIT: usize = 8;
         self.refresh()?;
@@ -1296,12 +1317,16 @@ fn check_gates(args: &[String]) -> Result<(), String> {
         "--max-package-fan-out",
         "--max-symbol-fan-in",
         "--max-unresolved-local-dependencies",
+        "--paths",
+        "--scopes",
+        "--max-framework-confidence",
+        "--max-false-positive-matches",
         "--output",
     ];
     validate_value_flags(args, ALLOWED)?;
     let gate = flag(args, "--gate")?;
-    if !matches!(gate, "change" | "repository") {
-        return Err("--gate must be change or repository".to_owned());
+    if !matches!(gate, "change" | "repository" | "framework") {
+        return Err("--gate must be change, repository, or framework".to_owned());
     }
     let format = flag_or(args, "--format", "json");
     if !matches!(format, "json" | "sarif") {
@@ -1325,7 +1350,7 @@ fn check_gates(args: &[String]) -> Result<(), String> {
             "max_unverified_impacts": parse_bounded_usize(flag_or(args, "--max-unverified-impacts", "0"), "--max-unverified-impacts", 0, 10_000)?,
         });
         ("check_change_gates", arguments)
-    } else {
+    } else if gate == "repository" {
         let package_depth = parse_bounded_usize(
             flag_or(args, "--package-depth", "2"),
             "--package-depth",
@@ -1343,6 +1368,47 @@ fn check_gates(args: &[String]) -> Result<(), String> {
             "max_coverage_gaps": parse_bounded_usize(flag_or(args, "--max-coverage-gaps", "0"), "--max-coverage-gaps", 0, 1_000_000)?,
         });
         ("check_repository_gates", arguments)
+    } else {
+        let paths = optional_flag(args, "--paths")
+            .map(|value| {
+                value
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|segment| !segment.is_empty())
+                    .map(str::to_owned)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        let scopes = optional_flag(args, "--scopes")
+            .map(|value| {
+                value
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|segment| !segment.is_empty())
+                    .map(str::to_owned)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        let max_framework_confidence = parse_bounded_usize(
+            flag_or(args, "--max-framework-confidence", "0"),
+            "--max-framework-confidence",
+            0,
+            10_000,
+        )?;
+        let max_false_positive_matches = parse_bounded_usize(
+            flag_or(args, "--max-false-positive-matches", "0"),
+            "--max-false-positive-matches",
+            0,
+            10_000,
+        )?;
+        let arguments = json!({
+            "paths": paths,
+            "scopes": scopes,
+            "fail_on": fail_on,
+            "max_framework_confidence": max_framework_confidence,
+            "max_false_positive_matches": max_false_positive_matches,
+        });
+        ("check_framework_gates", arguments)
     };
 
     let response = call_managed_tool(tool, arguments, root)?;
