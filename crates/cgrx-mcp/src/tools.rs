@@ -176,6 +176,17 @@ pub trait ToolBackend: Send + Sync {
         max_framework_confidence: usize,
         max_false_positive_matches: usize,
     ) -> Result<Value, BackendError>;
+
+    /// Scan working-tree secrets, dependencies and licenses and evaluate the security gate.
+    fn check_security_gates(
+        &mut self,
+        fail_on: &str,
+        max_secret_findings: usize,
+        max_dependency_findings: usize,
+        max_license_findings: usize,
+        allowlist_paths: &[String],
+        allowlist_licenses: &[String],
+    ) -> Result<Value, BackendError>;
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -600,6 +611,7 @@ impl Server {
             "get_code_snippet" => self.get_code_snippet(from_value(call.arguments)?)?,
             "check_index_coverage" => self.check_index_coverage(from_value(call.arguments)?)?,
             "check_framework_gates" => self.check_framework_gates(from_value(call.arguments)?)?,
+            "check_security_gates" => self.check_security_gates(from_value(call.arguments)?)?,
             "expand" => self.expand(from_value(call.arguments)?)?,
             "status" => self.status(from_value(call.arguments)?)?,
             "memory_record" => self.memory_record(from_value(call.arguments)?)?,
@@ -873,6 +885,34 @@ impl Server {
             .map_err(backend_error)
     }
 
+    fn check_security_gates(
+        &mut self,
+        arguments: CheckSecurityGatesArguments,
+    ) -> Result<Value, JsonRpcError> {
+        let Some(backend) = &mut self.backend else {
+            return Err(JsonRpcError::typed(
+                -32020,
+                "cgrx.index_adapter_not_connected",
+                "check_security_gates requires an indexed runtime backend",
+            ));
+        };
+        let fail_on = if arguments.fail_on.is_empty() {
+            "error"
+        } else {
+            arguments.fail_on.as_str()
+        };
+        backend
+            .check_security_gates(
+                fail_on,
+                arguments.max_secret_findings,
+                arguments.max_dependency_findings,
+                arguments.max_license_findings,
+                &arguments.allowlist_paths,
+                &arguments.allowlist_licenses,
+            )
+            .map_err(backend_error)
+    }
+
     fn expand(&mut self, arguments: ExpandArguments) -> Result<Value, JsonRpcError> {
         if arguments.budget == 0 {
             return Err(JsonRpcError::typed(
@@ -1018,6 +1058,7 @@ fn model_visible_result(tool: &str, structured: &Value) -> Value {
         "get_code_snippet" => compact_snippet(structured),
         "check_index_coverage" => compact_coverage(structured),
         "check_framework_gates" => compact_framework_gates(structured),
+        "check_security_gates" => compact_security_gates(structured),
         "status" => compact_status(structured),
         "memory_record" => compact_memory_record(structured),
         "memory_recall" => compact_memory_recall(structured),
@@ -1945,6 +1986,40 @@ fn compact_framework_gates(value: &Value) -> Value {
     })
 }
 
+fn compact_security_gates(value: &Value) -> Value {
+    let secret_count = value
+        .get("secret_findings")
+        .and_then(Value::as_array)
+        .map(Vec::len)
+        .unwrap_or(0);
+    let dependency_count = value
+        .get("dependency_findings")
+        .and_then(Value::as_array)
+        .map(Vec::len)
+        .unwrap_or(0);
+    let license_count = value
+        .get("license_findings")
+        .and_then(Value::as_array)
+        .map(Vec::len)
+        .unwrap_or(0);
+    json!({
+        "at": snapshot_tag(value.get("snapshot")),
+        "algorithm": value.get("algorithm"),
+        "llm_used": value.get("llm_used"),
+        "verdict": value.get("verdict"),
+        "would_block": value.get("would_block"),
+        "fail_on": value.get("fail_on"),
+        "rules": value.get("rules"),
+        "partial": value.get("partial"),
+        "totals": value.get("totals"),
+        "secret_findings_count": secret_count,
+        "dependency_findings_count": dependency_count,
+        "license_findings_count": license_count,
+        "coverage_gap_count": value.get("coverage_gap_count"),
+        "agent_handoff": value.get("agent_handoff"),
+    })
+}
+
 fn compact_record_row(value: &Value) -> Value {
     json!([
         value.get("path"),
@@ -2146,6 +2221,22 @@ struct CheckFrameworkGatesArguments {
     max_false_positive_matches: usize,
 }
 
+#[derive(Deserialize)]
+struct CheckSecurityGatesArguments {
+    #[serde(default)]
+    fail_on: String,
+    #[serde(default)]
+    max_secret_findings: usize,
+    #[serde(default)]
+    max_dependency_findings: usize,
+    #[serde(default)]
+    max_license_findings: usize,
+    #[serde(default)]
+    allowlist_paths: Vec<String>,
+    #[serde(default)]
+    allowlist_licenses: Vec<String>,
+}
+
 const fn default_coverage_limit() -> usize {
     100
 }
@@ -2336,7 +2427,8 @@ fn model_visible_schema() -> Value {
         {"name":"expand","description":"Expand","inputSchema":{"type":"object","required":["handle","budget"],"properties":{"handle":{"type":"string"},"budget":{"type":"integer","minimum":1}}}},
         {"name":"status","inputSchema":{"type":"object","required":["paths_or_scope"],"properties":{"paths_or_scope":{}}}},
         {"name":"memory_record","description":"Record","inputSchema":{"type":"object","required":["fact","confidence","repo","path"],"properties":{"fact":{"type":"string"},"confidence":{"type":"integer","minimum":0,"maximum":1000},"repo":{"type":"string"},"rev":{"type":"string"},"path":{"type":"string"},"span":{"type":"object","required":["start_line","end_line"],"properties":{"start_line":{"type":"integer","minimum":1},"end_line":{"type":"integer","minimum":1}}},"valid_until_unix_nanos":{"type":"integer","minimum":1},"privacy_tag":{"type":"string"}}}},
-        {"name":"memory_recall","description":"Recall","inputSchema":{"type":"object","properties":{"query":{"type":"string"},"min_confidence":{"type":"integer","minimum":0,"maximum":1000,"default":0},"privacy_tag":{"type":"string"},"revision":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":50,"default":20}}}}
+        {"name":"memory_recall","description":"Recall","inputSchema":{"type":"object","properties":{"query":{"type":"string"},"min_confidence":{"type":"integer","minimum":0,"maximum":1000,"default":0},"privacy_tag":{"type":"string"},"revision":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":50,"default":20}}}},
+        {"name":"check_security_gates","description":"Snapshot-bound security gate over working-tree secrets, Cargo.lock dependency hygiene and license allowlist with explicit PASS/WARN/FAIL/INCONCLUSIVE verdict; no LLM executed.","inputSchema":{"type":"object","properties":{"fail_on":{"enum":["error","warning","none"],"default":"error"},"max_secret_findings":{"type":"integer","minimum":0,"maximum":10000,"default":0},"max_dependency_findings":{"type":"integer","minimum":0,"maximum":10000,"default":0},"max_license_findings":{"type":"integer","minimum":0,"maximum":10000,"default":0},"allowlist_paths":{"type":"array","items":{"type":"string"}},"allowlist_licenses":{"type":"array","items":{"type":"string"}}}}}
     ]);
     let metadata = [
         (
@@ -2411,6 +2503,10 @@ fn model_visible_schema() -> Value {
             "Recall decisions",
             "Recall non-expired decision facts with bounded deterministic ranking by confidence; no LLM executed.",
         ),
+        (
+            "Check security gates",
+            "Scan working-tree secrets, Cargo.lock dependency hygiene and license allowlist within the repository and evaluate a snapshot-bound, model-free gate with explicit pass, warning, fail or inconclusive semantics.",
+        ),
     ];
     for (tool, (title, description)) in tools.as_array_mut().unwrap().iter_mut().zip(metadata) {
         tool["title"] = json!(title);
@@ -2451,7 +2547,7 @@ mod openai_metadata_tests {
     #[test]
     fn openai_tool_contract() {
         let tools = model_visible_schema();
-        assert_eq!(tools.as_array().unwrap().len(), 18);
+        assert_eq!(tools.as_array().unwrap().len(), 19);
         for tool in tools.as_array().unwrap() {
             assert!(tool["title"].as_str().is_some_and(|s| !s.is_empty()));
             assert!(tool["description"].as_str().is_some_and(|s| s.len() > 20));

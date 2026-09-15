@@ -7,6 +7,7 @@ pub use file_watcher::{FileWatcher, FileWatcherEvent, NotifyWatcher};
 mod intent;
 mod runtime;
 
+pub use runtime::security::SecurityAuditConfig;
 pub use runtime::{
     GraphDirection, GraphViewRequest, ImportRuntimeEvidenceReport, IndexReport, OrientReport,
     RiskBaseline, Runtime, RuntimeConfig, RuntimeError, RuntimeEvidenceFormat, RuntimeInsight,

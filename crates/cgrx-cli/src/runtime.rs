@@ -5,6 +5,7 @@ mod graph_view;
 mod observations;
 mod refactors;
 mod risks;
+pub mod security;
 mod ts_config;
 
 pub use config::RuntimeConfig;
@@ -1273,6 +1274,15 @@ impl Runtime {
         };
         let result = frameworks::evaluate_framework_gates(&detection, fail_on, thresholds);
         Ok(serde_json::to_value(&result).expect("framework gate result serializes"))
+    }
+
+    pub fn check_security_gates(
+        &self,
+        config: &security::SecurityAuditConfig,
+    ) -> Result<Value, RuntimeError> {
+        let snapshot = serde_json::to_value(self.snapshot()).expect("snapshot serializes");
+        let result = security::evaluate_security_gates(config, &snapshot)?;
+        Ok(serde_json::to_value(&result).expect("security audit result serializes"))
     }
 
     #[must_use]

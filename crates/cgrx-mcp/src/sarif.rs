@@ -66,8 +66,9 @@ fn gate_kind(tool: &str) -> Result<&'static str, String> {
         "check_change_gates" | "change" => Ok("change"),
         "check_repository_gates" | "repository" => Ok("repository"),
         "check_framework_gates" | "framework" => Ok("framework"),
+        "check_security_gates" | "security" => Ok("security"),
         _ => Err(format!(
-            "unknown gate tool {tool}; expected check_change_gates or check_repository_gates"
+            "unknown gate tool {tool}; expected check_change_gates, check_repository_gates, check_framework_gates or check_security_gates"
         )),
     }
 }

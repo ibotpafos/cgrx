@@ -1129,6 +1129,40 @@ impl ToolBackend for RuntimeMcpBackend {
             .map_err(|error| BackendError::new(error.code(), error.to_string()))
     }
 
+    fn check_security_gates(
+        &mut self,
+        fail_on: &str,
+        max_secret_findings: usize,
+        max_dependency_findings: usize,
+        max_license_findings: usize,
+        allowlist_paths: &[String],
+        allowlist_licenses: &[String],
+    ) -> Result<Value, BackendError> {
+        let root = self.watch_root.clone().ok_or_else(|| {
+            BackendError::new(
+                "cgrx.no_watch_root",
+                "security gates require a managed repository root",
+            )
+        })?;
+        self.refresh()?;
+        let config = cgrx_cli::SecurityAuditConfig {
+            snapshot_path: root.to_string_lossy().into_owned(),
+            fail_on: if fail_on.is_empty() {
+                "error".to_owned()
+            } else {
+                fail_on.to_owned()
+            },
+            allowlist_paths: allowlist_paths.to_vec(),
+            allowlist_licenses: allowlist_licenses.to_vec(),
+            max_secret_findings,
+            max_dependency_findings,
+            max_license_findings,
+        };
+        self.runtime
+            .check_security_gates(&config)
+            .map_err(|error| BackendError::new(error.code(), error.to_string()))
+    }
+
     fn status(&mut self, paths_or_scope: Value) -> Result<Value, BackendError> {
         const COVERAGE_OUTPUT_LIMIT: usize = 8;
         self.refresh()?;
@@ -1335,8 +1369,8 @@ fn check_gates(args: &[String]) -> Result<(), String> {
     ];
     validate_value_flags(args, ALLOWED)?;
     let gate = flag(args, "--gate")?;
-    if !matches!(gate, "change" | "repository" | "framework") {
-        return Err("--gate must be change, repository, or framework".to_owned());
+    if !matches!(gate, "change" | "repository" | "framework" | "security") {
+        return Err("--gate must be change, repository, framework, or security".to_owned());
     }
     let format = flag_or(args, "--format", "json");
     if !matches!(format, "json" | "sarif") {
@@ -1378,6 +1412,54 @@ fn check_gates(args: &[String]) -> Result<(), String> {
             "max_coverage_gaps": parse_bounded_usize(flag_or(args, "--max-coverage-gaps", "0"), "--max-coverage-gaps", 0, 1_000_000)?,
         });
         ("check_repository_gates", arguments)
+    } else if gate == "security" {
+        let max_secret_findings = parse_bounded_usize(
+            flag_or(args, "--max-secret-findings", "0"),
+            "--max-secret-findings",
+            0,
+            10_000,
+        )?;
+        let max_dependency_findings = parse_bounded_usize(
+            flag_or(args, "--max-dependency-findings", "0"),
+            "--max-dependency-findings",
+            0,
+            10_000,
+        )?;
+        let max_license_findings = parse_bounded_usize(
+            flag_or(args, "--max-license-findings", "0"),
+            "--max-license-findings",
+            0,
+            10_000,
+        )?;
+        let allowlist_paths = optional_flag(args, "--allowlist-paths")
+            .map(|value| {
+                value
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|segment| !segment.is_empty())
+                    .map(str::to_owned)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        let allowlist_licenses = optional_flag(args, "--allowlist-licenses")
+            .map(|value| {
+                value
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|segment| !segment.is_empty())
+                    .map(str::to_owned)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        let arguments = json!({
+            "fail_on": fail_on,
+            "max_secret_findings": max_secret_findings,
+            "max_dependency_findings": max_dependency_findings,
+            "max_license_findings": max_license_findings,
+            "allowlist_paths": allowlist_paths,
+            "allowlist_licenses": allowlist_licenses,
+        });
+        ("check_security_gates", arguments)
     } else {
         let paths = optional_flag(args, "--paths")
             .map(|value| {

@@ -44,6 +44,7 @@ impl Toolset {
                 "get_code_snippet",
                 "check_index_coverage",
                 "check_framework_gates",
+                "check_security_gates",
             ],
             Self::Standard => &[
                 "status",
@@ -57,6 +58,7 @@ impl Toolset {
                 "expand",
                 "get_architecture",
                 "check_framework_gates",
+                "check_security_gates",
             ],
             Self::Full => &[
                 "status",
@@ -76,6 +78,7 @@ impl Toolset {
                 "find_similar",
                 "suggest_refactors",
                 "check_framework_gates",
+                "check_security_gates",
             ],
         }
     }
@@ -168,7 +171,7 @@ mod tests {
         assert!(names.contains(&"find_usages"));
         assert!(names.contains(&"get_code_snippet"));
         assert!(names.contains(&"check_index_coverage"));
-        assert_eq!(names.len(), 8);
+        assert_eq!(names.len(), 9);
     }
 
     #[test]
@@ -180,7 +183,7 @@ mod tests {
         assert!(names.contains(&"orient"));
         assert!(names.contains(&"expand"));
         assert!(names.contains(&"get_architecture"));
-        assert_eq!(names.len(), 11);
+        assert_eq!(names.len(), 12);
     }
 
     #[test]
@@ -195,7 +198,7 @@ mod tests {
         assert!(names.contains(&"ingest_runtime_evidence"));
         assert!(names.contains(&"find_similar"));
         assert!(names.contains(&"suggest_refactors"));
-        assert_eq!(names.len(), 17);
+        assert_eq!(names.len(), 18);
     }
 
     #[test]
