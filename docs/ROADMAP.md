@@ -41,7 +41,7 @@ CGRX должен стать **незаменимым инструментом**
 | C# | ✅ | Средняя | Высокое (.NET ecosystem) |
 | Ruby | ✅ | Низкая | Среднее (Rails community) |
 | PHP | ✅ | Низкая | Среднее (web backend) |
-| Swift | ⏳ | Средняя | Среднее (iOS/macOS) |
+| Swift | ✅ | Средняя | Среднее (iOS/macOS) |
 | Scala | ⏳ | Средняя | Низкое (JVM niche) |
 | Clojure | ⏳ | Низкая | Низкое (Lisp niche) |
 | Elixir | ⏳ | Низкая | Низкое (Phoenix niche) |

@@ -6,6 +6,7 @@ mod csharp;
 mod go;
 mod php;
 mod ruby;
+mod swift;
 mod java;
 mod kotlin;
 mod pack;
