@@ -1548,7 +1548,7 @@ fn check_gates(args: &[String]) -> Result<(), String> {
 
     let rendered = if format == "sarif" {
         let root = root.canonicalize().map_err(|error| error.to_string())?;
-        let resolve = |path: &str, offset: u64| file_line(&root, path, offset);
+        let resolve = move |path: &str, offset: u64| file_line(&root, path, offset);
         gate_to_sarif(tool, &structured, Some(&resolve))?
     } else {
         structured.clone()

@@ -8,7 +8,7 @@ mod tools;
 
 pub use presets::{Toolset, resolve_toolset};
 pub use protocol::{JsonRpcError, JsonRpcRequest, JsonRpcResponse};
-pub use sarif::{LineResolver, gate_to_sarif, severity_level, verdict_level};
+pub use sarif::{LineResolver, SarifResult, gate_to_sarif, severity_level, to_sarif, verdict_level};
 pub use tools::{
     BackendError, Server, ToolBackend, model_visible_schema_json, revision_bound_handle,
 };
