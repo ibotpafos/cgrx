@@ -95,17 +95,20 @@
 ## Priority 3: Code Quality (Week 3)
 
 ### 3.1 Decompose runtime.rs
-**Problem**: 6666 lines is too large.
+**Problem**: 6738 lines in runtime.rs.
 
-**Solution**: Split into modules:
-- runtime/orient.rs — orient logic
-- runtime/search.rs — search logic
-- runtime/tracing.rs — trace_path, find_usages
-- runtime/refactors.rs — suggest_refactors
-- runtime/risks.rs — scan_risks
-- runtime/gates.rs — check_*_gates
-- runtime/index.rs — index logic
-- runtime/state.rs — state management
+**Solution**: Split into focused modules. Already extracted:
+- architecture.rs (54K) — package graph, communities
+- config.rs (1.7K) — RuntimeConfig
+- frameworks.rs (33K) — framework detection
+- graph_view.rs (19K) — graph visualization
+- observations.rs (37K) — runtime evidence
+- refactors.rs (27K) — refactoring suggestions
+- risks.rs (18K) — risk scanning
+- security.rs (45K) — security gates
+- ts_config.rs (33K) — TypeScript config
+
+**Remaining in runtime.rs**: Core types, ScopedQuery, arc resolution (~826 lines), search, extraction, index, orient, tracing.
 
 **Success criteria**: No file > 1000 lines.
 
