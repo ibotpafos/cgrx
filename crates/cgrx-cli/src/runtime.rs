@@ -15,6 +15,7 @@ mod ts_helpers;
 mod scan_helpers;
 mod git_helpers;
 mod index_helpers;
+mod check_helpers;
 #[cfg(test)]
 mod tests;
 
@@ -26,6 +27,7 @@ use ts_helpers::{is_ts_inventory_path, is_ts_resolution_config, remove_path, sca
 use scan_helpers::{crosses_nested_git_boundary, expand_untracked_directories, collect_untracked_sources, watch_scan_path, normalize_stored, refresh_qualified_call_gaps, definitive_stored_arcs, rebuild_refreshed_arcs, changed_paths, working_tree_digest, ScopedQuery};
 use git_helpers::{parse_committed_tree, GitBlobBatch, refresh_status, coverage_for_scope, coverage_for_scope_with_matcher, coverage_gap_page, coverage_gap_count, dynamic_dispatch_path, git_bytes, git_text, store_writer_error};
 use index_helpers::index_source;
+use check_helpers::check_index_coverage as check_index_impl;
 pub use config::RuntimeConfig;
 pub use graph_view::{GraphDirection, GraphViewRequest};
 pub use observations::{
@@ -1287,164 +1289,9 @@ impl Runtime {
         gap_offset: usize,
         gap_limit: usize,
     ) -> Result<Value, RuntimeError> {
-        if gap_limit == 0 || gap_limit > 500 {
-            return Err(RuntimeError::new(
-                "cgrx.invalid_arguments",
-                "coverage limit must be from 1 to 500",
-            ));
-        }
-        if paths.is_empty() && scopes.is_empty() {
-            return Err(RuntimeError::new(
-                "cgrx.invalid_arguments",
-                "at least one exact path or bounded scope is required",
-            ));
-        }
-        if paths
-            .iter()
-            .chain(scopes)
-            .any(|value| value.trim().is_empty())
-        {
-            return Err(RuntimeError::new(
-                "cgrx.invalid_arguments",
-                "paths and scopes must be non-empty",
-            ));
-        }
-
-        let mut counts = BTreeMap::from([
-            ("indexed", 0_usize),
-            ("partial", 0),
-            ("excluded", 0),
-            ("unknown", 0),
-        ]);
-        let path_rows: Vec<_> = paths
-            .iter()
-            .map(|path| {
-                let indexed = self.stored.documents.iter().any(|document| {
-                    document.provenance == "SYNTAX" && document.path == *path
-                });
-                let excluded = self.stored.coverage.excluded_paths.iter().any(|item| item == path);
-                let mut gaps = Vec::new();
-                gaps.extend(
-                    self.stored
-                        .coverage
-                        .parser_error_ranges
-                        .iter()
-                        .filter(|range| range.path == *path)
-                        .map(|range| json!({"code":"PARSER_ERROR_RANGE","start":range.start,"end":range.end})),
-                );
-                gaps.extend(
-                    self.stored
-                        .coverage
-                        .stale_paths
-                        .iter()
-                        .filter(|item| *item == path)
-                        .map(|_| json!({"code":"STALE_PATH"})),
-                );
-                gaps.extend(
-                    self.stored
-                        .coverage
-                        .dynamic_dispatch
-                        .iter()
-                        .filter(|location| dynamic_dispatch_path(location) == path)
-                        .map(|location| json!({"code":"DYNAMIC_DISPATCH","location":location})),
-                );
-                let status = if indexed && gaps.is_empty() {
-                    "indexed"
-                } else if indexed {
-                    "partial"
-                } else if excluded {
-                    "excluded"
-                } else {
-                    "unknown"
-                };
-                *counts.get_mut(status).expect("known coverage status") += 1;
-                json!({"path":path,"status":status,"gaps":gaps,"gap_count":gaps.len()})
-            })
-            .collect();
-
-        let scope_rows: Vec<_> = scopes
-            .iter()
-            .map(|pattern| {
-                let scope = Scope {
-                    include: vec![pattern.clone()],
-                    exclude: Vec::new(),
-                    relation_kinds: Vec::new(),
-                    max_depth: 1,
-                };
-                let indexed_paths: BTreeSet<_> = self
-                    .stored
-                    .documents
-                    .iter()
-                    .filter(|document| {
-                        document.provenance == "SYNTAX" && path_in_scope(&document.path, &scope)
-                    })
-                    .map(|document| document.path.as_str())
-                    .collect();
-                let coverage = coverage_for_scope(&self.stored.coverage, &scope);
-                let gap_count = coverage_gap_count(&coverage);
-                let page = coverage_gap_page(&coverage, gap_offset, gap_limit);
-                let returned = page.len();
-                let has_more = gap_offset.saturating_add(returned) < gap_count;
-                let next_offset = has_more.then_some(gap_offset.saturating_add(returned));
-                let status = if !indexed_paths.is_empty() && gap_count == 0 {
-                    "indexed"
-                } else if !indexed_paths.is_empty() {
-                    "partial"
-                } else if !coverage.excluded_paths.is_empty() {
-                    "excluded"
-                } else {
-                    "unknown"
-                };
-                json!({
-                    "scope":pattern,
-                    "status":status,
-                    "indexed_paths":indexed_paths.len(),
-                    "coverage_gap_count":gap_count,
-                    "gap_offset":gap_offset,
-                    "gap_limit":gap_limit,
-                    "gaps":page,
-                    "returned":returned,
-                    "has_more":has_more,
-                    "next_offset":next_offset,
-                    "coverage_summary":{
-                        "excluded_paths":coverage.excluded_paths.len(),
-                        "parser_error_ranges":coverage.parser_error_ranges.len(),
-                        "stale_paths":coverage.stale_paths.len(),
-                        "dynamic_dispatch":coverage.dynamic_dispatch.len(),
-                        "traversal_truncated":coverage.traversal_truncated
-                    }
-                })
-            })
-            .collect();
-
-        let mut scope_counts = BTreeMap::from([
-            ("indexed", 0_usize),
-            ("partial", 0),
-            ("excluded", 0),
-            ("unknown", 0),
-        ]);
-        for row in &scope_rows {
-            if let Some(status) = row["status"].as_str() {
-                *scope_counts.get_mut(status).expect("known scope status") += 1;
-            }
-        }
-
-        Ok(json!({
-            "snapshot":self.stored.snapshot,
-            "paths":path_rows,
-            "scopes":scope_rows,
-            "summary":counts,
-            "scope_summary":scope_counts,
-            "meaning":"indexed means no recorded gap; partial means indexed with recorded parser, dynamic, or stale gaps"
-        }))
+        check_index_impl(&self.stored, paths, scopes, gap_offset, gap_limit)
     }
 
-    /// Detect framework usage within the given paths/scopes and evaluate the
-    /// conservative, deterministic framework gate.
-    ///
-    /// No LLM is involved and the result is bound to the current snapshot. The
-    /// gate reports Django/FastAPI/Express signals, confidence, false-positive
-    /// guards and an explicit PASS/WARN/FAIL/INCONCLUSIVE verdict.
     pub fn check_framework_gates(
         &self,
         paths: &[String],
