@@ -25,6 +25,23 @@ explicitly on each request. No embedding service, hosted index or API key.
 - Rust, Go, Java, TypeScript/JavaScript/TSX and Python parsing. Resolution depth varies
   by language; this does not replace a compiler or language server.
 
+## Roadmap
+
+See [Competitive positioning](docs/COMPETITIVE.md) for the full comparison and
+roadmap. The four phases toward competitive parity are:
+
+- **P1 — Language breadth:** grow from the current 5 packs (Rust, Go, Java,
+  TypeScript/TSX, Python) toward 10+ languages with conservative relationship
+  proofs (`crates/cgrx-languages/src/`).
+- **P2 — Monorepo scale:** replace hard caps (e.g. `100_000`/`20_000` in
+  `crates/cgrx-cli/src/runtime/risks.rs`) with streaming, pagination and
+  configurable limits.
+- **P3 — Team / shared index server:** move from repo-scoped runtimes to a shared
+  index, starting with per-project resident-cost measurement.
+- **P4 — Safe model-free apply:** let agents execute the deterministic
+  `suggest_refactors` / `scan_risks` handoffs without an LLM, refusing any edit
+  that crosses a `blocked_by_gaps` boundary.
+
 ## Install with one command
 
 ~~~sh

@@ -2789,4 +2789,164 @@ mod openai_metadata_tests {
                 .is_err()
         );
     }
+
+    // ---- Quality-gate verdict + would_block coverage (private functions) ----
+
+    #[test]
+    fn change_gate_verdict_pass_with_clean_full_evidence() {
+        // No error-severity rule breached and partial=false => PASS.
+        let scan = json!({"partial": false});
+        let gate = evaluate_change_gates(&scan, "error", [0, 0, 0, 0]);
+        assert_eq!(gate["verdict"], "PASS");
+        assert_eq!(gate["would_block"], false);
+        assert_eq!(gate["totals"]["errors"], 0);
+        assert_eq!(gate["totals"]["warnings"], 0);
+        assert_eq!(gate["partial"], false);
+    }
+
+    #[test]
+    fn change_gate_verdict_warn_only_warning_severity_breached() {
+        // Only the warning-severity rule (max_unverified_impacts) breaches: WARN, no errors.
+        let scan = json!({"partial": false, "impacts": [{}]});
+        let gate = evaluate_change_gates(&scan, "error", [0, 0, 0, 0]);
+        assert_eq!(gate["verdict"], "WARN");
+        // Under the default "error" policy a warning alone does not block.
+        assert_eq!(gate["would_block"], false);
+        let strict = evaluate_change_gates(&scan, "warning", [0, 0, 0, 0]);
+        assert_eq!(strict["verdict"], "WARN");
+        assert_eq!(strict["would_block"], true);
+    }
+
+    #[test]
+    fn change_gate_verdict_fail_on_error_severity_breach() {
+        // findings>0 breaches the error-severity rule => FAIL regardless of partial.
+        let scan = json!({"partial": false, "findings": [{}]});
+        let gate = evaluate_change_gates(&scan, "error", [0, 0, 0, 0]);
+        assert_eq!(gate["verdict"], "FAIL");
+        assert_eq!(gate["would_block"], true);
+        assert_eq!(gate["totals"]["errors"], 1);
+
+        // coverage_gap_count is also error-severity.
+        let gaps = json!({"partial": false, "coverage_gap_count": 2});
+        assert_eq!(
+            evaluate_change_gates(&gaps, "error", [0, 0, 0, 0])["verdict"],
+            "FAIL"
+        );
+        // blocked missions is also error-severity.
+        let blocked = json!({"partial": false, "change_plan": {"totals": {"blocked": 3}}});
+        assert_eq!(
+            evaluate_change_gates(&blocked, "error", [0, 0, 0, 0])["verdict"],
+            "FAIL"
+        );
+    }
+
+    #[test]
+    fn change_gate_verdict_inconclusive_when_partial_and_no_errors() {
+        // partial=true with no error-severity breach => INCONCLUSIVE (blocking under error policy).
+        let scan = json!({"partial": true});
+        let gate = evaluate_change_gates(&scan, "error", [0, 0, 0, 0]);
+        assert_eq!(gate["verdict"], "INCONCLUSIVE");
+        assert_eq!(gate["would_block"], true);
+        assert_eq!(gate["partial"], true);
+    }
+
+    #[test]
+    fn change_gate_would_block_follows_fail_on() {
+        // fail_on="none" never blocks, even when the verdict is FAIL.
+        let failing = json!({"partial": false, "findings": [{}]});
+        let none = evaluate_change_gates(&failing, "none", [0, 0, 0, 0]);
+        assert_eq!(none["verdict"], "FAIL");
+        assert_eq!(none["would_block"], false);
+
+        // Under the "error" policy a warning-only scan does not block...
+        let warn_only = json!({"partial": false, "impacts": [{}]});
+        let error_policy = evaluate_change_gates(&warn_only, "error", [0, 0, 0, 0]);
+        assert_eq!(error_policy["would_block"], false);
+        // ...but partial alone (no errors) still blocks under the default "error" policy.
+        let partial_only = json!({"partial": true});
+        let partial_gate = evaluate_change_gates(&partial_only, "error", [0, 0, 0, 0]);
+        assert_eq!(partial_gate["verdict"], "INCONCLUSIVE");
+        assert_eq!(partial_gate["would_block"], true);
+        // Under the "warning" policy, a warning alone does block.
+        let warning_policy = evaluate_change_gates(&warn_only, "warning", [0, 0, 0, 0]);
+        assert_eq!(warning_policy["would_block"], true);
+    }
+
+    #[test]
+    fn repository_gate_verdict_pass_with_clean_full_evidence() {
+        let architecture = json!({"partial": false});
+        let gate = evaluate_repository_gates(&architecture, "error", [0, 0, 0, 0, 0]);
+        assert_eq!(gate["verdict"], "PASS");
+        assert_eq!(gate["would_block"], false);
+        assert_eq!(gate["totals"]["errors"], 0);
+        assert_eq!(gate["totals"]["warnings"], 0);
+    }
+
+    #[test]
+    fn repository_gate_verdict_warn_only_warning_severity_breached() {
+        // Only a warning-severity rule (max_package_fan_out) breaches => WARN.
+        let architecture = json!({"partial": false, "packages": [{"fan_out": 1}]});
+        let gate = evaluate_repository_gates(&architecture, "error", [0, 0, 0, 0, 0]);
+        assert_eq!(gate["verdict"], "WARN");
+        assert_eq!(gate["would_block"], false);
+        let strict = evaluate_repository_gates(&architecture, "warning", [0, 0, 0, 0, 0]);
+        assert_eq!(strict["verdict"], "WARN");
+        assert_eq!(strict["would_block"], true);
+    }
+
+    #[test]
+    fn repository_gate_verdict_fail_on_error_severity_breach() {
+        // cycles>0 breaches the error-severity rule => FAIL.
+        let architecture = json!({"partial": false, "totals": {"cycles": 1}});
+        let gate = evaluate_repository_gates(&architecture, "error", [0, 0, 0, 0, 0]);
+        assert_eq!(gate["verdict"], "FAIL");
+        assert_eq!(gate["would_block"], true);
+
+        // coverage_gap_count is error-severity and drives FAIL, not INCONCLUSIVE.
+        let gaps = json!({"partial": false, "coverage_gap_count": 5});
+        assert_eq!(
+            evaluate_repository_gates(&gaps, "error", [0, 0, 0, 0, 0])["verdict"],
+            "FAIL"
+        );
+        // unresolved local dependencies is also error-severity.
+        let unresolved = json!({
+            "partial": false,
+            "import_resolution": {"unresolved_local": 4},
+            "reference_resolution": {"unresolved_local": 1}
+        });
+        assert_eq!(
+            evaluate_repository_gates(&unresolved, "error", [0, 0, 0, 0, 0])["verdict"],
+            "FAIL"
+        );
+    }
+
+    #[test]
+    fn repository_gate_verdict_inconclusive_when_partial_and_no_errors() {
+        let architecture = json!({"partial": true});
+        let gate = evaluate_repository_gates(&architecture, "error", [0, 0, 0, 0, 0]);
+        assert_eq!(gate["verdict"], "INCONCLUSIVE");
+        assert_eq!(gate["would_block"], true);
+        assert_eq!(gate["partial"], true);
+    }
+
+    #[test]
+    fn repository_gate_partial_and_coverage_gap_keep_inconclusive_under_threshold() {
+        // partial=true with a coverage gap UNDER the threshold keeps INCONCLUSIVE:
+        // the gap only flips to FAIL once it exceeds the max_coverage_gaps threshold.
+        let architecture = json!({"partial": true, "coverage_gap_count": 1});
+        let gate = evaluate_repository_gates(&architecture, "error", [0, 0, 0, 0, 10]);
+        assert_eq!(gate["verdict"], "INCONCLUSIVE");
+        assert_eq!(gate["would_block"], true);
+
+        // fail_on="none" never blocks even when the verdict is FAIL.
+        let failing = json!({"partial": false, "totals": {"cycles": 1}});
+        let none = evaluate_repository_gates(&failing, "none", [0, 0, 0, 0, 0]);
+        assert_eq!(none["verdict"], "FAIL");
+        assert_eq!(none["would_block"], false);
+
+        // A warning-only scan does not block under the default "error" policy.
+        let warn_only = json!({"partial": false, "packages": [{"fan_out": 1}]});
+        let error_policy = evaluate_repository_gates(&warn_only, "error", [0, 0, 0, 0, 0]);
+        assert_eq!(error_policy["would_block"], false);
+    }
 }

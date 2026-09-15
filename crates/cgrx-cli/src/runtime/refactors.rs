@@ -8,8 +8,8 @@ use cgrx_core::Scope;
 use serde_json::{Value, json};
 
 use super::{
-    Runtime, RuntimeError, StoredArc, StoredDocument, coverage_for_scope, coverage_gap_count,
-    coverage_gap_page, definitive_stored_arcs, pack_for_path, path_in_scope,
+    Runtime, RuntimeError, StoredArc, StoredDocument, coverage_for_scope,
+    coverage_gap_count, coverage_gap_page, definitive_stored_arcs, pack_for_path, path_in_scope,
 };
 
 const MIN_BODY_TOKENS: usize = 8;

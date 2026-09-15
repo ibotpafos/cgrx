@@ -11,7 +11,7 @@ use std::process::Command;
 use std::time::Instant;
 
 use cgrx_capsule::Tokenizer;
-use cgrx_cli::{Runtime, RuntimeEvidenceFormat};
+use cgrx_cli::{Runtime, RuntimeEvidenceFormat, TestRunRecord};
 use cgrx_core::{
     CapsuleStatus, EvidenceSelector, Hash32, QueryRequest, RelationKind, RepoSnapshot, Scope,
     canonical_hash,
@@ -810,7 +810,12 @@ impl ToolBackend for RuntimeMcpBackend {
             .map_err(|error| BackendError::new("cgrx.runtime_evidence", error.to_string()))
     }
 
-    fn scan_risks(&mut self, _mode: &str, limit: usize) -> Result<Value, BackendError> {
+    fn scan_risks(
+        &mut self,
+        _mode: &str,
+        limit: usize,
+        runs: Option<Value>,
+    ) -> Result<Value, BackendError> {
         self.refresh()?;
         let (Some(state), Some(root)) = (&self.managed_state, &self.watch_root) else {
             return Err(BackendError::new(
@@ -826,14 +831,21 @@ impl ToolBackend for RuntimeMcpBackend {
                     .risk_baseline(),
             );
         }
-        let mut result = self
-            .runtime
-            .scan_risks(
-                self.risk_baseline.as_ref().expect("baseline loaded"),
-                root,
-                limit,
-            )
-            .map_err(|e| BackendError::new(e.code(), e.to_string()))?;
+        let baseline = self.risk_baseline.as_ref().expect("baseline loaded");
+        let mut result = match runs {
+            Some(value) => {
+                let parsed = serde_json::from_value::<Vec<TestRunRecord>>(value).map_err(|error| {
+                    BackendError::new("cgrx.invalid_arguments", error.to_string())
+                })?;
+                self.runtime
+                    .scan_risks_with_test_runs(baseline, root, limit, &parsed)
+                    .map_err(|e| BackendError::new(e.code(), e.to_string()))?
+            }
+            None => self
+                .runtime
+                .scan_risks(baseline, root, limit)
+                .map_err(|e| BackendError::new(e.code(), e.to_string()))?,
+        };
         result["baseline_cache_hit"] = json!(cache_hit);
         Ok(result)
     }

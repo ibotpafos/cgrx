@@ -1,9 +1,11 @@
 mod architecture;
+mod config;
 mod graph_view;
 mod observations;
 mod refactors;
 mod risks;
 mod ts_config;
+pub use config::RuntimeConfig;
 pub use graph_view::{GraphDirection, GraphViewRequest};
 pub use observations::{
     ImportRuntimeEvidenceReport, RuntimeEvidenceFormat, RuntimeInsight, RuntimeInsightsReport,

@@ -80,3 +80,70 @@ pub(crate) fn tokenize(value: &str) -> Vec<String> {
     }
     tokens
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::graph::{CandidateProvenance, GraphDocument};
+    use cgrx_languages::Span;
+
+    fn doc(node_id: u64, name: &str, path: &str, text: &str) -> GraphDocument {
+        GraphDocument {
+            node_id,
+            qualified_name: name.to_string(),
+            path: path.to_string(),
+            text: text.to_string(),
+            span: Span { start: 0, end: 10 },
+            provenance: CandidateProvenance::Syntax,
+            semantic_fingerprint: None,
+        }
+    }
+
+    // A document that contains all of the query terms must rank strictly above
+    // a document that contains only one of them, and with a higher raw score.
+    #[test]
+    fn more_query_terms_ranks_above_fewer() {
+        let documents = vec![
+            doc(1, "alpha", "src/a.rs", "foo bar baz foo bar baz"),
+            doc(2, "beta", "src/b.rs", "foo"),
+        ];
+        let hits = rank("foo bar baz", &documents);
+        assert!(!hits.is_empty(), "expected at least one ranked hit");
+        assert_eq!(
+            hits[0].node_id, 1,
+            "document matching all three query terms must rank first"
+        );
+        assert!(
+            hits[0].raw_score > hits[1].raw_score,
+            "more matched terms must yield a strictly higher score"
+        );
+    }
+
+    // For a single query term, a higher term frequency must outrank a lower
+    // term frequency.
+    #[test]
+    fn higher_term_frequency_ranks_above_lower() {
+        let documents = vec![
+            doc(1, "rep", "src/a.rs", "foo foo foo"),
+            doc(2, "once", "src/b.rs", "foo"),
+        ];
+        let hits = rank("foo", &documents);
+        assert_eq!(hits.len(), 2, "both documents should be ranked");
+        assert_eq!(
+            hits[0].node_id, 1,
+            "document with higher term frequency must rank first"
+        );
+        assert!(
+            hits[0].raw_score > hits[1].raw_score,
+            "higher term frequency must yield a strictly higher score"
+        );
+    }
+
+    // No query-term overlap means no hits at all.
+    #[test]
+    fn no_overlap_yields_no_hits() {
+        let documents = vec![doc(1, "alpha", "src/a.rs", "completely unrelated text")];
+        let hits = rank("foo bar baz", &documents);
+        assert!(hits.is_empty(), "documents without query terms must not rank");
+    }
+}

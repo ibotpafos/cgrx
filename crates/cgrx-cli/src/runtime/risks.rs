@@ -1,13 +1,12 @@
 //! Conservative change-risk candidates, not a whole-program bug detector.
 use super::*;
+use super::RuntimeConfig;
 mod missions;
 mod review;
 mod test_runs;
 
 pub use test_runs::{TestCaseResult, TestOutcome, TestRunRecord};
 
-const DOCUMENT_LIMIT: usize = 100_000;
-const EDGE_LIMIT: usize = 20_000;
 const EVIDENCE_BYTES: usize = 2 * 1024 * 1024;
 
 pub struct RiskBaseline {
@@ -16,6 +15,7 @@ pub struct RiskBaseline {
     edges: Vec<StoredArc>,
     coverage: CoverageMetadata,
     partial: bool,
+    partial_reason: Option<String>,
 }
 
 struct RiskSymbol {
@@ -29,16 +29,23 @@ impl Runtime {
     /// Retain only bounded proven relation metadata, not a second full index.
     #[must_use]
     pub fn risk_baseline(&self) -> RiskBaseline {
+        let config = RuntimeConfig::default();
         let scope = all_scope();
         let edges = definitive_stored_arcs(&self.stored, &scope);
-        let partial = self.stored.documents.len() > DOCUMENT_LIMIT || edges.len() > EDGE_LIMIT;
+        let partial = self.stored.documents.len() > config.max_documents
+            || edges.len() > config.max_edges;
+        let partial_reason = if partial {
+            Some("SCAN_BUDGET_EXCEEDED".to_owned())
+        } else {
+            None
+        };
         RiskBaseline {
             snapshot: self.stored.snapshot.clone(),
             symbols: self
                 .stored
                 .documents
                 .iter()
-                .take(DOCUMENT_LIMIT)
+                .take(config.max_documents)
                 .filter(|d| d.provenance == "SYNTAX")
                 .map(|d| {
                     (
@@ -52,9 +59,10 @@ impl Runtime {
                     )
                 })
                 .collect(),
-            edges: edges.into_iter().take(EDGE_LIMIT).cloned().collect(),
+            edges: edges.into_iter().take(config.max_edges).cloned().collect(),
             coverage: self.stored.coverage.clone(),
             partial,
+            partial_reason,
         }
     }
 
@@ -89,21 +97,29 @@ impl Runtime {
                 "risk baseline differs from current HEAD; retry after refresh",
             ));
         }
+        let config = RuntimeConfig::default();
+        let mut partial_reason: Option<String> = baseline.partial_reason.clone();
         let mut gaps = BTreeSet::<(String, String)>::new();
-        let mut partial = baseline.partial
-            || self.stored.documents.len() > DOCUMENT_LIMIT
-            || self.stored.arcs.len() > EDGE_LIMIT;
+        let budget_exceeded = self.stored.documents.len() > config.max_documents
+            || self.stored.arcs.len() > config.max_edges;
+        let mut partial = baseline.partial || budget_exceeded;
+        if budget_exceeded {
+            partial_reason = Some("SCAN_BUDGET_EXCEEDED".to_owned());
+        }
         if partial {
             gaps.insert((".".to_owned(), "SCAN_BUDGET_EXCEEDED".to_owned()));
         }
         if baseline.coverage.traversal_truncated || self.stored.coverage.traversal_truncated {
             partial = true;
+            if partial_reason.is_none() {
+                partial_reason = Some("INDEX_TRAVERSAL_TRUNCATED".to_owned());
+            }
             gaps.insert((".".to_owned(), "INDEX_TRAVERSAL_TRUNCATED".to_owned()));
         }
         let mut current = BTreeMap::<(&str, &str), Vec<&StoredDocument>>::new();
         let mut names = BTreeSet::new();
         let mut calls = BTreeMap::<(&str, &str), Vec<&StoredDocument>>::new();
-        for d in self.stored.documents.iter().take(DOCUMENT_LIMIT) {
+        for d in self.stored.documents.iter().take(config.max_documents) {
             if d.provenance == "SYNTAX" {
                 current
                     .entry((&d.path, &d.qualified_name))
@@ -123,7 +139,7 @@ impl Runtime {
         // whose byte span or source hash may no longer describe the working tree.
         let live_pairs: BTreeMap<_, _> = live_arcs
             .iter()
-            .take(EDGE_LIMIT)
+            .take(config.max_edges)
             .filter_map(|e| {
                 e.evidence
                     .as_ref()
@@ -132,7 +148,7 @@ impl Runtime {
             .collect();
         let resolved: BTreeSet<_> = live_arcs
             .into_iter()
-            .take(EDGE_LIMIT)
+            .take(config.max_edges)
             .filter_map(|e| {
                 e.evidence
                     .as_ref()
@@ -175,6 +191,9 @@ impl Runtime {
             inspected += 1;
             if findings.len() > limit {
                 partial = true;
+                if partial_reason.is_none() {
+                    partial_reason = Some("RESULT_LIMIT".to_owned());
+                }
                 gaps.insert((".".to_owned(), "RESULT_LIMIT".to_owned()));
                 break;
             }
@@ -217,6 +236,9 @@ impl Runtime {
                 {
                     let Some(line) = evidence.line(&caller.path, now_caller.span_start) else {
                         partial = true;
+                        if partial_reason.is_none() {
+                            partial_reason = Some("SOURCE_UNVERIFIED_OR_BUDGET".to_owned());
+                        }
                         gaps.insert((
                             caller.path.clone(),
                             "SOURCE_UNVERIFIED_OR_BUDGET".to_owned(),
@@ -225,6 +247,9 @@ impl Runtime {
                     };
                     if evidence.line(&target.path, now_target.span_start).is_none() {
                         partial = true;
+                        if partial_reason.is_none() {
+                            partial_reason = Some("SOURCE_UNVERIFIED_OR_BUDGET".to_owned());
+                        }
                         gaps.insert((
                             target.path.clone(),
                             "SOURCE_UNVERIFIED_OR_BUDGET".to_owned(),
@@ -233,6 +258,9 @@ impl Runtime {
                     }
                     if impacts.len() >= limit {
                         partial = true;
+                        if partial_reason.is_none() {
+                            partial_reason = Some("RESULT_LIMIT".to_owned());
+                        }
                         gaps.insert((".".to_owned(), "RESULT_LIMIT".to_owned()));
                         continue;
                     }
@@ -270,6 +298,9 @@ impl Runtime {
                 }
                 let Some(line) = evidence.line(&call.path, call.span_start) else {
                     partial = true;
+                    if partial_reason.is_none() {
+                        partial_reason = Some("SOURCE_UNVERIFIED_OR_BUDGET".to_owned());
+                    }
                     gaps.insert((call.path.clone(), "SOURCE_UNVERIFIED_OR_BUDGET".to_owned()));
                     continue;
                 };
@@ -286,6 +317,9 @@ impl Runtime {
         if findings.len() + impacts.len() > limit {
             impacts.truncate(limit.saturating_sub(findings.len()));
             partial = true;
+            if partial_reason.is_none() {
+                partial_reason = Some("RESULT_LIMIT".to_owned());
+            }
             gaps.insert((".".to_owned(), "RESULT_LIMIT".to_owned()));
         }
         let mut verification_plan = review::build(
@@ -323,7 +357,7 @@ impl Runtime {
             partial,
         });
         Ok(
-            json!({"snapshot":self.snapshot(),"base_revision":baseline.snapshot.repo_revision,"mode":"changes","findings":findings,"impacts":impacts,"verification_plan":verification_plan,"change_plan":change_plan,"partial":partial,"coverage_gaps":gap_rows,"coverage_gap_count":gap_count,"coverage_gaps_truncated":gap_count>20,"inspected_base_edges":inspected,"changed_paths":self.changed_paths.iter().take(20).collect::<Vec<_>>(),"changed_path_count":self.changed_paths.len(),"evidence_bytes":EVIDENCE_BYTES-evidence.bytes_left,"limitations":["Candidates, not confirmed bugs; no whole-program absence proof.","Compares working tree with HEAD; no historical commit-range scan.","Cycles, architecture rules and data-flow bugs are not covered by this first slice."]}),
+            json!({"snapshot":self.snapshot(),"base_revision":baseline.snapshot.repo_revision,"mode":"changes","findings":findings,"impacts":impacts,"verification_plan":verification_plan,"change_plan":change_plan,"partial":partial,"partial_reason":partial_reason,"coverage_gaps":gap_rows,"coverage_gap_count":gap_count,"coverage_gaps_truncated":gap_count>20,"inspected_base_edges":inspected,"changed_paths":self.changed_paths.iter().take(20).collect::<Vec<_>>(),"changed_path_count":self.changed_paths.len(),"evidence_bytes":EVIDENCE_BYTES-evidence.bytes_left,"limitations":["Candidates, not confirmed bugs; no whole-program absence proof.","Compares working tree with HEAD; no historical commit-range scan.","Cycles, architecture rules and data-flow bugs are not covered by this first slice."]}),
         )
     }
 }

@@ -1,5 +1,6 @@
 //! Bounded test-selection hints. Proven CALLS do not prove test discovery.
 use super::*;
+use super::RuntimeConfig;
 
 pub(super) fn build(
     stored: &StoredIndex,
@@ -14,7 +15,7 @@ pub(super) fn build(
     for doc in stored
         .documents
         .iter()
-        .take(DOCUMENT_LIMIT)
+        .take(RuntimeConfig::default().max_documents)
         .filter(|d| d.provenance == "SYNTAX")
     {
         by_name

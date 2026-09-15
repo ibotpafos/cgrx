@@ -9,7 +9,7 @@ mod runtime;
 
 pub use runtime::{
     GraphDirection, GraphViewRequest, ImportRuntimeEvidenceReport, IndexReport, OrientReport,
-    RiskBaseline, Runtime, RuntimeError, RuntimeEvidenceFormat, RuntimeInsight,
+    RiskBaseline, Runtime, RuntimeError, RuntimeConfig, RuntimeEvidenceFormat, RuntimeInsight,
     RuntimeInsightsReport, TestCaseResult, TestOutcome, TestRunRecord,
 };
 
