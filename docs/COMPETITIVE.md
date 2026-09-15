@@ -155,11 +155,12 @@ with streaming, pagination, and caller-configurable limits.
     `DOCUMENT_LIMIT: usize = 20_000`, `PAIR_LIMIT: usize = 100_000`.
   - `crates/cgrx-core/src/runtime_evidence.rs:10-11` —
     `MAX_TRACE_SPANS: usize = 100_000`, `MAX_TRACE_CALLS: usize = 100_000`.
-- These are safety caps, not scale features. P2 turns them into configurable
-  thresholds (mirroring how gate thresholds already take explicit CLI/MCP
-  arguments, e.g. `--limit 1..50`, `--max-package-fan-out`) and adds
-  streaming/pagination for `orient`/`expand` and `get_architecture` so large
-  monorepos return bounded, resumable pages instead of truncating.
+- These are safety caps, not scale features. P2 first step: `suggest_refactors`
+  now accepts optional `max_documents` and `max_pairs` arguments (default 0 = use
+  original safety caps), so callers on large monorepos can raise or lower the
+  budgets explicitly. Remaining work: streaming/pagination for `orient`/`expand`
+  and `get_architecture` so large monorepos return bounded, resumable pages
+  instead of truncating.
 - **Measured today:** `docs/benchmarks/architecture-communities-2026-09-07.md`
   and `docs/benchmarks/architecture-futures-2026-09-07.md` pin five-project
   runs; the same harness should be re-run on a large single-repository corpus to
