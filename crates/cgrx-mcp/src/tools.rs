@@ -166,6 +166,16 @@ pub trait ToolBackend: Send + Sync {
         offset: usize,
         limit: usize,
     ) -> Result<Value, BackendError>;
+
+    /// Detect framework usage and evaluate the framework gate.
+    fn check_framework_gates(
+        &mut self,
+        paths: &[String],
+        scopes: &[String],
+        fail_on: &str,
+        max_framework_confidence: usize,
+        max_false_positive_matches: usize,
+    ) -> Result<Value, BackendError>;
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -589,6 +599,7 @@ impl Server {
             "suggest_refactors" => self.suggest_refactors(from_value(call.arguments)?)?,
             "get_code_snippet" => self.get_code_snippet(from_value(call.arguments)?)?,
             "check_index_coverage" => self.check_index_coverage(from_value(call.arguments)?)?,
+            "check_framework_gates" => self.check_framework_gates(from_value(call.arguments)?)?,
             "expand" => self.expand(from_value(call.arguments)?)?,
             "status" => self.status(from_value(call.arguments)?)?,
             "memory_record" => self.memory_record(from_value(call.arguments)?)?,
@@ -835,6 +846,33 @@ impl Server {
             .map_err(backend_error)
     }
 
+    fn check_framework_gates(
+        &mut self,
+        arguments: CheckFrameworkGatesArguments,
+    ) -> Result<Value, JsonRpcError> {
+        let Some(backend) = &mut self.backend else {
+            return Err(JsonRpcError::typed(
+                -32020,
+                "cgrx.index_adapter_not_connected",
+                "check_framework_gates requires an indexed runtime backend",
+            ));
+        };
+        let fail_on = if arguments.fail_on.is_empty() {
+            "error"
+        } else {
+            arguments.fail_on.as_str()
+        };
+        backend
+            .check_framework_gates(
+                &arguments.paths,
+                &arguments.scopes,
+                fail_on,
+                arguments.max_framework_confidence,
+                arguments.max_false_positive_matches,
+            )
+            .map_err(backend_error)
+    }
+
     fn expand(&mut self, arguments: ExpandArguments) -> Result<Value, JsonRpcError> {
         if arguments.budget == 0 {
             return Err(JsonRpcError::typed(
@@ -979,6 +1017,7 @@ fn model_visible_result(tool: &str, structured: &Value) -> Value {
         "suggest_refactors" => compact_refactors(structured),
         "get_code_snippet" => compact_snippet(structured),
         "check_index_coverage" => compact_coverage(structured),
+        "check_framework_gates" => compact_framework_gates(structured),
         "status" => compact_status(structured),
         "memory_record" => compact_memory_record(structured),
         "memory_recall" => compact_memory_recall(structured),
@@ -1864,6 +1903,48 @@ fn compact_coverage(value: &Value) -> Value {
     })
 }
 
+fn compact_framework_gates(value: &Value) -> Value {
+    let frameworks = value
+        .get("frameworks")
+        .and_then(Value::as_object)
+        .map(|object| {
+            let mut map = serde_json::Map::new();
+            for (key, framework) in object {
+                map.insert(
+                    key.clone(),
+                    json!({
+                        "confidence": framework.get("confidence"),
+                        "verdict": framework.get("verdict"),
+                        "positive_count": framework
+                            .get("positive_matches")
+                            .and_then(Value::as_array)
+                            .map(Vec::len)
+                            .unwrap_or(0),
+                        "negative_count": framework
+                            .get("negative_matches")
+                            .and_then(Value::as_array)
+                            .map(Vec::len)
+                            .unwrap_or(0),
+                    }),
+                );
+            }
+            map
+        });
+    json!({
+        "at": snapshot_tag(value.get("snapshot")),
+        "algorithm": value.get("algorithm"),
+        "llm_used": value.get("llm_used"),
+        "verdict": value.get("verdict"),
+        "would_block": value.get("would_block"),
+        "fail_on": value.get("fail_on"),
+        "rules": value.get("rules"),
+        "partial": value.get("partial"),
+        "totals": value.get("totals"),
+        "frameworks": frameworks,
+        "agent_handoff": value.get("agent_handoff"),
+    })
+}
+
 fn compact_record_row(value: &Value) -> Value {
     json!([
         value.get("path"),
@@ -2049,6 +2130,20 @@ struct CheckIndexCoverageArguments {
     offset: usize,
     #[serde(default = "default_coverage_limit")]
     limit: usize,
+}
+
+#[derive(Deserialize)]
+struct CheckFrameworkGatesArguments {
+    #[serde(default)]
+    paths: Vec<String>,
+    #[serde(default)]
+    scopes: Vec<String>,
+    #[serde(default)]
+    fail_on: String,
+    #[serde(default)]
+    max_framework_confidence: usize,
+    #[serde(default)]
+    max_false_positive_matches: usize,
 }
 
 const fn default_coverage_limit() -> usize {
@@ -2237,6 +2332,7 @@ fn model_visible_schema() -> Value {
         {"name":"suggest_refactors","description":"Similar code and hypothetical graph delta","inputSchema":{"type":"object","properties":{"language":{"enum":["typescript","go","java","python","rust"]},"min_score":{"type":"integer","minimum":0,"maximum":1000},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":50}}}},
         {"name":"get_code_snippet","description":"Source","inputSchema":{"type":"object","required":["symbol"],"properties":{"symbol":{"type":"string"},"path":{"type":"string"}}}},
         {"name":"check_index_coverage","description":"Coverage","inputSchema":{"type":"object","properties":{"paths":{"type":"array","items":{"type":"string"}},"scopes":{"type":"array","items":{"type":"string"}},"offset":{"type":"integer","minimum":0},"limit":{"type":"integer","minimum":1,"maximum":500}}}},
+        {"name":"check_framework_gates","description":"Framework-aware detection gate for Django/FastAPI/Express with explicit PASS/WARN/FAIL/INCONCLUSIVE verdict; no LLM executed.","inputSchema":{"type":"object","properties":{"paths":{"type":"array","items":{"type":"string"}},"scopes":{"type":"array","items":{"type":"string"}},"fail_on":{"enum":["error","warning","none"],"default":"error"},"max_framework_confidence":{"type":"integer","minimum":0,"maximum":10000,"default":0},"max_false_positive_matches":{"type":"integer","minimum":0,"maximum":10000,"default":0}}}},
         {"name":"expand","description":"Expand","inputSchema":{"type":"object","required":["handle","budget"],"properties":{"handle":{"type":"string"},"budget":{"type":"integer","minimum":1}}}},
         {"name":"status","inputSchema":{"type":"object","required":["paths_or_scope"],"properties":{"paths_or_scope":{}}}},
         {"name":"memory_record","description":"Record","inputSchema":{"type":"object","required":["fact","confidence","repo","path"],"properties":{"fact":{"type":"string"},"confidence":{"type":"integer","minimum":0,"maximum":1000},"repo":{"type":"string"},"rev":{"type":"string"},"path":{"type":"string"},"span":{"type":"object","required":["start_line","end_line"],"properties":{"start_line":{"type":"integer","minimum":1},"end_line":{"type":"integer","minimum":1}}},"valid_until_unix_nanos":{"type":"integer","minimum":1},"privacy_tag":{"type":"string"}}}},
@@ -2296,6 +2392,10 @@ fn model_visible_schema() -> Value {
             "Check evidence paths or scopes before relying on graph results; gaps require source inspection.",
         ),
         (
+            "Check framework gates",
+            "Detect Django, FastAPI and Express usage within scope and evaluate a snapshot-bound, model-free gate with explicit pass, warning, fail or inconclusive semantics.",
+        ),
+        (
             "Expand context",
             "Retrieve more evidence using a returned handle from the same repository and server session.",
         ),
@@ -2351,7 +2451,7 @@ mod openai_metadata_tests {
     #[test]
     fn openai_tool_contract() {
         let tools = model_visible_schema();
-        assert_eq!(tools.as_array().unwrap().len(), 17);
+        assert_eq!(tools.as_array().unwrap().len(), 18);
         for tool in tools.as_array().unwrap() {
             assert!(tool["title"].as_str().is_some_and(|s| !s.is_empty()));
             assert!(tool["description"].as_str().is_some_and(|s| s.len() > 20));

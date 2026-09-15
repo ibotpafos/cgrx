@@ -1,10 +1,12 @@
 mod architecture;
 mod config;
+mod frameworks;
 mod graph_view;
 mod observations;
 mod refactors;
 mod risks;
 mod ts_config;
+
 pub use config::RuntimeConfig;
 pub use graph_view::{GraphDirection, GraphViewRequest};
 pub use observations::{
@@ -1219,6 +1221,58 @@ impl Runtime {
             "scope_summary":scope_counts,
             "meaning":"indexed means no recorded gap; partial means indexed with recorded parser, dynamic, or stale gaps"
         }))
+    }
+
+    /// Detect framework usage within the given paths/scopes and evaluate the
+    /// conservative, deterministic framework gate.
+    ///
+    /// No LLM is involved and the result is bound to the current snapshot. The
+    /// gate reports Django/FastAPI/Express signals, confidence, false-positive
+    /// guards and an explicit PASS/WARN/FAIL/INCONCLUSIVE verdict.
+    pub fn check_framework_gates(
+        &self,
+        paths: &[String],
+        scopes: &[String],
+        fail_on: &str,
+        max_framework_confidence: usize,
+        max_false_positive_matches: usize,
+    ) -> Result<Value, RuntimeError> {
+        if paths.is_empty() && scopes.is_empty() {
+            return Err(RuntimeError::new(
+                "cgrx.invalid_arguments",
+                "at least one exact path or bounded scope is required",
+            ));
+        }
+        if paths
+            .iter()
+            .chain(scopes)
+            .any(|value| value.trim().is_empty())
+        {
+            return Err(RuntimeError::new(
+                "cgrx.invalid_arguments",
+                "paths and scopes must be non-empty",
+            ));
+        }
+
+        let mut include: Vec<String> = Vec::new();
+        include.extend(paths.iter().cloned());
+        include.extend(scopes.iter().cloned());
+        let scope = Scope {
+            include,
+            exclude: Vec::new(),
+            relation_kinds: Vec::new(),
+            max_depth: 1,
+        };
+
+        let snapshot = self.snapshot().clone();
+        let detection =
+            frameworks::detect_frameworks(&self.stored.documents, &scope, snapshot, path_in_scope);
+        let thresholds = frameworks::FrameworkGateThresholds {
+            max_framework_confidence,
+            max_false_positive_matches,
+        };
+        let result = frameworks::evaluate_framework_gates(&detection, fail_on, thresholds);
+        Ok(serde_json::to_value(&result).expect("framework gate result serializes"))
     }
 
     #[must_use]
