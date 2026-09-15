@@ -207,7 +207,7 @@ fn suggest_refactors_projects_shared_helper_for_every_supported_extension() {
         ("similar.rs", "rust", "save_rs"),
     ] {
         let result = runtime
-            .suggest_refactors(&calls_scope(path), Some(language), 760, 20)
+            .suggest_refactors(&calls_scope(path), Some(language), 760, 20, 0, 0)
             .expect("suggest refactors");
         assert_eq!(result["total"], 1, "{path}: {result}");
         if path == "similar.ts" {
@@ -245,7 +245,7 @@ fn suggest_refactors_projects_shared_helper_for_every_supported_extension() {
         assert_eq!(
             result,
             runtime
-                .suggest_refactors(&calls_scope(path), Some(language), 760, 20)
+                .suggest_refactors(&calls_scope(path), Some(language), 760, 20, 0, 0)
                 .expect("repeat suggestions"),
             "{path} ordering must be deterministic"
         );
@@ -260,7 +260,7 @@ fn suggest_refactors_rejects_invalid_arguments_and_weak_pairs() {
     let runtime = Runtime::open(state.path()).expect("open runtime");
 
     let negative = runtime
-        .suggest_refactors(&calls_scope("negative.py"), Some("python"), 760, 20)
+        .suggest_refactors(&calls_scope("negative.py"), Some("python"), 760, 20, 0, 0)
         .expect("scan negative fixture");
     assert_eq!(negative["total"], 0, "{negative}");
 
@@ -271,7 +271,7 @@ fn suggest_refactors_rejects_invalid_arguments_and_weak_pairs() {
         (Some("rust"), 760, 51),
     ] {
         let error = runtime
-            .suggest_refactors(&calls_scope("similar.rs"), language, score, limit)
+            .suggest_refactors(&calls_scope("similar.rs"), language, score, limit, 0, 0)
             .expect_err("invalid arguments fail closed");
         assert_eq!(error.code(), "cgrx.invalid_arguments");
     }

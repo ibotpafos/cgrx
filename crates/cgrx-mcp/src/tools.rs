@@ -139,6 +139,8 @@ pub trait ToolBackend: Send + Sync {
         _language: Option<&str>,
         _min_score: u16,
         _limit: u32,
+        _max_documents: usize,
+        _max_pairs: usize,
     ) -> Result<Value, BackendError> {
         Err(BackendError::new(
             "cgrx.refactor_scan_unavailable",
@@ -810,6 +812,8 @@ impl Server {
                 arguments.language.as_deref(),
                 arguments.min_score,
                 arguments.limit,
+                arguments.max_documents,
+                arguments.max_pairs,
             )
             .map_err(backend_error)
     }
@@ -2182,6 +2186,10 @@ struct SuggestRefactorsArguments {
     min_score: u16,
     #[serde(default = "default_graph_limit")]
     limit: u32,
+    #[serde(default)]
+    max_documents: usize,
+    #[serde(default)]
+    max_pairs: usize,
 }
 
 const fn default_refactor_score() -> u16 {
@@ -2420,7 +2428,7 @@ fn model_visible_schema() -> Value {
         {"name":"get_architecture","description":"Packages, proven boundaries, communities and model-free ranked graph futures for cycles and hotspots","inputSchema":{"type":"object","properties":{"scope":path_or_scope.clone(),"package_depth":{"type":"integer","minimum":1,"maximum":4},"limit":{"type":"integer","minimum":1,"maximum":100}}}},
         {"name":"trace_path","description":"Calls","inputSchema":{"type":"object","required":["symbol"],"properties":{"symbol":{"type":"string"},"path":{"type":"string"},"direction":{"enum":["callers","callees","both"]},"depth":{"type":"integer","minimum":1,"maximum":4},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":50},"evidence":{"enum":["static","observed","all"],"default":"static"}}}},
         {"name":"find_usages","description":"Proven usages","inputSchema":{"type":"object","required":["symbol"],"properties":{"symbol":{"type":"string"},"path":{"type":"string"},"depth":{"type":"integer","minimum":1,"maximum":4},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":500},"evidence":{"enum":["static","observed","all"],"default":"static"}}}},
-        {"name":"suggest_refactors","description":"Similar code and hypothetical graph delta","inputSchema":{"type":"object","properties":{"language":{"enum":["typescript","go","java","python","rust"]},"min_score":{"type":"integer","minimum":0,"maximum":1000},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":50}}}},
+        {"name":"suggest_refactors","description":"Similar code and hypothetical graph delta","inputSchema":{"type":"object","properties":{"language":{"enum":["typescript","go","java","python","rust","c","kotlin"]},"min_score":{"type":"integer","minimum":0,"maximum":1000},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":50},"max_documents":{"type":"integer","minimum":0,"maximum":1000000,"default":0},"max_pairs":{"type":"integer","minimum":0,"maximum":1000000,"default":0}}}},
         {"name":"get_code_snippet","description":"Source","inputSchema":{"type":"object","required":["symbol"],"properties":{"symbol":{"type":"string"},"path":{"type":"string"}}}},
         {"name":"check_index_coverage","description":"Coverage","inputSchema":{"type":"object","properties":{"paths":{"type":"array","items":{"type":"string"}},"scopes":{"type":"array","items":{"type":"string"}},"offset":{"type":"integer","minimum":0},"limit":{"type":"integer","minimum":1,"maximum":500}}}},
         {"name":"check_framework_gates","description":"Framework-aware detection gate for Django/FastAPI/Express with explicit PASS/WARN/FAIL/INCONCLUSIVE verdict; no LLM executed.","inputSchema":{"type":"object","properties":{"paths":{"type":"array","items":{"type":"string"}},"scopes":{"type":"array","items":{"type":"string"}},"fail_on":{"enum":["error","warning","none"],"default":"error"},"max_framework_confidence":{"type":"integer","minimum":0,"maximum":10000,"default":0},"max_false_positive_matches":{"type":"integer","minimum":0,"maximum":10000,"default":0}}}},

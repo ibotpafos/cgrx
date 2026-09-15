@@ -262,6 +262,8 @@ impl Visualizer {
             request.query("language").filter(|value| !value.is_empty()),
             number(request, "min_score", 760)?,
             number(request, "limit", 8)?,
+            0,
+            0,
         )
     }
 

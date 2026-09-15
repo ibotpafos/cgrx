@@ -14,9 +14,9 @@ use super::{
 
 const MIN_BODY_TOKENS: usize = 8;
 const SHINGLE_WIDTH: usize = 4;
-const DOCUMENT_LIMIT: usize = 20_000;
-const PAIR_LIMIT: usize = 100_000;
-const EVIDENCE_LIMIT: usize = 2_000;
+const DEFAULT_DOCUMENT_LIMIT: usize = 20_000;
+const DEFAULT_PAIR_LIMIT: usize = 100_000;
+const DEFAULT_EVIDENCE_LIMIT: usize = 2_000;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct RefactorFingerprint {
@@ -281,16 +281,21 @@ impl Runtime {
         language: Option<&str>,
         min_score: u16,
         limit: usize,
+        max_documents: usize,
+        max_pairs: usize,
     ) -> Result<Value, RuntimeError> {
         let language = language.map(str::trim);
-        if language
-            .is_some_and(|value| !matches!(value, "typescript" | "go" | "java" | "python" | "rust"))
-            || min_score > 1000
+        if language.is_some_and(|value| {
+            !matches!(
+                value,
+                "typescript" | "go" | "java" | "python" | "rust" | "c" | "kotlin"
+            )
+        }) || min_score > 1000
             || !(1..=50).contains(&limit)
         {
             return Err(RuntimeError::new(
                 "cgrx.invalid_arguments",
-                "language must be typescript, go, java, python, or rust; min_score must be 0..1000; limit must be 1..50",
+                "language must be typescript, go, java, python, rust, c, or kotlin; min_score must be 0..1000; limit must be 1..50",
             ));
         }
 
@@ -327,10 +332,15 @@ impl Runtime {
         });
 
         let mut gaps = BTreeSet::new();
-        let mut partial = selected.len() > DOCUMENT_LIMIT;
+        let document_limit = if max_documents == 0 {
+            DEFAULT_DOCUMENT_LIMIT
+        } else {
+            max_documents
+        };
+        let mut partial = selected.len() > document_limit;
         if partial {
             gaps.insert("REFACTOR_DOCUMENT_BUDGET");
-            selected.truncate(DOCUMENT_LIMIT);
+            selected.truncate(document_limit);
         }
 
         let documents = selected
@@ -371,7 +381,12 @@ impl Runtime {
             for (offset, left) in members.iter().enumerate() {
                 for right in members.iter().skip(offset + 1) {
                     let pair = (*left.min(right), *left.max(right));
-                    if !pairs.contains(&pair) && pairs.len() >= PAIR_LIMIT {
+                    let pair_limit = if max_pairs == 0 {
+                        DEFAULT_PAIR_LIMIT
+                    } else {
+                        max_pairs
+                    };
+                    if !pairs.contains(&pair) && pairs.len() >= pair_limit {
                         partial = true;
                         gaps.insert("REFACTOR_PAIR_BUDGET");
                         break 'buckets;
@@ -579,7 +594,7 @@ fn candidate_json(
             })
             .filter_map(|arc| arc.evidence.as_ref())
             .collect::<Vec<_>>();
-        if !reserve_evidence(evidence_count, proofs.len(), EVIDENCE_LIMIT) {
+        if !reserve_evidence(evidence_count, proofs.len(), DEFAULT_EVIDENCE_LIMIT) {
             evidence_truncated = true;
             continue;
         }
@@ -597,7 +612,7 @@ fn candidate_json(
         .iter()
         .filter(|arc| arc.target == left.node_id || arc.target == right.node_id)
     {
-        if !reserve_evidence(evidence_count, 1, EVIDENCE_LIMIT) {
+        if !reserve_evidence(evidence_count, 1, DEFAULT_EVIDENCE_LIMIT) {
             evidence_truncated = true;
             continue;
         }

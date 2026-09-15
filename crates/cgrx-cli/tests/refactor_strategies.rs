@@ -101,6 +101,8 @@ fn coverage_gaps_block_destructive_strategies() {
             Some("typescript"),
             760,
             20,
+            0,
+            0,
         )
         .expect("suggest refactors");
     assert_eq!(
@@ -139,10 +141,10 @@ fn strategy_identity_changes_with_snapshot_without_copying_source() {
         max_depth: 1,
     };
     let first = runtime
-        .suggest_refactors(&scope, Some("typescript"), 760, 20)
+        .suggest_refactors(&scope, Some("typescript"), 760, 20, 0, 0)
         .expect("first suggestions");
     let repeated = runtime
-        .suggest_refactors(&scope, Some("typescript"), 760, 20)
+        .suggest_refactors(&scope, Some("typescript"), 760, 20, 0, 0)
         .expect("repeat suggestions");
     assert_eq!(first, repeated);
 
@@ -166,7 +168,7 @@ fn strategy_identity_changes_with_snapshot_without_copying_source() {
         .expect("change fixture");
     assert!(runtime.refresh(repository.path()).expect("refresh fixture"));
     let refreshed = runtime
-        .suggest_refactors(&scope, Some("typescript"), 760, 20)
+        .suggest_refactors(&scope, Some("typescript"), 760, 20, 0, 0)
         .expect("refreshed suggestions");
     let refreshed_id = refreshed["candidates"][0]["strategies"][0]["strategy_id"]
         .as_str()
@@ -188,6 +190,8 @@ fn positive_candidate_has_three_snapshot_bound_strategies() {
             Some("typescript"),
             760,
             20,
+            0,
+            0,
         )
         .expect("suggest refactors");
     let strategies = result["candidates"][0]["strategies"]
@@ -229,7 +233,7 @@ fn strategies_encode_distinct_future_graphs() {
         max_depth: 1,
     };
     let result = runtime
-        .suggest_refactors(&scope, Some("typescript"), 760, 20)
+        .suggest_refactors(&scope, Some("typescript"), 760, 20, 0, 0)
         .expect("suggest refactors");
     let candidate = matching_candidate(&result);
     let strategies = candidate["strategies"].as_array().expect("strategies");
@@ -287,6 +291,8 @@ fn consolidation_removes_duplicate_only_without_coverage_gaps() {
             Some("typescript"),
             760,
             20,
+            0,
+            0,
         )
         .expect("suggest refactors");
     let candidate = matching_candidate(&result);
@@ -330,6 +336,8 @@ fn counterfactual_planner_ranks_futures_from_runtime_cost_without_an_llm() {
             Some("typescript"),
             760,
             20,
+            0,
+            0,
         )
         .expect("rank refactor futures");
     let candidate = matching_candidate(&result);
@@ -366,10 +374,10 @@ fn counterfactual_planner_is_byte_stable_and_can_choose_consolidation() {
         max_depth: 1,
     };
     let first = runtime
-        .suggest_refactors(&scope, Some("typescript"), 760, 20)
+        .suggest_refactors(&scope, Some("typescript"), 760, 20, 0, 0)
         .unwrap();
     let second = runtime
-        .suggest_refactors(&scope, Some("typescript"), 760, 20)
+        .suggest_refactors(&scope, Some("typescript"), 760, 20, 0, 0)
         .unwrap();
     assert_eq!(first, second);
     let candidate = matching_candidate(&first);

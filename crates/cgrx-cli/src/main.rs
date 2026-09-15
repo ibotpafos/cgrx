@@ -1075,13 +1075,15 @@ impl ToolBackend for RuntimeMcpBackend {
         language: Option<&str>,
         min_score: u16,
         limit: u32,
+        max_documents: usize,
+        max_pairs: usize,
     ) -> Result<Value, BackendError> {
         self.refresh()?;
         let scope = graph_scope(&scope)?;
         let limit = usize::try_from(limit)
             .map_err(|_| BackendError::new("cgrx.invalid_arguments", "limit is out of range"))?;
         self.runtime
-            .suggest_refactors(&scope, language, min_score, limit)
+            .suggest_refactors(&scope, language, min_score, limit, max_documents, max_pairs)
             .map_err(|error| BackendError::new(error.code(), error.to_string()))
     }
 
