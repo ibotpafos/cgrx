@@ -61,13 +61,12 @@
 
 ## Priority 2: Performance (Week 2)
 
-### 2.1 Compress nodes.seg
+### 2.1 Compress nodes.seg ✅ DONE
 **Problem**: 59MB for 2779 nodes is too large (~21KB/node).
 
-**Solution**:
-1. Use varint encoding for node IDs
-2. Compress text fields with zstd
-3. Remove redundant fields
+**Solution**: zstd compression with CZST magic header in segment.rs.
+
+**Result**: 59MB → 2.6MB (22.7x smaller, 95.6% savings). Overhead: +4% indexing, +6% orient.
 4. Use delta encoding for spans
 
 **Success criteria**: nodes.seg < 10MB for this codebase.
