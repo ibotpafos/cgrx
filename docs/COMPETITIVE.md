@@ -29,7 +29,7 @@ comparable on that axis.
 | Capability | CGRX | CodeQL | Sourcegraph | Trace MCP (reference) |
 | --- | --- | --- | --- | --- |
 | Local, offline execution (no API key) | ✅ One binary, no embedding/API key | ⚠️ CLI is local but needs build/extraction and a licensed runner for some flows | ❌ Centrally hosted server / Cody uses LLM APIs | ✅ Local stdio server, no API key |
-| Stdio MCP server for agents | ✅ `cgrx serve`, 18 focused tools | ❌ different scope (CI/scanning, not an agent MCP) | ❌ different scope (search UI + Cody API) | ✅ MCP tool surface |
+| Stdio MCP server for agents | ✅ `cgrx serve`, 19 focused tools | ❌ different scope (CI/scanning, not an agent MCP) | ❌ different scope (search UI + Cody API) | ✅ MCP tool surface |
 | Symbol search (name, prefix, substring) | ✅ `search_graph`, name-first deterministic ranking | ❌ different scope | ✅ Full-text + structural search | ✅ Full-text + language/file filters |
 | Exact source definitions | ✅ `get_code_snippet`, `get_outline` (spans, no bodies) | ❌ different scope | ✅ Go to definition | ✅ `get_code_snippet` / outline → exact |
 | Bounded caller/callee traces | ✅ `trace_path`, `find_usages` (1–4 hop, proven edges only) | ❌ different scope (data-flow, not call trace) | ✅ Find references / call graph (broader language coverage) | ✅ `find_usages` with `depth`, `via` |
@@ -40,6 +40,7 @@ comparable on that axis.
 | Runtime-evidence fusion | ✅ Revision-pinned observed calls merged with static graph; `observe insights` | ❌ different scope | ❌ different scope | ✅ Static/runtime overlays described |
 | SARIF quality gates | ✅ `check_change_gates` / `check_repository_gates` → SARIF 2.1.0 (`crates/cgrx-mcp/src/sarif.rs`) | ✅ Native SARIF output (its core format) | ❌ different scope | ⚠️ Quality-gate documented, but missing coverage not first-class |
 | Framework-aware detection gate | ✅ `check_framework_gates` model-free, snapshot-bound detector for Django/FastAPI/Express with explicit PASS/WARN/FAIL/INCONCLUSIVE (`docs/framework-gates.md`) | ❌ different scope | ❌ different scope | ⚠️ No equivalent framework-packet recognition described |
+| Security audit gate | ✅ `check_security_gates` model-free secret/dependency/license gate with explicit verdict and coverage-gap honesty (`docs/security-gates.md`) | ⚠️ CodeQL detects secrets via queries (different scope: vulnerability finding vs. CI gate) | ❌ different scope | ⚠️ No equivalent security gate described |
 | Deterministic, model-free (`llm_used=false`) | ✅ All planners report `llm_used=false` | ✅ Static analysis, no LLM | ❌ Cody is LLM-backed | ❌ Optional AI paths use Ollama/OpenAI |
 | Revision-pinned snapshots | ✅ Graph bound to revision/working-tree digest | ✅ Analysis bound to a commit/checkout | ✅ Indexed at a commit | ✅ Pinned SHAs in benchmark |
 | Language breadth | ⚠️ 5 packs today (Rust, Go, Java, TS/JS/TSX, Python) | ✅ Very broad language support | ✅ Very broad (SCIP/LSIF) | ✅ Larger symbol-only surface documented |
@@ -113,6 +114,9 @@ grounded in shipped behavior, not a roadmap promise.
    it, and `INCONCLUSIVE` stays blocking unless `fail_on=none`. It is a pure
    function over the indexed documents with `llm_used=false`
    (`docs/framework-gates.md`, `crates/cgrx-cli/src/runtime/frameworks.rs`).
+   `check_security_gates` extends this pattern to working-tree secrets,
+   Cargo.lock dependency hygiene and license allowlist scanning
+   (`docs/security-gates.md`, `crates/cgrx-cli/src/runtime/security.rs`).
 
 ## (c) Road to competitive parity
 
