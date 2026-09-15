@@ -1,0 +1,30 @@
+{
+ "expected_cgcr_status": "COMPLETE_BOUNDED",
+ "expected_graph_only": true,
+ "gold_spans": [
+  {
+   "end_byte": 228,
+   "path": "repo/src/main.kts",
+   "relation_kind": "CALLS",
+   "risk_class": "low",
+   "source_sha256": "38a599a6306271200eef6019276a2cfe75756da8136b9c710895a8bd333c70a3",
+   "start_byte": 208,
+   "text": "return unwrap(boxed)"
+  }
+ ],
+ "id": "kotlin-script-coverage",
+ "language": "kotlin",
+ "query": "Where does the runner call the local unwrap function?",
+ "required_uncertainty": [],
+ "scope": {
+  "exclude": [],
+  "include": [
+   "repo/**"
+  ],
+  "max_depth": 4,
+  "relation_kinds": [
+   "CALLS"
+  ]
+ },
+ "scorer_type": "positive_evidence"
+}

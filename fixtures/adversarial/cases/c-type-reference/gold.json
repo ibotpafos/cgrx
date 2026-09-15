@@ -1,0 +1,30 @@
+{
+ "expected_cgcr_status": "COMPLETE_BOUNDED",
+ "expected_graph_only": true,
+ "gold_spans": [
+  {
+   "end_byte": 164,
+   "path": "repo/src/main.c",
+   "relation_kind": "REFERENCE",
+   "risk_class": "low",
+   "source_sha256": "b59228f2e880516d3a7bd307f1d9953c746e4c83b520fc46c8b18f6adef7ae60",
+   "start_byte": 140,
+   "text": "Point origin = { 0, 0 };"
+  }
+ ],
+ "id": "c-type-reference",
+ "language": "c",
+ "query": "Which local struct type describes the origin value?",
+ "required_uncertainty": [],
+ "scope": {
+  "exclude": [],
+  "include": [
+   "repo/**"
+  ],
+  "max_depth": 4,
+  "relation_kinds": [
+   "REFERENCE"
+  ]
+ },
+ "scorer_type": "positive_evidence"
+}

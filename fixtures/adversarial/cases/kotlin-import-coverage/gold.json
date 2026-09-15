@@ -1,0 +1,30 @@
+{
+ "expected_cgcr_status": "COMPLETE_BOUNDED",
+ "expected_graph_only": true,
+ "gold_spans": [
+  {
+   "end_byte": 21,
+   "path": "repo/src/main.kt",
+   "relation_kind": "IMPORTS",
+   "risk_class": "low",
+   "source_sha256": "26b46b1aaf75cd7ed48cdc01e1939018eaa93f9bdcaf8df6319bc3b6a809e918",
+   "start_byte": 0,
+   "text": "import java.util.List"
+  }
+ ],
+ "id": "kotlin-import-coverage",
+ "language": "kotlin",
+ "query": "Which package does this file import?",
+ "required_uncertainty": [],
+ "scope": {
+  "exclude": [],
+  "include": [
+   "repo/**"
+  ],
+  "max_depth": 4,
+  "relation_kinds": [
+   "IMPORTS"
+  ]
+ },
+ "scorer_type": "positive_evidence"
+}

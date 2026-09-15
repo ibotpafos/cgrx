@@ -1,0 +1,30 @@
+{
+ "expected_cgcr_status": "COMPLETE_BOUNDED",
+ "expected_graph_only": true,
+ "gold_spans": [
+  {
+   "end_byte": 208,
+   "path": "repo/src/types.h",
+   "relation_kind": "CALLS",
+   "risk_class": "low",
+   "source_sha256": "821c4ab98980a77aed57057d942a17932ef796c5e2a1afd65217a14f8494669a",
+   "start_byte": 190,
+   "text": "return add_one(x);"
+  }
+ ],
+ "id": "c-header-coverage",
+ "language": "c",
+ "query": "Where does the helper call the local add_one function?",
+ "required_uncertainty": [],
+ "scope": {
+  "exclude": [],
+  "include": [
+   "repo/**"
+  ],
+  "max_depth": 4,
+  "relation_kinds": [
+   "CALLS"
+  ]
+ },
+ "scorer_type": "positive_evidence"
+}

@@ -1,122 +1,224 @@
 {
-  "schema_version": 1,
-  "relations": ["CALLS", "IMPORTS", "REFERENCE", "UNRESOLVED"],
-  "languages": [
-    {
-      "id": "typescript",
-      "module": "typescript",
-      "source": "crates/cgrx-languages/src/typescript.rs",
-      "extensions": ["ts", "tsx"],
-      "cells": {
-        "ts": {
-          "CALLS": ["vocal-chat-rooms-getRooms"],
-          "IMPORTS": ["vocal-ts-auth-import-service"],
-          "REFERENCE": ["gd-notification-preferences"],
-          "UNRESOLVED": ["vocal-ts-response-clear-cookie-unresolved"]
-        },
-        "tsx": {
-          "CALLS": ["pyramid-tsx-create-project-fetch-projects"],
-          "IMPORTS": ["pyramid-tsx-main-import-app"],
-          "REFERENCE": ["pyramid-tsx-open-project-reference"],
-          "UNRESOLVED": ["pyramid-tsx-login-callback-unresolved"]
-        }
-      }
+ "schema_version": 1,
+ "relations": [
+  "CALLS",
+  "IMPORTS",
+  "REFERENCE",
+  "UNRESOLVED"
+ ],
+ "languages": [
+  {
+   "id": "typescript",
+   "module": "typescript",
+   "source": "crates/cgrx-languages/src/typescript.rs",
+   "extensions": [
+    "ts",
+    "tsx"
+   ],
+   "cells": {
+    "ts": {
+     "CALLS": [
+      "vocal-chat-rooms-getRooms"
+     ],
+     "IMPORTS": [
+      "vocal-ts-auth-import-service"
+     ],
+     "REFERENCE": [
+      "gd-notification-preferences"
+     ],
+     "UNRESOLVED": [
+      "vocal-ts-response-clear-cookie-unresolved"
+     ]
     },
-    {
-      "id": "go",
-      "module": "go",
-      "source": "crates/cgrx-languages/src/go.rs",
-      "extensions": ["go"],
-      "cells": {
-        "go": {
-          "CALLS": ["vpn-bool-default"],
-          "IMPORTS": ["vex-go-networkprobe-import-domain"],
-          "REFERENCE": ["pyramid-dependency-edge-type"],
-          "UNRESOLVED": ["vex-go-context-err-unresolved"]
-        }
-      }
-    },
-    {
-      "id": "java",
-      "module": "java",
-      "source": "crates/cgrx-languages/src/java.rs",
-      "extensions": ["java"],
-      "cells": {
-        "java": {
-          "CALLS": ["gson-java-parse-calls-parseString"],
-          "IMPORTS": ["gson-java-import-malformed-json"],
-          "REFERENCE": ["gson-java-reference-malformed-json"],
-          "UNRESOLVED": ["gson-java-receiver-nextDouble-unresolved"]
-        }
-      }
-    },
-    {
-      "id": "c",
-      "module": "c",
-      "source": "crates/cgrx-languages/src/c.rs",
-      "extensions": ["c", "h"],
-      "cells": {
-        "c": {
-          "CALLS": ["c-direct-call-add"],
-          "IMPORTS": ["c-direct-call-stdio-import"],
-          "REFERENCE": [],
-          "UNRESOLVED": ["c-function-pointer-dispatch"]
-        },
-        "h": {
-          "CALLS": [],
-          "IMPORTS": [],
-          "REFERENCE": [],
-          "UNRESOLVED": []
-        }
-      }
-    },
-    {
-      "id": "kotlin",
-      "module": "kotlin",
-      "source": "crates/cgrx-languages/src/kotlin.rs",
-      "extensions": ["kt", "kts"],
-      "cells": {
-        "kt": {
-          "CALLS": ["kotlin-direct-call-greet"],
-          "IMPORTS": ["kotlin-direct-call-import-list"],
-          "REFERENCE": [],
-          "UNRESOLVED": ["kotlin-method-dispatch"]
-        },
-        "kts": {
-          "CALLS": [],
-          "IMPORTS": [],
-          "REFERENCE": [],
-          "UNRESOLVED": []
-        }
-      }
-    },
-    {
-      "id": "python",
-      "module": "python",
-      "source": "crates/cgrx-languages/src/python.rs",
-      "extensions": ["py"],
-      "cells": {
-        "py": {
-          "CALLS": ["itsdangerous-encoding-base64_encode-want_bytes"],
-          "IMPORTS": ["itsdangerous-encoding-import-BadData"],
-          "REFERENCE": ["itsdangerous-url_safe-URLSafeSerializerMixin-reference"],
-          "UNRESOLVED": ["itsdangerous-signer-verify_signature-unresolved-get_signature"]
-        }
-      }
-    },
-    {
-      "id": "rust",
-      "module": "rust",
-      "source": "crates/cgrx-languages/src/rust.rs",
-      "extensions": ["rs"],
-      "cells": {
-        "rs": {
-          "CALLS": ["cgrx-git-text-git-bytes"],
-          "IMPORTS": ["rust-typescript-import-extraction"],
-          "REFERENCE": ["rust-typescript-extract-reference"],
-          "UNRESOLVED": ["rust-tsconfig-read-closure-unresolved"]
-        }
-      }
+    "tsx": {
+     "CALLS": [
+      "pyramid-tsx-create-project-fetch-projects"
+     ],
+     "IMPORTS": [
+      "pyramid-tsx-main-import-app"
+     ],
+     "REFERENCE": [
+      "pyramid-tsx-open-project-reference"
+     ],
+     "UNRESOLVED": [
+      "pyramid-tsx-login-callback-unresolved"
+     ]
     }
-  ]
+   }
+  },
+  {
+   "id": "go",
+   "module": "go",
+   "source": "crates/cgrx-languages/src/go.rs",
+   "extensions": [
+    "go"
+   ],
+   "cells": {
+    "go": {
+     "CALLS": [
+      "vpn-bool-default"
+     ],
+     "IMPORTS": [
+      "vex-go-networkprobe-import-domain"
+     ],
+     "REFERENCE": [
+      "pyramid-dependency-edge-type"
+     ],
+     "UNRESOLVED": [
+      "vex-go-context-err-unresolved"
+     ]
+    }
+   }
+  },
+  {
+   "id": "java",
+   "module": "java",
+   "source": "crates/cgrx-languages/src/java.rs",
+   "extensions": [
+    "java"
+   ],
+   "cells": {
+    "java": {
+     "CALLS": [
+      "gson-java-parse-calls-parseString"
+     ],
+     "IMPORTS": [
+      "gson-java-import-malformed-json"
+     ],
+     "REFERENCE": [
+      "gson-java-reference-malformed-json"
+     ],
+     "UNRESOLVED": [
+      "gson-java-receiver-nextDouble-unresolved"
+     ]
+    }
+   }
+  },
+  {
+   "id": "c",
+   "module": "c",
+   "source": "crates/cgrx-languages/src/c.rs",
+   "extensions": [
+    "c",
+    "h"
+   ],
+   "cells": {
+    "c": {
+     "CALLS": [
+      "c-direct-call-add"
+     ],
+     "IMPORTS": [
+      "c-direct-call-stdio-import"
+     ],
+     "REFERENCE": [
+      "c-type-reference"
+     ],
+     "UNRESOLVED": [
+      "c-function-pointer-dispatch"
+     ]
+    },
+    "h": {
+     "CALLS": [
+      "c-header-call"
+     ],
+     "IMPORTS": [
+      "c-header-import"
+     ],
+     "REFERENCE": [
+      "c-header-reference"
+     ],
+     "UNRESOLVED": [
+      "c-header-dispatch"
+     ]
+    }
+   }
+  },
+  {
+   "id": "kotlin",
+   "module": "kotlin",
+   "source": "crates/cgrx-languages/src/kotlin.rs",
+   "extensions": [
+    "kt",
+    "kts"
+   ],
+   "cells": {
+    "kt": {
+     "CALLS": [
+      "kotlin-direct-call-greet"
+     ],
+     "IMPORTS": [
+      "kotlin-direct-call-import-list"
+     ],
+     "REFERENCE": [
+      "kotlin-type-reference"
+     ],
+     "UNRESOLVED": [
+      "kotlin-method-dispatch"
+     ]
+    },
+    "kts": {
+     "CALLS": [
+      "kotlin-script-call"
+     ],
+     "IMPORTS": [
+      "kotlin-script-import"
+     ],
+     "REFERENCE": [
+      "kotlin-script-reference"
+     ],
+     "UNRESOLVED": [
+      "kotlin-script-dispatch"
+     ]
+    }
+   }
+  },
+  {
+   "id": "python",
+   "module": "python",
+   "source": "crates/cgrx-languages/src/python.rs",
+   "extensions": [
+    "py"
+   ],
+   "cells": {
+    "py": {
+     "CALLS": [
+      "itsdangerous-encoding-base64_encode-want_bytes"
+     ],
+     "IMPORTS": [
+      "itsdangerous-encoding-import-BadData"
+     ],
+     "REFERENCE": [
+      "itsdangerous-url_safe-URLSafeSerializerMixin-reference"
+     ],
+     "UNRESOLVED": [
+      "itsdangerous-signer-verify_signature-unresolved-get_signature"
+     ]
+    }
+   }
+  },
+  {
+   "id": "rust",
+   "module": "rust",
+   "source": "crates/cgrx-languages/src/rust.rs",
+   "extensions": [
+    "rs"
+   ],
+   "cells": {
+    "rs": {
+     "CALLS": [
+      "cgrx-git-text-git-bytes"
+     ],
+     "IMPORTS": [
+      "rust-typescript-import-extraction"
+     ],
+     "REFERENCE": [
+      "rust-typescript-extract-reference"
+     ],
+     "UNRESOLVED": [
+      "rust-tsconfig-read-closure-unresolved"
+     ]
+    }
+   }
+  }
+ ]
 }
