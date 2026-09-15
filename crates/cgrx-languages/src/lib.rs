@@ -1,6 +1,7 @@
 //! Narrow, deterministic C, Go, Java, Kotlin, TypeScript, Python, and Rust extraction packs.
 
 mod c;
+mod cpp;
 mod go;
 mod java;
 mod kotlin;

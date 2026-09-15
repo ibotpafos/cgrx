@@ -446,6 +446,7 @@ pub fn pack_for_path(path: &RepoPath) -> Option<&'static dyn LanguagePack> {
     let extension = path.extension()?.to_str()?;
     [
         &crate::c::C_PACK as &dyn LanguagePack,
+        &crate::cpp::CPP_PACK as &dyn LanguagePack,
         &crate::typescript::TYPESCRIPT as &dyn LanguagePack,
         &crate::go::GO,
         &crate::java::JAVA,
