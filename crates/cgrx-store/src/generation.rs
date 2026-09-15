@@ -272,7 +272,8 @@ impl GenerationWriter {
             let [(_, bytes)] = candidates.as_slice() else {
                 return Err(invalid_data("expected segment missing or duplicated"));
             };
-            if fs::read(path.join(name))?.as_slice() != *bytes {
+            let existing = segment::read_decompressed(&path.join(name))?;
+            if existing.as_slice() != *bytes {
                 return Err(invalid_data("existing generation content differs"));
             }
         }
