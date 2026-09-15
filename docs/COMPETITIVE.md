@@ -43,7 +43,7 @@ comparable on that axis.
 | Security audit gate | ✅ `check_security_gates` model-free secret/dependency/license gate with explicit verdict and coverage-gap honesty (`docs/security-gates.md`) | ⚠️ CodeQL detects secrets via queries (different scope: vulnerability finding vs. CI gate) | ❌ different scope | ⚠️ No equivalent security gate described |
 | Deterministic, model-free (`llm_used=false`) | ✅ All planners report `llm_used=false` | ✅ Static analysis, no LLM | ❌ Cody is LLM-backed | ❌ Optional AI paths use Ollama/OpenAI |
 | Revision-pinned snapshots | ✅ Graph bound to revision/working-tree digest | ✅ Analysis bound to a commit/checkout | ✅ Indexed at a commit | ✅ Pinned SHAs in benchmark |
-| Language breadth | ⚠️ 5 packs today (Rust, Go, Java, TS/JS/TSX, Python) | ✅ Very broad language support | ✅ Very broad (SCIP/LSIF) | ✅ Larger symbol-only surface documented |
+| Language breadth | ⚠️ 7 packs today (Rust, Go, Java, TS/JS/TSX, Python, C, Kotlin) | ✅ Very broad language support | ✅ Very broad (SCIP/LSIF) | ✅ Larger symbol-only surface documented |
 
 **Reading the table honestly.** CGRX wins on the agent-facing, evidence-honest,
 model-free axes: token-budgeted context, first-class coverage gaps,
@@ -126,8 +126,8 @@ not a claim of current parity.
 
 ### P1 — Language breadth
 
-**Goal:** grow from the current 5 packs (Rust, Go, Java, TypeScript/JS/TSX,
-Python) toward 10+ languages.
+**Goal:** grow from the current 7 packs (Rust, Go, Java, TypeScript/JS/TSX,
+Python, C, Kotlin) toward 10+ languages.
 
 - Today's parsers live in `crates/cgrx-languages/src/` (`rust.rs`, `go.rs`,
   `java.rs`, `python.rs`, `typescript.rs`, `ts_imports.rs`) and are wired through
