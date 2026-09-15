@@ -98,7 +98,7 @@
 **Problem**: 6738 lines in runtime.rs.
 
 **Solution**: Split into focused modules. Extracted:
-- architecture.rs (1425 lines) — package graph, communities
+- architecture.rs (1426 lines) — package graph, communities
 - config.rs (47 lines) — RuntimeConfig
 - frameworks.rs (1069 lines) — framework detection
 - graph_view.rs (527 lines) — graph visualization
@@ -106,13 +106,16 @@
 - refactors.rs (818 lines) — refactoring suggestions
 - risks.rs (432 lines) — risk scanning
 - security.rs (1316 lines) — security gates
-- ts_config.rs (899 lines) — TypeScript config
+- ts_config.rs (900 lines) — TypeScript config
+- ts_helpers.rs (431 lines) — TS resolution, inventory, fingerprinting
+- arc_resolution.rs (760 lines) — arc resolution, Go module resolution
 - extraction.rs (731 lines) — source extraction, ExtractedPath, extract_path
+- orient_helpers.rs (295 lines) — task evidence, symbol matching, graph evidence
 - helpers.rs (150 lines) — body_fingerprint, stable_node_id, generation_id, declaration_span
 
-**Remaining in runtime.rs (5902 lines)**: Core types, ScopedQuery, arc resolution (~826 lines), TS helpers, search, orient, tracing.
+**Remaining in runtime.rs (4471 lines)**: Core types, ScopedQuery, search, orient, tracing, tests.
 
-**Success criteria**: No file > 1500 lines. ✅ Achieved (max is architecture.rs at 1425).
+**Success criteria**: No file > 1500 lines. ✅ Achieved (max is architecture.rs at 1426).
 
 ### 3.2 Improve Error Handling
 **Problem**: Many unwrap() calls, inconsistent error types.
