@@ -7,7 +7,9 @@ mod refactors;
 mod risks;
 pub mod security;
 mod ts_config;
+mod helpers;
 
+use helpers::{body_fingerprint, declaration_name, generation_id, stable_node_id};
 pub use config::RuntimeConfig;
 pub use graph_view::{GraphDirection, GraphViewRequest};
 pub use observations::{
@@ -167,48 +169,7 @@ fn is_zero(value: &usize) -> bool {
     *value == 0
 }
 
-/// Deterministic structural fingerprint of a declaration body: blake3 over
-/// whitespace-normalized source with every whole-token occurrence of the
-/// declaration's own name removed. Equal fingerprints prove byte-identical
-/// bodies modulo whitespace and self-naming — a duplicate-implementation
-/// signal that is exact, stable across runs, and never a heuristic guess.
-fn body_fingerprint(declaration_name: &str, body: &str) -> Option<String> {
-    let mut normalized = String::with_capacity(body.len());
-    let mut pending_space = false;
-    for character in body.chars() {
-        if character.is_whitespace() {
-            pending_space = !normalized.is_empty();
-        } else {
-            if pending_space {
-                normalized.push(' ');
-                pending_space = false;
-            }
-            normalized.push(character);
-        }
-    }
-    let mut filtered = String::with_capacity(normalized.len());
-    let mut token = String::new();
-    for character in normalized.chars() {
-        if character.is_alphanumeric() || character == '_' {
-            token.push(character);
-        } else {
-            if !token.is_empty() {
-                if token != declaration_name {
-                    filtered.push_str(&token);
-                }
-                token.clear();
-            }
-            filtered.push(character);
-        }
-    }
-    if !token.is_empty() && token != declaration_name {
-        filtered.push_str(&token);
-    }
-    if filtered.trim().is_empty() {
-        return None;
-    }
-    Some(blake3::hash(filtered.as_bytes()).to_hex().to_string())
-}
+// body_fingerprint is defined in helpers.rs
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 struct StoredDocument {
@@ -4887,12 +4848,7 @@ impl ProbeOracle for NoopOracle {
     }
 }
 
-fn declaration_name(text: &str) -> Option<String> {
-    let value = text.trim();
-    let value = value.strip_prefix("function ").unwrap_or(value);
-    let name = value.split('(').next()?.trim();
-    (!name.is_empty()).then(|| name.to_owned())
-}
+// declaration_name is defined in helpers.rs
 
 fn declaration_span(source: &[u8], symbol: Span, path: &Path) -> Option<Span> {
     let line_start = source[..symbol.start]
@@ -5235,28 +5191,7 @@ fn graph_evidence_ids(
     ordered
 }
 
-fn stable_node_id(path: &str, span: Span, name: &str) -> u64 {
-    let mut hasher = blake3::Hasher::new();
-    hasher.update(path.as_bytes());
-    hasher.update(&(span.start as u64).to_le_bytes());
-    hasher.update(&(span.end as u64).to_le_bytes());
-    hasher.update(name.as_bytes());
-    let mut bytes = [0_u8; 8];
-    bytes.copy_from_slice(&hasher.finalize().as_bytes()[..8]);
-    u64::from_le_bytes(bytes)
-}
-
-fn generation_id(revision: &str) -> u64 {
-    // Extraction semantics are part of the immutable generation identity.
-    // A new extractor must never collide with the same HEAD's old generation.
-    let mut hasher = blake3::Hasher::new();
-    hasher.update(revision.as_bytes());
-    hasher.update(&EXTRACTION_REVISION.to_le_bytes());
-    let digest = hasher.finalize();
-    let mut bytes = [0_u8; 8];
-    bytes.copy_from_slice(&digest.as_bytes()[..8]);
-    u64::from_le_bytes(bytes) % 10_000_000_000_000_000
-}
+// stable_node_id and generation_id are defined in helpers.rs
 
 fn git_bytes(root: &Path, args: &[&str]) -> Result<Vec<u8>, RuntimeError> {
     let output = Command::new(crate::git_executable())
