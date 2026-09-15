@@ -1,5 +1,6 @@
 //! Bounded, pass-local TS configuration proof. No node_modules or name lookup.
 use super::*;
+use super::ts_helpers::TsDirectoryCache;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
 pub(super) struct TsResolutionConfig {
