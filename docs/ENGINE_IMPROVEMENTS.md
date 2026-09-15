@@ -110,10 +110,11 @@
 - ts_helpers.rs (431 lines) — TS resolution, inventory, fingerprinting
 - arc_resolution.rs (760 lines) — arc resolution, Go module resolution
 - extraction.rs (731 lines) — source extraction, ExtractedPath, extract_path
+- scan_helpers.rs (455 lines) — git boundary, untracked scan, index normalization, ScopedQuery
 - orient_helpers.rs (295 lines) — task evidence, symbol matching, graph evidence
 - helpers.rs (150 lines) — body_fingerprint, stable_node_id, generation_id, declaration_span
 
-**Remaining in runtime.rs (4471 lines)**: Core types, ScopedQuery, search, orient, tracing, tests.
+**Remaining in runtime.rs (4031 lines)**: Core types, impl Runtime, tests.
 
 **Success criteria**: No file > 1500 lines. ✅ Achieved (max is architecture.rs at 1426).
 
