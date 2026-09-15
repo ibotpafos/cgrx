@@ -98,6 +98,7 @@ pub enum RelationKind {
     Calls,
     Implements,
     References,
+    Imports,
 }
 
 /// Stable integer identity of a graph node within a generation.
