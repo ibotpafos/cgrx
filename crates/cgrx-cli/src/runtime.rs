@@ -1,5 +1,6 @@
 mod architecture;
 mod config;
+mod target_types;
 mod frameworks;
 mod graph_view;
 mod observations;
@@ -28,6 +29,7 @@ use scan_helpers::{crosses_nested_git_boundary, expand_untracked_directories, co
 use git_helpers::{parse_committed_tree, GitBlobBatch, refresh_status, coverage_for_scope, coverage_for_scope_with_matcher, coverage_gap_page, coverage_gap_count, dynamic_dispatch_path, git_bytes, git_text, store_writer_error};
 use index_helpers::index_source;
 use check_helpers::check_index_coverage as check_index_impl;
+use target_types::{GoFieldTarget, GoLocalConstructorTarget, JavaConstructorTarget, RustSelfTarget, TsLexicalTarget, GoReceiverTarget};
 pub use config::RuntimeConfig;
 pub use graph_view::{GraphDirection, GraphViewRequest};
 pub use observations::{
@@ -122,59 +124,6 @@ impl fmt::Display for RuntimeError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(formatter, "{}: {}", self.code, self.detail)
     }
-}
-
-impl std::error::Error for RuntimeError {}
-
-#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
-struct GoFieldTarget {
-    package: String,
-    caller: ByteRange,
-    receiver_type: ByteRange,
-    field: ByteRange,
-    field_type: ByteRange,
-    target: ByteRange,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
-struct GoLocalConstructorTarget {
-    package: String,
-    caller: ByteRange,
-    binding: String,
-    constructor: String,
-    target: String,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
-struct JavaConstructorTarget {
-    caller: ByteRange,
-    target: ByteRange,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
-struct RustSelfTarget {
-    owner: ByteRange,
-    implementation: ByteRange,
-    #[serde(default)]
-    target_implementation: Option<ByteRange>,
-    caller: ByteRange,
-    target: ByteRange,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
-struct TsLexicalTarget {
-    target: ByteRange,
-    caller: ByteRange,
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-struct GoReceiverTarget {
-    package: String,
-    receiver_type: String,
-    path: String,
-    symbol: String,
-    span_start: usize,
-    span_end: usize,
 }
 
 // Default metadata is optional on disk; preserve the same decoded revision-3
