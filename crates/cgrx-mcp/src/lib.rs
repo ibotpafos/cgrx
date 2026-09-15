@@ -1,10 +1,12 @@
 //! Synchronous, offline MCP surface for CGRX.
 #![recursion_limit = "256"]
 
+mod presets;
 mod protocol;
 mod sarif;
 mod tools;
 
+pub use presets::{Toolset, resolve_toolset};
 pub use protocol::{JsonRpcError, JsonRpcRequest, JsonRpcResponse};
 pub use sarif::{LineResolver, gate_to_sarif, severity_level, verdict_level};
 pub use tools::{

@@ -144,6 +144,9 @@ mod tests {
     fn no_overlap_yields_no_hits() {
         let documents = vec![doc(1, "alpha", "src/a.rs", "completely unrelated text")];
         let hits = rank("foo bar baz", &documents);
-        assert!(hits.is_empty(), "documents without query terms must not rank");
+        assert!(
+            hits.is_empty(),
+            "documents without query terms must not rank"
+        );
     }
 }

@@ -11,7 +11,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
-use crate::{JsonRpcError, JsonRpcRequest, JsonRpcResponse};
+use crate::{JsonRpcError, JsonRpcRequest, JsonRpcResponse, Toolset};
 
 const PROTOCOL_VERSION: &str = "2025-06-18";
 
@@ -21,6 +21,7 @@ pub struct Server {
     memory: Option<MemoryStore>,
     usage_log: Option<UsageLog>,
     metrics_log: Option<MetricsLog>,
+    toolset: Toolset,
 }
 
 struct UsageLog {
@@ -192,6 +193,9 @@ impl Server {
             memory: None,
             usage_log: None,
             metrics_log: None,
+            // Library/programmatic default is permissive; the `serve` command narrows
+            // this to the resolved (default: standard) toolset.
+            toolset: Toolset::Full,
         }
     }
 
@@ -203,7 +207,15 @@ impl Server {
             memory: None,
             usage_log: None,
             metrics_log: None,
+            toolset: Toolset::Full,
         }
+    }
+
+    /// Override the active toolset that gates which tools are exposed to clients.
+    #[must_use]
+    pub fn with_toolset(mut self, toolset: Toolset) -> Self {
+        self.toolset = toolset;
+        self
     }
 
     /// Attach the durable decision-memory store rooted at the managed repository.
@@ -369,7 +381,10 @@ impl Server {
                 "protocolVersion": PROTOCOL_VERSION,
                 "capabilities": {"tools": {"listChanged": false}},
                 "serverInfo": {"name": "cgrx", "version": env!("CARGO_PKG_VERSION")},
-                "instructions": "Use status first to verify revision and freshness. Multi-repo calls require repo: absolute Git worktree root. Search symbols, trace calls, read snippets, then check coverage for evidence paths. Read source for partial or missing coverage; empty results do not prove no bugs. scan_risks yields candidates, not confirmed defects. Handles belong to one repo and live session. Tools update local indexes/caches, not source files."
+                "instructions": format!(
+                    "Use status first to verify revision and freshness. Multi-repo calls require repo: absolute Git worktree root. Search symbols, trace calls, read snippets, then check coverage for evidence paths. Read source for partial or missing coverage; empty results do not prove no bugs. scan_risks yields candidates, not confirmed defects. Handles belong to one repo and live session. Tools update local indexes/caches, not source files. Active toolset: {}.",
+                    self.toolset.label()
+                )
             })),
             "tools/list" => Ok(json!({"tools": model_visible_schema()})),
             "tools/call" => self.call_tool(request.params),
@@ -387,6 +402,18 @@ impl Server {
 
     fn call_tool(&mut self, params: Value) -> Result<Value, JsonRpcError> {
         let call: ToolCall = from_value(params)?;
+        // Gate disabled tools: clients may only call tools in the active toolset.
+        if !self.toolset.allows(call.name.as_str()) {
+            return Err(JsonRpcError::typed(
+                -32602,
+                "cgrx.tool_not_found",
+                format!(
+                    "tool {} is not enabled in the active toolset ({})",
+                    call.name,
+                    self.toolset.label()
+                ),
+            ));
+        }
         let structured = match call.name.as_str() {
             "scan_risks" => {
                 #[derive(Deserialize)]
