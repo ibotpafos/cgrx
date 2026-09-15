@@ -7,13 +7,13 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-use cgrx_core::{ByteRange, ConfidenceClass, EdgeEvidence, Hash32, ResolverClass};
+use cgrx_core::{ByteRange, ConfidenceClass, EdgeEvidence, Hash32, RelationKind, ResolverClass};
 use cgrx_languages::{RelationKind as LanguageRelation, Span, pack_for_path};
 use cgrx_languages::ts_imports::{ImportClassification, SiteBinding, TsFileFacts};
 
 use super::ts_config::{self, TsResolutionConfig};
-use super::{GoFieldTarget, GoLocalConstructorTarget, GoReceiverTarget, JavaConstructorTarget,
-            RustSelfTarget, StoredArc, StoredDocument, StoredIndex, StoredTsFileFacts};
+use super::{GoFieldTarget, GoLocalConstructorTarget, GoReceiverTarget, JavaConstructorTarget, StoredArc,
+            RustSelfTarget, StoredDocument, StoredIndex, StoredTsFileFacts};
 use super::helpers::stable_node_id;
 use super::{ts_config_modules, ts_config_supported_for, ts_paths_portable_for};
 
@@ -631,6 +631,32 @@ pub(super) fn rebuild_arcs_with_cargo(
             });
         }
     }
+    // Create References arcs from reference documents to their targets
+    for document in documents.iter().filter(|d| d.provenance == "REFERENCES") {
+        let Some(targets) = by_name.get(document.qualified_name.as_str()) else {
+            continue;
+        };
+        for target in targets {
+            if target.provenance == "SYNTAX" {
+                let source_hash = path_hashes.get(&document.path).copied().unwrap_or(Hash32([0; 32]));
+                arcs.push(StoredArc {
+                    source: document.node_id,
+                    target: target.node_id,
+                    kind: RelationKind::References,
+                    evidence: Some(EdgeEvidence {
+                        path: document.path.clone(),
+                        span: ByteRange::new(document.span_start, document.span_end),
+                        source_hash,
+                        resolver: ResolverClass::SyntaxExact,
+                        confidence: ConfidenceClass::Proven,
+                        assumptions: Vec::new(),
+                        counter_evidence: Vec::new(),
+                    }),
+                });
+            }
+        }
+    }
+
     arcs.sort_by_key(|arc| (arc.source, arc.target, arc.kind, arc.evidence.clone()));
     arcs.dedup();
     arcs

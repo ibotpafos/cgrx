@@ -15,7 +15,7 @@ use cgrx_languages::{
 use cgrx_languages::ts_imports::{SiteBinding, TsFileFacts};
 
 use super::helpers::{body_fingerprint, declaration_name, declaration_span, implements_spans, stable_node_id};
-use super::{GoFieldTarget, GoLocalConstructorTarget, GoReceiverTarget, JavaConstructorTarget,
+use super::{GoFieldTarget, GoLocalConstructorTarget, GoReceiverTarget, JavaConstructorTarget, StoredArc,
             RustSelfTarget, StoredDocument, TsLexicalTarget};
 use super::RuntimeError;
 
@@ -25,6 +25,7 @@ pub(super) struct ExtractedPath {
     pub(super) rust_file: Option<cgrx_languages::RustFileFacts>,
     pub(super) ts_file: Option<TsFileFacts>,
     pub(super) documents: Vec<StoredDocument>,
+    pub(super) reference_arcs: Vec<StoredArc>,
     pub(super) parser_error_ranges: Vec<SourceRange>,
     pub(super) dynamic_dispatch: Vec<String>,
 }
@@ -694,6 +695,7 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
         rust_file: extraction.rust_file,
         ts_file,
         documents,
+        reference_arcs: Vec::new(),
         parser_error_ranges: extraction
             .parser_error_ranges
             .into_iter()
