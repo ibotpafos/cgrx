@@ -5,10 +5,10 @@
 //! | Preset    | Tools                                                                                     |
 //! |-----------|-------------------------------------------------------------------------------------------|
 //! | `minimal` | Read/search only: `status`, `search_graph`, `get_outline`, `trace_path`, `find_usages`,   |
-//! |           | `get_code_snippet`, `check_index_coverage`                                                |
+//! |           | `get_code_snippet`, `check_index_coverage`, `check_framework_gates`                           |
 //! | `standard`|`minimal` + `orient`, `expand`, `get_architecture` (default)                               |
 //! | `full`    | All tools including `scan_risks`, `check_change_gates`, `check_repository_gates`,          |
-//! |           | `ingest_runtime_evidence`, `find_similar`, `suggest_refactors`                            |
+//! |           | `ingest_runtime_evidence`, `find_similar`, `suggest_refactors`, `check_framework_gates`   |
 
 use serde::Deserialize;
 use std::str::FromStr;
@@ -43,6 +43,7 @@ impl Toolset {
                 "find_usages",
                 "get_code_snippet",
                 "check_index_coverage",
+                "check_framework_gates",
             ],
             Self::Standard => &[
                 "status",
@@ -55,6 +56,7 @@ impl Toolset {
                 "orient",
                 "expand",
                 "get_architecture",
+                "check_framework_gates",
             ],
             Self::Full => &[
                 "status",
@@ -73,6 +75,7 @@ impl Toolset {
                 "ingest_runtime_evidence",
                 "find_similar",
                 "suggest_refactors",
+                "check_framework_gates",
             ],
         }
     }
@@ -165,7 +168,7 @@ mod tests {
         assert!(names.contains(&"find_usages"));
         assert!(names.contains(&"get_code_snippet"));
         assert!(names.contains(&"check_index_coverage"));
-        assert_eq!(names.len(), 7);
+        assert_eq!(names.len(), 8);
     }
 
     #[test]
@@ -177,7 +180,7 @@ mod tests {
         assert!(names.contains(&"orient"));
         assert!(names.contains(&"expand"));
         assert!(names.contains(&"get_architecture"));
-        assert_eq!(names.len(), 10);
+        assert_eq!(names.len(), 11);
     }
 
     #[test]
@@ -192,7 +195,7 @@ mod tests {
         assert!(names.contains(&"ingest_runtime_evidence"));
         assert!(names.contains(&"find_similar"));
         assert!(names.contains(&"suggest_refactors"));
-        assert_eq!(names.len(), 16);
+        assert_eq!(names.len(), 17);
     }
 
     #[test]
