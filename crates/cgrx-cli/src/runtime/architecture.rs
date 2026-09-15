@@ -5,9 +5,10 @@ use cgrx_core::{
 };
 use serde_json::{Value, json};
 
+use super::arc_resolution::go_module_for;
 use super::{
     Runtime, RuntimeError, coverage_for_scope, coverage_gap_count, coverage_gap_page,
-    definitive_stored_arcs, go_module_for, path_in_scope, ts_config_modules,
+    definitive_stored_arcs, path_in_scope, ts_config_modules,
 };
 
 #[derive(Default)]
