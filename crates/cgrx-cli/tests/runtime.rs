@@ -265,7 +265,7 @@ fn suggest_refactors_rejects_invalid_arguments_and_weak_pairs() {
     assert_eq!(negative["total"], 0, "{negative}");
 
     for (language, score, limit) in [
-        (Some("kotlin"), 760, 20),
+        (Some("lisp"), 760, 20),
         (Some("rust"), 1001, 20),
         (Some("rust"), 760, 0),
         (Some("rust"), 760, 51),
@@ -1668,8 +1668,9 @@ fn search_graph_can_search_bodies_and_filter_every_supported_language() {
         .search_graph_filtered("body_token_rs", &scope, 10, Some("rust"), false)
         .expect("search names only");
     assert_eq!(names_only["total"], 0);
+    // Kotlin is now supported; use a truly unsupported language for the error path.
     let error = runtime
-        .search_graph_filtered("anything", &scope, 10, Some("kotlin"), true)
+        .search_graph_filtered("anything", &scope, 10, Some("lisp"), true)
         .expect_err("unsupported language fails closed");
     assert_eq!(error.code(), "cgrx.invalid_arguments");
 }

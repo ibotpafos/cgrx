@@ -14,7 +14,7 @@ CGRX должен стать **незаменимым инструментом**
 - ✅ **Локальный запуск** — не требует GitHub, работает offline
 - ✅ **MCP сервер** — нативная интеграция с AI agents
 - ✅ **Мгновенный ответ** — нет очередей, нет лимитов
-- ✅ **7 языков** — Rust, Go, Java, TypeScript, Python, C, Kotlin
+- ✅ **14 языков** — Rust, Go, Java, TypeScript, Python, C, C++, C#, Ruby, PHP, Swift, Scala, Elixir, Kotlin
 
 ### vs Sourcegraph
 - ✅ **Offline** — не требует облачного хостинга
@@ -44,7 +44,7 @@ CGRX должен стать **незаменимым инструментом**
 | Swift | ✅ | Средняя | Среднее (iOS/macOS) |
 | Scala | ✅ | Средняя | Низкое (JVM niche) |
 | Clojure | ⏳ | Низкая | Низкое (Lisp niche) |
-| Elixir | ⏳ | Низкая | Низкое (Phoenix niche) |
+| Elixir | ✅ | Низкая | Низкое (Phoenix niche) |
 
 **Реализация:**
 - Каждый язык: 200-300 строк parser + 50 строк pack.rs + frozen fixtures
@@ -171,10 +171,17 @@ CGRX должен стать **незаменимым инструментом**
 
 ## Ближайшие действия
 
-### Сегодня
-1. Добавить C++ поддержку (2-3 часа)
-2. Улучшить search_graph с fuzzy matching
-3. Добавить check_test_coverage gate
+### Сегодня (сделано)
+- ✅ C++ поддержка (8-й язык)
+- ✅ C# поддержка (9-й язык)
+- ✅ Ruby поддержка (10-й язык)
+- ✅ PHP поддержка (11-й язык)
+- ✅ Swift поддержка (12-й язык)
+- ✅ Scala поддержка (13-й язык)
+- ✅ Elixir поддержка (14-й язык)
+- ✅ Fuzzy matching в search_graph (Levenshtein distance)
+- ✅ explain_symbol инструмент (21-й MCP инструмент)
+- ✅ Настройка DSH интеграции
 
 ### Эта неделя
 1. Добавить C#, Ruby, PHP
