@@ -315,6 +315,7 @@ const fn relation_code(kind: RelationKind) -> u8 {
     match kind {
         RelationKind::Calls => 0,
         RelationKind::Implements => 1,
+        RelationKind::References => 2,
     }
 }
 

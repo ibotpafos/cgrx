@@ -101,6 +101,7 @@ impl Runtime {
             let (relation, semantic_weight) = match arc.kind {
                 cgrx_core::RelationKind::Calls => ("CALLS", 4),
                 cgrx_core::RelationKind::Implements => ("IMPLEMENTS", 4),
+                cgrx_core::RelationKind::References => ("REFERENCES", 1),
             };
             if documents.contains_key(&arc.source) && documents.contains_key(&arc.target) {
                 add_semantic_edge(

@@ -97,6 +97,7 @@ pub enum Mode {
 pub enum RelationKind {
     Calls,
     Implements,
+    References,
 }
 
 /// Stable integer identity of a graph node within a generation.
