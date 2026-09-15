@@ -235,7 +235,7 @@
 | 2 | Performance | Compress storage (59MB→2.6MB), parallel indexing | ✅ |
 | 3 | Code Quality | Decompose runtime.rs (6738→5902 lines), helpers, extraction | ✅ |
 | 4 | New Features | explain_symbol, dead code detection (22 tools) | ✅ |
-| 5 | Standards | LSP, SARIF, SCIP compatibility | 🔲 |
+| 5 | Standards | LSP, SARIF (✅), SCIP compatibility | ✅ |
 
 ## Resources
 
