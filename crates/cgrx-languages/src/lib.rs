@@ -3,6 +3,7 @@
 mod c;
 mod cpp;
 mod csharp;
+mod elixir;
 mod go;
 mod php;
 mod ruby;

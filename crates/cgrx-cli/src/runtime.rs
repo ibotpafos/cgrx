@@ -16,6 +16,7 @@ pub use observations::{
 pub use risks::{RiskBaseline, TestCaseResult, TestOutcome, TestRunRecord};
 use ts_config::TsResolutionConfig;
 
+use levenshtein::levenshtein;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::fs;
@@ -401,11 +402,11 @@ impl Runtime {
     ) -> Result<Value, RuntimeError> {
         let language = language.map(str::trim);
         if language.is_some_and(|language| {
-            !matches!(language, "typescript" | "go" | "java" | "python" | "rust")
+            !matches!(language, "typescript" | "go" | "java" | "python" | "rust" | "c" | "cpp" | "csharp" | "ruby" | "php" | "swift" | "scala" | "elixir" | "kotlin")
         }) {
             return Err(RuntimeError::new(
                 "cgrx.invalid_arguments",
-                "language must be one of typescript, go, java, python, or rust",
+                "language must be one of typescript, go, java, python, rust, c, cpp, csharp, ruby, php, swift, scala, elixir, or kotlin",
             ));
         }
         self.search_graph_with_matcher(query, scope, limit, language, include_body, path_in_scope)
@@ -518,7 +519,13 @@ impl Runtime {
                 } else if include_body && document.search_text.to_lowercase().contains(&folded) {
                     (3, "body")
                 } else {
-                    return None;
+                    // Fuzzy matching: allow up to 2 edits for short queries, 3 for longer
+                    let max_distance = if folded.len() <= 4 { 1 } else if folded.len() <= 8 { 2 } else { 3 };
+                    if levenshtein(&name, &folded) <= max_distance {
+                        (4, "fuzzy")
+                    } else {
+                        return None;
+                    }
                 };
                 let callers = caller_counts.get(&document.node_id).copied().unwrap_or(0);
                 let callees = callee_counts.get(&document.node_id).copied().unwrap_or(0);
