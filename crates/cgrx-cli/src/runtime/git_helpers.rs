@@ -14,6 +14,33 @@ use serde_json::{Value, json};
 
 use super::{path_in_scope, RuntimeError};
 
+pub(super) fn git_bytes(root: &Path, args: &[&str]) -> Result<Vec<u8>, RuntimeError> {
+    let output = Command::new(crate::git_executable())
+        .env("GIT_OPTIONAL_LOCKS", "0")
+        .args(args)
+        .current_dir(root)
+        .output()
+        .map_err(|error| RuntimeError::new("git_spawn", error.to_string()))?;
+    if !output.status.success() {
+        return Err(RuntimeError::new("git_exit", "git command failed"));
+    }
+    Ok(output.stdout)
+}
+
+pub(super) fn store_writer_error(code: &'static str, error: std::io::Error) -> RuntimeError {
+    if error.kind() == std::io::ErrorKind::WouldBlock {
+        RuntimeError::new("store_busy", "another process is publishing this index; retry after it finishes")
+    } else {
+        RuntimeError::new(code, error.to_string())
+    }
+}
+
+pub(super) fn git_text(root: &Path, args: &[&str]) -> Result<String, RuntimeError> {
+    String::from_utf8(git_bytes(root, args)?)
+        .map(|value| value.trim().to_owned())
+        .map_err(|error| RuntimeError::new("git_utf8", error.to_string()))
+}
+
 pub(super) fn parse_committed_tree(bytes: &[u8]) -> Result<BTreeMap<String, String>, RuntimeError> {
     let mut entries = BTreeMap::new();
     for record in bytes

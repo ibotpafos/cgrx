@@ -11,7 +11,8 @@ use cgrx_languages::{pack_for_path, Span};
 
 use cgrx_cgcr::CoverageMetadata;
 
-use super::{crosses_nested_git_boundary, open_current_report, normalize_stored, git_text, git_bytes, store_writer_error, EXTRACTION_REVISION, NODES_SEGMENT, EDGES_SEGMENT, TERMS_SEGMENT, TERMS_MARKER, RuntimeError, GenerationWriter, IndexReport, RepoSnapshot, StoredIndex, StoredTsFileFacts, TsFileFacts, TsResolutionConfig};
+use super::{crosses_nested_git_boundary, open_current_report, normalize_stored, EXTRACTION_REVISION, NODES_SEGMENT, EDGES_SEGMENT, TERMS_SEGMENT, TERMS_MARKER, RuntimeError, GenerationWriter, IndexReport, RepoSnapshot, StoredIndex, StoredTsFileFacts, TsFileFacts, TsResolutionConfig};
+use super::git_helpers::{git_text, git_bytes, store_writer_error};
 use super::scan_helpers::refresh_qualified_call_gaps;
 use super::arc_resolution::{rebuild_arcs_with_cargo, go_module_name};
 use super::extraction::extract_sources_parallel;
