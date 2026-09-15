@@ -450,6 +450,7 @@ pub fn pack_for_path(path: &RepoPath) -> Option<&'static dyn LanguagePack> {
         &crate::csharp::CSHARP_PACK as &dyn LanguagePack,
         &crate::php::PHP_PACK as &dyn LanguagePack,
         &crate::ruby::RUBY_PACK as &dyn LanguagePack,
+        &crate::scala::SCALA_PACK as &dyn LanguagePack,
         &crate::swift::SWIFT_PACK as &dyn LanguagePack,
         &crate::typescript::TYPESCRIPT as &dyn LanguagePack,
         &crate::go::GO,
