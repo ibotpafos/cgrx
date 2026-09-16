@@ -216,6 +216,7 @@ pub(super) fn index_source(
 
     // Add CONTAINS arcs: each file's first SYNTAX symbol contains all others
     {
+        let before = arcs.len();
         use std::collections::BTreeMap;
         let mut symbols_by_file: BTreeMap<&str, Vec<&super::StoredDocument>> = BTreeMap::new();
         for document in documents.iter().filter(|d| d.provenance == "SYNTAX") {
@@ -246,6 +247,7 @@ pub(super) fn index_source(
         }
         arcs.sort_by_key(|arc| (arc.source, arc.target, arc.kind, arc.evidence.clone()));
         arcs.dedup();
+        eprintln!("CONTAINS arcs added: {} (total: {})", arcs.len() - before, arcs.len());
     }
 
     parser_error_ranges.sort();
