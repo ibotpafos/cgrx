@@ -1,6 +1,4 @@
-use crate::pack::{
-    Edge, Extraction, LanguagePack, Provenance, RelationKind, Span, text,
-};
+use crate::pack::{Edge, Extraction, LanguagePack, Provenance, RelationKind, Span, text};
 use tree_sitter::{Language, Node};
 
 pub(crate) static ELIXIR_PACK: Elixir = Elixir;
@@ -34,7 +32,11 @@ impl LanguagePack for Elixir {
                             provenance: Provenance::Syntax,
                         };
                         extraction.edges.push(edge);
-                        if target_name == "require" || target_name == "import" || target_name == "use" || target_name == "alias" {
+                        if target_name == "require"
+                            || target_name == "import"
+                            || target_name == "use"
+                            || target_name == "alias"
+                        {
                             if let Some(arg) = node.child_by_field_name("arguments") {
                                 if let Some(module) = arg.named_child(0) {
                                     let import_text = text(module, source);
@@ -56,7 +58,9 @@ impl LanguagePack for Elixir {
             }
             "module" | "alias" => {
                 let type_name = text(node, source);
-                if !type_name.is_empty() && type_name.chars().next().map_or(false, |c| c.is_uppercase()) {
+                if !type_name.is_empty()
+                    && type_name.chars().next().map_or(false, |c| c.is_uppercase())
+                {
                     let edge = Edge {
                         relation: RelationKind::References,
                         target: type_name,

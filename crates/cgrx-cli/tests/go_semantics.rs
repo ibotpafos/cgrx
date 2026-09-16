@@ -189,7 +189,10 @@ fn explicit_embedded_methods_have_exact_target_and_callsite() {
         );
         let stored = fixture.stored();
         let arcs = stored["arcs"].as_array().unwrap();
-        let calls_arcs: Vec<_> = arcs.iter().filter(|arc| arc["kind"].as_str() == Some("CALLS")).collect();
+        let calls_arcs: Vec<_> = arcs
+            .iter()
+            .filter(|arc| arc["kind"].as_str() == Some("CALLS"))
+            .collect();
         assert_eq!(calls_arcs.len(), 1, "{}: {stored}", case["id"]);
         assert_eq!(calls_arcs[0]["target"], node["node_id"]);
         assert_eq!(calls_arcs[0]["evidence"]["confidence"], "PROVEN");
@@ -207,7 +210,12 @@ fn interfaces_ambiguity_and_shadowing_remain_dispatch_gaps() {
         let result = trace(&fixture.runtime());
         assert_eq!(result["total"], 0, "{}: {result}", case["id"]);
         assert!(
-            fixture.stored()["arcs"].as_array().unwrap().iter().all(|arc| arc["kind"].as_str() != Some("CALLS") && arc["kind"].as_str() != Some("IMPLEMENTS")),
+            fixture.stored()["arcs"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|arc| arc["kind"].as_str() != Some("CALLS")
+                    && arc["kind"].as_str() != Some("IMPLEMENTS")),
             "{}: unexpected proven edge",
             case["id"]
         );

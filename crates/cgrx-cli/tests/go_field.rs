@@ -113,7 +113,10 @@ fn go_field_named_slice_exact_target_span_and_distinct_callsites() {
     assert_len(&fixture.runtime(), &source);
     let stored = fixture.stored();
     let arcs = stored["arcs"].as_array().unwrap();
-    let calls_arcs: Vec<_> = arcs.iter().filter(|arc| arc["kind"].as_str() == Some("CALLS")).collect();
+    let calls_arcs: Vec<_> = arcs
+        .iter()
+        .filter(|arc| arc["kind"].as_str() == Some("CALLS"))
+        .collect();
     assert_eq!(calls_arcs.len(), 2, "{stored}");
     for arc in &calls_arcs {
         assert_eq!(arc["evidence"]["path"], "queue/queue.go");
@@ -164,7 +167,14 @@ macro_rules! negative {
                 "{}",
                 fixture.stored()
             );
-            assert!(fixture.stored()["arcs"].as_array().unwrap().iter().all(|arc| arc["kind"].as_str() != Some("CALLS") && arc["kind"].as_str() != Some("IMPLEMENTS")));
+            assert!(
+                fixture.stored()["arcs"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .all(|arc| arc["kind"].as_str() != Some("CALLS")
+                        && arc["kind"].as_str() != Some("IMPLEMENTS"))
+            );
         }
     };
 }

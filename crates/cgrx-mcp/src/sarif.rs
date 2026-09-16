@@ -3,14 +3,10 @@
 //! Converts CGRX graph data to SARIF 2.1.0 format for interoperability
 //! with other static analysis tools.
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 /// Convert CGRX findings to SARIF 2.1.0 format.
-pub fn to_sarif(
-    tool_name: &str,
-    tool_version: &str,
-    results: &[SarifResult],
-) -> Value {
+pub fn to_sarif(tool_name: &str, tool_version: &str, results: &[SarifResult]) -> Value {
     let rules: Vec<Value> = results
         .iter()
         .map(|r| r.rule_id.clone())
@@ -128,7 +124,9 @@ fn extract_gate_results(value: &Value) -> Result<Vec<SarifResult>, String> {
     let mut results = Vec::new();
 
     // Extract from structured content
-    if let Some(findings) = value.pointer("/structuredContent/findings").and_then(Value::as_array)
+    if let Some(findings) = value
+        .pointer("/structuredContent/findings")
+        .and_then(Value::as_array)
     {
         for finding in findings {
             let rule_id = finding
@@ -151,10 +149,7 @@ fn extract_gate_results(value: &Value) -> Result<Vec<SarifResult>, String> {
                 .and_then(Value::as_str)
                 .unwrap_or("warning")
                 .to_owned();
-            let line = finding
-                .get("line")
-                .and_then(Value::as_u64)
-                .unwrap_or(1) as u32;
+            let line = finding.get("line").and_then(Value::as_u64).unwrap_or(1) as u32;
 
             let fingerprint = format!("gate:{}:{}", path, line);
             results.push(SarifResult {

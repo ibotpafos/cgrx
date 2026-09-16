@@ -14,11 +14,13 @@ use cgrx_cgcr::CoverageMetadata;
 use cgrx_core::{Hash32, Scope};
 use cgrx_languages::pack_for_path;
 
-use super::{path_in_scope, RuntimeError, StoredArc, StoredIndex, StoredDocument, UntrackedScanCache};
-use super::arc_resolution::rebuild_arcs_with_cargo;
-use super::ts_helpers::{remove_path, source_fingerprint};
 use super::SourceFingerprint;
+use super::arc_resolution::rebuild_arcs_with_cargo;
 use super::coverage_for_scope_with_matcher;
+use super::ts_helpers::{remove_path, source_fingerprint};
+use super::{
+    RuntimeError, StoredArc, StoredDocument, StoredIndex, UntrackedScanCache, path_in_scope,
+};
 
 const UNTRACKED_SCAN_ENTRY_LIMIT: usize = 64;
 
@@ -390,7 +392,10 @@ impl<'a, F: FnMut(&str, &Scope) -> bool> ScopedQuery<'a, F> {
         })
     }
 
-    pub(super) fn definitive_arcs<'s: 'a>(&mut self, stored: &'s StoredIndex) -> Vec<&'s StoredArc> {
+    pub(super) fn definitive_arcs<'s: 'a>(
+        &mut self,
+        stored: &'s StoredIndex,
+    ) -> Vec<&'s StoredArc> {
         stored
             .arcs
             .iter()
@@ -408,7 +413,10 @@ impl<'a, F: FnMut(&str, &Scope) -> bool> ScopedQuery<'a, F> {
     }
 }
 
-pub(super) fn definitive_stored_arcs<'a>(stored: &'a StoredIndex, scope: &Scope) -> Vec<&'a StoredArc> {
+pub(super) fn definitive_stored_arcs<'a>(
+    stored: &'a StoredIndex,
+    scope: &Scope,
+) -> Vec<&'a StoredArc> {
     ScopedQuery::new(stored, scope, path_in_scope).definitive_arcs(stored)
 }
 
@@ -431,13 +439,20 @@ pub(super) fn rebuild_refreshed_arcs(stored: &StoredIndex) -> Vec<StoredArc> {
         use std::collections::BTreeMap;
         let mut symbols_by_file: BTreeMap<&str, Vec<&StoredDocument>> = BTreeMap::new();
         for document in stored.documents.iter().filter(|d| d.provenance == "SYNTAX") {
-            symbols_by_file.entry(document.path.as_str()).or_default().push(document);
+            symbols_by_file
+                .entry(document.path.as_str())
+                .or_default()
+                .push(document);
         }
         for (file_path, symbols) in &symbols_by_file {
             let mut sorted: Vec<_> = symbols.clone();
             sorted.sort_by_key(|d| (d.span_start, d.node_id));
-            let source_hash = stored.path_hashes.get(*file_path).copied().unwrap_or(cgrx_core::Hash32([0; 32]));
-            
+            let source_hash = stored
+                .path_hashes
+                .get(*file_path)
+                .copied()
+                .unwrap_or(cgrx_core::Hash32([0; 32]));
+
             // File-level containment: first symbol contains all others
             if let Some(module) = sorted.first() {
                 for symbol in sorted.iter().skip(1) {
@@ -457,16 +472,20 @@ pub(super) fn rebuild_refreshed_arcs(stored: &StoredIndex) -> Vec<StoredArc> {
                     });
                 }
             }
-            
+
             // Hierarchical containment: parent symbols contain children whose span is inside theirs
             // Use body_start/body_end for containment (body spans include nested definitions)
             for (i, parent) in sorted.iter().enumerate() {
                 let p_start = parent.body_start;
                 let p_end = parent.body_end;
-                if p_start == p_end { continue; }
+                if p_start == p_end {
+                    continue;
+                }
                 for child in sorted.iter().skip(i + 1) {
                     // Stop if child starts after parent ends
-                    if child.span_start >= p_end { break; }
+                    if child.span_start >= p_end {
+                        break;
+                    }
                     // Child is inside parent's body
                     if child.span_start >= p_start && child.span_end <= p_end {
                         arcs.push(StoredArc {
@@ -489,7 +508,9 @@ pub(super) fn rebuild_refreshed_arcs(stored: &StoredIndex) -> Vec<StoredArc> {
                 // they are siblings in the same parent scope
                 if p_start > 0 && p_end > p_start {
                     for child in sorted.iter().skip(i + 1) {
-                        if child.span_start >= p_end { break; }
+                        if child.span_start >= p_end {
+                            break;
+                        }
                         if child.body_start == p_start && child.body_end == p_end {
                             // Same parent scope — this is already handled by file-level containment
                             continue;
@@ -516,7 +537,10 @@ pub(super) fn changed_paths(
         .collect()
 }
 
-pub(super) fn working_tree_digest(changed: &BTreeSet<String>, current: &BTreeMap<String, Hash32>) -> Hash32 {
+pub(super) fn working_tree_digest(
+    changed: &BTreeSet<String>,
+    current: &BTreeMap<String, Hash32>,
+) -> Hash32 {
     let mut hasher = blake3::Hasher::new();
     hasher.update(b"cgrx-working-tree-v1\0");
     for path in changed {
@@ -531,4 +555,3 @@ pub(super) fn working_tree_digest(changed: &BTreeSet<String>, current: &BTreeMap
     }
     Hash32(*hasher.finalize().as_bytes())
 }
-

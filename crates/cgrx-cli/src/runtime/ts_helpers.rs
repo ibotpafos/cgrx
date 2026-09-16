@@ -12,9 +12,9 @@ use cgrx_core::Hash32;
 use cgrx_languages::ts_imports::TsFileFacts;
 use serde_json::Value;
 
+use super::crosses_nested_git_boundary;
 use super::ts_config::{self, TsResolutionConfig};
 use super::{RuntimeError, SourceFingerprint, StoredIndex, StoredTsFileFacts};
-use super::crosses_nested_git_boundary;
 
 // ExtractedPath and ExtractedSource are defined in extraction.rs
 
@@ -59,7 +59,10 @@ pub(super) fn ts_resolution_config_supported(source: &[u8]) -> bool {
     !RESOLUTION_KEYS.iter().any(|key| options.contains_key(*key))
 }
 
-pub(super) fn ts_config_supported_for(path: &str, configs: &BTreeMap<String, TsResolutionConfig>) -> bool {
+pub(super) fn ts_config_supported_for(
+    path: &str,
+    configs: &BTreeMap<String, TsResolutionConfig>,
+) -> bool {
     ts_config::nearest(path, configs).is_none_or(|config| config.supported)
 }
 
@@ -95,7 +98,9 @@ pub(super) fn ts_config_modules(
     modules
 }
 
-pub(super) fn ts_inventory_candidates(ts_files: &BTreeMap<String, StoredTsFileFacts>) -> BTreeSet<String> {
+pub(super) fn ts_inventory_candidates(
+    ts_files: &BTreeMap<String, StoredTsFileFacts>,
+) -> BTreeSet<String> {
     let mut paths = BTreeSet::new();
     for (caller, stored) in ts_files.iter().filter(|(path, _)| {
         path.ends_with(".ts") && !path.ends_with(".d.ts") || path.ends_with(".tsx")

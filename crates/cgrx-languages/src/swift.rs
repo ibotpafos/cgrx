@@ -1,6 +1,4 @@
-use crate::pack::{
-    Edge, Extraction, LanguagePack, Provenance, RelationKind, Span, symbol, text,
-};
+use crate::pack::{Edge, Extraction, LanguagePack, Provenance, RelationKind, Span, symbol, text};
 use tree_sitter::{Language, Node};
 
 pub(crate) static SWIFT_PACK: Swift = Swift;

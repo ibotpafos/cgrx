@@ -9,7 +9,10 @@ use cgrx_cgcr::CoverageMetadata;
 use cgrx_core::Scope;
 use serde_json::{Value, json};
 
-use super::{coverage_for_scope, coverage_gap_count, coverage_gap_page, dynamic_dispatch_path, path_in_scope, RuntimeError, StoredIndex};
+use super::{
+    RuntimeError, StoredIndex, coverage_for_scope, coverage_gap_count, coverage_gap_page,
+    dynamic_dispatch_path, path_in_scope,
+};
 
 pub(super) fn check_index_coverage(
     stored: &StoredIndex,

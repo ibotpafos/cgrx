@@ -13,8 +13,8 @@ use cgrx_retrieval::GraphArc;
 const GRAPH_FANOUT_LIMIT: usize = 8;
 use cgrx_languages::Span;
 
-use super::{path_in_scope, StoredDocument};
 use super::helpers::stable_node_id;
+use super::{StoredDocument, path_in_scope};
 use crate::intent::{TaskIntent, classify};
 
 pub(super) fn task_evidence_ids(
@@ -99,7 +99,11 @@ pub(super) fn task_evidence_ids(
         .collect()
 }
 
-pub(super) fn exact_symbol_ids(task: &str, documents: &[StoredDocument], scope: &Scope) -> Vec<u64> {
+pub(super) fn exact_symbol_ids(
+    task: &str,
+    documents: &[StoredDocument],
+    scope: &Scope,
+) -> Vec<u64> {
     let exact_terms: BTreeSet<_> = task
         .split(|character: char| !character.is_alphanumeric() && character != '_')
         .filter(|term| term.len() >= 4)
@@ -142,7 +146,11 @@ pub(super) fn exact_symbol_ids(task: &str, documents: &[StoredDocument], scope: 
         .collect()
 }
 
-pub(super) fn definition_body_ids(task: &str, documents: &[StoredDocument], scope: &Scope) -> Vec<u64> {
+pub(super) fn definition_body_ids(
+    task: &str,
+    documents: &[StoredDocument],
+    scope: &Scope,
+) -> Vec<u64> {
     let terms = lexical_terms(task);
     if terms.len() < 3 {
         return Vec::new();
@@ -292,4 +300,3 @@ pub(super) fn graph_evidence_ids(
 }
 
 // stable_node_id and generation_id are defined in helpers.rs
-

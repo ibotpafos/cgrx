@@ -12,7 +12,7 @@ use cgrx_cgcr::CoverageMetadata;
 use cgrx_core::Scope;
 use serde_json::{Value, json};
 
-use super::{path_in_scope, RuntimeError};
+use super::{RuntimeError, path_in_scope};
 
 pub(super) fn git_bytes(root: &Path, args: &[&str]) -> Result<Vec<u8>, RuntimeError> {
     let output = Command::new(crate::git_executable())
@@ -29,7 +29,10 @@ pub(super) fn git_bytes(root: &Path, args: &[&str]) -> Result<Vec<u8>, RuntimeEr
 
 pub(super) fn store_writer_error(code: &'static str, error: std::io::Error) -> RuntimeError {
     if error.kind() == std::io::ErrorKind::WouldBlock {
-        RuntimeError::new("store_busy", "another process is publishing this index; retry after it finishes")
+        RuntimeError::new(
+            "store_busy",
+            "another process is publishing this index; retry after it finishes",
+        )
     } else {
         RuntimeError::new(code, error.to_string())
     }
@@ -235,7 +238,11 @@ pub(super) fn coverage_for_scope_with_matcher<'a>(
     }
 }
 
-pub(super) fn coverage_gap_page(coverage: &CoverageMetadata, offset: usize, limit: usize) -> Vec<Value> {
+pub(super) fn coverage_gap_page(
+    coverage: &CoverageMetadata,
+    offset: usize,
+    limit: usize,
+) -> Vec<Value> {
     coverage
         .excluded_paths
         .iter()
@@ -275,4 +282,3 @@ pub(super) fn dynamic_dispatch_path(location: &str) -> &str {
         .rsplit_once(':')
         .map_or(location, |(path, _span)| path)
 }
-

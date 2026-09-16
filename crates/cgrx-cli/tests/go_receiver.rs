@@ -103,7 +103,10 @@ fn go_self_runtime_proves_actual_receiver_target_path_symbol_and_span() {
     assert_eq!(node["span"]["end"], target + 6);
     let stored = fixture.stored();
     let arcs = stored["arcs"].as_array().unwrap();
-    let calls_arcs: Vec<_> = arcs.iter().filter(|arc| arc["kind"].as_str() == Some("CALLS")).collect();
+    let calls_arcs: Vec<_> = arcs
+        .iter()
+        .filter(|arc| arc["kind"].as_str() == Some("CALLS"))
+        .collect();
     assert_eq!(
         calls_arcs.len(),
         2,

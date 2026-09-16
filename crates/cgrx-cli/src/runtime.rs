@@ -1,43 +1,66 @@
+mod arc_resolution;
 mod architecture;
+mod check_helpers;
 mod config;
-mod target_types;
-mod graph_query;
+mod extraction;
 mod frameworks;
+mod git_helpers;
+mod graph_query;
 mod graph_view;
+mod helpers;
+mod index_helpers;
 mod observations;
+mod orient_helpers;
 mod refactors;
 mod risks;
-pub mod security;
-mod ts_config;
-mod helpers;
-mod extraction;
-mod arc_resolution;
-mod orient_helpers;
-mod ts_helpers;
 mod scan_helpers;
-mod git_helpers;
-mod index_helpers;
-mod check_helpers;
+pub mod security;
+mod target_types;
 #[cfg(test)]
 mod tests;
+mod ts_config;
+mod ts_helpers;
 
-use helpers::{body_fingerprint, declaration_name, generation_id, stable_node_id};
-use extraction::{ExtractedPath, ExtractedSource, extract_path, extract_sources_parallel, outer_dynamic_spans};
-use arc_resolution::{rebuild_arcs_with_cargo, go_module_name, split_call_target, path_matches_qualifier};
-use orient_helpers::{task_evidence_ids, exact_symbol_ids, definition_body_ids, lexical_terms, neighbor_map, graph_evidence_ids};
-use ts_helpers::{is_ts_inventory_path, is_ts_resolution_config, remove_path, scan_ts_inventory, scan_ts_inventory_cached, source_fingerprint, store_ts_presence_blocker, ts_config_modules, ts_config_supported_for, ts_inventory_candidates, ts_module_specifiers, ts_path_is_plain, ts_paths_portable_for, ts_resolution_config_supported};
-use scan_helpers::{crosses_nested_git_boundary, expand_untracked_directories, collect_untracked_sources, watch_scan_path, normalize_stored, refresh_qualified_call_gaps, definitive_stored_arcs, rebuild_refreshed_arcs, changed_paths, working_tree_digest, ScopedQuery};
-use git_helpers::{parse_committed_tree, GitBlobBatch, refresh_status, coverage_for_scope, coverage_for_scope_with_matcher, coverage_gap_page, coverage_gap_count, dynamic_dispatch_path, git_bytes, git_text, store_writer_error};
-use index_helpers::index_source;
+use arc_resolution::{
+    go_module_name, path_matches_qualifier, rebuild_arcs_with_cargo, split_call_target,
+};
 use check_helpers::check_index_coverage as check_index_impl;
-use target_types::{GoFieldTarget, GoLocalConstructorTarget, JavaConstructorTarget, RustSelfTarget, TsLexicalTarget, GoReceiverTarget};
 pub use config::RuntimeConfig;
+use extraction::{
+    ExtractedPath, ExtractedSource, extract_path, extract_sources_parallel, outer_dynamic_spans,
+};
+use git_helpers::{
+    GitBlobBatch, coverage_for_scope, coverage_for_scope_with_matcher, coverage_gap_count,
+    coverage_gap_page, dynamic_dispatch_path, git_bytes, git_text, parse_committed_tree,
+    refresh_status, store_writer_error,
+};
 pub use graph_view::{GraphDirection, GraphViewRequest};
+use helpers::{body_fingerprint, declaration_name, generation_id, stable_node_id};
+use index_helpers::index_source;
 pub use observations::{
     ImportRuntimeEvidenceReport, RuntimeEvidenceFormat, RuntimeInsight, RuntimeInsightsReport,
 };
+use orient_helpers::{
+    definition_body_ids, exact_symbol_ids, graph_evidence_ids, lexical_terms, neighbor_map,
+    task_evidence_ids,
+};
 pub use risks::{RiskBaseline, TestCaseResult, TestOutcome, TestRunRecord};
+use scan_helpers::{
+    ScopedQuery, changed_paths, collect_untracked_sources, crosses_nested_git_boundary,
+    definitive_stored_arcs, expand_untracked_directories, normalize_stored, rebuild_refreshed_arcs,
+    refresh_qualified_call_gaps, watch_scan_path, working_tree_digest,
+};
+use target_types::{
+    GoFieldTarget, GoLocalConstructorTarget, GoReceiverTarget, JavaConstructorTarget,
+    RustSelfTarget, TsLexicalTarget,
+};
 use ts_config::TsResolutionConfig;
+use ts_helpers::{
+    is_ts_inventory_path, is_ts_resolution_config, remove_path, scan_ts_inventory,
+    scan_ts_inventory_cached, source_fingerprint, store_ts_presence_blocker, ts_config_modules,
+    ts_config_supported_for, ts_inventory_candidates, ts_module_specifiers, ts_path_is_plain,
+    ts_paths_portable_for, ts_resolution_config_supported,
+};
 
 use levenshtein::levenshtein;
 use std::collections::{BTreeMap, BTreeSet};
@@ -331,7 +354,23 @@ impl Runtime {
     ) -> Result<Value, RuntimeError> {
         let language = language.map(str::trim);
         if language.is_some_and(|language| {
-            !matches!(language, "typescript" | "go" | "java" | "python" | "rust" | "c" | "cpp" | "csharp" | "ruby" | "php" | "swift" | "scala" | "elixir" | "kotlin")
+            !matches!(
+                language,
+                "typescript"
+                    | "go"
+                    | "java"
+                    | "python"
+                    | "rust"
+                    | "c"
+                    | "cpp"
+                    | "csharp"
+                    | "ruby"
+                    | "php"
+                    | "swift"
+                    | "scala"
+                    | "elixir"
+                    | "kotlin"
+            )
         }) {
             return Err(RuntimeError::new(
                 "cgrx.invalid_arguments",
@@ -340,7 +379,6 @@ impl Runtime {
         }
         self.search_graph_with_matcher(query, scope, limit, language, include_body, path_in_scope)
     }
-
 
     pub fn check_index_coverage(
         &self,
@@ -700,7 +738,6 @@ impl Runtime {
         index_helpers::index_source(root, state, committed_head)
     }
 
-
     pub fn open(state: &Path) -> Result<Self, RuntimeError> {
         let reader = GenerationReader::open_current(state)
             .map_err(|error| RuntimeError::new("store_open", error.to_string()))?;
@@ -939,8 +976,15 @@ impl Runtime {
             .map_err(|error| RuntimeError::new("accounting", error.to_string()))?;
         struct NoopOracle;
         impl ProbeOracle for NoopOracle {
-            fn execute(&self, _probe: &Probe, _snapshot: &RepoSnapshot) -> Result<Vec<ProbeFact>, ProbeError> {
-                Err(ProbeError::new("NO_ORACLE", "runtime has no external probe oracle"))
+            fn execute(
+                &self,
+                _probe: &Probe,
+                _snapshot: &RepoSnapshot,
+            ) -> Result<Vec<ProbeFact>, ProbeError> {
+                Err(ProbeError::new(
+                    "NO_ORACLE",
+                    "runtime has no external probe oracle",
+                ))
             }
         }
         let engine = CgcrEngine::new(NoopOracle, CostTable::default());

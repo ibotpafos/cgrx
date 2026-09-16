@@ -157,7 +157,8 @@ macro_rules! negative {
                     .as_array()
                     .unwrap()
                     .iter()
-                    .all(|a| a["kind"].as_str() == Some("CONTAINS") || a["evidence"]["path"] != "main.ts")
+                    .all(|a| a["kind"].as_str() == Some("CONTAINS")
+                        || a["evidence"]["path"] != "main.ts")
             );
         }
     };

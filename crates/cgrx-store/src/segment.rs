@@ -29,8 +29,8 @@ pub(crate) fn valid_name(name: &str) -> bool {
 pub(crate) fn write_synced(path: &Path, bytes: &[u8]) -> io::Result<()> {
     let mut file = OpenOptions::new().create_new(true).write(true).open(path)?;
     if bytes.len() >= COMPRESS_THRESHOLD {
-        let compressed = zstd::encode_all(bytes, 3)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+        let compressed =
+            zstd::encode_all(bytes, 3).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
         if compressed.len() < bytes.len() {
             file.write_all(COMPRESSED_MAGIC)?;
             file.write_all(&compressed)?;
@@ -50,8 +50,7 @@ pub(crate) fn read_decompressed(path: &Path) -> io::Result<Vec<u8>> {
     if header_read == 4 && header == *COMPRESSED_MAGIC {
         let mut compressed = Vec::new();
         file.read_to_end(&mut compressed)?;
-        zstd::decode_all(&compressed[..])
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+        zstd::decode_all(&compressed[..]).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
     } else {
         let mut bytes = Vec::with_capacity(header_read + 4096);
         bytes.extend_from_slice(&header[..header_read]);

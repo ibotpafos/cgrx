@@ -7,19 +7,28 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use cgrx_core::Hash32;
-use cgrx_languages::{pack_for_path, Span};
+use cgrx_languages::{Span, pack_for_path};
 
 use cgrx_cgcr::CoverageMetadata;
 
-use super::{crosses_nested_git_boundary, open_current_report, normalize_stored, EXTRACTION_REVISION, NODES_SEGMENT, EDGES_SEGMENT, TERMS_SEGMENT, TERMS_MARKER, RuntimeError, GenerationWriter, IndexReport, RepoSnapshot, StoredIndex, StoredTsFileFacts, TsFileFacts, TsResolutionConfig};
-use super::git_helpers::{git_text, git_bytes, store_writer_error};
-use super::scan_helpers::refresh_qualified_call_gaps;
-use super::arc_resolution::{rebuild_arcs_with_cargo, go_module_name};
+use super::arc_resolution::{go_module_name, rebuild_arcs_with_cargo};
 use super::extraction::extract_sources_parallel;
-use super::git_helpers::{parse_committed_tree, GitBlobBatch};
+use super::git_helpers::{GitBlobBatch, parse_committed_tree};
+use super::git_helpers::{git_bytes, git_text, store_writer_error};
 use super::helpers::{generation_id, stable_node_id};
-use super::scan_helpers::{collect_untracked_sources, expand_untracked_directories, watch_scan_path};
-use super::ts_helpers::{is_ts_inventory_path, is_ts_resolution_config, scan_ts_inventory, store_ts_presence_blocker, ts_path_is_plain};
+use super::scan_helpers::refresh_qualified_call_gaps;
+use super::scan_helpers::{
+    collect_untracked_sources, expand_untracked_directories, watch_scan_path,
+};
+use super::ts_helpers::{
+    is_ts_inventory_path, is_ts_resolution_config, scan_ts_inventory, store_ts_presence_blocker,
+    ts_path_is_plain,
+};
+use super::{
+    EDGES_SEGMENT, EXTRACTION_REVISION, GenerationWriter, IndexReport, NODES_SEGMENT, RepoSnapshot,
+    RuntimeError, StoredIndex, StoredTsFileFacts, TERMS_MARKER, TERMS_SEGMENT, TsFileFacts,
+    TsResolutionConfig, crosses_nested_git_boundary, normalize_stored, open_current_report,
+};
 
 pub(super) fn index_source(
     root: &Path,
@@ -92,10 +101,7 @@ pub(super) fn index_source(
             .is_some_and(|name| name == "go.mod");
         let is_cargo = relative_path.file_name().is_some_and(|n| n == "Cargo.toml");
         let is_ts_inventory = is_ts_inventory_path(relative_path);
-        if pack_for_path(relative_path).is_none()
-            && !is_go_module
-            && !is_cargo
-            && !is_ts_inventory
+        if pack_for_path(relative_path).is_none() && !is_go_module && !is_cargo && !is_ts_inventory
         {
             excluded_paths.push(relative);
             continue;
@@ -147,8 +153,7 @@ pub(super) fn index_source(
                 },
             );
             if is_ts_resolution_config(relative_path) {
-                ts_resolution_configs
-                    .insert(relative.clone(), TsResolutionConfig::legacy(&source));
+                ts_resolution_configs.insert(relative.clone(), TsResolutionConfig::legacy(&source));
             }
             excluded_paths.push(relative);
             continue;
@@ -219,13 +224,19 @@ pub(super) fn index_source(
         use std::collections::BTreeMap;
         let mut symbols_by_file: BTreeMap<&str, Vec<&super::StoredDocument>> = BTreeMap::new();
         for document in documents.iter().filter(|d| d.provenance == "SYNTAX") {
-            symbols_by_file.entry(document.path.as_str()).or_default().push(document);
+            symbols_by_file
+                .entry(document.path.as_str())
+                .or_default()
+                .push(document);
         }
         for (file_path, symbols) in &symbols_by_file {
             let mut sorted: Vec<_> = symbols.clone();
             sorted.sort_by_key(|d| (d.span_start, d.node_id));
             if let Some(module) = sorted.first() {
-                let source_hash = path_hashes.get(*file_path).copied().unwrap_or(cgrx_core::Hash32([0; 32]));
+                let source_hash = path_hashes
+                    .get(*file_path)
+                    .copied()
+                    .unwrap_or(cgrx_core::Hash32([0; 32]));
                 for symbol in sorted.iter().skip(1) {
                     arcs.push(super::StoredArc {
                         source: module.node_id,

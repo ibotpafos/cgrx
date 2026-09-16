@@ -1,6 +1,4 @@
-use crate::pack::{
-    Edge, Extraction, LanguagePack, Provenance, RelationKind, Span, symbol, text,
-};
+use crate::pack::{Edge, Extraction, LanguagePack, Provenance, RelationKind, Span, symbol, text};
 use tree_sitter::{Language, Node};
 
 pub(crate) static RUBY_PACK: Ruby = Ruby;
@@ -61,7 +59,9 @@ impl LanguagePack for Ruby {
             }
             "constant" => {
                 let type_name = text(node, source);
-                if !type_name.is_empty() && type_name.chars().next().map_or(false, |c| c.is_uppercase()) {
+                if !type_name.is_empty()
+                    && type_name.chars().next().map_or(false, |c| c.is_uppercase())
+                {
                     let edge = Edge {
                         relation: RelationKind::References,
                         target: type_name,

@@ -1,6 +1,4 @@
-use crate::pack::{
-    Edge, Extraction, LanguagePack, Provenance, RelationKind, Span, symbol, text,
-};
+use crate::pack::{Edge, Extraction, LanguagePack, Provenance, RelationKind, Span, symbol, text};
 use tree_sitter::{Language, Node};
 
 pub(crate) static PHP_PACK: Php = Php;
@@ -27,7 +25,9 @@ impl LanguagePack for Php {
                     symbol(name, source, extraction);
                 }
             }
-            "function_call_expression" | "member_call_expression" | "nullsafe_member_call_expression" => {
+            "function_call_expression"
+            | "member_call_expression"
+            | "nullsafe_member_call_expression" => {
                 if let Some(function) = node.child_by_field_name("function") {
                     let target_name = text(function, source);
                     if !target_name.is_empty() {

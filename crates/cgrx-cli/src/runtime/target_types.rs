@@ -5,7 +5,6 @@
 use cgrx_core::ByteRange;
 use serde::{Deserialize, Serialize};
 
-
 #[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
 pub(super) struct GoFieldTarget {
     pub(super) package: String,
@@ -56,4 +55,3 @@ pub(super) struct GoReceiverTarget {
     pub(super) span_start: usize,
     pub(super) span_end: usize,
 }
-

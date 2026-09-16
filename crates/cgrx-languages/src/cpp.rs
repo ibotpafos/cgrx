@@ -1,6 +1,4 @@
-use crate::pack::{
-    Edge, Extraction, LanguagePack, Provenance, RelationKind, Span, symbol, text,
-};
+use crate::pack::{Edge, Extraction, LanguagePack, Provenance, RelationKind, Span, symbol, text};
 use std::collections::BTreeSet;
 use tree_sitter::{Language, Node};
 
@@ -52,7 +50,10 @@ impl CppContext {
                 _ => {}
             }
         }
-        CppContext { namespaces, classes }
+        CppContext {
+            namespaces,
+            classes,
+        }
     }
 }
 
@@ -97,7 +98,13 @@ fn classify(node: Node, source: &[u8], extraction: &mut Extraction, context: &Cp
         }
         "type_identifier" | "scoped_type_identifier" => {
             let type_name = text(node, source);
-            if !type_name.is_empty() && (context.classes.contains(&type_name) || context.namespaces.iter().any(|ns| type_name.starts_with(ns))) {
+            if !type_name.is_empty()
+                && (context.classes.contains(&type_name)
+                    || context
+                        .namespaces
+                        .iter()
+                        .any(|ns| type_name.starts_with(ns)))
+            {
                 let edge = Edge {
                     relation: RelationKind::References,
                     target: type_name,

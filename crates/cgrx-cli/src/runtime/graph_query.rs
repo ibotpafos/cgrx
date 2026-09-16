@@ -6,15 +6,17 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use cgrx_core::{ByteRange, Hash32, RelationKind, Scope};
-use cgrx_languages::{pack_for_path, Span};
+use cgrx_languages::{Span, pack_for_path};
 use serde_json::{Value, json};
 
-use super::{coverage_for_scope, coverage_gap_count, coverage_gap_page, dynamic_dispatch_path, path_in_scope, RuntimeError, StoredArc};
 use super::helpers::{body_fingerprint, stable_node_id};
 use super::scan_helpers::ScopedQuery;
+use super::{
+    RuntimeError, StoredArc, coverage_for_scope, coverage_gap_count, coverage_gap_page,
+    dynamic_dispatch_path, path_in_scope,
+};
 
 impl super::Runtime {
-
     pub fn get_outline(&self, path: &str, limit: usize) -> Result<Value, RuntimeError> {
         let path = path.trim();
         if path.is_empty() || Path::new(path).is_absolute() || !(1..=500).contains(&limit) {
@@ -123,7 +125,13 @@ impl super::Runtime {
                     (3, "body")
                 } else {
                     // Fuzzy matching: allow up to 2 edits for short queries, 3 for longer
-                    let max_distance = if folded.len() <= 4 { 1 } else if folded.len() <= 8 { 2 } else { 3 };
+                    let max_distance = if folded.len() <= 4 {
+                        1
+                    } else if folded.len() <= 8 {
+                        2
+                    } else {
+                        3
+                    };
                     if levenshtein::levenshtein(&name, &folded) <= max_distance {
                         (4, "fuzzy")
                     } else {
@@ -215,9 +223,7 @@ impl super::Runtime {
                 (document, outgoing)
             })
             .collect();
-        candidates.sort_by_key(|(doc, outgoing)| {
-            (doc.path.clone(), doc.span_start, *outgoing)
-        });
+        candidates.sort_by_key(|(doc, outgoing)| (doc.path.clone(), doc.span_start, *outgoing));
         let total = candidates.len();
         let rows: Vec<_> = candidates
             .into_iter()

@@ -1239,8 +1239,8 @@ mod compact_storage_tests {
 
 #[cfg(test)]
 mod ts_inventory_cache_tests {
-    use super::*;
     use super::ts_helpers::TsDirectoryCache;
+    use super::*;
     use std::cell::Cell;
     use std::sync::atomic::{AtomicU64, Ordering};
     thread_local! { pub(super) static DIRECTORY_READS: Cell<usize> = const { Cell::new(0) }; }

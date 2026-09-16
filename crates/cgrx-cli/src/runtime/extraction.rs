@@ -8,16 +8,20 @@ use std::path::Path;
 
 use cgrx_capsule::{ContextWindow, slice_source};
 use cgrx_core::{ByteRange, Hash32};
+use cgrx_languages::ts_imports::{SiteBinding, TsFileFacts};
 use cgrx_languages::{
     Provenance as LanguageProvenance, RelationKind as LanguageRelation, Span, UnresolvedKind,
     pack_for_path,
 };
-use cgrx_languages::ts_imports::{SiteBinding, TsFileFacts};
 
-use super::helpers::{body_fingerprint, declaration_name, declaration_span, implements_spans, stable_node_id};
-use super::{GoFieldTarget, GoLocalConstructorTarget, GoReceiverTarget, JavaConstructorTarget, StoredArc,
-            RustSelfTarget, StoredDocument, TsLexicalTarget};
 use super::RuntimeError;
+use super::helpers::{
+    body_fingerprint, declaration_name, declaration_span, implements_spans, stable_node_id,
+};
+use super::{
+    GoFieldTarget, GoLocalConstructorTarget, GoReceiverTarget, JavaConstructorTarget,
+    RustSelfTarget, StoredArc, StoredDocument, TsLexicalTarget,
+};
 
 use cgrx_cgcr::SourceRange;
 
@@ -730,4 +734,3 @@ pub(super) fn outer_dynamic_spans(unresolved: &[cgrx_languages::Unresolved]) -> 
         })
         .collect()
 }
-
