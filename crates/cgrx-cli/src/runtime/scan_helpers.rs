@@ -426,6 +426,7 @@ pub(super) fn rebuild_refreshed_arcs(stored: &StoredIndex) -> Vec<StoredArc> {
     );
 
     // Add CONTAINS arcs: each file's first SYNTAX symbol contains all others
+    // Also add hierarchical containment: parent symbols contain child symbols by span
     {
         use std::collections::BTreeMap;
         let mut symbols_by_file: BTreeMap<&str, Vec<&StoredDocument>> = BTreeMap::new();
@@ -435,8 +436,10 @@ pub(super) fn rebuild_refreshed_arcs(stored: &StoredIndex) -> Vec<StoredArc> {
         for (file_path, symbols) in &symbols_by_file {
             let mut sorted: Vec<_> = symbols.clone();
             sorted.sort_by_key(|d| (d.span_start, d.node_id));
+            let source_hash = stored.path_hashes.get(*file_path).copied().unwrap_or(cgrx_core::Hash32([0; 32]));
+            
+            // File-level containment: first symbol contains all others
             if let Some(module) = sorted.first() {
-                let source_hash = stored.path_hashes.get(*file_path).copied().unwrap_or(cgrx_core::Hash32([0; 32]));
                 for symbol in sorted.iter().skip(1) {
                     arcs.push(StoredArc {
                         source: module.node_id,
@@ -452,6 +455,35 @@ pub(super) fn rebuild_refreshed_arcs(stored: &StoredIndex) -> Vec<StoredArc> {
                             counter_evidence: Vec::new(),
                         }),
                     });
+                }
+            }
+            
+            // Hierarchical containment: parent symbols contain children whose span is inside theirs
+            // Use body_start/body_end for containment (body spans include nested definitions)
+            for (i, parent) in sorted.iter().enumerate() {
+                let p_start = parent.body_start;
+                let p_end = parent.body_end;
+                if p_start == p_end { continue; }
+                for child in sorted.iter().skip(i + 1) {
+                    // Stop if child starts after parent ends
+                    if child.span_start >= p_end { break; }
+                    // Child is inside parent's body
+                    if child.span_start >= p_start && child.span_end <= p_end {
+                        arcs.push(StoredArc {
+                            source: parent.node_id,
+                            target: child.node_id,
+                            kind: cgrx_core::RelationKind::Contains,
+                            evidence: Some(cgrx_core::EdgeEvidence {
+                                path: file_path.to_string(),
+                                span: cgrx_core::ByteRange::new(child.span_start, child.span_end),
+                                source_hash,
+                                resolver: cgrx_core::ResolverClass::SyntaxExact,
+                                confidence: cgrx_core::ConfidenceClass::Proven,
+                                assumptions: Vec::new(),
+                                counter_evidence: Vec::new(),
+                            }),
+                        });
+                    }
                 }
             }
         }
