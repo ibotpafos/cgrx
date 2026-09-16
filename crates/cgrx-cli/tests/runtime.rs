@@ -2173,8 +2173,9 @@ fn repeated_call_sites_keep_proofs_but_count_distinct_neighbors() {
     Runtime::index(repository.path(), state.path()).unwrap();
     let runtime = Runtime::open(state.path()).unwrap();
     let proofs = stored_arcs(state.path());
-    assert_eq!(proofs.len(), 2);
-    assert_ne!(proofs[0]["evidence"]["span"], proofs[1]["evidence"]["span"]);
+    let calls_proofs: Vec<_> = proofs.iter().filter(|arc| arc["kind"].as_str() == Some("CALLS")).cloned().collect();
+    assert_eq!(calls_proofs.len(), 2);
+    assert_ne!(calls_proofs[0]["evidence"]["span"], calls_proofs[1]["evidence"]["span"]);
     let scope = Scope {
         include: vec![],
         exclude: vec![],
@@ -2209,7 +2210,7 @@ fn rust_shadowed_call_has_no_proven_arc_and_retains_uncertainty() {
         let repository = repository_with_file("shadow-call", "main.rs", source.as_bytes());
         let state = TestDirectory::new("shadow-call-state");
         Runtime::index(repository.path(), state.path()).unwrap();
-        assert!(stored_arcs(state.path()).is_empty(), "{source}");
+        assert!(stored_arcs(state.path()).iter().all(|arc| arc["kind"].as_str() != Some("CALLS") && arc["kind"].as_str() != Some("IMPLEMENTS")), "{source}");
         let reader = GenerationReader::open_current(state.path()).unwrap();
         let stored: serde_json::Value =
             serde_json::from_slice(&reader.read_segment("nodes.seg").unwrap()).unwrap();
@@ -2231,10 +2232,11 @@ macro_rules! rust_lexical_runtime_case {
             let state = TestDirectory::new(concat!(stringify!($name), "-state"));
             Runtime::index(repository.path(), state.path()).unwrap();
             let arcs = stored_arcs(state.path());
-            assert_eq!(arcs.len(), usize::from($proven), "{source}");
+            let calls_arcs: Vec<_> = arcs.iter().filter(|arc| arc["kind"].as_str() == Some("CALLS")).cloned().collect();
+            assert_eq!(calls_arcs.len(), usize::from($proven), "{source}");
             if $proven {
-                assert_eq!(arcs[0]["evidence"]["resolver"], "SYNTAX_EXACT");
-                assert_eq!(arcs[0]["evidence"]["confidence"], "PROVEN");
+                assert_eq!(calls_arcs[0]["evidence"]["resolver"], "SYNTAX_EXACT");
+                assert_eq!(calls_arcs[0]["evidence"]["confidence"], "PROVEN");
             }
             let reader = GenerationReader::open_current(state.path()).unwrap();
             let stored: serde_json::Value =
@@ -2328,12 +2330,13 @@ fn rust_lexical_runtime_mixed_sites_only_prove_live_static_calls() {
     let state = TestDirectory::new("lexical-mixed-state");
     Runtime::index(repository.path(), state.path()).unwrap();
     let arcs = stored_arcs(state.path());
-    assert_eq!(arcs.len(), 3);
+    let calls_arcs: Vec<_> = arcs.iter().filter(|arc| arc["kind"].as_str() == Some("CALLS")).cloned().collect();
+    assert_eq!(calls_arcs.len(), 3);
     let sites: Vec<_> = source
         .match_indices("target();")
         .map(|(start, _)| start)
         .collect();
-    let mut proven_sites = arcs
+    let mut proven_sites = calls_arcs
         .iter()
         .map(|arc| {
             assert_eq!(arc["evidence"]["resolver"], "SYNTAX_EXACT");

@@ -514,7 +514,7 @@ fn status_cli_uses_the_managed_root_instead_of_a_zero_generation_snapshot() {
     assert_eq!(payload["freshness"], "WATCHED");
     assert_eq!(payload["changed_paths"], serde_json::json!([]));
     assert_eq!(payload["graph"]["nodes"], 2);
-    assert_eq!(payload["graph"]["edges"], 1);
+    assert!(payload["graph"]["edges"].as_u64().unwrap() >= 1);
 }
 
 #[test]

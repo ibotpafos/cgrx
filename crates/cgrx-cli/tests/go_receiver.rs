@@ -103,12 +103,13 @@ fn go_self_runtime_proves_actual_receiver_target_path_symbol_and_span() {
     assert_eq!(node["span"]["end"], target + 6);
     let stored = fixture.stored();
     let arcs = stored["arcs"].as_array().unwrap();
+    let calls_arcs: Vec<_> = arcs.iter().filter(|arc| arc["kind"].as_str() == Some("CALLS")).collect();
     assert_eq!(
-        arcs.len(),
+        calls_arcs.len(),
         2,
         "two distinct callsite proofs, one traced target"
     );
-    for arc in arcs {
+    for arc in &calls_arcs {
         assert_eq!(arc["target"], node["node_id"]);
         assert_eq!(arc["evidence"]["path"], "auth/service.go");
         let start = arc["evidence"]["span"]["start"].as_u64().unwrap() as usize;

@@ -204,7 +204,7 @@ pub(super) fn index_source(
         ))
     });
     documents.dedup_by_key(|document| document.node_id);
-    let arcs = rebuild_arcs_with_cargo(
+    let mut arcs = rebuild_arcs_with_cargo(
         &documents,
         &path_hashes,
         &go_modules,
@@ -213,6 +213,41 @@ pub(super) fn index_source(
         &ts_files,
         &ts_resolution_configs,
     );
+
+    // Add CONTAINS arcs: each file's first SYNTAX symbol contains all others
+    {
+        use std::collections::BTreeMap;
+        let mut symbols_by_file: BTreeMap<&str, Vec<&super::StoredDocument>> = BTreeMap::new();
+        for document in documents.iter().filter(|d| d.provenance == "SYNTAX") {
+            symbols_by_file.entry(document.path.as_str()).or_default().push(document);
+        }
+        for (file_path, symbols) in &symbols_by_file {
+            let mut sorted: Vec<_> = symbols.clone();
+            sorted.sort_by_key(|d| (d.span_start, d.node_id));
+            if let Some(module) = sorted.first() {
+                let source_hash = path_hashes.get(*file_path).copied().unwrap_or(cgrx_core::Hash32([0; 32]));
+                for symbol in sorted.iter().skip(1) {
+                    arcs.push(super::StoredArc {
+                        source: module.node_id,
+                        target: symbol.node_id,
+                        kind: cgrx_core::RelationKind::Contains,
+                        evidence: Some(cgrx_core::EdgeEvidence {
+                            path: file_path.to_string(),
+                            span: cgrx_core::ByteRange::new(symbol.span_start, symbol.span_end),
+                            source_hash,
+                            resolver: cgrx_core::ResolverClass::SyntaxExact,
+                            confidence: cgrx_core::ConfidenceClass::Proven,
+                            assumptions: Vec::new(),
+                            counter_evidence: Vec::new(),
+                        }),
+                    });
+                }
+            }
+        }
+        arcs.sort_by_key(|arc| (arc.source, arc.target, arc.kind, arc.evidence.clone()));
+        arcs.dedup();
+    }
+
     parser_error_ranges.sort();
     parser_error_ranges.dedup();
     dynamic_dispatch.sort();

@@ -112,9 +112,10 @@ fn nested_named_struct_fields_do_not_hide_receiver_methods() {
         );
         let stored = fixture.stored();
         let arcs = stored["arcs"].as_array().unwrap();
-        assert_eq!(arcs.len(), 1);
-        assert_eq!(arcs[0]["target"], node["node_id"]);
-        let evidence = &arcs[0]["evidence"]["span"];
+        let calls_arcs: Vec<_> = arcs.iter().filter(|arc| arc["kind"].as_str() == Some("CALLS")).collect();
+        assert_eq!(calls_arcs.len(), 1);
+        assert_eq!(calls_arcs[0]["target"], node["node_id"]);
+        let evidence = &calls_arcs[0]["evidence"]["span"];
         let start = evidence["start"].as_u64().unwrap() as usize;
         let end = evidence["end"].as_u64().unwrap() as usize;
         assert_eq!(&source[start..end], "s.Target()");

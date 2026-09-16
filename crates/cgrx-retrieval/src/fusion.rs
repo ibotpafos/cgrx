@@ -317,6 +317,7 @@ const fn relation_code(kind: RelationKind) -> u8 {
         RelationKind::Implements => 1,
         RelationKind::References => 2,
         RelationKind::Imports => 3,
+        RelationKind::Contains => 4,
     }
 }
 

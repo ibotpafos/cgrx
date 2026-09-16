@@ -103,6 +103,7 @@ impl Runtime {
                 cgrx_core::RelationKind::Implements => ("IMPLEMENTS", 4),
                 cgrx_core::RelationKind::References => ("REFERENCES", 1),
                 cgrx_core::RelationKind::Imports => ("IMPORTS", 1),
+                cgrx_core::RelationKind::Contains => ("CONTAINS", 1),
             };
             if documents.contains_key(&arc.source) && documents.contains_key(&arc.target) {
                 add_semantic_edge(

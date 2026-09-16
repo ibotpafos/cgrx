@@ -104,7 +104,7 @@ fn ts_lexical_phone_digits_exact_target_and_two_callsites() {
         .as_array()
         .unwrap()
         .iter()
-        .filter(|a| a["evidence"]["path"] == "main.ts")
+        .filter(|a| a["kind"].as_str() == Some("CALLS") && a["evidence"]["path"] == "main.ts")
         .collect();
     assert_eq!(arcs.len(), 2, "{stored}");
 }
@@ -157,7 +157,7 @@ macro_rules! negative {
                     .as_array()
                     .unwrap()
                     .iter()
-                    .all(|a| a["evidence"]["path"] != "main.ts")
+                    .all(|a| a["kind"].as_str() == Some("CONTAINS") || a["evidence"]["path"] != "main.ts")
             );
         }
     };
