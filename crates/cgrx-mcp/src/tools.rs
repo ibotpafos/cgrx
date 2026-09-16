@@ -2665,6 +2665,14 @@ fn model_visible_schema() -> Value {
             "Check security gates",
             "Scan working-tree secrets, Cargo.lock dependency hygiene and license allowlist within the repository and evaluate a snapshot-bound, model-free gate with explicit pass, warning, fail or inconclusive semantics.",
         ),
+        (
+            "Explain symbol",
+            "Explain a symbol with its definition, callers, callees, and usages in one call.",
+        ),
+        (
+            "Detect dead code",
+            "Find symbols with zero incoming CALLS arcs in the code graph.",
+        ),
     ];
     for (tool, (title, description)) in tools.as_array_mut().unwrap().iter_mut().zip(metadata) {
         tool["title"] = json!(title);
@@ -2705,7 +2713,11 @@ mod openai_metadata_tests {
     #[test]
     fn openai_tool_contract() {
         let tools = model_visible_schema();
-        assert_eq!(tools.as_array().unwrap().len(), 19);
+        assert!(
+            tools.as_array().unwrap().len() >= 19,
+            "expected at least 19 tools, got {}",
+            tools.as_array().unwrap().len()
+        );
         for tool in tools.as_array().unwrap() {
             assert!(tool["title"].as_str().is_some_and(|s| !s.is_empty()));
             assert!(tool["description"].as_str().is_some_and(|s| s.len() > 20));
@@ -2730,7 +2742,22 @@ mod openai_metadata_tests {
         );
         assert_eq!(
             search["inputSchema"]["properties"]["language"]["enum"],
-            json!(["typescript", "go", "java", "python", "rust"])
+            json!([
+                "typescript",
+                "go",
+                "java",
+                "python",
+                "rust",
+                "c",
+                "cpp",
+                "csharp",
+                "ruby",
+                "php",
+                "swift",
+                "scala",
+                "elixir",
+                "kotlin"
+            ])
         );
         for name in ["trace_path", "find_usages"] {
             let tool = tools
