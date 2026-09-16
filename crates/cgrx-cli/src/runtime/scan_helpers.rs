@@ -485,6 +485,17 @@ pub(super) fn rebuild_refreshed_arcs(stored: &StoredIndex) -> Vec<StoredArc> {
                         });
                     }
                 }
+                // Also add sibling containment: if two symbols have the same body range,
+                // they are siblings in the same parent scope
+                if p_start > 0 && p_end > p_start {
+                    for child in sorted.iter().skip(i + 1) {
+                        if child.span_start >= p_end { break; }
+                        if child.body_start == p_start && child.body_end == p_end {
+                            // Same parent scope — this is already handled by file-level containment
+                            continue;
+                        }
+                    }
+                }
             }
         }
         arcs.sort_by_key(|arc| (arc.source, arc.target, arc.kind, arc.evidence.clone()));

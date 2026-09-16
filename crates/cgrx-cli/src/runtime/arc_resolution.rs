@@ -711,8 +711,10 @@ pub(super) fn rebuild_arcs_with_cargo(
             }
         }
         
-        // For crate:: imports, extract symbol names and match to SYNTAX documents
-        if import_target.starts_with("crate::") || import_target.starts_with("use crate::") {
+        // For crate:: and internal crate imports, extract symbol names and match to SYNTAX documents
+        let is_internal = import_target.starts_with("crate::") || import_target.starts_with("use crate::") || 
+            import_target.starts_with("use cgrx_") || import_target.starts_with("use super::") || import_target.starts_with("use self::");
+        if is_internal {
             // Extract symbol names from various patterns:
             // - use crate::Symbol -> ["Symbol"]
             // - use crate::module::Symbol -> ["Symbol"]
