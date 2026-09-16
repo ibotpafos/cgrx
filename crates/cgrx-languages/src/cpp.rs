@@ -61,9 +61,10 @@ fn classify(node: Node, source: &[u8], extraction: &mut Extraction, context: &Cp
     match node.kind() {
         "function_definition" | "declaration" => {
             if let Some(name) = node.child_by_field_name("declarator")
-                && let Some(inner) = name.child_by_field_name("declarator") {
-                    symbol(inner, source, extraction);
-                }
+                && let Some(inner) = name.child_by_field_name("declarator")
+            {
+                symbol(inner, source, extraction);
+            }
         }
         "call_expression" => {
             if let Some(function) = node.child_by_field_name("function") {

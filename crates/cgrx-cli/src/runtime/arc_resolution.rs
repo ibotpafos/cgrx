@@ -12,9 +12,7 @@ use cgrx_languages::ts_imports::ImportClassification;
 use cgrx_languages::{RelationKind as LanguageRelation, pack_for_path};
 
 use super::ts_config::{self, TsResolutionConfig};
-use super::{
-    StoredArc, StoredDocument, StoredTsFileFacts,
-};
+use super::{StoredArc, StoredDocument, StoredTsFileFacts};
 use super::{ts_config_modules, ts_config_supported_for, ts_paths_portable_for};
 
 pub(super) fn rebuild_arcs_with_cargo(
@@ -696,27 +694,28 @@ pub(super) fn rebuild_arcs_with_cargo(
                 format!("{}/index.js", resolved_str),
             ] {
                 if let Some(targets) = syntax_by_path.get(candidate.as_str())
-                    && let Some(target) = targets.first() {
-                        let source_hash = path_hashes
-                            .get(&document.path)
-                            .copied()
-                            .unwrap_or(Hash32([0; 32]));
-                        arcs.push(StoredArc {
-                            source: document.node_id,
-                            target: target.node_id,
-                            kind: RelationKind::Imports,
-                            evidence: Some(EdgeEvidence {
-                                path: document.path.clone(),
-                                span: ByteRange::new(document.span_start, document.span_end),
-                                source_hash,
-                                resolver: ResolverClass::SyntaxExact,
-                                confidence: ConfidenceClass::Proven,
-                                assumptions: Vec::new(),
-                                counter_evidence: Vec::new(),
-                            }),
-                        });
-                        break;
-                    }
+                    && let Some(target) = targets.first()
+                {
+                    let source_hash = path_hashes
+                        .get(&document.path)
+                        .copied()
+                        .unwrap_or(Hash32([0; 32]));
+                    arcs.push(StoredArc {
+                        source: document.node_id,
+                        target: target.node_id,
+                        kind: RelationKind::Imports,
+                        evidence: Some(EdgeEvidence {
+                            path: document.path.clone(),
+                            span: ByteRange::new(document.span_start, document.span_end),
+                            source_hash,
+                            resolver: ResolverClass::SyntaxExact,
+                            confidence: ConfidenceClass::Proven,
+                            assumptions: Vec::new(),
+                            counter_evidence: Vec::new(),
+                        }),
+                    });
+                    break;
+                }
             }
         }
 

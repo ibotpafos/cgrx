@@ -17,9 +17,7 @@ use super::git_helpers::{GitBlobBatch, parse_committed_tree};
 use super::git_helpers::{git_bytes, git_text, store_writer_error};
 use super::helpers::generation_id;
 use super::scan_helpers::refresh_qualified_call_gaps;
-use super::ts_helpers::{
-    is_ts_inventory_path, is_ts_resolution_config, scan_ts_inventory,
-};
+use super::ts_helpers::{is_ts_inventory_path, is_ts_resolution_config, scan_ts_inventory};
 use super::{
     EDGES_SEGMENT, EXTRACTION_REVISION, GenerationWriter, IndexReport, NODES_SEGMENT, RepoSnapshot,
     RuntimeError, StoredIndex, StoredTsFileFacts, TERMS_MARKER, TERMS_SEGMENT, TsFileFacts,

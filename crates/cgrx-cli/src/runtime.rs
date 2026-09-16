@@ -26,22 +26,20 @@ use check_helpers::check_index_coverage as check_index_impl;
 pub use config::RuntimeConfig;
 use extraction::extract_path;
 use git_helpers::{
-    coverage_for_scope, coverage_for_scope_with_matcher, coverage_gap_count,
-    coverage_gap_page, dynamic_dispatch_path, git_bytes,
-    refresh_status,
+    coverage_for_scope, coverage_for_scope_with_matcher, coverage_gap_count, coverage_gap_page,
+    dynamic_dispatch_path, git_bytes, refresh_status,
 };
 pub use graph_view::{GraphDirection, GraphViewRequest};
 pub use observations::{
     ImportRuntimeEvidenceReport, RuntimeEvidenceFormat, RuntimeInsight, RuntimeInsightsReport,
 };
 use orient_helpers::{
-    definition_body_ids, exact_symbol_ids, graph_evidence_ids, neighbor_map,
-    task_evidence_ids,
+    definition_body_ids, exact_symbol_ids, graph_evidence_ids, neighbor_map, task_evidence_ids,
 };
 pub use risks::{RiskBaseline, TestCaseResult, TestOutcome, TestRunRecord};
 use scan_helpers::{
-    ScopedQuery, changed_paths, crosses_nested_git_boundary,
-    definitive_stored_arcs, expand_untracked_directories, normalize_stored, rebuild_refreshed_arcs, working_tree_digest,
+    ScopedQuery, changed_paths, crosses_nested_git_boundary, definitive_stored_arcs,
+    expand_untracked_directories, normalize_stored, rebuild_refreshed_arcs, working_tree_digest,
 };
 use target_types::{
     GoFieldTarget, GoLocalConstructorTarget, GoReceiverTarget, JavaConstructorTarget,
@@ -49,9 +47,8 @@ use target_types::{
 };
 use ts_config::TsResolutionConfig;
 use ts_helpers::{
-    is_ts_inventory_path, is_ts_resolution_config, remove_path,
-    scan_ts_inventory_cached, source_fingerprint, ts_config_modules,
-    ts_config_supported_for, ts_path_is_plain,
+    is_ts_inventory_path, is_ts_resolution_config, remove_path, scan_ts_inventory_cached,
+    source_fingerprint, ts_config_modules, ts_config_supported_for, ts_path_is_plain,
     ts_paths_portable_for, ts_resolution_config_supported,
 };
 
@@ -61,21 +58,14 @@ use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-use cgrx_capsule::{
-    EvidencePacker, EvidenceRecord, PackInput, Tokenizer,
-};
+use cgrx_capsule::{EvidencePacker, EvidenceRecord, PackInput, Tokenizer};
 use cgrx_cgcr::{
     CgcrEngine, CompileRequest, CompiledContext, CostTable, CoverageMetadata, ObligationCompiler,
     Probe, ProbeError, ProbeFact, ProbeOracle, QueryClass, RemainingBudget, ResolvedAnchor,
 };
-use cgrx_core::{
-    ByteRange, EdgeEvidence, Hash32, QueryRequest, RelationKind, RepoSnapshot, Scope,
-};
+use cgrx_core::{ByteRange, EdgeEvidence, Hash32, QueryRequest, RelationKind, RepoSnapshot, Scope};
 use cgrx_languages::ts_imports::TsFileFacts;
-use cgrx_languages::{
-    Span,
-    pack_for_path,
-};
+use cgrx_languages::{Span, pack_for_path};
 use cgrx_retrieval::{
     BaseGraph, Candidate, CandidateProvenance, GraphArc, GraphDocument, RetrievalEngine,
     ScoreComponents, SnapshotView, path_in_scope,
@@ -83,7 +73,6 @@ use cgrx_retrieval::{
 use cgrx_store::{DeltaOverlay, GenerationReader, GenerationWriter};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-
 
 const EXTRACTION_REVISION: u32 = 28;
 

@@ -37,19 +37,20 @@ impl LanguagePack for Elixir {
                             || target_name == "use"
                             || target_name == "alias")
                             && let Some(arg) = node.child_by_field_name("arguments")
-                                && let Some(module) = arg.named_child(0) {
-                                    let import_text = text(module, source);
-                                    if !import_text.is_empty() {
-                                        let edge = Edge {
-                                            relation: RelationKind::Imports,
-                                            target: import_text,
-                                            span: Span::from(node),
-                                            context_span: Span::from(node),
-                                            provenance: Provenance::Syntax,
-                                        };
-                                        extraction.edges.push(edge);
-                                    }
-                                }
+                            && let Some(module) = arg.named_child(0)
+                        {
+                            let import_text = text(module, source);
+                            if !import_text.is_empty() {
+                                let edge = Edge {
+                                    relation: RelationKind::Imports,
+                                    target: import_text,
+                                    span: Span::from(node),
+                                    context_span: Span::from(node),
+                                    provenance: Provenance::Syntax,
+                                };
+                                extraction.edges.push(edge);
+                            }
+                        }
                     }
                 }
             }

@@ -10,9 +10,7 @@ use cgrx_languages::pack_for_path;
 use serde_json::{Value, json};
 
 use super::scan_helpers::ScopedQuery;
-use super::{
-    RuntimeError, StoredArc, coverage_gap_count, path_in_scope,
-};
+use super::{RuntimeError, StoredArc, coverage_gap_count, path_in_scope};
 
 impl super::Runtime {
     pub fn get_outline(&self, path: &str, limit: usize) -> Result<Value, RuntimeError> {
@@ -842,21 +840,23 @@ impl super::Runtime {
 
         for arc in scoped.definitive_arcs(&self.stored) {
             if arc.target == document.node_id
-                && let Some(source) = by_id.get(&arc.source) {
-                    callers.push(json!({
-                        "symbol": source.qualified_name,
-                        "path": source.path,
-                        "span": {"start": source.span_start, "end": source.span_end},
-                    }));
-                }
+                && let Some(source) = by_id.get(&arc.source)
+            {
+                callers.push(json!({
+                    "symbol": source.qualified_name,
+                    "path": source.path,
+                    "span": {"start": source.span_start, "end": source.span_end},
+                }));
+            }
             if arc.source == document.node_id
-                && let Some(target) = by_id.get(&arc.target) {
-                    callees.push(json!({
-                        "symbol": target.qualified_name,
-                        "path": target.path,
-                        "span": {"start": target.span_start, "end": target.span_end},
-                    }));
-                }
+                && let Some(target) = by_id.get(&arc.target)
+            {
+                callees.push(json!({
+                    "symbol": target.qualified_name,
+                    "path": target.path,
+                    "span": {"start": target.span_start, "end": target.span_end},
+                }));
+            }
         }
 
         callers.truncate(limit);

@@ -39,19 +39,20 @@ impl LanguagePack for Ruby {
                         extraction.edges.push(edge);
                         if (target_name == "require" || target_name == "require_relative")
                             && let Some(arg) = node.child_by_field_name("arguments")
-                                && let Some(string) = arg.named_child(0) {
-                                    let import_text = text(string, source);
-                                    if !import_text.is_empty() {
-                                        let edge = Edge {
-                                            relation: RelationKind::Imports,
-                                            target: import_text,
-                                            span: Span::from(node),
-                                            context_span: Span::from(node),
-                                            provenance: Provenance::Syntax,
-                                        };
-                                        extraction.edges.push(edge);
-                                    }
-                                }
+                            && let Some(string) = arg.named_child(0)
+                        {
+                            let import_text = text(string, source);
+                            if !import_text.is_empty() {
+                                let edge = Edge {
+                                    relation: RelationKind::Imports,
+                                    target: import_text,
+                                    span: Span::from(node),
+                                    context_span: Span::from(node),
+                                    provenance: Provenance::Syntax,
+                                };
+                                extraction.edges.push(edge);
+                            }
+                        }
                     }
                 }
             }
