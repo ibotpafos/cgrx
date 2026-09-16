@@ -22,6 +22,8 @@ mod ts_config;
 mod ts_helpers;
 
 use arc_resolution::go_module_name;
+#[cfg(test)]
+use arc_resolution::rebuild_arcs_with_cargo;
 use check_helpers::check_index_coverage as check_index_impl;
 pub use config::RuntimeConfig;
 use extraction::extract_path;
@@ -51,6 +53,8 @@ use ts_helpers::{
     source_fingerprint, ts_config_modules, ts_config_supported_for, ts_path_is_plain,
     ts_paths_portable_for, ts_resolution_config_supported,
 };
+#[cfg(test)]
+use ts_helpers::{scan_ts_inventory, store_ts_presence_blocker};
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -59,11 +63,15 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use cgrx_capsule::{EvidencePacker, EvidenceRecord, PackInput, Tokenizer};
+#[cfg(test)]
+use cgrx_cgcr::SourceRange;
 use cgrx_cgcr::{
     CgcrEngine, CompileRequest, CompiledContext, CostTable, CoverageMetadata, ObligationCompiler,
     Probe, ProbeError, ProbeFact, ProbeOracle, QueryClass, RemainingBudget, ResolvedAnchor,
 };
 use cgrx_core::{ByteRange, EdgeEvidence, Hash32, QueryRequest, RelationKind, RepoSnapshot, Scope};
+#[cfg(test)]
+use cgrx_core::{ConfidenceClass, ResolverClass};
 use cgrx_languages::ts_imports::TsFileFacts;
 use cgrx_languages::{Span, pack_for_path};
 use cgrx_retrieval::{

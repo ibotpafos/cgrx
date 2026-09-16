@@ -210,7 +210,7 @@ fn go_field_explicit_embedded_has_exact_target() {
     assert_len(&fixture.runtime(), &source);
     let stored = fixture.stored();
     let arcs = stored["arcs"].as_array().unwrap();
-    assert!(arcs.len() >= 1);
+    assert!(!arcs.is_empty());
     assert_eq!(arcs[0]["evidence"]["confidence"], "PROVEN");
 }
 negative!(

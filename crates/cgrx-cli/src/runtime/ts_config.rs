@@ -803,7 +803,7 @@ pub(super) mod tests {
             ],
         ] {
             assert!(
-                Command::new("git")
+                std::process::Command::new("git")
                     .args(args)
                     .current_dir(&temp.0)
                     .status()

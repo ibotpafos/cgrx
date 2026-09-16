@@ -7,6 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use cgrx_core::{Hash32, Scope};
 
 #[cfg(test)]
+#[allow(unused_imports)]
 use cgrx_languages::Span;
 
 #[cfg(test)]
@@ -29,6 +30,7 @@ fn rebuild_arcs(
     )
 }
 
+#[allow(unused_imports)]
 use super::git_helpers::{git_bytes, git_text, store_writer_error};
 
 #[cfg(test)]
@@ -180,7 +182,7 @@ mod proof_edge_tests {
 
     fn git(root: &Path, args: &[&str]) {
         assert!(
-            Command::new("git")
+            std::process::Command::new("git")
                 .args(args)
                 .current_dir(root)
                 .status()
