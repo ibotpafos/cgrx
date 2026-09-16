@@ -29,6 +29,7 @@ pub(super) struct ExtractedPath {
     pub(super) rust_file: Option<cgrx_languages::RustFileFacts>,
     pub(super) ts_file: Option<TsFileFacts>,
     pub(super) documents: Vec<StoredDocument>,
+    #[allow(dead_code)]
     pub(super) reference_arcs: Vec<StoredArc>,
     pub(super) parser_error_ranges: Vec<SourceRange>,
     pub(super) dynamic_dispatch: Vec<String>,

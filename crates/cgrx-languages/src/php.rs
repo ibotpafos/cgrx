@@ -44,8 +44,8 @@ impl LanguagePack for Php {
             }
             "namespace_use_declaration" => {
                 for child in node.named_children(&mut node.walk()) {
-                    if child.kind() == "namespace_use_clause" {
-                        if let Some(name) = child.child_by_field_name("name") {
+                    if child.kind() == "namespace_use_clause"
+                        && let Some(name) = child.child_by_field_name("name") {
                             let import_text = text(name, source);
                             if !import_text.is_empty() {
                                 let edge = Edge {
@@ -58,7 +58,6 @@ impl LanguagePack for Php {
                                 extraction.edges.push(edge);
                             }
                         }
-                    }
                 }
             }
             "named_type" | "qualified_name" => {

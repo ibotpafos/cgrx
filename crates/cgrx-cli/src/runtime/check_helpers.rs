@@ -3,9 +3,7 @@
 //! Extracted from impl Runtime as a standalone function.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::Path;
 
-use cgrx_cgcr::CoverageMetadata;
 use cgrx_core::Scope;
 use serde_json::{Value, json};
 

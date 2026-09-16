@@ -30,7 +30,7 @@ pub(crate) fn write_synced(path: &Path, bytes: &[u8]) -> io::Result<()> {
     let mut file = OpenOptions::new().create_new(true).write(true).open(path)?;
     if bytes.len() >= COMPRESS_THRESHOLD {
         let compressed =
-            zstd::encode_all(bytes, 3).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+            zstd::encode_all(bytes, 3).map_err(io::Error::other)?;
         if compressed.len() < bytes.len() {
             file.write_all(COMPRESSED_MAGIC)?;
             file.write_all(&compressed)?;

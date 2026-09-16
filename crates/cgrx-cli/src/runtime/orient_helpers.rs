@@ -11,9 +11,7 @@ use cgrx_core::Scope;
 use cgrx_retrieval::GraphArc;
 
 const GRAPH_FANOUT_LIMIT: usize = 8;
-use cgrx_languages::Span;
 
-use super::helpers::stable_node_id;
 use super::{StoredDocument, path_in_scope};
 use crate::intent::{TaskIntent, classify};
 

@@ -17,11 +17,12 @@ use cgrx_languages::pack_for_path;
 use super::SourceFingerprint;
 use super::arc_resolution::rebuild_arcs_with_cargo;
 use super::coverage_for_scope_with_matcher;
-use super::ts_helpers::{remove_path, source_fingerprint};
+use super::ts_helpers::source_fingerprint;
 use super::{
     RuntimeError, StoredArc, StoredDocument, StoredIndex, UntrackedScanCache, path_in_scope,
 };
 
+#[allow(dead_code)]
 const UNTRACKED_SCAN_ENTRY_LIMIT: usize = 64;
 
 pub(super) fn crosses_nested_git_boundary(
@@ -174,7 +175,8 @@ pub(super) fn watch_scan_path(
     Ok(())
 }
 
-struct GitIgnoreMatcher {
+#[allow(dead_code)]
+pub(super) struct GitIgnoreMatcher {
     child: Child,
     stdin: Option<ChildStdin>,
     stdout: BufReader<ChildStdout>,

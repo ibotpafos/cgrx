@@ -37,9 +37,9 @@ impl LanguagePack for Ruby {
                             provenance: Provenance::Syntax,
                         };
                         extraction.edges.push(edge);
-                        if target_name == "require" || target_name == "require_relative" {
-                            if let Some(arg) = node.child_by_field_name("arguments") {
-                                if let Some(string) = arg.named_child(0) {
+                        if (target_name == "require" || target_name == "require_relative")
+                            && let Some(arg) = node.child_by_field_name("arguments")
+                                && let Some(string) = arg.named_child(0) {
                                     let import_text = text(string, source);
                                     if !import_text.is_empty() {
                                         let edge = Edge {
@@ -52,15 +52,13 @@ impl LanguagePack for Ruby {
                                         extraction.edges.push(edge);
                                     }
                                 }
-                            }
-                        }
                     }
                 }
             }
             "constant" => {
                 let type_name = text(node, source);
                 if !type_name.is_empty()
-                    && type_name.chars().next().map_or(false, |c| c.is_uppercase())
+                    && type_name.chars().next().is_some_and(|c| c.is_uppercase())
                 {
                     let edge = Edge {
                         relation: RelationKind::References,

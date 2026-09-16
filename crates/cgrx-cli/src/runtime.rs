@@ -21,34 +21,27 @@ mod tests;
 mod ts_config;
 mod ts_helpers;
 
-use arc_resolution::{
-    go_module_name, path_matches_qualifier, rebuild_arcs_with_cargo, split_call_target,
-};
+use arc_resolution::go_module_name;
 use check_helpers::check_index_coverage as check_index_impl;
 pub use config::RuntimeConfig;
-use extraction::{
-    ExtractedPath, ExtractedSource, extract_path, extract_sources_parallel, outer_dynamic_spans,
-};
+use extraction::extract_path;
 use git_helpers::{
-    GitBlobBatch, coverage_for_scope, coverage_for_scope_with_matcher, coverage_gap_count,
-    coverage_gap_page, dynamic_dispatch_path, git_bytes, git_text, parse_committed_tree,
-    refresh_status, store_writer_error,
+    coverage_for_scope, coverage_for_scope_with_matcher, coverage_gap_count,
+    coverage_gap_page, dynamic_dispatch_path, git_bytes,
+    refresh_status,
 };
 pub use graph_view::{GraphDirection, GraphViewRequest};
-use helpers::{body_fingerprint, declaration_name, generation_id, stable_node_id};
-use index_helpers::index_source;
 pub use observations::{
     ImportRuntimeEvidenceReport, RuntimeEvidenceFormat, RuntimeInsight, RuntimeInsightsReport,
 };
 use orient_helpers::{
-    definition_body_ids, exact_symbol_ids, graph_evidence_ids, lexical_terms, neighbor_map,
+    definition_body_ids, exact_symbol_ids, graph_evidence_ids, neighbor_map,
     task_evidence_ids,
 };
 pub use risks::{RiskBaseline, TestCaseResult, TestOutcome, TestRunRecord};
 use scan_helpers::{
-    ScopedQuery, changed_paths, collect_untracked_sources, crosses_nested_git_boundary,
-    definitive_stored_arcs, expand_untracked_directories, normalize_stored, rebuild_refreshed_arcs,
-    refresh_qualified_call_gaps, watch_scan_path, working_tree_digest,
+    ScopedQuery, changed_paths, crosses_nested_git_boundary,
+    definitive_stored_arcs, expand_untracked_directories, normalize_stored, rebuild_refreshed_arcs, working_tree_digest,
 };
 use target_types::{
     GoFieldTarget, GoLocalConstructorTarget, GoReceiverTarget, JavaConstructorTarget,
@@ -56,36 +49,31 @@ use target_types::{
 };
 use ts_config::TsResolutionConfig;
 use ts_helpers::{
-    is_ts_inventory_path, is_ts_resolution_config, remove_path, scan_ts_inventory,
-    scan_ts_inventory_cached, source_fingerprint, store_ts_presence_blocker, ts_config_modules,
-    ts_config_supported_for, ts_inventory_candidates, ts_module_specifiers, ts_path_is_plain,
+    is_ts_inventory_path, is_ts_resolution_config, remove_path,
+    scan_ts_inventory_cached, source_fingerprint, ts_config_modules,
+    ts_config_supported_for, ts_path_is_plain,
     ts_paths_portable_for, ts_resolution_config_supported,
 };
 
-use levenshtein::levenshtein;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::fs;
-use std::io::{BufRead, BufReader, Read, Write};
-use std::os::unix::fs::MetadataExt;
+use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 
 use cgrx_capsule::{
-    ContextWindow, EvidencePacker, EvidenceRecord, PackInput, Tokenizer, slice_source,
+    EvidencePacker, EvidenceRecord, PackInput, Tokenizer,
 };
 use cgrx_cgcr::{
     CgcrEngine, CompileRequest, CompiledContext, CostTable, CoverageMetadata, ObligationCompiler,
     Probe, ProbeError, ProbeFact, ProbeOracle, QueryClass, RemainingBudget, ResolvedAnchor,
-    SourceRange,
 };
 use cgrx_core::{
-    ByteRange, ConfidenceClass, EdgeEvidence, Hash32, QueryRequest, RelationKind, RepoSnapshot,
-    ResolverClass, Scope,
+    ByteRange, EdgeEvidence, Hash32, QueryRequest, RelationKind, RepoSnapshot, Scope,
 };
-use cgrx_languages::ts_imports::{ImportClassification, SiteBinding, TsFileFacts};
+use cgrx_languages::ts_imports::TsFileFacts;
 use cgrx_languages::{
-    Provenance as LanguageProvenance, RelationKind as LanguageRelation, Span, UnresolvedKind,
+    Span,
     pack_for_path,
 };
 use cgrx_retrieval::{
@@ -96,7 +84,6 @@ use cgrx_store::{DeltaOverlay, GenerationReader, GenerationWriter};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use crate::intent::{TaskIntent, classify};
 
 const EXTRACTION_REVISION: u32 = 28;
 
@@ -104,7 +91,9 @@ const NODES_SEGMENT: &str = "nodes.seg";
 const EDGES_SEGMENT: &str = "edges.seg";
 const TERMS_SEGMENT: &str = "terms.fst";
 const TERMS_MARKER: &[u8] = b"CGRXTERMS1";
+#[allow(dead_code)]
 const GRAPH_FANOUT_LIMIT: usize = 8;
+#[allow(dead_code)]
 const UNTRACKED_SCAN_ENTRY_LIMIT: usize = 64;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

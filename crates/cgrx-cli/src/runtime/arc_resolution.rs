@@ -8,14 +8,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use cgrx_core::{ByteRange, ConfidenceClass, EdgeEvidence, Hash32, RelationKind, ResolverClass};
-use cgrx_languages::ts_imports::{ImportClassification, SiteBinding, TsFileFacts};
-use cgrx_languages::{RelationKind as LanguageRelation, Span, pack_for_path};
+use cgrx_languages::ts_imports::ImportClassification;
+use cgrx_languages::{RelationKind as LanguageRelation, pack_for_path};
 
-use super::helpers::stable_node_id;
 use super::ts_config::{self, TsResolutionConfig};
 use super::{
-    GoFieldTarget, GoLocalConstructorTarget, GoReceiverTarget, JavaConstructorTarget,
-    RustSelfTarget, StoredArc, StoredDocument, StoredIndex, StoredTsFileFacts,
+    StoredArc, StoredDocument, StoredTsFileFacts,
 };
 use super::{ts_config_modules, ts_config_supported_for, ts_paths_portable_for};
 
@@ -697,8 +695,8 @@ pub(super) fn rebuild_arcs_with_cargo(
                 format!("{}/index.ts", resolved_str),
                 format!("{}/index.js", resolved_str),
             ] {
-                if let Some(targets) = syntax_by_path.get(candidate.as_str()) {
-                    if let Some(target) = targets.first() {
+                if let Some(targets) = syntax_by_path.get(candidate.as_str())
+                    && let Some(target) = targets.first() {
                         let source_hash = path_hashes
                             .get(&document.path)
                             .copied()
@@ -719,7 +717,6 @@ pub(super) fn rebuild_arcs_with_cargo(
                         });
                         break;
                     }
-                }
             }
         }
 

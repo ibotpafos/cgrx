@@ -2,12 +2,12 @@
 //!
 //! Extracted from impl Runtime as a standalone function (no self dependency).
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use cgrx_core::Hash32;
-use cgrx_languages::{Span, pack_for_path};
+use cgrx_languages::pack_for_path;
 
 use cgrx_cgcr::CoverageMetadata;
 
@@ -15,19 +15,15 @@ use super::arc_resolution::{go_module_name, rebuild_arcs_with_cargo};
 use super::extraction::extract_sources_parallel;
 use super::git_helpers::{GitBlobBatch, parse_committed_tree};
 use super::git_helpers::{git_bytes, git_text, store_writer_error};
-use super::helpers::{generation_id, stable_node_id};
+use super::helpers::generation_id;
 use super::scan_helpers::refresh_qualified_call_gaps;
-use super::scan_helpers::{
-    collect_untracked_sources, expand_untracked_directories, watch_scan_path,
-};
 use super::ts_helpers::{
-    is_ts_inventory_path, is_ts_resolution_config, scan_ts_inventory, store_ts_presence_blocker,
-    ts_path_is_plain,
+    is_ts_inventory_path, is_ts_resolution_config, scan_ts_inventory,
 };
 use super::{
     EDGES_SEGMENT, EXTRACTION_REVISION, GenerationWriter, IndexReport, NODES_SEGMENT, RepoSnapshot,
     RuntimeError, StoredIndex, StoredTsFileFacts, TERMS_MARKER, TERMS_SEGMENT, TsFileFacts,
-    TsResolutionConfig, crosses_nested_git_boundary, normalize_stored, open_current_report,
+    TsResolutionConfig, open_current_report,
 };
 
 pub(super) fn index_source(

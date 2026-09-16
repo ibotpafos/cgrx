@@ -32,13 +32,12 @@ impl LanguagePack for Elixir {
                             provenance: Provenance::Syntax,
                         };
                         extraction.edges.push(edge);
-                        if target_name == "require"
+                        if (target_name == "require"
                             || target_name == "import"
                             || target_name == "use"
-                            || target_name == "alias"
-                        {
-                            if let Some(arg) = node.child_by_field_name("arguments") {
-                                if let Some(module) = arg.named_child(0) {
+                            || target_name == "alias")
+                            && let Some(arg) = node.child_by_field_name("arguments")
+                                && let Some(module) = arg.named_child(0) {
                                     let import_text = text(module, source);
                                     if !import_text.is_empty() {
                                         let edge = Edge {
@@ -51,15 +50,13 @@ impl LanguagePack for Elixir {
                                         extraction.edges.push(edge);
                                     }
                                 }
-                            }
-                        }
                     }
                 }
             }
             "module" | "alias" => {
                 let type_name = text(node, source);
                 if !type_name.is_empty()
-                    && type_name.chars().next().map_or(false, |c| c.is_uppercase())
+                    && type_name.chars().next().is_some_and(|c| c.is_uppercase())
                 {
                     let edge = Edge {
                         relation: RelationKind::References,

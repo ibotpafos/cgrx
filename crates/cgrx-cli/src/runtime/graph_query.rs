@@ -5,15 +5,13 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-use cgrx_core::{ByteRange, Hash32, RelationKind, Scope};
-use cgrx_languages::{Span, pack_for_path};
+use cgrx_core::{RelationKind, Scope};
+use cgrx_languages::pack_for_path;
 use serde_json::{Value, json};
 
-use super::helpers::{body_fingerprint, stable_node_id};
 use super::scan_helpers::ScopedQuery;
 use super::{
-    RuntimeError, StoredArc, coverage_for_scope, coverage_gap_count, coverage_gap_page,
-    dynamic_dispatch_path, path_in_scope,
+    RuntimeError, StoredArc, coverage_gap_count, path_in_scope,
 };
 
 impl super::Runtime {
@@ -843,24 +841,22 @@ impl super::Runtime {
         let mut callees = Vec::new();
 
         for arc in scoped.definitive_arcs(&self.stored) {
-            if arc.target == document.node_id {
-                if let Some(source) = by_id.get(&arc.source) {
+            if arc.target == document.node_id
+                && let Some(source) = by_id.get(&arc.source) {
                     callers.push(json!({
                         "symbol": source.qualified_name,
                         "path": source.path,
                         "span": {"start": source.span_start, "end": source.span_end},
                     }));
                 }
-            }
-            if arc.source == document.node_id {
-                if let Some(target) = by_id.get(&arc.target) {
+            if arc.source == document.node_id
+                && let Some(target) = by_id.get(&arc.target) {
                     callees.push(json!({
                         "symbol": target.qualified_name,
                         "path": target.path,
                         "span": {"start": target.span_start, "end": target.span_end},
                     }));
                 }
-            }
         }
 
         callers.truncate(limit);
