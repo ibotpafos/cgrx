@@ -710,6 +710,63 @@ pub(super) fn rebuild_arcs_with_cargo(
                 }
             }
         }
+        
+        // For crate:: imports, extract symbol names and match to SYNTAX documents
+        if import_target.starts_with("crate::") || import_target.starts_with("use crate::") {
+            // Extract symbol names from various patterns:
+            // - use crate::Symbol -> ["Symbol"]
+            // - use crate::module::Symbol -> ["Symbol"]
+            // - use crate::{A, B, C} -> ["A", "B", "C"]
+            // - use crate::module::{A, B} -> ["A", "B"]
+            // Remove "use " prefix if present
+            let clean_target = import_target.strip_prefix("use ").unwrap_or(import_target);
+            // Remove trailing semicolon
+            let clean_target = clean_target.trim_end_matches(';');
+            let symbols: Vec<&str> = if clean_target.contains('{') {
+                // Handle brace-enclosed imports: crate::{A, B, C} or crate::module::{A, B}
+                if let Some(brace_start) = clean_target.find('{') {
+                    let inner = &clean_target[brace_start + 1..];
+                    if let Some(brace_end) = inner.find('}') {
+                        inner[..brace_end]
+                            .split(',')
+                            .map(|s| s.trim())
+                            .filter(|s| !s.is_empty())
+                            .collect()
+                    } else {
+                        Vec::new()
+                    }
+                } else {
+                    Vec::new()
+                }
+            } else {
+                // Handle simple imports: crate::Symbol or crate::module::Symbol
+                clean_target.rsplit("::").next().into_iter().collect()
+            };
+            
+            for symbol_name in symbols {
+                if let Some(targets) = by_name.get(symbol_name) {
+                    for target in targets {
+                        if target.provenance == "SYNTAX" {
+                            let source_hash = path_hashes.get(&document.path).copied().unwrap_or(Hash32([0; 32]));
+                            arcs.push(StoredArc {
+                                source: document.node_id,
+                                target: target.node_id,
+                                kind: RelationKind::Imports,
+                                evidence: Some(EdgeEvidence {
+                                    path: document.path.clone(),
+                                    span: ByteRange::new(document.span_start, document.span_end),
+                                    source_hash,
+                                    resolver: ResolverClass::SyntaxExact,
+                                    confidence: ConfidenceClass::Proven,
+                                    assumptions: Vec::new(),
+                                    counter_evidence: Vec::new(),
+                                }),
+                            });
+                        }
+                    }
+                }
+            }
+        }
     }
 
     arcs.sort_by_key(|arc| (arc.source, arc.target, arc.kind, arc.evidence.clone()));
