@@ -3,17 +3,22 @@ use std::path::PathBuf;
 
 use cgrx_metrics::{Summarize, parse_events_from_path};
 
+static METRICS_DIR_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 fn metrics_dir() -> PathBuf {
     let nonce = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_nanos();
+    let seq = METRICS_DIR_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     let path = std::env::temp_dir().join(format!(
-        "cgrx-metrics-test-{}-{}",
+        "cgrx-metrics-test-{}-{}-{}",
         std::process::id(),
-        nonce
+        nonce,
+        seq
     ));
-    std::fs::create_dir(&path).unwrap();
+    let _ = std::fs::remove_dir_all(&path);
+    std::fs::create_dir_all(&path).unwrap();
     path
 }
 
