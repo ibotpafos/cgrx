@@ -633,7 +633,12 @@ pub(super) fn rebuild_arcs_with_cargo(
     }
     // Create References arcs from reference documents to their targets
     for document in documents.iter().filter(|d| d.provenance == "REFERENCES") {
-        let Some(targets) = by_name.get(document.qualified_name.as_str()) else {
+        // Try exact match first, then extract last segment for qualified names
+        let targets = by_name.get(document.qualified_name.as_str()).or_else(|| {
+            // For qualified names like "cgrx_core::IoAccounting", try "IoAccounting"
+            document.qualified_name.rsplit("::").next().and_then(|name| by_name.get(name))
+        });
+        let Some(targets) = targets else {
             continue;
         };
         for target in targets {
