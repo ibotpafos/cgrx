@@ -127,7 +127,11 @@ fn hybrid_bench_query1_renamed_symbol_same_body() {
     print_results("hybrid", &hybrid.candidates);
 
     assert_eq!(
-        baseline.candidates.iter().map(|c| c.node_id).collect::<Vec<_>>(),
+        baseline
+            .candidates
+            .iter()
+            .map(|c| c.node_id)
+            .collect::<Vec<_>>(),
         vec![2],
         "baseline must not include structural-only candidates"
     );
