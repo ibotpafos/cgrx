@@ -243,6 +243,7 @@ mod proof_edge_tests {
     fn syntax(node_id: u64, name: &str, path: &str, start: usize, end: usize) -> StoredDocument {
         StoredDocument {
             php_function_target: None,
+            php_type_target: None,
             rust_module_target: None,
             rust_self_target: None,
             ts_lexical_target: None,
@@ -272,6 +273,7 @@ mod proof_edge_tests {
     fn call(node_id: u64, name: &str, path: &str, start: usize, end: usize) -> StoredDocument {
         StoredDocument {
             php_function_target: None,
+            php_type_target: None,
             rust_module_target: None,
             rust_self_target: None,
             ts_lexical_target: None,

@@ -69,8 +69,8 @@ fn php_registry_policy_has_separate_cache_identity_and_reindexes_the_same_commit
         cgrx_languages::pack_for_path(Path::new("main.php")).is_some(),
         enabled
     );
-    let active_policy = if enabled { 30 } else { 29 };
-    let foreign_policy = if enabled { 29 } else { 30 };
+    let active_policy = if enabled { 31 } else { 29 };
+    let foreign_policy = if enabled { 29 } else { 31 };
     let report = Runtime::index(&root, &fresh).unwrap();
     assert_eq!(report.indexed_files, if enabled { 2 } else { 1 });
     assert_eq!(

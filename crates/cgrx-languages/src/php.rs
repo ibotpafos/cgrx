@@ -1,6 +1,8 @@
 //! Conservative PHP extraction. Only unique, unconditional same-file global
 //! functions are eligible for direct call resolution. Namespaces, function
 //! imports, conditional definitions and receiver dispatch remain explicit gaps.
+mod type_refs;
+
 use crate::UnresolvedKind;
 use crate::pack::{
     Edge, ExtractError, Extraction, LanguagePack, Provenance, RelationKind, RepoPath, Span,
@@ -61,6 +63,7 @@ impl LanguagePack for Php {
 
 #[derive(Default)]
 struct FileFacts {
+    types: type_refs::TypeFacts,
     functions: BTreeMap<String, Option<(String, Span)>>,
     blocked: bool,
 }
@@ -69,6 +72,7 @@ impl FileFacts {
     fn collect(root: Node<'_>, source: &[u8]) -> Self {
         let mut facts = Self {
             blocked: root.has_error(),
+            types: type_refs::TypeFacts::collect(root, source),
             ..Self::default()
         };
         facts.visit(root, source);
@@ -113,7 +117,23 @@ fn named_body_owner(node: Node<'_>) -> Option<Span> {
     let mut parent = node.parent();
     while let Some(owner) = parent {
         match owner.kind() {
-            "anonymous_function" | "arrow_function" => return None,
+            "anonymous_function" | "arrow_function" | "attribute" | "attribute_list" => {
+                return None;
+            }
+            "class_declaration"
+            | "interface_declaration"
+            | "trait_declaration"
+            | "enum_declaration"
+            | "anonymous_class" => {
+                // Declaration initializers are not calls made by the outer
+                // function. Anonymous-class constructor arguments remain in
+                // the outer expression, outside the class declaration body.
+                let body = owner.child_by_field_name("body")?;
+                if body.start_byte() <= node.start_byte() && node.end_byte() <= body.end_byte() {
+                    return None;
+                }
+                parent = owner.parent();
+            }
             "function_definition" | "method_declaration" => {
                 let body = owner.child_by_field_name("body")?;
                 if body.start_byte() <= node.start_byte() && node.end_byte() <= body.end_byte() {
@@ -195,6 +215,10 @@ fn classify(node: Node<'_>, source: &[u8], extraction: &mut Extraction, facts: &
             }
         }
         "named_type" => {
+            if let Some(reference) = facts.types.reference(node, source) {
+                extraction.edges.push(reference);
+                return;
+            }
             edge(
                 RelationKind::References,
                 text(node, source),

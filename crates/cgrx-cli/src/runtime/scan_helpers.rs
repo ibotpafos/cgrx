@@ -295,19 +295,20 @@ pub(super) fn normalize_stored(stored: &mut StoredIndex) {
         stored.arcs = migrated;
     }
     super::php_resolution::normalize(stored);
-    refresh_qualified_call_gaps(stored);
+    refresh_proof_gaps(stored);
 }
 
-// Qualified Go/Rust syntax alone is not a proof. Keep a recorded gap until
-// cross-file package identity resolves; refresh recalculates even when only
-// the target's package clause changed and every symbol span stayed identical.
-pub(super) fn refresh_qualified_call_gaps(stored: &mut StoredIndex) {
-    let sites: BTreeSet<_> = stored
+// Re-evaluate unresolved bindings, including PHP type references. A site is
+// discharged only by the expected relation with a current source hash. The v1
+// coverage schema stores these binding gaps in its legacy dynamic_dispatch list.
+pub(super) fn refresh_proof_gaps(stored: &mut StoredIndex) {
+    let sites: BTreeMap<_, _> = stored
         .documents
         .iter()
         .filter(|doc| {
             doc.go_import_path.is_some()
-                || (doc.provenance == "CALLS" && super::php_resolution::is_php_path(&doc.path))
+                || (matches!(doc.provenance.as_str(), "CALLS" | "REFERENCES")
+                    && super::php_resolution::is_php_path(&doc.path))
                 || doc
                     .semantic_tags
                     .iter()
@@ -324,7 +325,16 @@ pub(super) fn refresh_qualified_call_gaps(stored: &mut StoredIndex) {
                     && doc.provenance == "CALLS"
                     && doc.qualified_name.contains("::")
         })
-        .map(|doc| format!("{}:{}-{}", doc.path, doc.span_start, doc.span_end))
+        .map(|doc| {
+            (
+                format!("{}:{}-{}", doc.path, doc.span_start, doc.span_end),
+                if doc.provenance == "REFERENCES" {
+                    cgrx_core::RelationKind::References
+                } else {
+                    cgrx_core::RelationKind::Calls
+                },
+            )
+        })
         .collect();
     if sites.is_empty() {
         return;
@@ -332,23 +342,26 @@ pub(super) fn refresh_qualified_call_gaps(stored: &mut StoredIndex) {
     let proven: BTreeSet<_> = stored
         .arcs
         .iter()
-        .filter_map(|arc| arc.evidence.as_ref())
-        .filter(|evidence| evidence.is_definitive())
-        .map(|evidence| {
-            format!(
+        .filter_map(|arc| {
+            let evidence = arc.evidence.as_ref()?;
+            let location = format!(
                 "{}:{}-{}",
                 evidence.path, evidence.span.start, evidence.span.end
-            )
+            );
+            (evidence.is_definitive()
+                && stored.path_hashes.get(&evidence.path) == Some(&evidence.source_hash)
+                && sites.get(&location) == Some(&arc.kind))
+            .then_some(location)
         })
         .collect();
     stored
         .coverage
         .dynamic_dispatch
-        .retain(|location| !sites.contains(location));
+        .retain(|location| !sites.contains_key(location));
     stored
         .coverage
         .dynamic_dispatch
-        .extend(sites.difference(&proven).cloned());
+        .extend(sites.keys().filter(|site| !proven.contains(*site)).cloned());
     stored.coverage.dynamic_dispatch.sort();
     stored.coverage.dynamic_dispatch.dedup();
 }
