@@ -1,0 +1,52 @@
+name: Prepare PHP runtime branch
+on:
+  push:
+    branches: [feat/php-runtime-proof-validation]
+    paths:
+      - .github/workflows/php-bootstrap.yml
+      - scripts/prepare_php_runtime.py
+permissions:
+  contents: write
+concurrency:
+  group: prepare-php-runtime
+  cancel-in-progress: false
+jobs:
+  prepare:
+    if: github.repository == 'ibotpafos/cgrx' && github.ref == 'refs/heads/feat/php-runtime-proof-validation'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - run: rustup toolchain install 1.89.0 --profile minimal --component rustfmt
+      - name: Apply exact checked source edits
+        run: |
+          python3 -m py_compile scripts/prepare_php_runtime.py
+          python3 scripts/prepare_php_runtime.py
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('crates/cgrx-cli/tests/php_runtime.rs')
+          text = p.read_text()
+          old = 'for provenance in ["IMPORTS", "REFERENCES", "UNRESOLVED"]'
+          assert text.count(old) == 1
+          text = text.replace(old, 'for provenance in ["IMPORTS", "REFERENCES"]')
+          anchor = '        let gap = &case["cells"]["UNRESOLVED"]["span"];'
+          assert text.count(anchor) == 1
+          text = text.replace(anchor, '''        assert!(documents.iter().any(|doc| doc["path"] == fixture.path
+              && doc["provenance"] == "CALLS"
+              && doc["semantic_tags"].as_array().is_some_and(|tags| tags.iter().any(|tag| tag == "DYNAMIC_DISPATCH"))
+              && doc.get("php_function_target").is_none()));
+          ''' + anchor)
+          p.write_text(text)
+          p = Path('crates/cgrx-cli/src/runtime/php_resolution.rs')
+          text = p.read_text()
+          old = 'arc.kind != RelationKind::Calls || !touches_php(arc)'
+          assert text.count(old) == 1
+          p.write_text(text.replace(old, 'arc.kind == RelationKind::Contains || !touches_php(arc)'))
+          PY
+          cargo +1.89.0 fmt --all
+          python3 scripts/validate_php_validation.py
+      - name: Commit only the prepared source changes without force-pushing
+        run: |
+          git add crates contracts/php_validation_v1.json fixtures/php-validation
+          git diff --cached --stat
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'feat(php): integrate isolated positional runtime proof validation'
+          git push origin HEAD:refs/heads/feat/php-runtime-proof-validation
