@@ -1,0 +1,33 @@
+name: PHP validation
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: php-validation-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+jobs:
+  php-runtime:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - run: rustup toolchain install 1.89.0 --profile minimal --component clippy --component rustfmt
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+        with:
+          shared-key: php-validation-${{ matrix.os }}
+      - run: cargo fmt --all -- --check
+      - name: Check local evidence integrity
+        run: |
+          python3 scripts/validate_php_validation.py
+          python3 -m unittest discover -s scripts -p test_validate_php.py
+      - run: cargo clippy --locked --workspace --all-targets --features cgrx-cli/experimental-php -- -D warnings
+      - run: cargo test --locked --workspace --features cgrx-cli/experimental-php --no-fail-fast
+      - name: Verify dependency-only feature unification cannot reuse the default cache
+        run: cargo test --locked -p cgrx-cli --features cgrx-languages/experimental-php --test php_policy
+      - run: cargo build --locked --release -p cgrx-cli --features experimental-php
