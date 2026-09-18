@@ -30,8 +30,8 @@ explicitly on each request. No embedding service, hosted index or API key.
 See [Competitive positioning](docs/COMPETITIVE.md) for the full comparison and
 roadmap. The four phases toward competitive parity are:
 
-- **P1 — Language breadth:** grow from the current 5 packs (Rust, Go, Java,
-  TypeScript/TSX, Python) toward 10+ languages with conservative relationship
+- **P1 — Language breadth:** grow from the current 7 validated packs (Rust, Go, Java,
+  TypeScript/TSX, Python, C, Kotlin) toward 10+ languages with conservative relationship
   proofs (`crates/cgrx-languages/src/`).
 - **P2 — Monorepo scale:** replace hard caps (e.g. `100_000`/`20_000` in
   `crates/cgrx-cli/src/runtime/risks.rs`) with streaming, pagination and

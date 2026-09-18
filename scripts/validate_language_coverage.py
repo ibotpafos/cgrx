@@ -66,7 +66,9 @@ def validate_coverage(contract, corpus, root):
     require(len(parts)==2, 'language pack registry unavailable')
     body=parts[1].split('.into_iter()',1)[0]
     registered=set(re.findall(r'&crate::([a-z_]+)::[A-Z]+',body))
-    require(registered == modules, 'registered language packs differ from coverage contract')
+    missing = sorted(registered - modules)
+    extra = sorted(modules - registered)
+    require(registered == modules, f'registered language packs differ from coverage contract: missing={missing} extra={extra}')
     corpus_extensions={task['evidence']['source']['path'].rsplit('.',1)[-1] for task in corpus['tasks']}
     require(corpus_extensions <= extensions, 'corpus contains an unsupported extension')
     return len(modules),len(extensions),len(extensions)*len(relations),len(covered)

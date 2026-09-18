@@ -3,6 +3,8 @@
 //! These functions handle TS config parsing, module resolution,
 //! inventory scanning, path validation, and source fingerprinting.
 
+#[cfg(test)]
+use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::os::unix::fs::MetadataExt;
@@ -15,6 +17,16 @@ use serde_json::Value;
 use super::crosses_nested_git_boundary;
 use super::ts_config::{self, TsResolutionConfig};
 use super::{RuntimeError, SourceFingerprint, StoredIndex, StoredTsFileFacts};
+
+// Count actual operations, not their callers. These thread-local counters exist
+// only in test builds, so parallel tests cannot alter each other's measurements.
+#[cfg(test)]
+thread_local! {
+    pub(super) static DIRECTORY_READS: Cell<usize> = const { Cell::new(0) };
+    pub(super) static SOURCE_READS: Cell<usize> = const { Cell::new(0) };
+    pub(super) static INVENTORY_BUILDS: Cell<usize> = const { Cell::new(0) };
+    pub(super) static MODULE_EXPANSIONS: Cell<usize> = const { Cell::new(0) };
+}
 
 // ExtractedPath and ExtractedSource are defined in extraction.rs
 
@@ -101,6 +113,8 @@ pub(super) fn ts_config_modules(
 pub(super) fn ts_inventory_candidates(
     ts_files: &BTreeMap<String, StoredTsFileFacts>,
 ) -> BTreeSet<String> {
+    #[cfg(test)]
+    INVENTORY_BUILDS.with(|count| count.set(count.get() + 1));
     let mut paths = BTreeSet::new();
     for (caller, stored) in ts_files.iter().filter(|(path, _)| {
         path.ends_with(".ts") && !path.ends_with(".d.ts") || path.ends_with(".tsx")
@@ -123,6 +137,8 @@ pub(super) fn ts_inventory_candidates(
             }
         }
         for module in ts_module_specifiers(&stored.facts) {
+            #[cfg(test)]
+            MODULE_EXPANSIONS.with(|count| count.set(count.get() + 1));
             paths.extend(cgrx_languages::ts_imports::module_candidates(
                 caller, module,
             ));
@@ -278,6 +294,9 @@ pub(super) fn scan_ts_inventory_cached(
             if verified_fingerprints.get(&relative) == Some(&fingerprint) {
                 continue;
             }
+            // Source verification reads only; config discovery has its own witnesses.
+            #[cfg(test)]
+            SOURCE_READS.with(|count| count.set(count.get() + 1));
             let Ok(source) = fs::read(&absolute) else {
                 verified_fingerprints.remove(&relative);
                 invalid_sources.push((
@@ -353,6 +372,8 @@ impl TsDirectoryCache {
             return names.contains(name);
         }
         self.entries.remove(directory);
+        #[cfg(test)]
+        DIRECTORY_READS.with(|count| count.set(count.get() + 1));
         let Ok(entries) = fs::read_dir(directory) else {
             return false;
         };
