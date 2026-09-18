@@ -1,21 +1,54 @@
 name: Release
 
 on:
+  pull_request:
+    paths:
+      - RELEASE_VERSION
+      - .github/workflows/release.yml
+      - .github/release-notes/**
+      - install.sh
+      - scripts/test_validate_release.py
   workflow_run:
     workflows: ["CI"]
     types: [completed]
     branches: [main]
 
 permissions:
-  contents: write
-
-concurrency:
-  group: release-${{ github.event.workflow_run.head_sha }}
-  cancel-in-progress: false
+  contents: read
 
 jobs:
+  validate:
+    if: github.event_name == 'pull_request'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Validate release metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/test_validate_release.py
+          version=$(tr -d '\r\n' < RELEASE_VERSION)
+          test -f ".github/release-notes/$version.md"
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.89.0 --profile minimal --target aarch64-apple-darwin
+      - name: Cross-build Apple Silicon release candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo +1.89.0 build --locked --release -p cgrx-cli --target aarch64-apple-darwin
+          binary=target/aarch64-apple-darwin/release/cgrx
+          file "$binary" | grep -E 'arm64|aarch64'
+          version=$(tr -d '\r\n' < RELEASE_VERSION)
+          asset="cgrx-$version-aarch64-apple-darwin.tar.gz"
+          tar -czf "$asset" -C target/aarch64-apple-darwin/release cgrx
+          shasum -a 256 "$asset" > SHA256SUMS
+          tar -tzf "$asset" | grep -Fx cgrx
+          test -s SHA256SUMS
+
   publish:
-    if: github.event.workflow_run.conclusion == 'success'
+    if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'
+    permissions:
+      contents: write
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -31,6 +64,7 @@ jobs:
           [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-alpha\.[0-9]+$ ]]
           test -f ".github/release-notes/$version.md"
           python3 scripts/test_validate_release.py
+          test "$(git rev-parse HEAD)" = "${{ github.event.workflow_run.head_sha }}"
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Skip an already published release
@@ -78,6 +112,7 @@ jobs:
           tar -czf "$asset" -C target/aarch64-apple-darwin/release cgrx
           shasum -a 256 "$asset" > SHA256SUMS
           tar -tzf "$asset" | grep -Fx cgrx
+          test -s SHA256SUMS
 
       - name: Publish prerelease
         if: steps.existing.outputs.skip != 'true'
