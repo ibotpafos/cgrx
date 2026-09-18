@@ -81,12 +81,28 @@ impl std::error::Error for RetrievalError {}
 #[derive(Clone, Copy, Debug, Default)]
 pub struct RetrievalEngine {
     profile: FusionProfile,
+    hybrid: Option<bool>,
 }
 
 impl RetrievalEngine {
+    /// Use the process's `CGRX_HYBRID` opt-in unless explicitly overridden.
     #[must_use]
     pub const fn new(profile: FusionProfile) -> Self {
-        Self { profile }
+        Self {
+            profile,
+            hybrid: None,
+        }
+    }
+
+    /// Enable or disable structural retrieval for this engine only.
+    ///
+    /// An explicit setting takes precedence over `CGRX_HYBRID` and avoids
+    /// consulting the process environment during retrieval. Other engines are
+    /// unaffected, so baseline and hybrid queries can safely run concurrently.
+    #[must_use]
+    pub const fn with_hybrid(mut self, enabled: bool) -> Self {
+        self.hybrid = Some(enabled);
+        self
     }
 
     pub fn retrieve(
@@ -114,7 +130,7 @@ impl RetrievalEngine {
             &request.scope.relation_kinds,
             request.scope.max_depth,
         );
-        let structural_hits = if hybrid_enabled() {
+        let structural_hits = if self.hybrid.unwrap_or_else(hybrid_enabled) {
             structural::rank(&request.task, &documents)
         } else {
             Vec::new()
@@ -412,9 +428,6 @@ mod tests {
     use crate::graph::{BaseGraph, GraphDocument};
     use cgrx_core::{Mode, Scope};
     use cgrx_languages::Span;
-    use std::sync::Mutex;
-
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     fn doc(node_id: u64, name: &str, text: &str) -> GraphDocument {
         GraphDocument {
@@ -438,24 +451,23 @@ mod tests {
     }
 
     #[test]
-    fn hybrid_disabled_by_default() {
-        let _guard = ENV_LOCK.lock().unwrap();
-        unsafe { std::env::remove_var("CGRX_HYBRID") };
-        assert!(!hybrid_enabled());
+    fn default_and_new_preserve_environment_fallback() {
+        assert_eq!(RetrievalEngine::default().hybrid, None);
+        assert_eq!(RetrievalEngine::new(FusionProfile::default()).hybrid, None);
     }
 
     #[test]
-    fn hybrid_enabled_with_env() {
-        let _guard = ENV_LOCK.lock().unwrap();
-        unsafe { std::env::set_var("CGRX_HYBRID", "1") };
-        assert!(hybrid_enabled());
-        unsafe { std::env::remove_var("CGRX_HYBRID") };
+    fn hybrid_override_is_local_and_last_setting_wins() {
+        let engine = RetrievalEngine::default();
+        let enabled = engine.with_hybrid(true);
+        let disabled = enabled.with_hybrid(false);
+        assert_eq!(engine.hybrid, None);
+        assert_eq!(enabled.hybrid, Some(true));
+        assert_eq!(disabled.hybrid, Some(false));
     }
 
     #[test]
     fn structural_finds_renamed_symbol() {
-        let _guard = ENV_LOCK.lock().unwrap();
-        unsafe { std::env::set_var("CGRX_HYBRID", "1") };
         let docs = vec![
             doc(1, "processData", "let x = 1; let y = 2; return x + y;"),
             doc(2, "transformValue", "let x = 1; let y = 2; return x + y;"),
@@ -476,7 +488,7 @@ mod tests {
             mode: Mode::Precise,
             token_budget: 1000,
         };
-        let engine = RetrievalEngine::new(FusionProfile::default());
+        let engine = RetrievalEngine::new(FusionProfile::default()).with_hybrid(true);
         let result = engine.retrieve(&request, &view).unwrap();
         let ids: Vec<u64> = result.candidates.iter().map(|c| c.node_id).collect();
         assert!(ids.contains(&2), "exact match should be present");
@@ -484,13 +496,10 @@ mod tests {
             ids.contains(&1),
             "renamed symbol with same body should be present"
         );
-        unsafe { std::env::remove_var("CGRX_HYBRID") };
     }
 
     #[test]
     fn structural_negative_no_match() {
-        let _guard = ENV_LOCK.lock().unwrap();
-        unsafe { std::env::set_var("CGRX_HYBRID", "1") };
         let docs = vec![
             doc(1, "calculateTotal", "let a = 5; return a * 2;"),
             doc(2, "printMessage", "console.log('hello');"),
@@ -510,18 +519,15 @@ mod tests {
             mode: Mode::Precise,
             token_budget: 1000,
         };
-        let engine = RetrievalEngine::new(FusionProfile::default());
+        let engine = RetrievalEngine::new(FusionProfile::default()).with_hybrid(true);
         let result = engine.retrieve(&request, &view).unwrap();
         let ids: Vec<u64> = result.candidates.iter().map(|c| c.node_id).collect();
         assert!(ids.contains(&1), "exact match should be present");
         assert!(!ids.contains(&2), "unrelated symbol should not match");
-        unsafe { std::env::remove_var("CGRX_HYBRID") };
     }
 
     #[test]
     fn structural_lane_not_used_when_disabled() {
-        let _guard = ENV_LOCK.lock().unwrap();
-        unsafe { std::env::remove_var("CGRX_HYBRID") };
         let docs = vec![
             doc(1, "processData", "let x = 1; let y = 2; return x + y;"),
             doc(2, "transformValue", "let x = 1; let y = 2; return x + y;"),
@@ -541,7 +547,7 @@ mod tests {
             mode: Mode::Precise,
             token_budget: 1000,
         };
-        let engine = RetrievalEngine::new(FusionProfile::default());
+        let engine = RetrievalEngine::new(FusionProfile::default()).with_hybrid(false);
         let result = engine.retrieve(&request, &view).unwrap();
         let ids: Vec<u64> = result.candidates.iter().map(|c| c.node_id).collect();
         assert!(ids.contains(&2), "exact match should be present");

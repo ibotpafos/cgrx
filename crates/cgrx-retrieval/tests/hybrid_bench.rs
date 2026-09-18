@@ -43,11 +43,11 @@ fn build_view(docs: Vec<GraphDocument>) -> (BaseGraph, DeltaOverlay) {
 }
 
 fn run_retrieval(
-    _docs: &[GraphDocument],
     base: &BaseGraph,
     overlay: &DeltaOverlay,
     task: &str,
     profile: FusionProfile,
+    hybrid: bool,
 ) -> CandidateSet {
     let view = SnapshotView::new(base, overlay).unwrap();
     let request = QueryRequest {
@@ -56,9 +56,14 @@ fn run_retrieval(
         mode: Mode::Precise,
         token_budget: 1000,
     };
-    RetrievalEngine::new(profile)
+    let result = RetrievalEngine::new(profile)
+        .with_hybrid(hybrid)
         .retrieve(&request, &view)
-        .unwrap()
+        .unwrap();
+    if !hybrid {
+        assert!(result.candidates.iter().all(|c| c.scores.structural == 0));
+    }
+    result
 }
 
 fn baseline_profile() -> FusionProfile {
@@ -111,18 +116,25 @@ fn hybrid_bench_query1_renamed_symbol_same_body() {
         doc(4, "unrelatedB", "fn nothing_b() {}"),
         doc(5, "unrelatedC", "fn nothing_c() {}"),
     ];
-    let (base, overlay) = build_view(docs.clone());
+    let (base, overlay) = build_view(docs);
 
-    let baseline = run_retrieval(&docs, &base, &overlay, "transformValue", baseline_profile());
-    unsafe { std::env::set_var("CGRX_HYBRID", "1") };
-    let hybrid = run_retrieval(&docs, &base, &overlay, "transformValue", hybrid_profile());
-    unsafe { std::env::remove_var("CGRX_HYBRID") };
+    let baseline = run_retrieval(&base, &overlay, "transformValue", baseline_profile(), false);
+    let hybrid = run_retrieval(&base, &overlay, "transformValue", hybrid_profile(), true);
 
     println!("BM25 baseline ({} candidates):", baseline.candidates.len());
     print_results("baseline", &baseline.candidates);
     println!("Hybrid ({} candidates):", hybrid.candidates.len());
     print_results("hybrid", &hybrid.candidates);
 
+    assert_eq!(
+        baseline
+            .candidates
+            .iter()
+            .map(|c| c.node_id)
+            .collect::<Vec<_>>(),
+        vec![2],
+        "baseline must not include structural-only candidates"
+    );
     let hybrid_ids: Vec<u64> = hybrid.candidates.iter().map(|c| c.node_id).collect();
     assert!(hybrid_ids.contains(&2), "hybrid should find exact match");
     assert!(
@@ -148,12 +160,10 @@ fn hybrid_bench_query2_partial_name_overlap() {
             "fn authenticate(user) { return check(user); }",
         ),
     ];
-    let (base, overlay) = build_view(docs.clone());
+    let (base, overlay) = build_view(docs);
 
-    let baseline = run_retrieval(&docs, &base, &overlay, "DataProcessor", baseline_profile());
-    unsafe { std::env::set_var("CGRX_HYBRID", "1") };
-    let hybrid = run_retrieval(&docs, &base, &overlay, "DataProcessor", hybrid_profile());
-    unsafe { std::env::remove_var("CGRX_HYBRID") };
+    let baseline = run_retrieval(&base, &overlay, "DataProcessor", baseline_profile(), false);
+    let hybrid = run_retrieval(&base, &overlay, "DataProcessor", hybrid_profile(), true);
 
     println!("BM25 baseline ({} candidates):", baseline.candidates.len());
     print_results("baseline", &baseline.candidates);
@@ -180,12 +190,10 @@ fn hybrid_bench_query3_rewrite_similar_body() {
         ),
         doc(3, "printArray", "console.log('not related at all');"),
     ];
-    let (base, overlay) = build_view(docs.clone());
+    let (base, overlay) = build_view(docs);
 
-    let baseline = run_retrieval(&docs, &base, &overlay, "computeTotal", baseline_profile());
-    unsafe { std::env::set_var("CGRX_HYBRID", "1") };
-    let hybrid = run_retrieval(&docs, &base, &overlay, "computeTotal", hybrid_profile());
-    unsafe { std::env::remove_var("CGRX_HYBRID") };
+    let baseline = run_retrieval(&base, &overlay, "computeTotal", baseline_profile(), false);
+    let hybrid = run_retrieval(&base, &overlay, "computeTotal", hybrid_profile(), true);
 
     println!("BM25 baseline ({} candidates):", baseline.candidates.len());
     print_results("baseline", &baseline.candidates);
