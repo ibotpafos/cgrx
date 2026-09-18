@@ -254,6 +254,18 @@ struct Mcp {
 }
 
 impl Mcp {
+    #[cfg(unix)]
+    fn mock(script: &str) -> Self {
+        // A response fixture must consume a complete request before exiting.
+        // Otherwise it races the writer thread and may report BrokenPipe,
+        // masking a response-validation failure or failing a positive control.
+        let script = format!("IFS= read -r request || exit 1; {script}");
+        Self {
+            process: Process::spawn(Command::new("/bin/sh").args(["-c", &script])),
+            next_id: 1,
+        }
+    }
+
     fn start(cwd: &Path) -> Self {
         let mut mcp = Self {
             process: Process::spawn(
@@ -515,29 +527,57 @@ fn subprocess_read_write_deadlines_reap_the_process() {
 #[cfg(unix)]
 #[test]
 fn oversized_frames_wrong_ids_and_stderr_are_bounded() {
-    for script in [
-        "head -c 70000 /dev/zero",
-        "printf '%s\\n' '{\"jsonrpc\":\"2.0\",\"id\":9,\"result\":{}}'",
+    for (script, expected) in [
+        ("head -c 70000 /dev/zero", "missing/budgeted response"),
+        (
+            "printf '%s\\n' '{\"jsonrpc\":\"2.0\",\"id\":9,\"result\":{}}'",
+            "invalid RPC envelope",
+        ),
     ] {
-        let mut mcp = Mcp {
-            process: Process::spawn(Command::new("/bin/sh").args(["-c", script])),
-            next_id: 1,
-        };
-        assert!(
-            mcp.try_request("mock", json!({}), Duration::from_secs(2))
-                .is_err()
+        let mut mcp = Mcp::mock(script);
+        assert_eq!(
+            mcp.try_request("mock", json!({}), Duration::from_secs(2)),
+            Err(expected),
+            "the response guard must fail, not the request write"
         );
     }
-    let mut mcp = Mcp {
-        process: Process::spawn(Command::new("/bin/sh").args(["-c",
-            "head -c 2000000 /dev/zero >&2; printf '%s\\n' '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}'"])),
-        next_id: 1,
-    };
-    assert!(
-        mcp.try_request("mock", json!({}), Duration::from_secs(2))
-            .is_ok()
+    let mut mcp = Mcp::mock(
+        "head -c 2000000 /dev/zero >&2; printf '%s\\n' '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}'",
     );
+    mcp.try_request("mock", json!({}), Duration::from_secs(2))
+        .expect("a complete request followed by noisy stderr must still receive its response");
     mcp.process
         .finish(Instant::now() + Duration::from_secs(2))
         .unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn mock_responses_follow_complete_requests_under_parallel_load() {
+    let start = Barrier::new(4);
+    thread::scope(|scope| {
+        for worker in 0..4 {
+            let start = &start;
+            scope.spawn(move || {
+                start.wait();
+                for iteration in 0..8 {
+                    let params = if (worker + iteration) % 2 == 0 {
+                        json!({})
+                    } else {
+                        json!({"body":"x".repeat(FRAME_LIMIT - 500)})
+                    };
+                    let mut mcp = Mcp::mock(
+                        "printf '%s\\n' '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}'",
+                    );
+                    let response = mcp
+                        .try_request("mock", params, Duration::from_secs(2))
+                        .expect("mock must consume the request even across multiple pipe writes");
+                    assert_eq!(response, json!({"jsonrpc":"2.0","id":1,"result":{}}));
+                    mcp.process
+                        .finish(Instant::now() + Duration::from_secs(2))
+                        .unwrap();
+                }
+            });
+        }
+    });
 }
