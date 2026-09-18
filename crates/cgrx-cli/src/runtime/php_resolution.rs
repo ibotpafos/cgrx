@@ -98,6 +98,23 @@ pub(super) fn rebuild(
             if caller.search_text.get(start..end) != Some(call.text.as_str()) {
                 return None;
             }
+            // Containment alone also holds for an enclosing function or class.
+            // Restrict the existing positional index to this file and reject
+            // any inner declaration that owns the same site. Never silently
+            // substitute that inner owner for a corrupted caller proof.
+            let first = (call.path.as_str(), 0, 0);
+            let last = (call.path.as_str(), call.span_end, usize::MAX);
+            if symbols.range(first..=last).any(|(_, symbol)| {
+                symbol.is_some_and(|inner| {
+                    inner.node_id != caller.node_id
+                        && caller.body_start <= inner.body_start
+                        && inner.body_end <= caller.body_end
+                        && inner.body_start <= call.span_start
+                        && call.span_end <= inner.body_end
+                })
+            }) {
+                return None;
+            }
             Some(StoredArc {
                 source: caller.node_id,
                 target: target.node_id,
@@ -140,9 +157,8 @@ pub(super) fn normalize(stored: &mut StoredIndex) {
     if php_nodes.is_empty() && !stored.arcs.iter().any(touches_php) {
         return;
     }
-    // Even proof-bearing serialized CALLS must be reconstructed. A missing,
-    // stale or altered document proof cannot survive merely because edges.seg
-    // still contains an earlier successful relationship.
+    // Reconstruct semantic edges instead of trusting previously serialized
+    // CALLS, IMPORTS or REFERENCES that lost their supporting document proof.
     stored
         .arcs
         .retain(|arc| arc.kind == RelationKind::Contains || !touches_php(arc));
