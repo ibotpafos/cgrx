@@ -1145,7 +1145,7 @@ mod compact_storage_tests {
         assert_eq!(
             EXTRACTION_REVISION,
             if cgrx_languages::EXPERIMENTAL_PHP_ENABLED {
-                30
+                31
             } else {
                 29
             }
