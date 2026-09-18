@@ -566,9 +566,8 @@ fn mock_responses_follow_complete_requests_under_parallel_load() {
                     } else {
                         json!({"body":"x".repeat(FRAME_LIMIT - 500)})
                     };
-                    let mut mcp = Mcp::mock(
-                        "printf '%s\\n' '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}'",
-                    );
+                    let mut mcp =
+                        Mcp::mock("printf '%s\\n' '{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{}}'");
                     let response = mcp
                         .try_request("mock", params, Duration::from_secs(2))
                         .expect("mock must consume the request even across multiple pipe writes");
