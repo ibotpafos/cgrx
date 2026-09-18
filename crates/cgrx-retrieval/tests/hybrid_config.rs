@@ -55,9 +55,12 @@ fn assert_mode(result: &CandidateSet, enabled: bool) {
     } else {
         assert_eq!(ids, vec![2]);
         assert!(result.candidates.iter().all(|c| c.scores.structural == 0));
-        assert!(result.candidates.iter().all(|c| !c
-            .selection_reason
-            .contains("structural_fingerprint")));
+        assert!(
+            result
+                .candidates
+                .iter()
+                .all(|c| !c.selection_reason.contains("structural_fingerprint"))
+        );
     }
     assert!(result.uncertainties.is_empty());
 }
@@ -93,7 +96,14 @@ fn opposite_modes_are_deterministic_under_parallel_load() {
 fn environment_opt_in_and_explicit_overrides_in_fresh_processes() {
     // Command::env affects only the child. Never mutate the multithreaded
     // test process's environment, even behind a test-local mutex.
-    for value in [None, Some("1"), Some("0"), Some(""), Some("true"), Some(" 1")] {
+    for value in [
+        None,
+        Some("1"),
+        Some("0"),
+        Some(""),
+        Some("true"),
+        Some(" 1"),
+    ] {
         let mut child = Command::new(std::env::current_exe().unwrap());
         child.args(["--exact", "environment_configuration_child", "--nocapture"]);
         child.env(
