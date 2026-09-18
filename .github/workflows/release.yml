@@ -31,6 +31,22 @@ jobs:
           test -f ".github/release-notes/$version.md"
       - name: Install pinned Rust toolchain
         run: rustup toolchain install 1.89.0 --profile minimal --target aarch64-apple-darwin
+      - name: Refuse an existing release or tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(tr -d '\r\n' < RELEASE_VERSION)
+          if gh release view "$version" >/dev/null 2>&1; then
+            echo "release $version already exists" >&2
+            exit 1
+          fi
+          if git ls-remote --exit-code --tags origin "refs/tags/$version" >/dev/null 2>&1; then
+            echo "tag $version already exists" >&2
+            exit 1
+          fi
+
       - name: Cross-build Apple Silicon release candidate
         shell: bash
         run: |
@@ -67,15 +83,25 @@ jobs:
           test "$(git rev-parse HEAD)" = "${{ github.event.workflow_run.head_sha }}"
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
-      - name: Skip an already published release
+      - name: Check release identity
         id: existing
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.meta.outputs.version }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
         shell: bash
         run: |
           set -euo pipefail
           if gh release view "$VERSION" >/dev/null 2>&1; then
+            git fetch --no-tags --depth=1 origin "refs/tags/$VERSION:refs/tags/$VERSION"
+            release_commit=$(git rev-list -n 1 "$VERSION")
+            if [ "$release_commit" != "$SHA" ]; then
+              echo "release $VERSION already points to $release_commit, not $SHA" >&2
+              exit 1
+            fi
+            names=$(gh release view "$VERSION" --json assets --jq '.assets[].name')
+            printf '%s\n' "$names" | grep -Fx "cgrx-$VERSION-aarch64-apple-darwin.tar.gz"
+            printf '%s\n' "$names" | grep -Fx "SHA256SUMS"
             echo "skip=true" >> "$GITHUB_OUTPUT"
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
