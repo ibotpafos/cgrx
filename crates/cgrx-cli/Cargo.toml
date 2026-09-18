@@ -32,3 +32,7 @@ path = "../../tests/cli.rs"
 [[test]]
 name = "multi_repo"
 path = "../../tests/multi_repo.rs"
+
+[features]
+# Validation-only opt-in; never enabled by a default or release build.
+experimental-php = ["cgrx-languages/experimental-php"]

@@ -1,0 +1,306 @@
+{
+  "schema_version": 1,
+  "maturity": "experimental",
+  "relations": [
+    "CALLS",
+    "IMPORTS",
+    "REFERENCE",
+    "UNRESOLVED"
+  ],
+  "cases": [
+    {
+      "extension": "php",
+      "path": "fixtures/php-validation/sample.php",
+      "sha256": "01171153d455a692784d3aa2b75005914902764d17a0a7f9efa85cd04950debf",
+      "cells": {
+        "CALLS": {
+          "target": "Helper",
+          "span": {
+            "start": 155,
+            "end": 169
+          }
+        },
+        "IMPORTS": {
+          "target": "Vendor\\Payload",
+          "span": {
+            "start": 33,
+            "end": 55
+          }
+        },
+        "REFERENCE": {
+          "target": "Item",
+          "span": {
+            "start": 73,
+            "end": 77
+          }
+        },
+        "UNRESOLVED": {
+          "target": null,
+          "span": {
+            "start": 225,
+            "end": 249
+          }
+        }
+      },
+      "caller": {
+        "symbol": "caller",
+        "span": {
+          "start": 120,
+          "end": 126
+        }
+      },
+      "target": {
+        "symbol": "Helper",
+        "span": {
+          "start": 66,
+          "end": 72
+        }
+      }
+    },
+    {
+      "extension": "phtml",
+      "path": "fixtures/php-validation/sample.phtml",
+      "sha256": "01171153d455a692784d3aa2b75005914902764d17a0a7f9efa85cd04950debf",
+      "cells": {
+        "CALLS": {
+          "target": "Helper",
+          "span": {
+            "start": 155,
+            "end": 169
+          }
+        },
+        "IMPORTS": {
+          "target": "Vendor\\Payload",
+          "span": {
+            "start": 33,
+            "end": 55
+          }
+        },
+        "REFERENCE": {
+          "target": "Item",
+          "span": {
+            "start": 73,
+            "end": 77
+          }
+        },
+        "UNRESOLVED": {
+          "target": null,
+          "span": {
+            "start": 225,
+            "end": 249
+          }
+        }
+      },
+      "caller": {
+        "symbol": "caller",
+        "span": {
+          "start": 120,
+          "end": 126
+        }
+      },
+      "target": {
+        "symbol": "Helper",
+        "span": {
+          "start": 66,
+          "end": 72
+        }
+      }
+    },
+    {
+      "extension": "php3",
+      "path": "fixtures/php-validation/sample.php3",
+      "sha256": "01171153d455a692784d3aa2b75005914902764d17a0a7f9efa85cd04950debf",
+      "cells": {
+        "CALLS": {
+          "target": "Helper",
+          "span": {
+            "start": 155,
+            "end": 169
+          }
+        },
+        "IMPORTS": {
+          "target": "Vendor\\Payload",
+          "span": {
+            "start": 33,
+            "end": 55
+          }
+        },
+        "REFERENCE": {
+          "target": "Item",
+          "span": {
+            "start": 73,
+            "end": 77
+          }
+        },
+        "UNRESOLVED": {
+          "target": null,
+          "span": {
+            "start": 225,
+            "end": 249
+          }
+        }
+      },
+      "caller": {
+        "symbol": "caller",
+        "span": {
+          "start": 120,
+          "end": 126
+        }
+      },
+      "target": {
+        "symbol": "Helper",
+        "span": {
+          "start": 66,
+          "end": 72
+        }
+      }
+    },
+    {
+      "extension": "php4",
+      "path": "fixtures/php-validation/sample.php4",
+      "sha256": "01171153d455a692784d3aa2b75005914902764d17a0a7f9efa85cd04950debf",
+      "cells": {
+        "CALLS": {
+          "target": "Helper",
+          "span": {
+            "start": 155,
+            "end": 169
+          }
+        },
+        "IMPORTS": {
+          "target": "Vendor\\Payload",
+          "span": {
+            "start": 33,
+            "end": 55
+          }
+        },
+        "REFERENCE": {
+          "target": "Item",
+          "span": {
+            "start": 73,
+            "end": 77
+          }
+        },
+        "UNRESOLVED": {
+          "target": null,
+          "span": {
+            "start": 225,
+            "end": 249
+          }
+        }
+      },
+      "caller": {
+        "symbol": "caller",
+        "span": {
+          "start": 120,
+          "end": 126
+        }
+      },
+      "target": {
+        "symbol": "Helper",
+        "span": {
+          "start": 66,
+          "end": 72
+        }
+      }
+    },
+    {
+      "extension": "php5",
+      "path": "fixtures/php-validation/sample.php5",
+      "sha256": "01171153d455a692784d3aa2b75005914902764d17a0a7f9efa85cd04950debf",
+      "cells": {
+        "CALLS": {
+          "target": "Helper",
+          "span": {
+            "start": 155,
+            "end": 169
+          }
+        },
+        "IMPORTS": {
+          "target": "Vendor\\Payload",
+          "span": {
+            "start": 33,
+            "end": 55
+          }
+        },
+        "REFERENCE": {
+          "target": "Item",
+          "span": {
+            "start": 73,
+            "end": 77
+          }
+        },
+        "UNRESOLVED": {
+          "target": null,
+          "span": {
+            "start": 225,
+            "end": 249
+          }
+        }
+      },
+      "caller": {
+        "symbol": "caller",
+        "span": {
+          "start": 120,
+          "end": 126
+        }
+      },
+      "target": {
+        "symbol": "Helper",
+        "span": {
+          "start": 66,
+          "end": 72
+        }
+      }
+    },
+    {
+      "extension": "phps",
+      "path": "fixtures/php-validation/sample.phps",
+      "sha256": "01171153d455a692784d3aa2b75005914902764d17a0a7f9efa85cd04950debf",
+      "cells": {
+        "CALLS": {
+          "target": "Helper",
+          "span": {
+            "start": 155,
+            "end": 169
+          }
+        },
+        "IMPORTS": {
+          "target": "Vendor\\Payload",
+          "span": {
+            "start": 33,
+            "end": 55
+          }
+        },
+        "REFERENCE": {
+          "target": "Item",
+          "span": {
+            "start": 73,
+            "end": 77
+          }
+        },
+        "UNRESOLVED": {
+          "target": null,
+          "span": {
+            "start": 225,
+            "end": 249
+          }
+        }
+      },
+      "caller": {
+        "symbol": "caller",
+        "span": {
+          "start": 120,
+          "end": 126
+        }
+      },
+      "target": {
+        "symbol": "Helper",
+        "span": {
+          "start": 66,
+          "end": 72
+        }
+      }
+    }
+  ]
+}

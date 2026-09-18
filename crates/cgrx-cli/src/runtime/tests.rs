@@ -242,6 +242,7 @@ mod proof_edge_tests {
 
     fn syntax(node_id: u64, name: &str, path: &str, start: usize, end: usize) -> StoredDocument {
         StoredDocument {
+            php_function_target: None,
             rust_module_target: None,
             rust_self_target: None,
             ts_lexical_target: None,
@@ -270,6 +271,7 @@ mod proof_edge_tests {
 
     fn call(node_id: u64, name: &str, path: &str, start: usize, end: usize) -> StoredDocument {
         StoredDocument {
+            php_function_target: None,
             rust_module_target: None,
             rust_self_target: None,
             ts_lexical_target: None,
@@ -1138,7 +1140,14 @@ mod compact_storage_tests {
             serde_json::from_value::<StoredDocument>(encoded).unwrap(),
             doc
         );
-        assert_eq!(EXTRACTION_REVISION, 29);
+        assert_eq!(
+            EXTRACTION_REVISION,
+            if cgrx_languages::EXPERIMENTAL_PHP_ENABLED {
+                30
+            } else {
+                29
+            }
+        );
     }
 
     #[test]

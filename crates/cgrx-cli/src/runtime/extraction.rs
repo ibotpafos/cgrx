@@ -104,6 +104,18 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
     let lexical_arrows: BTreeSet<_> = extraction.lexical_arrows.into_iter().collect();
     let symbols = extraction.symbols;
     let edges = extraction.edges;
+    let php_targets: BTreeSet<_> = edges
+        .iter()
+        .filter_map(|edge| {
+            if let LanguageProvenance::PhpFunction { target, .. } = edge.provenance {
+                Some(target)
+            } else {
+                None
+            }
+        })
+        .collect();
+    let php_source_hash =
+        (!php_targets.is_empty()).then(|| Hash32(*blake3::hash(source).as_bytes()));
     let unresolved = extraction.unresolved;
     let overload_names: BTreeSet<_> = unresolved
         .iter()
@@ -124,6 +136,7 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
             });
         let semantic_fingerprint = body_fingerprint(&symbol.name, &search_text);
         documents.push(StoredDocument {
+            php_function_target: None,
             rust_module_target: None,
             rust_self_target: None,
             ts_lexical_target: None,
@@ -148,6 +161,8 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
             provenance: "SYNTAX".to_owned(),
             semantic_tags: if lexical_arrows.contains(&symbol.span) {
                 vec!["TS_LEXICAL_ARROW".to_owned()]
+            } else if php_targets.contains(&symbol.span) {
+                vec!["PHP_GLOBAL_FUNCTION".to_owned()]
             } else {
                 Vec::new()
             },
@@ -162,6 +177,7 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
         // external specifier look like a second repository-local dependency.
         let text = String::from_utf8_lossy(&source[edge.span.start..edge.span.end]).into_owned();
         documents.push(StoredDocument {
+            php_function_target: None,
             rust_module_target: None,
             rust_self_target: None,
             ts_lexical_target: None,
@@ -193,6 +209,7 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
     {
         let text = String::from_utf8_lossy(&source[edge.span.start..edge.span.end]).into_owned();
         documents.push(StoredDocument {
+            php_function_target: None,
             rust_module_target: None,
             rust_self_target: None,
             ts_lexical_target: None,
@@ -242,6 +259,7 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
                 })
             }
             LanguageProvenance::Syntax
+            | LanguageProvenance::PhpFunction { .. }
             | LanguageProvenance::GoFieldReceiver { .. }
             | LanguageProvenance::GoLocalConstructor { .. }
             | LanguageProvenance::GoImport { .. }
@@ -268,7 +286,22 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
             ByteRange::new(edge.span.start, edge.span.end),
             ContextWindow::lines(0),
         );
+        let call_text = if matches!(edge.provenance, LanguageProvenance::PhpFunction { .. }) {
+            String::from_utf8_lossy(&source[edge.span.start..edge.span.end]).into_owned()
+        } else {
+            String::from_utf8_lossy(&slice.bytes).into_owned()
+        };
         documents.push(StoredDocument {
+            php_function_target: match edge.provenance {
+                LanguageProvenance::PhpFunction { caller, target } => {
+                    Some(Box::new(super::php_resolution::PhpFunctionTarget {
+                        source_hash: php_source_hash.expect("PHP target identity was collected"),
+                        caller: ByteRange::new(caller.start, caller.end),
+                        target: ByteRange::new(target.start, target.end),
+                    }))
+                }
+                _ => None,
+            },
             semantic_fingerprint: None,
             go_field_target: match edge.provenance {
                 LanguageProvenance::GoFieldReceiver {
@@ -375,14 +408,16 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
             node_id: stable_node_id(relative, edge.span, &format!("call:{target}")),
             qualified_name: target.clone(),
             path: relative.to_owned(),
-            text: String::from_utf8_lossy(&slice.bytes).into_owned(),
-            search_text: String::from_utf8_lossy(&slice.bytes).into_owned(),
+            text: call_text.clone(),
+            search_text: call_text,
             span_start: edge.span.start,
             span_end: edge.span.end,
             body_start: edge.span.start,
             body_end: edge.span.end,
             provenance: "CALLS".to_owned(),
-            semantic_tags: if matches!(edge.provenance, LanguageProvenance::RustModule { .. }) {
+            semantic_tags: if matches!(edge.provenance, LanguageProvenance::PhpFunction { .. }) {
+                vec!["EXACT_CALL".to_owned(), "PHP_FUNCTION_CALL".to_owned()]
+            } else if matches!(edge.provenance, LanguageProvenance::RustModule { .. }) {
                 vec!["EXACT_CALL".to_owned(), "RUST_MODULE_CALL".to_owned()]
             } else if matches!(edge.provenance, LanguageProvenance::RustSelf { .. }) {
                 vec!["EXACT_CALL".to_owned(), "RUST_SELF_CALL".to_owned()]
@@ -419,6 +454,7 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
                 ContextWindow::lines(0),
             );
             documents.push(StoredDocument {
+                php_function_target: None,
                 rust_module_target: None,
                 rust_self_target: None,
                 ts_lexical_target: None,
@@ -487,6 +523,7 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
                 ContextWindow::lines(0),
             );
             documents.push(StoredDocument {
+                php_function_target: None,
                 rust_module_target: None,
                 rust_self_target: None,
                 ts_lexical_target: None,
@@ -539,6 +576,7 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
                 ContextWindow::lines(0),
             );
             documents.push(StoredDocument {
+                php_function_target: None,
                 rust_module_target: None,
                 rust_self_target: None,
                 ts_lexical_target: None,
@@ -597,6 +635,7 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
                 })
                 .collect();
             documents.push(StoredDocument {
+                php_function_target: None,
                 rust_module_target: None,
                 rust_self_target: None,
                 ts_lexical_target: None,
@@ -639,6 +678,7 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
         };
         let text = String::from_utf8_lossy(&source[span.start..span.end]).into_owned();
         documents.push(StoredDocument {
+            php_function_target: None,
             rust_module_target: None,
             rust_self_target: None,
             ts_lexical_target: None,
@@ -667,6 +707,7 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
     for span in implements_spans(source, relative_path) {
         let text = String::from_utf8_lossy(&source[span.start..span.end]).into_owned();
         documents.push(StoredDocument {
+            php_function_target: None,
             rust_module_target: None,
             rust_self_target: None,
             ts_lexical_target: None,

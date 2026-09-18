@@ -61,7 +61,7 @@ impl LanguagePack for Php {
 
 #[derive(Default)]
 struct FileFacts {
-    functions: BTreeMap<String, Option<String>>,
+    functions: BTreeMap<String, Option<(String, Span)>>,
     blocked: bool,
 }
 
@@ -91,7 +91,7 @@ impl FileFacts {
             self.functions
                 .entry(spelling.to_ascii_lowercase())
                 .and_modify(|target| *target = None)
-                .or_insert_with(|| unconditional.then_some(spelling));
+                .or_insert_with(|| unconditional.then_some((spelling, Span::from(name))));
         }
         for child in node.named_children(&mut node.walk()) {
             self.visit(child, source);
@@ -109,20 +109,22 @@ fn edge(relation: RelationKind, target: String, node: Node<'_>, extraction: &mut
     });
 }
 
-fn inside_named_body(node: Node<'_>) -> bool {
+fn named_body_owner(node: Node<'_>) -> Option<Span> {
     let mut parent = node.parent();
     while let Some(owner) = parent {
         match owner.kind() {
-            "anonymous_function" | "arrow_function" => return false,
+            "anonymous_function" | "arrow_function" => return None,
             "function_definition" | "method_declaration" => {
-                return owner.child_by_field_name("body").is_some_and(|body| {
-                    body.start_byte() <= node.start_byte() && node.end_byte() <= body.end_byte()
-                });
+                let body = owner.child_by_field_name("body")?;
+                if body.start_byte() <= node.start_byte() && node.end_byte() <= body.end_byte() {
+                    return owner.child_by_field_name("name").map(Span::from);
+                }
+                return None;
             }
             _ => parent = owner.parent(),
         }
     }
-    false
+    None
 }
 
 fn classify(node: Node<'_>, source: &[u8], extraction: &mut Extraction, facts: &FileFacts) {
@@ -152,10 +154,19 @@ fn classify(node: Node<'_>, source: &[u8], extraction: &mut Extraction, facts: &
             });
             if !facts.blocked
                 && !reference
-                && inside_named_body(node)
-                && let Some(target) = target
+                && let Some(caller) = named_body_owner(node)
+                && let Some((target, target_span)) = target
             {
-                edge(RelationKind::Calls, target.clone(), node, extraction);
+                extraction.edges.push(Edge {
+                    relation: RelationKind::Calls,
+                    target: target.clone(),
+                    span: Span::from(node),
+                    context_span: Span::from(node),
+                    provenance: Provenance::PhpFunction {
+                        caller,
+                        target: *target_span,
+                    },
+                });
             } else {
                 unresolved(UnresolvedKind::Dispatch, node, source, extraction);
             }

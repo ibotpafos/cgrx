@@ -17,7 +17,7 @@ mod cpp;
 mod csharp;
 #[cfg(test)]
 mod elixir;
-#[cfg(test)]
+#[cfg(any(test, feature = "experimental-php"))]
 mod php;
 #[cfg(test)]
 mod ruby;
@@ -31,6 +31,9 @@ pub use pack::{
     Unresolved, UnresolvedKind, pack_for_path,
 };
 
+/// Effective registry policy, including Cargo dependency feature unification.
+pub const EXPERIMENTAL_PHP_ENABLED: bool = cfg!(feature = "experimental-php");
+
 pub use go::{GoCallableKind, GoCallableType, go_callable_type};
 pub use rust::RustFileFacts;
 
@@ -43,7 +46,7 @@ mod experimental_tests {
     use std::path::Path;
 
     #[test]
-    fn experimental_grammars_compile_without_runtime_registration() {
+    fn experimental_grammars_follow_the_explicit_build_policy() {
         let packs: [&dyn LanguagePack; 7] = [
             &cpp::CPP_PACK,
             &csharp::CSHARP_PACK,
@@ -57,7 +60,11 @@ mod experimental_tests {
             assert!(!pack.id().is_empty());
             for extension in pack.extensions() {
                 let path = format!("example.{extension}");
-                assert!(pack_for_path(Path::new(&path)).is_none(), "{path}");
+                assert_eq!(
+                    pack_for_path(Path::new(&path)).is_some(),
+                    pack.id() == "php" && EXPERIMENTAL_PHP_ENABLED,
+                    "{path}"
+                );
                 // Parser initialization is not evidence of semantic support.
                 pack.extract(Path::new(&path), b"").unwrap();
             }

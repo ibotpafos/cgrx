@@ -294,6 +294,7 @@ pub(super) fn normalize_stored(stored: &mut StoredIndex) {
         migrated.dedup();
         stored.arcs = migrated;
     }
+    super::php_resolution::normalize(stored);
     refresh_qualified_call_gaps(stored);
 }
 
@@ -306,6 +307,7 @@ pub(super) fn refresh_qualified_call_gaps(stored: &mut StoredIndex) {
         .iter()
         .filter(|doc| {
             doc.go_import_path.is_some()
+                || (doc.provenance == "CALLS" && super::php_resolution::is_php_path(&doc.path))
                 || doc
                     .semantic_tags
                     .iter()

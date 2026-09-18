@@ -378,7 +378,14 @@ fn ts_lexical_metadata_is_compact_and_proofs_are_present_only_on_exact_calls() {
         "ts",
     );
     let stored = fixture.stored();
-    assert_eq!(stored["extraction_revision"], 29);
+    assert_eq!(
+        stored["extraction_revision"],
+        if cgrx_languages::EXPERIMENTAL_PHP_ENABLED {
+            30
+        } else {
+            29
+        }
+    );
     let docs = stored["documents"].as_array().unwrap();
     let proofs: Vec<_> = docs
         .iter()
