@@ -11,8 +11,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 static SEQUENCE: AtomicU64 = AtomicU64::new(0);
 const RETIRED: [&str; 21] = [
-    "cpp", "cxx", "cc", "hpp", "hxx", "hh", "cs", "ex", "exs", "php", "phtml", "php3",
-    "php4", "php5", "phps", "rb", "rake", "gemspec", "scala", "sc", "swift",
+    "cpp", "cxx", "cc", "hpp", "hxx", "hh", "cs", "ex", "exs", "php", "phtml", "php3", "php4",
+    "php5", "phps", "rb", "rake", "gemspec", "scala", "sc", "swift",
 ];
 
 struct Fixture(PathBuf);
@@ -121,7 +121,9 @@ fn revision_28_records_require_reindex_and_retired_extensions_stay_excluded() {
     let old_bytes = serde_json::to_vec(&stored).unwrap();
     publish(&state, legacy, &old_bytes);
     let pinned_old_reader = GenerationReader::open_current(&state).unwrap();
-    let error = Runtime::open(&state).err().expect("obsolete index must fail");
+    let error = Runtime::open(&state)
+        .err()
+        .expect("obsolete index must fail");
     assert_eq!(error.code(), "extraction_revision");
 
     // Reindex at the very same Git commit must allocate the new policy's
@@ -135,7 +137,13 @@ fn revision_28_records_require_reindex_and_retired_extensions_stay_excluded() {
     let current_bytes = current.read_segment("nodes.seg").unwrap();
     let current_stored: Value = serde_json::from_slice(&current_bytes).unwrap();
     assert_ne!(current_stored["extraction_revision"], json!(28));
-    assert!(current_stored["documents"].as_array().unwrap().iter().all(|doc| doc["path"] == "lib.rs"));
+    assert!(
+        current_stored["documents"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|doc| doc["path"] == "lib.rs")
+    );
     for extension in RETIRED {
         let path = format!("old.{extension}");
         assert!(runtime.coverage().excluded_paths.contains(&path));
@@ -145,5 +153,8 @@ fn revision_28_records_require_reindex_and_retired_extensions_stay_excluded() {
     runtime.refresh(&fixture.root()).unwrap();
     assert_eq!(runtime.graph_node_count(), 1);
     // Pinned readers retain the original immutable bytes after migration.
-    assert_eq!(pinned_old_reader.read_segment("nodes.seg").unwrap(), old_bytes);
+    assert_eq!(
+        pinned_old_reader.read_segment("nodes.seg").unwrap(),
+        old_bytes
+    );
 }
