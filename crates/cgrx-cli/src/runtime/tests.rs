@@ -1138,7 +1138,7 @@ mod compact_storage_tests {
             serde_json::from_value::<StoredDocument>(encoded).unwrap(),
             doc
         );
-        assert_eq!(EXTRACTION_REVISION, 28);
+        assert_eq!(EXTRACTION_REVISION, 29);
     }
 
     #[test]
@@ -1241,16 +1241,12 @@ mod compact_storage_tests {
 
 #[cfg(test)]
 mod ts_inventory_cache_tests {
-    use super::ts_helpers::TsDirectoryCache;
+    use super::ts_helpers::{
+        DIRECTORY_READS, INVENTORY_BUILDS, MODULE_EXPANSIONS, SOURCE_READS, TsDirectoryCache,
+    };
     use super::*;
     use std::cell::Cell;
     use std::sync::atomic::{AtomicU64, Ordering};
-    thread_local! { pub(super) static DIRECTORY_READS: Cell<usize> = const { Cell::new(0) }; }
-    thread_local! { pub(super) static SOURCE_READS: Cell<usize> = const { Cell::new(0) }; }
-    thread_local! {
-        pub(super) static INVENTORY_BUILDS: Cell<usize> = const { Cell::new(0) };
-        pub(super) static MODULE_EXPANSIONS: Cell<usize> = const { Cell::new(0) };
-    }
     static ID: AtomicU64 = AtomicU64::new(0);
     struct Fixture(PathBuf);
     impl Drop for Fixture {
@@ -1259,7 +1255,6 @@ mod ts_inventory_cache_tests {
         }
     }
     #[test]
-    #[ignore = "test instrumentation removed during ts_helpers extraction"]
     fn repeated_named_imports_expand_once_per_inventory_pass() {
         let fixture = Fixture(std::env::temp_dir().join(format!(
             "cgrx-candidate-cache-{}-{}",
@@ -1308,7 +1303,6 @@ mod ts_inventory_cache_tests {
     }
 
     #[test]
-    #[ignore = "test instrumentation removed during ts_helpers extraction"]
     fn directory_reads_are_shared_within_inventory_but_not_across_refreshes() {
         let fixture = Fixture(std::env::temp_dir().join(format!(
             "cgrx-dir-cache-{}-{}",
@@ -1365,7 +1359,6 @@ mod ts_inventory_cache_tests {
     }
 
     #[test]
-    #[ignore = "test instrumentation removed during ts_helpers extraction"]
     fn verified_sources_are_not_rehashed_until_metadata_changes() {
         let fixture = Fixture(std::env::temp_dir().join(format!(
             "cgrx-source-fingerprint-cache-{}-{}",
