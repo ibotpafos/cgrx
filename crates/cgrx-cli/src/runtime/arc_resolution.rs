@@ -11,6 +11,7 @@ use cgrx_core::{ByteRange, ConfidenceClass, EdgeEvidence, Hash32, RelationKind, 
 use cgrx_languages::ts_imports::ImportClassification;
 use cgrx_languages::{RelationKind as LanguageRelation, pack_for_path};
 
+use super::php_resolution;
 use super::ts_config::{self, TsResolutionConfig};
 use super::{StoredArc, StoredDocument, StoredTsFileFacts};
 use super::{ts_config_modules, ts_config_supported_for, ts_paths_portable_for};
@@ -55,6 +56,7 @@ pub(super) fn rebuild_arcs_with_cargo(
             .semantic_tags
             .iter()
             .any(|tag| tag == "TS_LEXICAL_ARROW")
+            && !php_resolution::is_php_path(&document.path)
         {
             by_name
                 .entry(document.qualified_name.as_str())
@@ -124,9 +126,10 @@ pub(super) fn rebuild_arcs_with_cargo(
                 .collect::<Vec<_>>()
         })
         .collect();
-    let mut arcs = Vec::new();
+    let mut arcs = php_resolution::rebuild(documents, path_hashes);
     for call in documents.iter().filter(|document| {
         document.provenance == "CALLS"
+            && !php_resolution::is_php_path(&document.path)
             && document.semantic_tags.iter().any(|tag| tag == "EXACT_CALL")
     }) {
         let source_document = syntax_by_path
@@ -630,7 +633,10 @@ pub(super) fn rebuild_arcs_with_cargo(
         }
     }
     // Create References arcs from reference documents to their targets
-    for document in documents.iter().filter(|d| d.provenance == "REFERENCES") {
+    for document in documents
+        .iter()
+        .filter(|d| d.provenance == "REFERENCES" && !php_resolution::is_php_path(&d.path))
+    {
         // Try exact match first, then extract last segment for qualified names
         let targets = by_name.get(document.qualified_name.as_str()).or_else(|| {
             // For qualified names like "cgrx_core::IoAccounting", try "IoAccounting"
@@ -669,7 +675,10 @@ pub(super) fn rebuild_arcs_with_cargo(
 
     // Create IMPORTS arcs from import documents to their targets
     // Match import targets to SYNTAX documents by path
-    for document in documents.iter().filter(|d| d.provenance == "IMPORTS") {
+    for document in documents
+        .iter()
+        .filter(|d| d.provenance == "IMPORTS" && !php_resolution::is_php_path(&d.path))
+    {
         // Try to find the imported module by matching the qualified_name to a file path
         let import_target = &document.qualified_name;
 

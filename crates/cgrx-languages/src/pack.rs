@@ -29,6 +29,11 @@ pub enum RelationKind {
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum Provenance {
     Syntax,
+    /// Exact names of a PHP caller and its unconditional same-file global target.
+    PhpFunction {
+        caller: Span,
+        target: Span,
+    },
     /// Exact same-file self/super module path to a free function.
     RustModule {
         caller: Span,
@@ -227,6 +232,10 @@ impl Extraction {
                 ] {
                     update(&mut hasher, kind, "", span);
                 }
+            }
+            if let Provenance::PhpFunction { caller, target } = edge.provenance {
+                update(&mut hasher, b"php_function_caller", "", caller);
+                update(&mut hasher, b"php_function_target", "", target);
             }
             if let Provenance::RustModule { caller, target } = edge.provenance {
                 update(&mut hasher, b"rust_module_caller", "", caller);
@@ -444,7 +453,7 @@ pub(crate) fn evidence_span(mut node: Node<'_>, statement_kinds: &[&str]) -> Spa
 
 pub fn pack_for_path(path: &RepoPath) -> Option<&'static dyn LanguagePack> {
     let extension = path.extension()?.to_str()?;
-    [
+    let pack = [
         &crate::c::C_PACK as &dyn LanguagePack,
         &crate::typescript::TYPESCRIPT as &dyn LanguagePack,
         &crate::go::GO,
@@ -454,5 +463,11 @@ pub fn pack_for_path(path: &RepoPath) -> Option<&'static dyn LanguagePack> {
         &crate::rust::RUST,
     ]
     .into_iter()
-    .find(|pack| pack.extensions().contains(&extension))
+    .find(|pack| pack.extensions().contains(&extension));
+    // Separate validation policy: not part of the reviewed default registry.
+    #[cfg(feature = "experimental-php")]
+    if pack.is_none() && crate::php::PHP_PACK.extensions().contains(&extension) {
+        return Some(&crate::php::PHP_PACK);
+    }
+    pack
 }

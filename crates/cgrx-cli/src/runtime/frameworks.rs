@@ -784,6 +784,7 @@ mod tests {
 
     fn make_document(path: &str, text: &str, span_start: usize) -> crate::runtime::StoredDocument {
         crate::runtime::StoredDocument {
+            php_function_target: None,
             rust_module_target: None,
             rust_self_target: None,
             ts_lexical_target: None,

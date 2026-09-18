@@ -56,7 +56,11 @@ pub(super) fn rebuild(
         .filter(|doc| doc.provenance == "SYNTAX" && is_php_path(&doc.path))
     {
         symbols
-            .entry((document.path.as_str(), document.span_start, document.span_end))
+            .entry((
+                document.path.as_str(),
+                document.span_start,
+                document.span_end,
+            ))
             .and_modify(|entry| *entry = None)
             .or_insert(Some(document));
     }
@@ -73,16 +77,10 @@ pub(super) fn rebuild(
             if path_hashes.get(&call.path) != Some(&proof.source_hash) {
                 return None;
             }
-            let caller = (*symbols.get(&(
-                call.path.as_str(),
-                proof.caller.start,
-                proof.caller.end,
-            ))?)?;
-            let target = (*symbols.get(&(
-                call.path.as_str(),
-                proof.target.start,
-                proof.target.end,
-            ))?)?;
+            let caller =
+                (*symbols.get(&(call.path.as_str(), proof.caller.start, proof.caller.end))?)?;
+            let target =
+                (*symbols.get(&(call.path.as_str(), proof.target.start, proof.target.end))?)?;
             if !consistent_symbol(caller)
                 || !consistent_symbol(target)
                 || !tagged(target, "PHP_GLOBAL_FUNCTION")
@@ -134,7 +132,10 @@ pub(super) fn normalize(stored: &mut StoredIndex) {
     let touches_php = |arc: &StoredArc| {
         php_nodes.contains(&arc.source)
             || php_nodes.contains(&arc.target)
-            || arc.evidence.as_ref().is_some_and(|proof| is_php_path(&proof.path))
+            || arc
+                .evidence
+                .as_ref()
+                .is_some_and(|proof| is_php_path(&proof.path))
     };
     if php_nodes.is_empty() && !stored.arcs.iter().any(touches_php) {
         return;
@@ -144,8 +145,12 @@ pub(super) fn normalize(stored: &mut StoredIndex) {
     // still contains an earlier successful relationship.
     stored
         .arcs
-        .retain(|arc| arc.kind != RelationKind::Calls || !touches_php(arc));
-    stored.arcs.extend(rebuild(&stored.documents, &stored.path_hashes));
-    stored.arcs.sort_by_key(|arc| (arc.source, arc.target, arc.kind, arc.evidence.clone()));
+        .retain(|arc| arc.kind == RelationKind::Contains || !touches_php(arc));
+    stored
+        .arcs
+        .extend(rebuild(&stored.documents, &stored.path_hashes));
+    stored
+        .arcs
+        .sort_by_key(|arc| (arc.source, arc.target, arc.kind, arc.evidence.clone()));
     stored.arcs.dedup();
 }

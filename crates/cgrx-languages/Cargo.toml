@@ -26,3 +26,7 @@ tree-sitter-typescript = "0.23.2"
 [[test]]
 name = "determinism"
 path = "../../tests/determinism.rs"
+
+[features]
+# Validation-only opt-in; never enabled by a default or release build.
+experimental-php = []

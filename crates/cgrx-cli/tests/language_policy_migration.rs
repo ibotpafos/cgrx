@@ -91,7 +91,14 @@ fn revision_28_records_require_reindex_and_retired_extensions_stay_excluded() {
     let fresh = fixture.0.join("fresh");
     let state = fixture.0.join("legacy");
     let expected = Runtime::index(&fixture.root(), &fresh).unwrap();
-    assert_eq!(expected.indexed_files, 1);
+    assert_eq!(
+        expected.indexed_files,
+        if cgrx_languages::EXPERIMENTAL_PHP_ENABLED {
+            7
+        } else {
+            1
+        }
+    );
     let reader = GenerationReader::open_current(&fresh).unwrap();
     let mut stored: Value =
         serde_json::from_slice(&reader.read_segment("nodes.seg").unwrap()).unwrap();
@@ -146,8 +153,9 @@ fn revision_28_records_require_reindex_and_retired_extensions_stay_excluded() {
     );
     for extension in RETIRED {
         let path = format!("old.{extension}");
-        assert!(runtime.coverage().excluded_paths.contains(&path));
-        assert!(current_stored["path_hashes"].get(&path).is_none());
+        let excluded = cgrx_languages::pack_for_path(Path::new(&path)).is_none();
+        assert_eq!(runtime.coverage().excluded_paths.contains(&path), excluded);
+        assert_eq!(current_stored["path_hashes"].get(&path).is_none(), excluded);
         fs::write(fixture.root().join(&path), "changed retired\n").unwrap();
     }
     runtime.refresh(&fixture.root()).unwrap();

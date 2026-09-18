@@ -11,6 +11,7 @@ mod helpers;
 mod index_helpers;
 mod observations;
 mod orient_helpers;
+mod php_resolution;
 mod refactors;
 mod risks;
 mod scan_helpers;
@@ -82,7 +83,13 @@ use cgrx_store::{DeltaOverlay, GenerationReader, GenerationWriter};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-const EXTRACTION_REVISION: u32 = 29;
+// Read the effective dependency policy, not just this crate's feature flag:
+// Cargo may enable cgrx-languages/experimental-php through another workspace member.
+const EXTRACTION_REVISION: u32 = if cgrx_languages::EXPERIMENTAL_PHP_ENABLED {
+    30
+} else {
+    29
+};
 
 const NODES_SEGMENT: &str = "nodes.seg";
 const EDGES_SEGMENT: &str = "edges.seg";
@@ -150,6 +157,8 @@ fn is_zero(value: &usize) -> bool {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 struct StoredDocument {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    php_function_target: Option<Box<php_resolution::PhpFunctionTarget>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     rust_module_target: Option<TsLexicalTarget>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
