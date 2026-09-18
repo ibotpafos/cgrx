@@ -43,7 +43,7 @@ jobs:
           shared-key: "ci-${{ matrix.os }}"
       - run: cargo fmt --all -- --check
       - run: cargo clippy --locked --workspace --all-targets -- -D warnings
-      - run: cargo test --locked --workspace
+      - run: cargo test --locked --workspace --no-fail-fast
       - run: cargo build --locked --release -p cgrx-cli
 
   integration:
