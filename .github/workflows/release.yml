@@ -1,0 +1,97 @@
+name: Release
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Read and validate release metadata
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(tr -d '\r\n' < RELEASE_VERSION)
+          [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-alpha\.[0-9]+$ ]]
+          test -f ".github/release-notes/$version.md"
+          python3 scripts/test_validate_release.py
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Skip an already published release
+        id: existing
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.meta.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            if git ls-remote --exit-code --tags origin "refs/tags/$VERSION" >/dev/null 2>&1; then
+              echo "tag $VERSION already exists without a release" >&2
+              exit 1
+            fi
+          fi
+
+      - name: Install pinned Rust toolchain
+        if: steps.existing.outputs.skip != 'true'
+        run: rustup toolchain install 1.89.0 --profile minimal --target aarch64-apple-darwin
+
+      - name: Build Apple Silicon release
+        if: steps.existing.outputs.skip != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo +1.89.0 build --locked --release -p cgrx-cli --target aarch64-apple-darwin
+          binary=target/aarch64-apple-darwin/release/cgrx
+          file "$binary" | grep -E 'arm64|aarch64'
+          if [[ "$(uname -m)" == "arm64" || "$(uname -m)" == "aarch64" ]]; then
+            "$binary" --version
+          fi
+
+      - name: Package and checksum
+        if: steps.existing.outputs.skip != 'true'
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          asset="cgrx-$VERSION-aarch64-apple-darwin.tar.gz"
+          tar -czf "$asset" -C target/aarch64-apple-darwin/release cgrx
+          shasum -a 256 "$asset" > SHA256SUMS
+          tar -tzf "$asset" | grep -Fx cgrx
+
+      - name: Publish prerelease
+        if: steps.existing.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          asset="cgrx-$VERSION-aarch64-apple-darwin.tar.gz"
+          gh release create "$VERSION" "$asset" SHA256SUMS \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$SHA" \
+            --title "CGRX $VERSION" \
+            --notes-file ".github/release-notes/$VERSION.md" \
+            --prerelease
