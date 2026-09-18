@@ -36,5 +36,13 @@ class LanguageCoverageTests(unittest.TestCase):
         contract=copy.deepcopy(self.contract); contract['languages'][0]['extensions']=['ts']; del contract['languages'][0]['cells']['tsx']; self.invalid(contract)
         contract=copy.deepcopy(self.contract); contract['languages'].pop(); self.invalid(contract)
 
+    def test_registry_mismatch_names_missing_and_extra_modules(self):
+        contract=copy.deepcopy(self.contract)
+        contract['languages'][0]['module']='future_pack'
+        contract['languages'][0]['id']='futurepack'
+        contract['languages'][0]['source']='crates/cgrx-languages/src/typescript.rs'
+        with self.assertRaisesRegex(ValueError, r"missing=\\['typescript'\\].*extra=\\['future_pack'\\]"):
+            coverage.validate_coverage(contract,self.corpus,ROOT)
+
 
 if __name__ == '__main__': unittest.main()
