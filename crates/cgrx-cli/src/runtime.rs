@@ -82,7 +82,7 @@ use cgrx_store::{DeltaOverlay, GenerationReader, GenerationWriter};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-const EXTRACTION_REVISION: u32 = 28;
+const EXTRACTION_REVISION: u32 = 29;
 
 const NODES_SEGMENT: &str = "nodes.seg";
 const EDGES_SEGMENT: &str = "edges.seg";
