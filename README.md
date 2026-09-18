@@ -22,8 +22,10 @@ explicitly on each request. No embedding service, hosted index or API key.
 - Snapshot-bound architecture projection with packages, proven boundaries,
   hotspots, package cycles and deterministic weighted communities.
 - Incremental working-tree refresh, isolated repo identities and writer locks.
-- Rust, Go, Java, TypeScript/JavaScript/TSX and Python parsing. Resolution depth varies
-  by language; this does not replace a compiler or language server.
+- Seven reviewed production packs: Rust, Go, Java, TypeScript/JavaScript/TSX, Python, C and Kotlin.
+  Resolution depth varies by language; this does not replace a compiler or language server.
+- PHP validation is available behind the explicit `experimental-php` build feature and stays
+  outside the production language contract until its reviewed evidence is promoted.
 
 ## Roadmap
 
@@ -45,7 +47,7 @@ roadmap. The four phases toward competitive parity are:
 ## Install with one command
 
 ~~~sh
-curl -fsSL https://raw.githubusercontent.com/ibotpafos/cgrx/v0.1.0-alpha.7/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/ibotpafos/cgrx/v0.1.0-alpha.8/install.sh | sh
 ~~~
 
 Installs to `$HOME/.local/bin/cgrx`, without sudo. Apple Silicon macOS downloads
@@ -78,7 +80,7 @@ Native Windows is not supported.
 ~~~sh
 git clone https://github.com/ibotpafos/cgrx.git
 cd cgrx
-git checkout v0.1.0-alpha.7
+git checkout v0.1.0-alpha.8
 cargo install --locked --path crates/cgrx-cli
 ~~~
 
