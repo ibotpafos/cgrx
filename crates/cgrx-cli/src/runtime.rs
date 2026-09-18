@@ -86,7 +86,7 @@ use serde_json::{Value, json};
 // Read the effective dependency policy, not just this crate's feature flag:
 // Cargo may enable cgrx-languages/experimental-php through another workspace member.
 const EXTRACTION_REVISION: u32 = if cgrx_languages::EXPERIMENTAL_PHP_ENABLED {
-    30
+    31
 } else {
     29
 };
@@ -159,6 +159,8 @@ fn is_zero(value: &usize) -> bool {
 struct StoredDocument {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     php_function_target: Option<Box<php_resolution::PhpFunctionTarget>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    php_type_target: Option<Box<php_resolution::PhpTypeTarget>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     rust_module_target: Option<TsLexicalTarget>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

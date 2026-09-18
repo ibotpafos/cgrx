@@ -29,6 +29,12 @@ pub enum RelationKind {
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum Provenance {
     Syntax,
+    /// Same-file class-like type usage, optionally bound through an exact use clause.
+    PhpType {
+        owner: Span,
+        target: Span,
+        import: Option<Span>,
+    },
     /// Exact names of a PHP caller and its unconditional same-file global target.
     PhpFunction {
         caller: Span,
@@ -231,6 +237,18 @@ impl Extraction {
                     (b"rust_self_target", target),
                 ] {
                     update(&mut hasher, kind, "", span);
+                }
+            }
+            if let Provenance::PhpType {
+                owner,
+                target,
+                import,
+            } = edge.provenance
+            {
+                update(&mut hasher, b"php_type_owner", "", owner);
+                update(&mut hasher, b"php_type_target", "", target);
+                if let Some(span) = import {
+                    update(&mut hasher, b"php_type_import", "", span);
                 }
             }
             if let Provenance::PhpFunction { caller, target } = edge.provenance {

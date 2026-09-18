@@ -381,7 +381,7 @@ fn ts_lexical_metadata_is_compact_and_proofs_are_present_only_on_exact_calls() {
     assert_eq!(
         stored["extraction_revision"],
         if cgrx_languages::EXPERIMENTAL_PHP_ENABLED {
-            30
+            31
         } else {
             29
         }

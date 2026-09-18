@@ -378,7 +378,7 @@ fn go_field_proof_metadata_binds_caller_field_types_and_target_and_is_optional()
     assert_eq!(
         stored["extraction_revision"],
         if cgrx_languages::EXPERIMENTAL_PHP_ENABLED {
-            30
+            31
         } else {
             29
         }

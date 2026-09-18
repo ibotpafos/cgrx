@@ -16,7 +16,7 @@ use super::extraction::extract_sources_parallel;
 use super::git_helpers::{GitBlobBatch, parse_committed_tree};
 use super::git_helpers::{git_bytes, git_text, store_writer_error};
 use super::helpers::generation_id;
-use super::scan_helpers::refresh_qualified_call_gaps;
+use super::scan_helpers::refresh_proof_gaps;
 use super::ts_helpers::{is_ts_inventory_path, is_ts_resolution_config, scan_ts_inventory};
 use super::{
     EDGES_SEGMENT, EXTRACTION_REVISION, GenerationWriter, IndexReport, NODES_SEGMENT, RepoSnapshot,
@@ -277,7 +277,7 @@ pub(super) fn index_source(
             ..CoverageMetadata::default()
         },
     };
-    refresh_qualified_call_gaps(&mut stored);
+    refresh_proof_gaps(&mut stored);
     let nodes = serde_json::to_vec(&stored)
         .map_err(|error| RuntimeError::new("serialize", error.to_string()))?;
     let segments: [(&str, &[u8]); 3] = [
