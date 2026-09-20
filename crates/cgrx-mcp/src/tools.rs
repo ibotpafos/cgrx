@@ -3167,7 +3167,11 @@ mod openai_metadata_tests {
             wire_structured_result("check_index_coverage", &coverage, &coverage_visible);
         assert_eq!(coverage_wire["snapshot"], coverage["snapshot"]);
         assert!(coverage_wire["rows"].is_array());
-        assert!(\n            !serde_json::to_string(&coverage_wire)\n                .unwrap()\n                .contains(&"y".repeat(1_000))\n        );
+        assert!(
+            !serde_json::to_string(&coverage_wire)
+                .unwrap()
+                .contains(&"y".repeat(1_000))
+        );
 
         let search = json!({"snapshot":snapshot,"results":[]});
         let search_visible = model_visible_result("search_graph", &search);
