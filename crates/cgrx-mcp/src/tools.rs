@@ -653,9 +653,10 @@ impl Server {
             }
         };
         let visible = model_visible_result(&call.name, &structured);
-        let compact_wire = self.usage_log.as_ref().is_some_and(|usage| {
-            matches!(usage.client.as_str(), "codex" | "opencode")
-        });
+        let compact_wire = self
+            .usage_log
+            .as_ref()
+            .is_some_and(|usage| matches!(usage.client.as_str(), "codex" | "opencode"));
         let wire_structured =
             wire_structured_result(&call.name, &structured, &visible, compact_wire);
         Ok(json!({
@@ -3177,12 +3178,7 @@ mod openai_metadata_tests {
         });
         let coverage_visible = model_visible_result("check_index_coverage", &coverage);
         let coverage_wire =
-            wire_structured_result(
-                "check_index_coverage",
-                &coverage,
-                &coverage_visible,
-                true,
-            );
+            wire_structured_result("check_index_coverage", &coverage, &coverage_visible, true);
         assert_eq!(coverage_wire["snapshot"], coverage["snapshot"]);
         assert!(coverage_wire["rows"].is_array());
         assert!(
