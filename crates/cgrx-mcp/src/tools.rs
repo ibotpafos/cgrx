@@ -653,7 +653,11 @@ impl Server {
             }
         };
         let visible = model_visible_result(&call.name, &structured);
-        let wire_structured = wire_structured_result(&call.name, &structured, &visible);
+        let compact_wire = self.usage_log.as_ref().is_some_and(|usage| {
+            matches!(usage.client.as_str(), "codex" | "opencode")
+        });
+        let wire_structured =
+            wire_structured_result(&call.name, &structured, &visible, compact_wire);
         Ok(json!({
             "content": [{"type": "text", "text": serde_json::to_string(&visible).expect("tool result serializes")}],
             "structuredContent": wire_structured,
@@ -1118,8 +1122,13 @@ impl Server {
     }
 }
 
-fn wire_structured_result(tool: &str, structured: &Value, visible: &Value) -> Value {
-    if !matches!(tool, "orient" | "check_index_coverage") {
+fn wire_structured_result(
+    tool: &str,
+    structured: &Value,
+    visible: &Value,
+    compact_wire: bool,
+) -> Value {
+    if !compact_wire || !matches!(tool, "orient" | "check_index_coverage") {
         return structured.clone();
     }
     let mut compact = visible.clone();
@@ -3142,12 +3151,16 @@ mod openai_metadata_tests {
             "next_handles":[]
         });
         let orient_visible = model_visible_result("orient", &orient);
-        let orient_wire = wire_structured_result("orient", &orient, &orient_visible);
+        let orient_wire = wire_structured_result("orient", &orient, &orient_visible, true);
         assert_eq!(orient_wire["snapshot"], orient["snapshot"]);
         assert!(orient_wire.get("compiled").is_none());
         assert!(
             serde_json::to_vec(&orient_wire).unwrap().len()
                 < serde_json::to_vec(&orient).unwrap().len() / 10
+        );
+        assert_eq!(
+            wire_structured_result("orient", &orient, &orient_visible, false),
+            orient
         );
 
         let coverage = json!({
@@ -3164,7 +3177,12 @@ mod openai_metadata_tests {
         });
         let coverage_visible = model_visible_result("check_index_coverage", &coverage);
         let coverage_wire =
-            wire_structured_result("check_index_coverage", &coverage, &coverage_visible);
+            wire_structured_result(
+                "check_index_coverage",
+                &coverage,
+                &coverage_visible,
+                true,
+            );
         assert_eq!(coverage_wire["snapshot"], coverage["snapshot"]);
         assert!(coverage_wire["rows"].is_array());
         assert!(
@@ -3176,7 +3194,7 @@ mod openai_metadata_tests {
         let search = json!({"snapshot":snapshot,"results":[]});
         let search_visible = model_visible_result("search_graph", &search);
         assert_eq!(
-            wire_structured_result("search_graph", &search, &search_visible),
+            wire_structured_result("search_graph", &search, &search_visible, true),
             search
         );
     }
