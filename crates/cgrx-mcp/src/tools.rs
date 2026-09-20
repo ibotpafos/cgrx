@@ -2611,97 +2611,10 @@ fn model_visible_schema() -> Value {
             {"name":"memory_recall","description":"Recall","inputSchema":{"type":"object","properties":{"query":{"type":"string"},"min_confidence":{"type":"integer","minimum":0,"maximum":1000,"default":0},"privacy_tag":{"type":"string"},"revision":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":50,"default":20}}}},
             {"name":"check_security_gates","description":"Snapshot-bound security gate over working-tree secrets, Cargo.lock dependency hygiene and license allowlist with explicit PASS/WARN/FAIL/INCONCLUSIVE verdict; no LLM executed.","inputSchema":{"type":"object","properties":{"fail_on":{"enum":["error","warning","none"],"default":"error"},"max_secret_findings":{"type":"integer","minimum":0,"maximum":10000,"default":0},"max_dependency_findings":{"type":"integer","minimum":0,"maximum":10000,"default":0},"max_license_findings":{"type":"integer","minimum":0,"maximum":10000,"default":0},"allowlist_paths":{"type":"array","items":{"type":"string"}},"allowlist_licenses":{"type":"array","items":{"type":"string"}}}}}
         ]);
-    let metadata = [
-        (
-            "Scan change risks",
-            "Find possible broken calls, candidate tests and deterministic parallel agent missions for working-tree changes versus HEAD.",
-        ),
-        (
-            "Check change quality gates",
-            "Evaluate snapshot-bound change findings, mission blockers and graph coverage with explicit pass, warning, fail or inconclusive semantics.",
-        ),
-        (
-            "Check repository quality gates",
-            "Evaluate proven repository architecture with explicit cycle, coupling, unresolved-dependency and coverage policies.",
-        ),
-        (
-            "Import runtime evidence",
-            "Import bounded OTLP/JSON or CGRX NDJSON from an approved local path without accepting inline trace bodies.",
-        ),
-        (
-            "Orient on a task",
-            "Retrieve task-relevant evidence within a token budget; keep returned handles for follow-up.",
-        ),
-        (
-            "Search symbols",
-            "Find code symbols by name, or opt into body search and language filtering, before tracing calls or reading definitions.",
-        ),
-        (
-            "Outline a file",
-            "List indexed symbols and definition spans in source order without returning their bodies.",
-        ),
-        (
-            "Map architecture",
-            "Summarize proven architecture, including weighted package and symbol communities with representatives.",
-        ),
-        (
-            "Trace calls",
-            "Trace callers or callees of a discovered symbol; use path to resolve ambiguity.",
-        ),
-        (
-            "Find usages",
-            "List proven direct or transitive incoming call or implementation sites with hop, resolver evidence and coverage gaps.",
-        ),
-        (
-            "Suggest refactors",
-            "Find structurally similar functions and preview a snapshot-bound hypothetical extract-helper graph delta.",
-        ),
-        (
-            "Read source",
-            "Read the definition of a discovered symbol; use path when names collide.",
-        ),
-        (
-            "Explain symbol",
-            "Explain a symbol with its definition, callers, callees, and usages in one call.",
-        ),
-        (
-            "Check coverage",
-            "Check evidence paths or scopes before relying on graph results; gaps require source inspection.",
-        ),
-        (
-            "Check framework gates",
-            "Detect Django, FastAPI and Express usage within scope and evaluate a snapshot-bound, model-free gate with explicit pass, warning, fail or inconclusive semantics.",
-        ),
-        (
-            "Expand context",
-            "Retrieve more evidence using a returned handle from the same repository and server session.",
-        ),
-        (
-            "Check index status",
-            "Check repository revision, index freshness and gaps before code discovery.",
-        ),
-        (
-            "Record decision",
-            "Persist a revision-pinned decision fact with confidence, provenance and optional TTL; identical facts replay as duplicates without LLM calls.",
-        ),
-        (
-            "Recall decisions",
-            "Recall non-expired decision facts with bounded deterministic ranking by confidence; no LLM executed.",
-        ),
-        (
-            "Check security gates",
-            "Scan working-tree secrets, Cargo.lock dependency hygiene and license allowlist within the repository and evaluate a snapshot-bound, model-free gate with explicit pass, warning, fail or inconclusive semantics.",
-        ),
-        (
-            "Explain symbol",
-            "Explain a symbol with its definition, callers, callees, and usages in one call.",
-        ),
-        (
-            "Detect dead code",
-            "Find symbols with zero incoming CALLS arcs in the code graph.",
-        ),
-    ];
-    for (tool, (title, description)) in tools.as_array_mut().unwrap().iter_mut().zip(metadata) {
+    for tool in tools.as_array_mut().unwrap() {
+        let name = tool["name"].as_str().expect("tool name is static");
+        let (title, description) = tool_metadata(name)
+            .unwrap_or_else(|| panic!("missing OpenAI metadata for tool {name}"));
         tool["title"] = json!(title);
         tool["description"] = json!(description);
         // All managed calls may refresh persistent indexes and session state.
@@ -2710,8 +2623,104 @@ fn model_visible_schema() -> Value {
             json!({"readOnlyHint":false,"destructiveHint":false,"openWorldHint":false});
         tool["outputSchema"] = json!({"type":"object","additionalProperties":true});
     }
-    tools[14]["inputSchema"]["properties"]["paths_or_scope"] = path_or_scope;
+    let status = tools
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|tool| tool["name"] == "status")
+        .expect("status tool is static");
+    status["inputSchema"]["properties"]["paths_or_scope"] = path_or_scope;
     tools
+}
+
+fn tool_metadata(name: &str) -> Option<(&'static str, &'static str)> {
+    Some(match name {
+        "scan_risks" => (
+            "Scan change risks",
+            "Find possible broken calls, candidate tests and deterministic parallel agent missions for working-tree changes versus HEAD.",
+        ),
+        "check_change_gates" => (
+            "Check change quality gates",
+            "Evaluate snapshot-bound change findings, mission blockers and graph coverage with explicit pass, warning, fail or inconclusive semantics.",
+        ),
+        "check_repository_gates" => (
+            "Check repository quality gates",
+            "Evaluate proven repository architecture with explicit cycle, coupling, unresolved-dependency and coverage policies.",
+        ),
+        "ingest_runtime_evidence" => (
+            "Import runtime evidence",
+            "Import bounded OTLP/JSON or CGRX NDJSON from an approved local path without accepting inline trace bodies.",
+        ),
+        "orient" => (
+            "Orient on a task",
+            "Retrieve task-relevant evidence within a token budget; keep returned handles for follow-up.",
+        ),
+        "search_graph" => (
+            "Search symbols",
+            "Find code symbols by name, or opt into body search and language filtering, before tracing calls or reading definitions.",
+        ),
+        "get_outline" => (
+            "Outline a file",
+            "List indexed symbols and definition spans in source order without returning their bodies.",
+        ),
+        "get_architecture" => (
+            "Map architecture",
+            "Summarize proven architecture, including weighted package and symbol communities with representatives.",
+        ),
+        "trace_path" => (
+            "Trace calls",
+            "Trace callers or callees of a discovered symbol; use path to resolve ambiguity.",
+        ),
+        "find_usages" => (
+            "Find usages",
+            "List proven direct or transitive incoming call or implementation sites with hop, resolver evidence and coverage gaps.",
+        ),
+        "suggest_refactors" => (
+            "Suggest refactors",
+            "Find structurally similar functions and preview a snapshot-bound hypothetical extract-helper graph delta.",
+        ),
+        "get_code_snippet" => (
+            "Read source",
+            "Read the definition of a discovered symbol; use path when names collide.",
+        ),
+        "explain_symbol" => (
+            "Explain symbol",
+            "Explain a symbol with its definition, callers, callees, and usages in one call.",
+        ),
+        "detect_dead_code" => (
+            "Detect dead code",
+            "Find symbols with zero incoming CALLS arcs in the code graph.",
+        ),
+        "check_index_coverage" => (
+            "Check coverage",
+            "Check evidence paths or scopes before relying on graph results; gaps require source inspection.",
+        ),
+        "check_framework_gates" => (
+            "Check framework gates",
+            "Detect Django, FastAPI and Express usage within scope and evaluate a snapshot-bound, model-free gate with explicit pass, warning, fail or inconclusive semantics.",
+        ),
+        "expand" => (
+            "Expand context",
+            "Retrieve more evidence using a returned handle from the same repository and server session.",
+        ),
+        "status" => (
+            "Check index status",
+            "Check repository revision, index freshness and gaps before code discovery.",
+        ),
+        "memory_record" => (
+            "Record decision",
+            "Persist a revision-pinned decision fact with confidence, provenance and optional TTL; identical facts replay as duplicates without LLM calls.",
+        ),
+        "memory_recall" => (
+            "Recall decisions",
+            "Recall non-expired decision facts with bounded deterministic ranking by confidence; no LLM executed.",
+        ),
+        "check_security_gates" => (
+            "Check security gates",
+            "Scan working-tree secrets, Cargo.lock dependency hygiene and license allowlist within the repository and evaluate a snapshot-bound, model-free gate with explicit pass, warning, fail or inconclusive semantics.",
+        ),
+        _ => return None,
+    })
 }
 
 fn bounded_scope_schema() -> Value {
@@ -2815,7 +2824,43 @@ mod openai_metadata_tests {
             .iter()
             .find(|tool| tool["name"] == "status")
             .unwrap();
+        for (name, title) in [
+            ("detect_dead_code", "Detect dead code"),
+            ("check_index_coverage", "Check coverage"),
+            ("check_framework_gates", "Check framework gates"),
+            ("expand", "Expand context"),
+            ("status", "Check index status"),
+            ("memory_record", "Record decision"),
+            ("memory_recall", "Recall decisions"),
+            ("check_security_gates", "Check security gates"),
+        ] {
+            let tool = tools
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|tool| tool["name"] == name)
+                .unwrap();
+            assert_eq!(tool["title"], title);
+        }
         assert!(status["inputSchema"].get("required").is_none());
+        assert_eq!(
+            status["inputSchema"]["properties"]["paths_or_scope"]["anyOf"]
+                .as_array()
+                .unwrap()
+                .len(),
+            3
+        );
+        let coverage = tools
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|tool| tool["name"] == "check_index_coverage")
+            .unwrap();
+        assert!(
+            coverage["inputSchema"]["properties"]
+                .get("paths_or_scope")
+                .is_none()
+        );
         assert_eq!(
             serde_json::from_value::<StatusArguments>(json!({}))
                 .unwrap()

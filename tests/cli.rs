@@ -246,7 +246,7 @@ fn usage_report_aggregates_cold_warm_metadata_without_leaking_payloads() {
         concat!(
             "{\"event\":\"tool_call\",\"timestamp_ms\":1,\"client\":\"codex\",\"session\":\"c1\",\"tool\":\"status\",\"ok\":true,\"latency_us\":1000,\"request_bytes\":10,\"response_bytes\":20,\"query\":\"SECRET_QUERY\",\"arguments\":{\"path\":\"/secret/repo\"}}\n",
             "{\"event\":\"tool_call\",\"timestamp_ms\":2,\"client\":\"codex\",\"session\":\"c1\",\"tool\":\"search_graph\",\"ok\":true,\"latency_us\":3000,\"request_bytes\":30,\"response_bytes\":40}\n",
-            "{\"event\":\"tool_call\",\"timestamp_ms\":3,\"client\":\"opencode\",\"session\":\"o1\",\"tool\":\"status\",\"ok\":false,\"latency_us\":2000,\"request_bytes\":50,\"response_bytes\":60}\n",
+            "{\"event\":\"tool_call\",\"timestamp_ms\":3,\"client\":\"opencode\",\"session\":\"o1\",\"tool\":\"status\",\"ok\":false,\"error_code\":\"cgrx.invalid_arguments\",\"latency_us\":2000,\"request_bytes\":50,\"response_bytes\":60}\n",
             "{\"event\":\"tool_call\",\"timestamp_ms\":4,\"client\":\"opencode\",\"session\":\"o1\",\"tool\":\"status\",\"ok\":true,\"latency_us\":4000,\"request_bytes\":70,\"response_bytes\":80}\n",
             "{\"event\":\"startup\",\"query\":\"ANOTHER_SECRET\"}\n",
         ),
@@ -276,6 +276,10 @@ fn usage_report_aggregates_cold_warm_metadata_without_leaking_payloads() {
     assert_eq!(report["totals"]["ok"], 3);
     assert_eq!(report["totals"]["request_bytes"], 160);
     assert_eq!(report["totals"]["response_bytes"], 200);
+    assert_eq!(
+        report["routing"]["error_counts"]["cgrx.invalid_arguments"],
+        1
+    );
     assert_eq!(report["phases"]["cold"]["calls"], 2);
     assert_eq!(report["phases"]["cold"]["latency_us"]["p50"], 1000);
     assert_eq!(report["phases"]["cold"]["latency_us"]["p95"], 2000);
@@ -287,6 +291,72 @@ fn usage_report_aggregates_cold_warm_metadata_without_leaking_payloads() {
     assert_eq!(report["groups"][0]["session"], "c1");
     assert_eq!(report["groups"][0]["tool"], "search_graph");
     assert_eq!(report["groups"][0]["ok"], true);
+    assert_eq!(
+        report["tools"]["status"]["error_counts"]["cgrx.invalid_arguments"],
+        1
+    );
+    assert_eq!(
+        report["clients"]["opencode"]["error_counts"]["cgrx.invalid_arguments"],
+        1
+    );
+}
+
+#[test]
+fn usage_report_directory_skips_probes_and_tolerates_malformed_rows() {
+    let directory = TestDirectory::new("usage-report-tree");
+    let regular = directory.path().join("release/codex");
+    let probes = directory.path().join("release/probes/codex");
+    fs::create_dir_all(&regular).expect("create regular usage directory");
+    fs::create_dir_all(&probes).expect("create probe usage directory");
+    fs::write(
+        regular.join("regular.jsonl"),
+        concat!(
+            "{\"event\":\"tool_call\",\"timestamp_ms\":1,\"client\":\"codex\",\"session\":\"regular\",\"tool\":\"status\",\"ok\":true,\"latency_us\":10,\"request_bytes\":1,\"response_bytes\":2}\n",
+            "malformed\n"
+        ),
+    )
+    .expect("write regular usage");
+    fs::write(
+        probes.join("probe.jsonl"),
+        "{\"event\":\"tool_call\",\"timestamp_ms\":2,\"client\":\"probe:codex\",\"session\":\"probe\",\"tool\":\"status\",\"ok\":true,\"latency_us\":20,\"request_bytes\":1,\"response_bytes\":2}\n",
+    )
+    .expect("write probe usage");
+
+    let output = cli()
+        .args(["usage-report", "--log-dir"])
+        .arg(directory.path())
+        .arg("--json")
+        .output()
+        .expect("recursive usage report executes");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("default report is JSON");
+    assert_eq!(report["events"], 1);
+    assert_eq!(report["ignored_events"], 1);
+    assert_eq!(report["inputs"]["files"], 1);
+    assert_eq!(report["inputs"]["include_probes"], false);
+
+    let output = cli()
+        .args(["usage-report", "--log-dir"])
+        .arg(directory.path())
+        .args(["--json", "--include-probes"])
+        .output()
+        .expect("usage report with probes executes");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("probe report is JSON");
+    assert_eq!(report["events"], 2);
+    assert_eq!(report["ignored_events"], 1);
+    assert_eq!(report["inputs"]["files"], 2);
+    assert_eq!(report["inputs"]["include_probes"], true);
 }
 
 #[test]
