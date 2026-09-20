@@ -378,7 +378,7 @@ fn bench(args: &[String]) -> Result<(), String> {
 
 fn collect_usage_logs(root: &Path) -> Result<Vec<PathBuf>, String> {
     if !root.is_dir() {
-        return Err(format!("usage log directory does not exist: {}", root.display()));
+        return Err(format!(\n            "usage log directory does not exist: {}",\n            root.display()\n        ));
     }
     let mut pending = vec![root.to_path_buf()];
     let mut logs = Vec::new();
@@ -399,7 +399,7 @@ fn collect_usage_logs(root: &Path) -> Result<Vec<PathBuf>, String> {
     }
     logs.sort();
     if logs.is_empty() {
-        return Err(format!("no .jsonl usage logs found under {}", root.display()));
+        return Err(format!(\n            "no .jsonl usage logs found under {}",\n            root.display()\n        ));
     }
     Ok(logs)
 }
