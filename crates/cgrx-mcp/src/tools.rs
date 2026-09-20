@@ -653,9 +653,10 @@ impl Server {
             }
         };
         let visible = model_visible_result(&call.name, &structured);
+        let wire_structured = wire_structured_result(&call.name, &structured, &visible);
         Ok(json!({
             "content": [{"type": "text", "text": serde_json::to_string(&visible).expect("tool result serializes")}],
-            "structuredContent": structured,
+            "structuredContent": wire_structured,
             "isError": false
         }))
     }
@@ -1115,6 +1116,17 @@ impl Server {
             "llm_used": false,
         }))
     }
+}
+
+fn wire_structured_result(tool: &str, structured: &Value, visible: &Value) -> Value {
+    if !matches!(tool, "orient" | "check_index_coverage") {
+        return structured.clone();
+    }
+    let mut compact = visible.clone();
+    if let (Some(object), Some(snapshot)) = (compact.as_object_mut(), structured.get("snapshot")) {
+        object.insert("snapshot".to_owned(), snapshot.clone());
+    }
+    compact
 }
 
 fn model_visible_result(tool: &str, structured: &Value) -> Value {
@@ -3077,6 +3089,66 @@ mod openai_metadata_tests {
             encoded.len() < 4_000,
             "compact payload bytes: {}",
             encoded.len()
+        );
+    }
+
+    #[test]
+    fn high_volume_wire_payloads_drop_duplicate_structured_detail() {
+        let snapshot = json!({
+            "repo_revision":"abc123",
+            "working_tree_digest":"00",
+            "graph_generation":9
+        });
+        let orient = json!({
+            "snapshot":snapshot,
+            "compiled":{
+                "status":"SATISFIED",
+                "packed":{"records":[{
+                    "path":"src/lib.rs",
+                    "span_start":1,
+                    "span_end":2,
+                    "text":"fn tiny() {}".repeat(64),
+                    "provenance":"SYNTAX"
+                }]},
+                "obligations":{"uncertainties":[]},
+                "residual":[],
+                "proof":"x".repeat(200_000)
+            },
+            "next_handles":[]
+        });
+        let orient_visible = model_visible_result("orient", &orient);
+        let orient_wire = wire_structured_result("orient", &orient, &orient_visible);
+        assert_eq!(orient_wire["snapshot"], orient["snapshot"]);
+        assert!(orient_wire.get("compiled").is_none());
+        assert!(
+            serde_json::to_vec(&orient_wire).unwrap().len()
+                < serde_json::to_vec(&orient).unwrap().len() / 10
+        );
+
+        let coverage = json!({
+            "snapshot":snapshot,
+            "paths":[{
+                "path":"src/lib.rs",
+                "status":"INDEXED",
+                "gap_count":0,
+                "details":"y".repeat(100_000)
+            }],
+            "scopes":[],
+            "summary":{"indexed":1},
+            "scope_summary":{}
+        });
+        let coverage_visible = model_visible_result("check_index_coverage", &coverage);
+        let coverage_wire =
+            wire_structured_result("check_index_coverage", &coverage, &coverage_visible);
+        assert_eq!(coverage_wire["snapshot"], coverage["snapshot"]);
+        assert!(coverage_wire["rows"].is_array());
+        assert!(!serde_json::to_string(&coverage_wire).unwrap().contains(&"y".repeat(1_000)));
+
+        let search = json!({"snapshot":snapshot,"results":[]});
+        let search_visible = model_visible_result("search_graph", &search);
+        assert_eq!(
+            wire_structured_result("search_graph", &search, &search_visible),
+            search
         );
     }
 
