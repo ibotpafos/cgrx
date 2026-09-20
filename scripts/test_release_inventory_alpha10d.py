@@ -6,7 +6,8 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class ReleaseInventoryAlpha10D(unittest.TestCase):
     def test_release_inventory(self):
-        runpy.run_path(str(ROOT / "scripts" / "release_inventory_check.py"), run_name="__main__")
+        module = runpy.run_path(str(ROOT / "scripts" / "release_inventory_check.py"))
+        self.assertEqual(module["main"](), 0)
 
 if __name__ == "__main__":
     unittest.main()
