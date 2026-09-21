@@ -34,6 +34,9 @@ pub struct ScoreComponents {
     pub bm25: u64,
     pub graph: u64,
     pub structural: u64,
+    /// Optional local semantic reranker contribution. Retrieval itself leaves
+    /// this at zero; callers may fill it without changing graph evidence.
+    pub semantic: u64,
     pub rrf: u64,
 }
 

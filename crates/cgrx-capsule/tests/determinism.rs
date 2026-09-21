@@ -20,6 +20,7 @@ mod common {
                     bm25: id * 20,
                     graph: id * 30,
                     structural: id * 40,
+                    semantic: 0,
                     rrf: id * 100,
                 },
                 selection_reason: "fixture".to_owned(),

@@ -17,6 +17,7 @@ fn candidate(id: u64, name: &str, path: &str, score: u64) -> Candidate {
             bm25: score / 2,
             graph: score / 3,
             structural: 0,
+            semantic: 0,
             rrf: score,
         },
         selection_reason: "test".to_owned(),
@@ -160,5 +161,37 @@ fn explicitly_required_disconnected_evidence_is_kept_when_enabled() {
             .map(|record| record.node_id)
             .collect::<Vec<_>>(),
         vec![1, 2]
+    );
+}
+
+#[test]
+fn semantic_score_breaks_an_otherwise_equal_candidate_choice() {
+    let tokenizer = Tokenizer::o200k_base().unwrap();
+    let first = candidate(1, "first", "src/main.rs", 0);
+    let mut second = candidate(2, "second", "src/main.rs", 0);
+    second.scores.semantic = 9_000;
+    let candidates = CandidateSet {
+        candidates: vec![first, second],
+        uncertainties: Vec::new(),
+    };
+    let records = vec![record(1, "src/main.rs", &[]), record(2, "src/main.rs", &[])];
+
+    let result = EvidencePacker::pack(PackInput {
+        candidates: &candidates,
+        records,
+        obligations: Vec::new(),
+        required_anchors: Vec::new(),
+        allow_disconnected_required_anchors: false,
+        tokenizer: &tokenizer,
+        budget: 800,
+    });
+
+    assert_eq!(
+        result
+            .records
+            .iter()
+            .map(|record| record.node_id)
+            .collect::<Vec<_>>(),
+        vec![2]
     );
 }

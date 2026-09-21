@@ -13,6 +13,8 @@ explicitly on each request. No embedding service, hosted index or API key.
 
 - Symbol search, exact source definitions and bounded caller/callee traces.
 - Task-sized context with token budgets and follow-up retrieval handles.
+- Optional local semantic reranking of already-discovered candidates, with
+  deterministic fallback and no authority over graph evidence or coverage gaps.
 - Coverage reporting: unresolved relationships remain unknown, not absent.
 - Candidate relationship-risk detection for working-tree changes.
 - Deterministic change missions that group impacts, order conflicting work and
