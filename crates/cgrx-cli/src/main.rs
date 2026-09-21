@@ -209,7 +209,7 @@ fn read_observation_input(path: &str) -> Result<Vec<u8>, String> {
 }
 
 fn validate_flags(args: &[String], allowed: &[&str]) -> Result<(), String> {
-    let boolean = ["--json", "--dry-run", "--apply"];
+    let boolean = ["--json", "--dry-run", "--apply", "--include-probes"];
     let mut cursor = 0;
     while cursor < args.len() {
         let flag = args[cursor].as_str();
@@ -254,6 +254,7 @@ struct UsageEvent {
 struct UsageBucket {
     calls: u64,
     ok: u64,
+    error_counts: BTreeMap<String, u64>,
     cold_calls: u64,
     warm_calls: u64,
     latency_us: Vec<u64>,
@@ -265,6 +266,13 @@ impl UsageBucket {
     fn record(&mut self, event: &UsageEvent, cold: bool) {
         self.calls = self.calls.saturating_add(1);
         self.ok = self.ok.saturating_add(u64::from(event.ok));
+        if let Some(code) = event
+            .error_code
+            .as_deref()
+            .filter(|code| valid_usage_error_code(code))
+        {
+            *self.error_counts.entry(code.to_owned()).or_default() += 1;
+        }
         if cold {
             self.cold_calls = self.cold_calls.saturating_add(1);
         } else {
@@ -279,6 +287,8 @@ impl UsageBucket {
         json!({
             "calls":self.calls,
             "ok":self.ok,
+            "errors":self.calls.saturating_sub(self.ok),
+            "error_counts":self.error_counts,
             "cold_calls":self.cold_calls,
             "warm_calls":self.warm_calls,
             "latency_us":sample_summary(&self.latency_us),
@@ -286,6 +296,14 @@ impl UsageBucket {
             "response_bytes":sample_summary(&self.response_bytes)
         })
     }
+}
+
+fn valid_usage_error_code(code: &str) -> bool {
+    code.starts_with("cgrx.")
+        && code.len() <= 64
+        && code
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'.' || byte == b'_')
 }
 
 fn sample_summary(samples: &[u64]) -> Value {
@@ -375,34 +393,90 @@ fn bench(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
+fn collect_usage_logs(root: &Path, include_probes: bool) -> Result<Vec<PathBuf>, String> {
+    if !root.is_dir() {
+        return Err(format!(
+            "usage log directory does not exist: {}",
+            root.display()
+        ));
+    }
+    let mut pending = vec![root.to_path_buf()];
+    let mut logs = Vec::new();
+    while let Some(directory) = pending.pop() {
+        let entries = fs::read_dir(&directory).map_err(|error| error.to_string())?;
+        for entry in entries {
+            let entry = entry.map_err(|error| error.to_string())?;
+            let file_type = entry.file_type().map_err(|error| error.to_string())?;
+            let path = entry.path();
+            if file_type.is_dir() {
+                if include_probes || entry.file_name() != "probes" {
+                    pending.push(path);
+                }
+            } else if file_type.is_file()
+                && path.extension().and_then(|extension| extension.to_str()) == Some("jsonl")
+            {
+                logs.push(path);
+            }
+        }
+    }
+    logs.sort();
+    if logs.is_empty() {
+        return Err(format!(
+            "no .jsonl usage logs found under {}",
+            root.display()
+        ));
+    }
+    Ok(logs)
+}
+
 fn usage_report(args: &[String]) -> Result<(), String> {
+    validate_flags(args, &["--json", "--log", "--log-dir", "--include-probes"])?;
     if !args.iter().any(|argument| argument == "--json") {
         return Err("usage-report requires --json".to_owned());
     }
-    let path = Path::new(flag(args, "--log")?);
-    let contents = fs::read_to_string(path).map_err(|error| error.to_string())?;
+    let log = optional_flag(args, "--log");
+    let log_dir = optional_flag(args, "--log-dir");
+    let include_probes = args.iter().any(|argument| argument == "--include-probes");
+    if log.is_some() == log_dir.is_some() {
+        return Err("usage-report requires exactly one of --log or --log-dir".to_owned());
+    }
+    let paths = match (log, log_dir) {
+        (Some(path), None) => vec![PathBuf::from(path)],
+        (None, Some(root)) => collect_usage_logs(Path::new(root), include_probes)?,
+        _ => unreachable!("validated exactly one usage input"),
+    };
+
     let mut events = Vec::new();
     let mut ignored_events = 0_u64;
-    for (line_index, line) in contents.lines().enumerate() {
-        if line.trim().is_empty() {
-            continue;
+    for (file_index, path) in paths.iter().enumerate() {
+        let contents = fs::read_to_string(path).map_err(|error| error.to_string())?;
+        for (line_index, line) in contents.lines().enumerate() {
+            if line.trim().is_empty() {
+                continue;
+            }
+            let Ok(kind) = serde_json::from_str::<UsageEventKind>(line) else {
+                ignored_events = ignored_events.saturating_add(1);
+                continue;
+            };
+            if kind.event != "tool_call" {
+                ignored_events = ignored_events.saturating_add(1);
+                continue;
+            }
+            let Ok(event) = serde_json::from_str::<UsageEvent>(line) else {
+                ignored_events = ignored_events.saturating_add(1);
+                continue;
+            };
+            events.push((event, file_index, line_index));
         }
-        let kind: UsageEventKind = serde_json::from_str(line)
-            .map_err(|_| format!("invalid usage event metadata at line {}", line_index + 1))?;
-        if kind.event != "tool_call" {
-            ignored_events = ignored_events.saturating_add(1);
-            continue;
-        }
-        let event: UsageEvent = serde_json::from_str(line)
-            .map_err(|_| format!("invalid tool_call metadata at line {}", line_index + 1))?;
-        events.push((event, line_index));
     }
-    events.sort_by_key(|(event, line_index)| (event.timestamp_ms, *line_index));
+    events.sort_by_key(|(event, file_index, line_index)| {
+        (event.timestamp_ms, *file_index, *line_index)
+    });
 
     let mut repositories = BTreeSet::new();
     let mut cache_counts: BTreeMap<String, u64> = BTreeMap::new();
     let mut error_counts: BTreeMap<String, u64> = BTreeMap::new();
-    for (event, _) in &events {
+    for (event, _, _) in &events {
         if let Some(id) = &event.repo_id
             && id.len() == 64
             && id.bytes().all(|b| b.is_ascii_hexdigit())
@@ -416,21 +490,20 @@ fn usage_report(args: &[String]) -> Result<(), String> {
             .unwrap_or("legacy");
         *cache_counts.entry(cache.to_owned()).or_default() += 1;
         if let Some(code) = &event.error_code
-            && code.starts_with("cgrx.")
-            && code.len() <= 64
-            && code
-                .bytes()
-                .all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'_')
+            && valid_usage_error_code(code)
         {
             *error_counts.entry(code.clone()).or_default() += 1;
         }
     }
+
     let mut seen_sessions = BTreeSet::new();
     let mut total = UsageBucket::default();
     let mut cold = UsageBucket::default();
     let mut warm = UsageBucket::default();
+    let mut tools: BTreeMap<String, UsageBucket> = BTreeMap::new();
+    let mut clients: BTreeMap<String, UsageBucket> = BTreeMap::new();
     let mut groups: BTreeMap<(String, String, String, bool), UsageBucket> = BTreeMap::new();
-    for (event, _) in &events {
+    for (event, _, _) in &events {
         let session_key = (event.client.clone(), event.session.clone());
         let is_cold = seen_sessions.insert(session_key);
         total.record(event, is_cold);
@@ -439,6 +512,14 @@ fn usage_report(args: &[String]) -> Result<(), String> {
         } else {
             warm.record(event, false);
         }
+        tools
+            .entry(event.tool.clone())
+            .or_default()
+            .record(event, is_cold);
+        clients
+            .entry(event.client.clone())
+            .or_default()
+            .record(event, is_cold);
         groups
             .entry((
                 event.client.clone(),
@@ -449,6 +530,14 @@ fn usage_report(args: &[String]) -> Result<(), String> {
             .or_default()
             .record(event, is_cold);
     }
+    let tool_rows: BTreeMap<_, _> = tools
+        .into_iter()
+        .map(|(tool, bucket)| (tool, bucket.as_json()))
+        .collect();
+    let client_rows: BTreeMap<_, _> = clients
+        .into_iter()
+        .map(|(client, bucket)| (client, bucket.as_json()))
+        .collect();
     let group_rows: Vec<Value> = groups
         .into_iter()
         .map(|((client, session, tool, ok), bucket)| {
@@ -463,6 +552,7 @@ fn usage_report(args: &[String]) -> Result<(), String> {
         .collect();
     let report = json!({
         "version":1,
+        "inputs":{"files":paths.len(),"include_probes":include_probes},
         "events":events.len(),
         "ignored_events":ignored_events,
         "routing":{"repositories":repositories.len(),"cache_counts":cache_counts,"error_counts":error_counts},
@@ -470,10 +560,13 @@ fn usage_report(args: &[String]) -> Result<(), String> {
         "totals":{
             "calls":total.calls,
             "ok":total.ok,
+            "errors":total.calls.saturating_sub(total.ok),
             "request_bytes":total.request_bytes.iter().copied().fold(0_u64, u64::saturating_add),
             "response_bytes":total.response_bytes.iter().copied().fold(0_u64, u64::saturating_add)
         },
         "phases":{"cold":cold.as_json(),"warm":warm.as_json()},
+        "tools":tool_rows,
+        "clients":client_rows,
         "groups":group_rows
     });
     println!("{report}");

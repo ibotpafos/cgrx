@@ -653,9 +653,15 @@ impl Server {
             }
         };
         let visible = model_visible_result(&call.name, &structured);
+        let compact_wire = self
+            .usage_log
+            .as_ref()
+            .is_some_and(|usage| matches!(usage.client.as_str(), "codex" | "opencode"));
+        let wire_structured =
+            wire_structured_result(&call.name, &structured, &visible, compact_wire);
         Ok(json!({
             "content": [{"type": "text", "text": serde_json::to_string(&visible).expect("tool result serializes")}],
-            "structuredContent": structured,
+            "structuredContent": wire_structured,
             "isError": false
         }))
     }
@@ -1115,6 +1121,22 @@ impl Server {
             "llm_used": false,
         }))
     }
+}
+
+fn wire_structured_result(
+    tool: &str,
+    structured: &Value,
+    visible: &Value,
+    compact_wire: bool,
+) -> Value {
+    if !compact_wire || !matches!(tool, "orient" | "check_index_coverage") {
+        return structured.clone();
+    }
+    let mut compact = visible.clone();
+    if let (Some(object), Some(snapshot)) = (compact.as_object_mut(), structured.get("snapshot")) {
+        object.insert("snapshot".to_owned(), snapshot.clone());
+    }
+    compact
 }
 
 fn model_visible_result(tool: &str, structured: &Value) -> Value {
@@ -2416,7 +2438,12 @@ const fn default_trace_depth() -> u8 {
 
 #[derive(Deserialize)]
 struct StatusArguments {
+    #[serde(default = "default_status_paths_or_scope")]
     paths_or_scope: Value,
+}
+
+fn default_status_paths_or_scope() -> Value {
+    json!(["**/*"])
 }
 
 #[derive(Deserialize)]
@@ -2563,7 +2590,7 @@ fn model_visible_schema() -> Value {
     let bounded_scope = bounded_scope_schema();
     let path_or_scope = path_or_scope_schema(&bounded_scope);
     let mut tools = json!([
-            {"name":"scan_risks","description":"Change risks, candidate tests and deterministic parallel agent missions; no tests or LLM executed.","inputSchema":{"type":"object","properties":{"mode":{"enum":["changes"]},"limit":{"type":"integer","minimum":1,"maximum":50},"runs":{"type":"array","items":{"type":"object","properties":{"runner_command":{"type":"string"},"revision":{"type":"string"},"results":{"type":"array","items":{"type":"object","properties":{"path":{"type":"string"},"symbol":{"type":"string"},"status":{"enum":["passed","failed"]},"source_hash":{"type":"string"}}}}}}}}}},
+            {"name":"scan_risks","description":"Change risks, candidate tests and deterministic parallel agent missions; arguments are mode, limit, and optional runs only; no tests or LLM executed.","inputSchema":{"type":"object","additionalProperties":false,"properties":{"mode":{"enum":["changes"]},"limit":{"type":"integer","minimum":1,"maximum":50},"runs":{"type":"array","items":{"type":"object","properties":{"runner_command":{"type":"string"},"revision":{"type":"string"},"results":{"type":"array","items":{"type":"object","properties":{"path":{"type":"string"},"symbol":{"type":"string"},"status":{"enum":["passed","failed"]},"source_hash":{"type":"string"}}}}}}}}}},
             {"name":"check_change_gates","description":"Snapshot-bound conservative change gate over findings, impacts, missions and graph coverage; no tests or LLM executed.","inputSchema":{"type":"object","properties":{"limit":{"type":"integer","minimum":1,"maximum":50},"fail_on":{"enum":["error","warning","none"],"default":"error"},"max_warning_findings":{"type":"integer","minimum":0,"maximum":10000,"default":0},"max_blocked_missions":{"type":"integer","minimum":0,"maximum":10000,"default":0},"max_coverage_gaps":{"type":"integer","minimum":0,"maximum":10000,"default":0},"max_unverified_impacts":{"type":"integer","minimum":0,"maximum":10000,"default":0},"runs":{"type":"array","items":{"type":"object","properties":{"runner_command":{"type":"string"},"revision":{"type":"string"},"results":{"type":"array","items":{"type":"object","properties":{"path":{"type":"string"},"symbol":{"type":"string"},"status":{"enum":["passed","failed"]},"source_hash":{"type":"string"}}}}}}}}}},
             {"name":"check_repository_gates","description":"Snapshot-bound architecture gate over package cycles, graph coupling, unresolved local dependencies and coverage; no LLM executed.","inputSchema":{"type":"object","properties":{"scope":path_or_scope.clone(),"package_depth":{"type":"integer","minimum":1,"maximum":4,"default":2},"fail_on":{"enum":["error","warning","none"],"default":"error"},"max_package_cycles":{"type":"integer","minimum":0,"maximum":1000000,"default":0},"max_package_fan_out":{"type":"integer","minimum":0,"maximum":1000000,"default":20},"max_symbol_fan_in":{"type":"integer","minimum":0,"maximum":1000000,"default":50},"max_unresolved_local_dependencies":{"type":"integer","minimum":0,"maximum":1000000,"default":0},"max_coverage_gaps":{"type":"integer","minimum":0,"maximum":1000000,"default":0}}}},
             {"name":"ingest_runtime_evidence","description":"Import revision-pinned runtime call evidence from a local file.","inputSchema":{"type":"object","required":["input_path"],"properties":{"input_path":{"type":"string"},"format":{"enum":["auto","ndjson","otlp-json"],"default":"auto"},"revision":{"type":"string"},"environment":{"type":"string"}}}},
@@ -2580,102 +2607,15 @@ fn model_visible_schema() -> Value {
             {"name":"check_index_coverage","description":"Coverage","inputSchema":{"type":"object","properties":{"paths":{"type":"array","items":{"type":"string"}},"scopes":{"type":"array","items":{"type":"string"}},"offset":{"type":"integer","minimum":0},"limit":{"type":"integer","minimum":1,"maximum":500}}}},
             {"name":"check_framework_gates","description":"Framework-aware detection gate for Django/FastAPI/Express with explicit PASS/WARN/FAIL/INCONCLUSIVE verdict; no LLM executed.","inputSchema":{"type":"object","properties":{"paths":{"type":"array","items":{"type":"string"}},"scopes":{"type":"array","items":{"type":"string"}},"fail_on":{"enum":["error","warning","none"],"default":"error"},"max_framework_confidence":{"type":"integer","minimum":0,"maximum":10000,"default":0},"max_false_positive_matches":{"type":"integer","minimum":0,"maximum":10000,"default":0}}}},
             {"name":"expand","description":"Expand","inputSchema":{"type":"object","required":["handle","budget"],"properties":{"handle":{"type":"string"},"budget":{"type":"integer","minimum":1}}}},
-            {"name":"status","inputSchema":{"type":"object","required":["paths_or_scope"],"properties":{"paths_or_scope":{}}}},
+            {"name":"status","description":"Check repository revision, index freshness and gaps; paths_or_scope defaults to the full repository.","inputSchema":{"type":"object","properties":{"paths_or_scope":{}}}},
             {"name":"memory_record","description":"Record","inputSchema":{"type":"object","required":["fact","confidence","repo","path"],"properties":{"fact":{"type":"string"},"confidence":{"type":"integer","minimum":0,"maximum":1000},"repo":{"type":"string"},"rev":{"type":"string"},"path":{"type":"string"},"span":{"type":"object","required":["start_line","end_line"],"properties":{"start_line":{"type":"integer","minimum":1},"end_line":{"type":"integer","minimum":1}}},"valid_until_unix_nanos":{"type":"integer","minimum":1},"privacy_tag":{"type":"string"}}}},
             {"name":"memory_recall","description":"Recall","inputSchema":{"type":"object","properties":{"query":{"type":"string"},"min_confidence":{"type":"integer","minimum":0,"maximum":1000,"default":0},"privacy_tag":{"type":"string"},"revision":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":50,"default":20}}}},
             {"name":"check_security_gates","description":"Snapshot-bound security gate over working-tree secrets, Cargo.lock dependency hygiene and license allowlist with explicit PASS/WARN/FAIL/INCONCLUSIVE verdict; no LLM executed.","inputSchema":{"type":"object","properties":{"fail_on":{"enum":["error","warning","none"],"default":"error"},"max_secret_findings":{"type":"integer","minimum":0,"maximum":10000,"default":0},"max_dependency_findings":{"type":"integer","minimum":0,"maximum":10000,"default":0},"max_license_findings":{"type":"integer","minimum":0,"maximum":10000,"default":0},"allowlist_paths":{"type":"array","items":{"type":"string"}},"allowlist_licenses":{"type":"array","items":{"type":"string"}}}}}
         ]);
-    let metadata = [
-        (
-            "Scan change risks",
-            "Find possible broken calls, candidate tests and deterministic parallel agent missions for working-tree changes versus HEAD.",
-        ),
-        (
-            "Check change quality gates",
-            "Evaluate snapshot-bound change findings, mission blockers and graph coverage with explicit pass, warning, fail or inconclusive semantics.",
-        ),
-        (
-            "Check repository quality gates",
-            "Evaluate proven repository architecture with explicit cycle, coupling, unresolved-dependency and coverage policies.",
-        ),
-        (
-            "Import runtime evidence",
-            "Import bounded OTLP/JSON or CGRX NDJSON from an approved local path without accepting inline trace bodies.",
-        ),
-        (
-            "Orient on a task",
-            "Retrieve task-relevant evidence within a token budget; keep returned handles for follow-up.",
-        ),
-        (
-            "Search symbols",
-            "Find code symbols by name, or opt into body search and language filtering, before tracing calls or reading definitions.",
-        ),
-        (
-            "Outline a file",
-            "List indexed symbols and definition spans in source order without returning their bodies.",
-        ),
-        (
-            "Map architecture",
-            "Summarize proven architecture, including weighted package and symbol communities with representatives.",
-        ),
-        (
-            "Trace calls",
-            "Trace callers or callees of a discovered symbol; use path to resolve ambiguity.",
-        ),
-        (
-            "Find usages",
-            "List proven direct or transitive incoming call or implementation sites with hop, resolver evidence and coverage gaps.",
-        ),
-        (
-            "Suggest refactors",
-            "Find structurally similar functions and preview a snapshot-bound hypothetical extract-helper graph delta.",
-        ),
-        (
-            "Read source",
-            "Read the definition of a discovered symbol; use path when names collide.",
-        ),
-        (
-            "Explain symbol",
-            "Explain a symbol with its definition, callers, callees, and usages in one call.",
-        ),
-        (
-            "Check coverage",
-            "Check evidence paths or scopes before relying on graph results; gaps require source inspection.",
-        ),
-        (
-            "Check framework gates",
-            "Detect Django, FastAPI and Express usage within scope and evaluate a snapshot-bound, model-free gate with explicit pass, warning, fail or inconclusive semantics.",
-        ),
-        (
-            "Expand context",
-            "Retrieve more evidence using a returned handle from the same repository and server session.",
-        ),
-        (
-            "Check index status",
-            "Check repository revision, index freshness and gaps before code discovery.",
-        ),
-        (
-            "Record decision",
-            "Persist a revision-pinned decision fact with confidence, provenance and optional TTL; identical facts replay as duplicates without LLM calls.",
-        ),
-        (
-            "Recall decisions",
-            "Recall non-expired decision facts with bounded deterministic ranking by confidence; no LLM executed.",
-        ),
-        (
-            "Check security gates",
-            "Scan working-tree secrets, Cargo.lock dependency hygiene and license allowlist within the repository and evaluate a snapshot-bound, model-free gate with explicit pass, warning, fail or inconclusive semantics.",
-        ),
-        (
-            "Explain symbol",
-            "Explain a symbol with its definition, callers, callees, and usages in one call.",
-        ),
-        (
-            "Detect dead code",
-            "Find symbols with zero incoming CALLS arcs in the code graph.",
-        ),
-    ];
-    for (tool, (title, description)) in tools.as_array_mut().unwrap().iter_mut().zip(metadata) {
+    for tool in tools.as_array_mut().unwrap() {
+        let name = tool["name"].as_str().expect("tool name is static");
+        let (title, description) = tool_metadata(name)
+            .unwrap_or_else(|| panic!("missing OpenAI metadata for tool {name}"));
         tool["title"] = json!(title);
         tool["description"] = json!(description);
         // All managed calls may refresh persistent indexes and session state.
@@ -2684,8 +2624,104 @@ fn model_visible_schema() -> Value {
             json!({"readOnlyHint":false,"destructiveHint":false,"openWorldHint":false});
         tool["outputSchema"] = json!({"type":"object","additionalProperties":true});
     }
-    tools[14]["inputSchema"]["properties"]["paths_or_scope"] = path_or_scope;
+    let status = tools
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|tool| tool["name"] == "status")
+        .expect("status tool is static");
+    status["inputSchema"]["properties"]["paths_or_scope"] = path_or_scope;
     tools
+}
+
+fn tool_metadata(name: &str) -> Option<(&'static str, &'static str)> {
+    Some(match name {
+        "scan_risks" => (
+            "Scan change risks",
+            "Find possible broken calls, candidate tests and deterministic parallel agent missions for working-tree changes versus HEAD.",
+        ),
+        "check_change_gates" => (
+            "Check change quality gates",
+            "Evaluate snapshot-bound change findings, mission blockers and graph coverage with explicit pass, warning, fail or inconclusive semantics.",
+        ),
+        "check_repository_gates" => (
+            "Check repository quality gates",
+            "Evaluate proven repository architecture with explicit cycle, coupling, unresolved-dependency and coverage policies.",
+        ),
+        "ingest_runtime_evidence" => (
+            "Import runtime evidence",
+            "Import bounded OTLP/JSON or CGRX NDJSON from an approved local path without accepting inline trace bodies.",
+        ),
+        "orient" => (
+            "Orient on a task",
+            "Retrieve task-relevant evidence within a token budget; keep returned handles for follow-up.",
+        ),
+        "search_graph" => (
+            "Search symbols",
+            "Find code symbols by name, or opt into body search and language filtering, before tracing calls or reading definitions.",
+        ),
+        "get_outline" => (
+            "Outline a file",
+            "List indexed symbols and definition spans in source order without returning their bodies.",
+        ),
+        "get_architecture" => (
+            "Map architecture",
+            "Summarize proven architecture, including weighted package and symbol communities with representatives.",
+        ),
+        "trace_path" => (
+            "Trace calls",
+            "Trace callers or callees of a discovered symbol; use path to resolve ambiguity.",
+        ),
+        "find_usages" => (
+            "Find usages",
+            "List proven direct or transitive incoming call or implementation sites with hop, resolver evidence and coverage gaps.",
+        ),
+        "suggest_refactors" => (
+            "Suggest refactors",
+            "Find structurally similar functions and preview a snapshot-bound hypothetical extract-helper graph delta.",
+        ),
+        "get_code_snippet" => (
+            "Read source",
+            "Read the definition of a discovered symbol; use path when names collide.",
+        ),
+        "explain_symbol" => (
+            "Explain symbol",
+            "Explain a symbol with its definition, callers, callees, and usages in one call.",
+        ),
+        "detect_dead_code" => (
+            "Detect dead code",
+            "Find symbols with zero incoming CALLS arcs in the code graph.",
+        ),
+        "check_index_coverage" => (
+            "Check coverage",
+            "Check evidence paths or scopes before relying on graph results; gaps require source inspection.",
+        ),
+        "check_framework_gates" => (
+            "Check framework gates",
+            "Detect Django, FastAPI and Express usage within scope and evaluate a snapshot-bound, model-free gate with explicit pass, warning, fail or inconclusive semantics.",
+        ),
+        "expand" => (
+            "Expand context",
+            "Retrieve more evidence using a returned handle from the same repository and server session.",
+        ),
+        "status" => (
+            "Check index status",
+            "Check repository revision, index freshness and gaps before code discovery.",
+        ),
+        "memory_record" => (
+            "Record decision",
+            "Persist a revision-pinned decision fact with confidence, provenance and optional TTL; identical facts replay as duplicates without LLM calls.",
+        ),
+        "memory_recall" => (
+            "Recall decisions",
+            "Recall non-expired decision facts with bounded deterministic ranking by confidence; no LLM executed.",
+        ),
+        "check_security_gates" => (
+            "Check security gates",
+            "Scan working-tree secrets, Cargo.lock dependency hygiene and license allowlist within the repository and evaluate a snapshot-bound, model-free gate with explicit pass, warning, fail or inconclusive semantics.",
+        ),
+        _ => return None,
+    })
 }
 
 fn bounded_scope_schema() -> Value {
@@ -2783,6 +2819,62 @@ mod openai_metadata_tests {
                 .len(),
             3
         );
+        let status = tools
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|tool| tool["name"] == "status")
+            .unwrap();
+        for (name, title) in [
+            ("detect_dead_code", "Detect dead code"),
+            ("check_index_coverage", "Check coverage"),
+            ("check_framework_gates", "Check framework gates"),
+            ("expand", "Expand context"),
+            ("status", "Check index status"),
+            ("memory_record", "Record decision"),
+            ("memory_recall", "Recall decisions"),
+            ("check_security_gates", "Check security gates"),
+        ] {
+            let tool = tools
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|tool| tool["name"] == name)
+                .unwrap();
+            assert_eq!(tool["title"], title);
+        }
+        assert!(status["inputSchema"].get("required").is_none());
+        assert_eq!(
+            status["inputSchema"]["properties"]["paths_or_scope"]["anyOf"]
+                .as_array()
+                .unwrap()
+                .len(),
+            3
+        );
+        let coverage = tools
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|tool| tool["name"] == "check_index_coverage")
+            .unwrap();
+        assert!(
+            coverage["inputSchema"]["properties"]
+                .get("paths_or_scope")
+                .is_none()
+        );
+        assert_eq!(
+            serde_json::from_value::<StatusArguments>(json!({}))
+                .unwrap()
+                .paths_or_scope,
+            json!(["**/*"])
+        );
+        let scan = tools
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|tool| tool["name"] == "scan_risks")
+            .unwrap();
+        assert_eq!(scan["inputSchema"]["additionalProperties"], false);
     }
 
     #[test]
@@ -3109,6 +3201,74 @@ mod openai_metadata_tests {
             encoded.len() < 4_000,
             "compact payload bytes: {}",
             encoded.len()
+        );
+    }
+
+    #[test]
+    fn high_volume_wire_payloads_drop_duplicate_structured_detail() {
+        let snapshot = json!({
+            "repo_revision":"abc123",
+            "working_tree_digest":"00",
+            "graph_generation":9
+        });
+        let orient = json!({
+            "snapshot":snapshot,
+            "compiled":{
+                "status":"SATISFIED",
+                "packed":{"records":[{
+                    "path":"src/lib.rs",
+                    "span_start":1,
+                    "span_end":2,
+                    "text":"fn tiny() {}".repeat(64),
+                    "provenance":"SYNTAX"
+                }]},
+                "obligations":{"uncertainties":[]},
+                "residual":[],
+                "proof":"x".repeat(200_000)
+            },
+            "next_handles":[]
+        });
+        let orient_visible = model_visible_result("orient", &orient);
+        let orient_wire = wire_structured_result("orient", &orient, &orient_visible, true);
+        assert_eq!(orient_wire["snapshot"], orient["snapshot"]);
+        assert!(orient_wire.get("compiled").is_none());
+        assert!(
+            serde_json::to_vec(&orient_wire).unwrap().len()
+                < serde_json::to_vec(&orient).unwrap().len() / 10
+        );
+        assert_eq!(
+            wire_structured_result("orient", &orient, &orient_visible, false),
+            orient
+        );
+
+        let coverage = json!({
+            "snapshot":snapshot,
+            "paths":[{
+                "path":"src/lib.rs",
+                "status":"INDEXED",
+                "gap_count":0,
+                "details":"y".repeat(100_000)
+            }],
+            "scopes":[],
+            "summary":{"indexed":1},
+            "scope_summary":{}
+        });
+        let coverage_visible = model_visible_result("check_index_coverage", &coverage);
+        let coverage_wire =
+            wire_structured_result("check_index_coverage", &coverage, &coverage_visible, true);
+        assert_eq!(coverage_wire["snapshot"], coverage["snapshot"]);
+        assert!(coverage_wire["rows"].is_array());
+        assert!(
+            !serde_json::to_string(&coverage_wire)
+                .unwrap()
+                .contains(&"y".repeat(1_000))
+        );
+
+        let search = json!({"snapshot":snapshot,"results":[]});
+        let search_visible = model_visible_result("search_graph", &search);
+        assert_eq!(
+            wire_structured_result("search_graph", &search, &search_visible, true),
+            search
         );
     }
 
