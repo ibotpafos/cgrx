@@ -404,6 +404,7 @@ fn utility(
         + path_gain * 100_000
         + provenance_gain * 10_000
         + candidate.scores.graph.min(50_000)
+        + candidate.scores.semantic.min(9_999)
         + candidate.scores.rrf.min(9_999))
     .saturating_sub(redundancy + u64::from(record.uncertainty_penalty).min(9_999))
 }

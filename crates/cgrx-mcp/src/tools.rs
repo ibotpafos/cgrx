@@ -1528,6 +1528,7 @@ fn compact_orient(value: &Value) -> Value {
         "n": records.len(),
         "gaps": uncertainties,
         "residual": residual,
+        "semantic_rerank": value.get("semantic_rerank"),
         "next": value.get("next_handles"),
     })
 }
@@ -2782,6 +2783,37 @@ mod openai_metadata_tests {
                 .len(),
             3
         );
+    }
+
+    #[test]
+    fn compact_orient_preserves_semantic_rerank_audit_metadata() {
+        let compact = compact_orient(&json!({
+            "snapshot":{"repo_revision":"abc","working_tree_digest":"00","graph_generation":1},
+            "compiled":{
+                "status":"PARTIAL",
+                "packed":{"records":[]},
+                "obligations":{"uncertainties":[]},
+                "residual":[]
+            },
+            "semantic_rerank":{
+                "backend":"local_unix_socket",
+                "status":"applied",
+                "candidates_scored":8
+            }
+        }));
+        assert_eq!(compact["semantic_rerank"]["status"], "applied");
+        assert_eq!(compact["semantic_rerank"]["candidates_scored"], 8);
+
+        let without_sidecar = compact_orient(&json!({
+            "snapshot":{},
+            "compiled":{
+                "status":"PARTIAL",
+                "packed":{"records":[]},
+                "obligations":{"uncertainties":[]},
+                "residual":[]
+            }
+        }));
+        assert!(without_sidecar["semantic_rerank"].is_null());
     }
 
     #[test]

@@ -6,6 +6,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 static TEST_DIRECTORY_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
+use cgrx_cgcr::QueryClass;
 use cgrx_cli::{GraphDirection, GraphViewRequest, OrientReport, Runtime, RuntimeEvidenceFormat};
 use cgrx_core::{EvidenceSelector, Mode, QueryRequest, RelationKind, Scope};
 use cgrx_store::GenerationReader;
@@ -180,6 +181,24 @@ fn orient(runtime: &Runtime, task: &str, relation_kinds: Vec<RelationKind>) -> O
             token_budget: 800,
         })
         .expect("orient query")
+}
+
+#[test]
+fn orient_uses_natural_language_query_classification() {
+    let repository = fixture_repository();
+    let state = TestDirectory::new("orient-query-class-state");
+    Runtime::index(repository.path(), state.path()).expect("index repository");
+    let runtime = Runtime::open(state.path()).expect("open runtime");
+
+    for (task, expected) in [
+        ("locate target", QueryClass::Locate),
+        ("кто вызывает target", QueryClass::Trace),
+        ("what is affected by target", QueryClass::Impact),
+        ("есть ли ещё вызовы target", QueryClass::NegativeExhaustive),
+    ] {
+        let output = orient(&runtime, task, vec![RelationKind::Calls]);
+        assert_eq!(output.compiled.obligations.query_class, expected, "{task}");
+    }
 }
 
 fn calls_scope(path: &str) -> Scope {

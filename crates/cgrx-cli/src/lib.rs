@@ -11,7 +11,7 @@ pub use runtime::security::SecurityAuditConfig;
 pub use runtime::{
     GraphDirection, GraphViewRequest, ImportRuntimeEvidenceReport, IndexReport, OrientReport,
     RiskBaseline, Runtime, RuntimeConfig, RuntimeError, RuntimeEvidenceFormat, RuntimeInsight,
-    RuntimeInsightsReport, TestCaseResult, TestOutcome, TestRunRecord,
+    RuntimeInsightsReport, SemanticRerankReport, TestCaseResult, TestOutcome, TestRunRecord,
 };
 
 /// Git executable used by all runtime subprocesses.

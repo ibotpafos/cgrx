@@ -16,6 +16,7 @@ mod refactors;
 mod risks;
 mod scan_helpers;
 pub mod security;
+mod semantic_rerank;
 mod target_types;
 #[cfg(test)]
 mod tests;
@@ -68,7 +69,7 @@ use cgrx_capsule::{EvidencePacker, EvidenceRecord, PackInput, Tokenizer};
 use cgrx_cgcr::SourceRange;
 use cgrx_cgcr::{
     CgcrEngine, CompileRequest, CompiledContext, CostTable, CoverageMetadata, ObligationCompiler,
-    Probe, ProbeError, ProbeFact, ProbeOracle, QueryClass, RemainingBudget, ResolvedAnchor,
+    Probe, ProbeError, ProbeFact, ProbeOracle, RemainingBudget, ResolvedAnchor,
 };
 use cgrx_core::{ByteRange, EdgeEvidence, Hash32, QueryRequest, RelationKind, RepoSnapshot, Scope};
 #[cfg(test)]
@@ -111,6 +112,15 @@ pub struct IndexReport {
 pub struct OrientReport {
     pub snapshot: RepoSnapshot,
     pub compiled: CompiledContext,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub semantic_rerank: Option<SemanticRerankReport>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct SemanticRerankReport {
+    pub backend: String,
+    pub status: String,
+    pub candidates_scored: usize,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -899,6 +909,31 @@ impl Runtime {
                     .retain(|candidate| call_nodes.contains(&candidate.node_id));
             }
         }
+        let semantic_rerank = if !task_selected {
+            let candidate_ids = candidates
+                .candidates
+                .iter()
+                .take(semantic_rerank::MAX_CANDIDATES)
+                .map(|candidate| candidate.node_id)
+                .collect::<BTreeSet<_>>();
+            let candidate_text = self
+                .stored
+                .documents
+                .iter()
+                .filter(|document| candidate_ids.contains(&document.node_id))
+                .map(|document| {
+                    let text = if document.search_text.is_empty() {
+                        document.text.clone()
+                    } else {
+                        document.search_text.clone()
+                    };
+                    (document.node_id, text)
+                })
+                .collect::<BTreeMap<_, _>>();
+            semantic_rerank::apply_from_env(&request.task, &mut candidates, &candidate_text)
+        } else {
+            None
+        };
         let anchors: Vec<_> = candidates
             .candidates
             .iter()
@@ -909,12 +944,7 @@ impl Runtime {
             })
             .collect();
         let scoped_coverage = coverage_for_scope(&self.stored.coverage, &request.scope);
-        let obligations = ObligationCompiler::compile(
-            &request,
-            &anchors,
-            &scoped_coverage,
-            Some(QueryClass::Locate),
-        );
+        let obligations = ObligationCompiler::compile(&request, &anchors, &scoped_coverage, None);
         let obligation_ids: Vec<_> = obligations
             .obligations
             .iter()
@@ -998,6 +1028,7 @@ impl Runtime {
         Ok(OrientReport {
             snapshot: self.stored.snapshot.clone(),
             compiled,
+            semantic_rerank,
         })
     }
 
