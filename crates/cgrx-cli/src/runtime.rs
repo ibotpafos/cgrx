@@ -121,6 +121,10 @@ pub struct SemanticRerankReport {
     pub backend: String,
     pub status: String,
     pub candidates_scored: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub top_relevance: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub relevance_margin: Option<u16>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

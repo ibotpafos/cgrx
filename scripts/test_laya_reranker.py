@@ -14,9 +14,11 @@ SPEC.loader.exec_module(laya_reranker)
 class FakeRouter:
     def __init__(self):
         self.last = None
+        self.calls = []
 
     def predict(self, state, questions, model=None):
         self.last = (state, questions, model)
+        self.calls.append((state, questions, model))
         return {
             "answers": {
                 key: {"noul": 0.91 if key == "22" else 0.12}
@@ -61,6 +63,21 @@ class LayaRerankerTests(unittest.TestCase):
         self.assertEqual(state, "найди обработчик платежа")
         self.assertIsNone(model)
         self.assertIn("payment_handler", questions["22"]["instructions"])
+        self.assertIn("Подходит ли", questions["22"]["instructions"])
+
+
+    def test_english_task_uses_english_candidate_instruction(self):
+        candidate = self.payload()["candidates"][0]
+        instruction = laya_reranker.candidate_instruction(candidate, "find payment handler")
+        self.assertIn("Is this code candidate relevant", instruction)
+        self.assertNotIn("Подходит ли", instruction)
+
+    def test_warmup_runs_both_language_models(self):
+        router = FakeRouter()
+        laya_reranker.warmup_router(router)
+        self.assertEqual([call[2] for call in router.calls], ["english", "multilingual"])
+        self.assertIn("warm semantic reranking", router.calls[0][0])
+        self.assertIn("прогрев", router.calls[1][0])
 
     def test_rejects_duplicate_nodes_and_oversized_candidate_sets(self):
         payload = self.payload()

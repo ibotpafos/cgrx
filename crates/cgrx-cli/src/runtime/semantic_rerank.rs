@@ -9,10 +9,12 @@ use serde::{Deserialize, Serialize};
 
 use super::SemanticRerankReport;
 
-pub(super) const MAX_CANDIDATES: usize = 12;
-const MAX_TEXT_CHARS: usize = 1_200;
+pub(super) const MAX_CANDIDATES: usize = 8;
+const MAX_TEXT_CHARS: usize = 400;
 const MAX_RESPONSE_BYTES: u64 = 64 * 1024;
 const DEFAULT_TIMEOUT_MS: u64 = 750;
+const MIN_TOP_RELEVANCE: u16 = 300;
+const MIN_RELEVANCE_MARGIN: u16 = 80;
 const SCHEMA: &str = "cgrx.semantic-rerank.v1";
 
 #[derive(Serialize)]
@@ -63,17 +65,29 @@ pub(super) fn apply_from_env(
         Duration::from_millis(timeout_ms),
     );
     Some(match scored {
-        Ok(candidates_scored) => SemanticRerankReport {
+        Ok(outcome) => SemanticRerankReport {
             backend: "local_unix_socket".to_owned(),
-            status: "applied".to_owned(),
-            candidates_scored,
+            status: outcome.status.to_owned(),
+            candidates_scored: outcome.candidates_scored,
+            top_relevance: outcome.top_relevance,
+            relevance_margin: outcome.relevance_margin,
         },
         Err(_) => SemanticRerankReport {
             backend: "local_unix_socket".to_owned(),
             status: "fallback".to_owned(),
             candidates_scored: 0,
+            top_relevance: None,
+            relevance_margin: None,
         },
     })
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct RerankOutcome {
+    status: &'static str,
+    candidates_scored: usize,
+    top_relevance: Option<u16>,
+    relevance_margin: Option<u16>,
 }
 
 #[cfg(unix)]
@@ -83,7 +97,7 @@ fn apply_from_socket(
     text_by_node: &BTreeMap<u64, String>,
     socket: &Path,
     timeout: Duration,
-) -> Result<usize, String> {
+) -> Result<RerankOutcome, String> {
     use std::os::unix::net::UnixStream;
 
     let selected = candidates
@@ -100,7 +114,12 @@ fn apply_from_socket(
         })
         .collect::<Vec<_>>();
     if selected.len() < 2 {
-        return Ok(0);
+        return Ok(RerankOutcome {
+            status: "skipped_insufficient_candidates",
+            candidates_scored: selected.len(),
+            top_relevance: None,
+            relevance_margin: None,
+        });
     }
     let expected = selected
         .iter()
@@ -137,7 +156,7 @@ fn apply_from_socket(
     }
 
     let mut seen = BTreeSet::new();
-    let mut scores = BTreeMap::new();
+    let mut scores = Vec::with_capacity(response.scores.len());
     for score in response.scores {
         if score.relevance > 1_000
             || !expected.contains(&score.node_id)
@@ -145,17 +164,35 @@ fn apply_from_socket(
         {
             return Err("semantic reranker returned invalid scores".to_owned());
         }
-        scores.insert(score.node_id, u64::from(score.relevance) * 10);
+        scores.push((score.node_id, score.relevance));
     }
     if seen != expected {
         return Err("semantic reranker omitted candidate scores".to_owned());
     }
-    for candidate in &mut candidates.candidates {
-        if let Some(score) = scores.get(&candidate.node_id) {
-            candidate.scores.semantic = *score;
+    scores.sort_unstable_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(&right.0)));
+    let (winner_id, top_relevance) = scores[0];
+    let relevance_margin = top_relevance.saturating_sub(scores[1].1);
+    let confident = top_relevance >= MIN_TOP_RELEVANCE && relevance_margin >= MIN_RELEVANCE_MARGIN;
+    if confident {
+        let winner_boost = u64::from(relevance_margin) * 10;
+        if let Some(candidate) = candidates
+            .candidates
+            .iter_mut()
+            .find(|candidate| candidate.node_id == winner_id)
+        {
+            candidate.scores.semantic = winner_boost;
         }
     }
-    Ok(scores.len())
+    Ok(RerankOutcome {
+        status: if confident {
+            "applied"
+        } else {
+            "skipped_low_confidence"
+        },
+        candidates_scored: scores.len(),
+        top_relevance: Some(top_relevance),
+        relevance_margin: Some(relevance_margin),
+    })
 }
 
 #[cfg(not(unix))]
@@ -165,8 +202,13 @@ fn apply_from_socket(
     _text_by_node: &BTreeMap<u64, String>,
     _socket: &Path,
     _timeout: Duration,
-) -> Result<usize, String> {
-    Ok(0)
+) -> Result<RerankOutcome, String> {
+    Ok(RerankOutcome {
+        status: "skipped_unsupported_platform",
+        candidates_scored: 0,
+        top_relevance: None,
+        relevance_margin: None,
+    })
 }
 
 fn truncate_chars(value: &str, limit: usize) -> String {
@@ -244,8 +286,59 @@ mod tests {
         let _ = fs::remove_file(socket);
 
         assert_eq!(candidates.candidates[0].scores.graph, 44);
-        assert_eq!(candidates.candidates[0].scores.semantic, 1_200);
-        assert_eq!(candidates.candidates[1].scores.semantic, 9_100);
-        assert_eq!(scored, 2);
+        assert_eq!(candidates.candidates[0].scores.semantic, 0);
+        assert_eq!(candidates.candidates[1].scores.semantic, 7_900);
+        assert_eq!(scored.status, "applied");
+        assert_eq!(scored.candidates_scored, 2);
+        assert_eq!(scored.top_relevance, Some(910));
+        assert_eq!(scored.relevance_margin, Some(790));
+    }
+
+    #[test]
+    fn low_confidence_sidecar_response_does_not_change_candidate_scores() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let socket =
+            env::temp_dir().join(format!("cgrx-sem-low-{}-{nonce}.sock", std::process::id()));
+        let listener = UnixListener::bind(&socket).unwrap();
+        let server = thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            let mut reader = BufReader::new(stream);
+            let mut line = String::new();
+            reader.read_line(&mut line).unwrap();
+            let mut stream = reader.into_inner();
+            write!(
+                stream,
+                "{{\"schema\":\"{SCHEMA}\",\"scores\":[{{\"node_id\":1,\"relevance\":850}},{{\"node_id\":2,\"relevance\":810}}]}}"
+            )
+            .unwrap();
+        });
+
+        let mut candidates = CandidateSet {
+            candidates: vec![candidate(1, "noise"), candidate(2, "payment")],
+            uncertainties: vec![],
+        };
+        let outcome = apply_from_socket(
+            "find payment handler",
+            &mut candidates,
+            &BTreeMap::new(),
+            &socket,
+            Duration::from_secs(1),
+        )
+        .unwrap();
+        server.join().unwrap();
+        let _ = fs::remove_file(socket);
+
+        assert_eq!(outcome.status, "skipped_low_confidence");
+        assert_eq!(outcome.top_relevance, Some(850));
+        assert_eq!(outcome.relevance_margin, Some(40));
+        assert!(
+            candidates
+                .candidates
+                .iter()
+                .all(|candidate| candidate.scores.semantic == 0)
+        );
     }
 }

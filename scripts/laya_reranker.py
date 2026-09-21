@@ -18,7 +18,7 @@ import sys
 
 SCHEMA = "cgrx.semantic-rerank.v1"
 MAX_REQUEST_BYTES = 64 * 1024
-MAX_CANDIDATES = 12
+MAX_CANDIDATES = 8
 
 
 def validate_request(payload):
@@ -50,8 +50,19 @@ def validate_request(payload):
     return payload
 
 
-def candidate_instruction(candidate):
+def _contains_cyrillic(value):
+    return any("\u0400" <= char <= "\u04ff" for char in value)
+
+
+def candidate_instruction(candidate, task):
     excerpt = " ".join(candidate["text"].split())
+    if _contains_cyrillic(task):
+        return (
+            "Подходит ли этот кандидат кода для задачи разработчика? "
+            f"Символ: {candidate['qualified_name']}. "
+            f"Путь: {candidate['path']}. "
+            f"Фрагмент кода: {excerpt}"
+        )
     return (
         "Is this code candidate relevant to the developer task? "
         f"Symbol: {candidate['qualified_name']}. "
@@ -65,7 +76,7 @@ def score_request(router, payload, model=None):
     questions = {
         str(candidate["node_id"]): {
             "type": "noul",
-            "instructions": candidate_instruction(candidate),
+            "instructions": candidate_instruction(candidate, payload["task"]),
         }
         for candidate in payload["candidates"]
     }
@@ -81,6 +92,20 @@ def score_request(router, payload, model=None):
         relevance = round(max(0.0, min(1.0, float(probability))) * 1000)
         scores.append({"node_id": node_id, "relevance": relevance})
     return {"schema": SCHEMA, "scores": scores}
+
+
+def warmup_router(router):
+    questions = {
+        "relevant": {
+            "type": "noul",
+            "instructions": "Is this code candidate relevant to the developer task?",
+        }
+    }
+    router.predict("warm semantic reranking", questions, model="english")
+    questions["relevant"]["instructions"] = (
+        "Подходит ли этот кандидат кода для задачи разработчика?"
+    )
+    router.predict("прогрев семантического ранжирования", questions, model="multilingual")
 
 
 def read_request(connection):
@@ -132,6 +157,7 @@ def build_router(device=None, preload=False):
     router = Router(device=device, max_loaded=2)
     if preload:
         router.preload(["english", "multilingual"])
+        warmup_router(router)
     return router
 
 
