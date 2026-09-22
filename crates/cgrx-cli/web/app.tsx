@@ -9,6 +9,8 @@ import React, {
 } from "react";
 import { projectCodeMap } from "./repository-map.js";
 import { layoutRepositoryMap } from "./dense-layout.js";
+import { ProjectPicker } from "./components/ProjectPicker";
+import type { ProjectCatalogue } from "./components/ProjectPicker";
 import { ProjectCanvas } from "./components/ProjectCanvas";
 import { WorkspaceDock, PanelHeading } from "./components/WorkspaceChrome";
 import { createRoot } from "react-dom/client";
@@ -150,10 +152,15 @@ const fragment = new URLSearchParams(location.hash.slice(1));
 const capability = fragment.get("token") || sessionStorage.getItem(tokenKey) || "";
 if (capability) sessionStorage.setItem(tokenKey, capability);
 if (location.hash) history.replaceState(null, "", `${location.pathname}${location.search}`);
+// Project selection lives in the URL. Navigating to another project creates a
+// fresh React tree, so responses/selection/history from the old repo cannot leak.
+const selectedProjectId = new URLSearchParams(location.search).get("project");
 defineWebGitGraph();
 
 async function api<T>(path: string, signal?: AbortSignal): Promise<T> {
-  const response = await fetch(path, {
+  const url = new URL(path, location.origin);
+  if (selectedProjectId && url.pathname !== "/api/projects") url.searchParams.set("project", selectedProjectId);
+  const response = await fetch(url, {
     headers: { "X-CGRX-Token": capability },
     cache: "no-store",
     signal
@@ -164,6 +171,16 @@ async function api<T>(path: string, signal?: AbortSignal): Promise<T> {
 }
 
 function App(): React.JSX.Element {
+  const [projectCatalogue, setProjectCatalogue] = useState<ProjectCatalogue | null>(null);
+  const [projectListError, setProjectListError] = useState("");
+  const selectedProject = projectCatalogue?.projects.find(project => project.id === (selectedProjectId || projectCatalogue.default_project));
+  const loadProjects = useCallback(async (): Promise<void> => {
+    try {
+      setProjectCatalogue(await api<ProjectCatalogue>("/api/projects"));
+      setProjectListError("");
+    } catch (error) { setProjectListError(errorMessage(error)); }
+  }, []);
+  useEffect(() => { void loadProjects(); }, [loadProjects]);
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [freshness, setFreshness] = useState<"connecting" | "live" | "refreshing" | "offline">("connecting");
   const [mode, setMode] = useState<Mode>("project");
@@ -320,7 +337,12 @@ function App(): React.JSX.Element {
     await Promise.all([loadRepository(), loadArchitecture(), loadMissions(), loadRuntime(), loadRefactors()]);
   }, [loadRepository, loadArchitecture, loadMissions, loadRefactors, loadRuntime]);
 
+  const statusInFlight = useRef(false);
   const loadStatus = useCallback(async (refreshOnChange = true): Promise<void> => {
+    // Cold projects can take longer than the polling interval to index.
+    // Keep one refresh in flight instead of queuing requests behind it.
+    if (statusInFlight.current) return;
+    statusInFlight.current = true;
     try {
       const value = await api<StatusResponse>("/api/status");
       const previousKey = snapshotKey(snapshotRef.current);
@@ -341,6 +363,8 @@ function App(): React.JSX.Element {
     } catch (error) {
       setFreshness("offline");
       setMessage(errorMessage(error));
+    } finally {
+      statusInFlight.current = false;
     }
   }, [loadFocusedGraph, refreshSecondaryData]);
 
@@ -635,7 +659,7 @@ function App(): React.JSX.Element {
   return <>
     <a className="skip-link" href="#graph-canvas">Skip to graph</a>
     <header className="topbar">
-      <div className="brand" aria-label="CGRX Evidence Graph Explorer"><strong>CGRX</strong><small>Code atlas</small></div>
+      <div className="brand" aria-label="CGRX Evidence Graph Explorer"><strong>CGRX</strong><small title={selectedProject?.path}>{selectedProject?.name || "Code atlas"}</small></div>
       <div className="atlas-stats" aria-label="Repository summary">
         <span>{currentProjectMap?.nodes.length ?? "—"} {graphDetail}</span>
         <span>{currentProjectMap?.edges.length ?? "—"} connections</span>
@@ -651,7 +675,8 @@ function App(): React.JSX.Element {
     <main className={`workspace atlas-workspace${mode === "project" ? " workspace--project" : ""}`}>
       <WorkspaceDock mode={mode} modes={MODES} onMode={setMode} discoveryOpen={discoveryOpen} onDiscovery={() => setDiscoveryOpen(v => !v)} />
       <aside id="discovery-panel" className="rail floating-panel" aria-label="Graph discovery" hidden={!discoveryOpen}>
-        <PanelHeading title="Explore repository" detail="Follow the connections in your code" onClose={() => setDiscoveryOpen(false)} />
+        <PanelHeading title="Explore repository" detail={selectedProject?.name || "Choose a project and follow its connections"} onClose={() => setDiscoveryOpen(false)} />
+        <ProjectPicker catalogue={projectCatalogue} selectedId={selectedProjectId} error={projectListError} onRefresh={() => void loadProjects()} />
         <form className="search" role="search" onSubmit={(event) => { void doSearch(event); }}>
           <label htmlFor="search-input">Find a symbol</label>
           <div className="search__row">

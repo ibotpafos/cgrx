@@ -147,6 +147,17 @@ server binds only to `127.0.0.1`, gives the browser a random process-local
 capability, accepts only GET and HEAD, and never sends graph or source data to
 an external service.
 
+The **Projects** panel lists local Git repositories next to the launch repository.
+Use `cgrx visualize --repo /path/to/repo --projects-dir /path/to/projects` to choose
+another projects directory; repeat `--projects-dir` for multiple locations.
+Discovery checks only immediate children, skips hidden directories and does not
+index other projects until selected. Search the list by name or path. **New**
+means no managed index exists yet; the first selection builds it. The selected
+project is stored in the page URL, so refresh/back navigation preserve it. Every
+API request (including source, runtime evidence and Git history) selects the same
+project explicitly. Up to four project runtimes are cached; switching back reloads
+an evicted index. Refresh the project list to discover newly added repositories.
+
 The default `Project map` shows indexed symbols and their proven call / implementation
 relationships in a React 2D code atlas with a full-screen canvas,
 soft community regions and collision-aware labels, adapted from

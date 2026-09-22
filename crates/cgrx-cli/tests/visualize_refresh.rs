@@ -95,6 +95,8 @@ fn source_change_refreshes_snapshot_and_strategy_identity_without_restart() {
     let mut child = Command::new(env!("CARGO_BIN_EXE_cgrx"))
         .args(["visualize", "--root"])
         .arg(&repository.0)
+        .arg("--projects-dir")
+        .arg(&repository.0)
         .args(["--port", "0", "--no-open"])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

@@ -1,5 +1,6 @@
 mod assets;
 mod http;
+mod projects;
 
 use std::fs::File;
 use std::io;
@@ -35,20 +36,27 @@ pub(super) fn run(args: &[String]) -> Result<(), String> {
     let address = listener.local_addr().map_err(|error| error.to_string())?;
     let token = capability_token()?;
     let url = format!("http://127.0.0.1:{}/#token={token}", address.port());
-    println!("visualizer_url={url}");
-    io::stdout().flush().map_err(|error| error.to_string())?;
-    if options.open_browser {
-        open_browser(&url)?;
-    }
 
     let risk_baseline = runtime.risk_baseline();
-    let mut server = Visualizer {
+    let initial = Visualizer {
         root,
         state,
         runtime,
         risk_baseline,
         token,
     };
+    let directories = if options.projects_dirs.is_empty() {
+        vec![initial.root.parent().unwrap_or(&initial.root).to_path_buf()]
+    } else {
+        options.projects_dirs
+    };
+    let mut server = projects::ProjectServer::new(initial, directories);
+    println!("visualizer_url={url}");
+    io::stdout().flush().map_err(|error| error.to_string())?;
+    if options.open_browser {
+        open_browser(&url)?;
+    }
+
     for connection in listener.incoming() {
         let mut connection = connection.map_err(|error| error.to_string())?;
         connection
@@ -61,7 +69,11 @@ pub(super) fn run(args: &[String]) -> Result<(), String> {
             Ok(request) => server.handle(&request),
             Err(response) => response,
         };
-        response.write(&mut connection)?;
+        // Switching projects or closing a tab can cancel an in-flight response.
+        // A disconnected client must not terminate the server for every project.
+        if let Err(error) = response.write(&mut connection) {
+            eprintln!("visualizer response disconnected: {error}");
+        }
     }
     Ok(())
 }
@@ -70,6 +82,7 @@ struct Options {
     root: PathBuf,
     port: u16,
     open_browser: bool,
+    projects_dirs: Vec<PathBuf>,
 }
 
 impl Options {
@@ -77,6 +90,7 @@ impl Options {
         let mut root = PathBuf::from(".");
         let mut port = 0_u16;
         let mut open_browser = true;
+        let mut projects_dirs = Vec::new();
         let mut index = 0;
         while index < args.len() {
             match args[index].as_str() {
@@ -95,6 +109,14 @@ impl Options {
                         .parse()
                         .map_err(|_| "--port must be an integer from 0 to 65535".to_owned())?;
                 }
+                "--projects-dir" => {
+                    index += 1;
+                    let path = PathBuf::from(
+                        args.get(index)
+                            .ok_or("--projects-dir requires a directory")?,
+                    );
+                    projects_dirs.push(path.canonicalize().map_err(|error| error.to_string())?);
+                }
                 "--no-open" => open_browser = false,
                 argument => return Err(format!("unknown visualize argument {argument}")),
             }
@@ -104,6 +126,7 @@ impl Options {
             root,
             port,
             open_browser,
+            projects_dirs,
         })
     }
 }
