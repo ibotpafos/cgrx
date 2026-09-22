@@ -123,7 +123,15 @@ button { color: inherit; }
 .edge--observed { stroke: var(--focus); }
 .edge-label { fill: var(--text); font: 700 10px ui-monospace, monospace; paint-order: stroke; stroke: var(--canvas); stroke-width: 4px; }
 .comparison-title { fill: var(--muted); font: 700 11px ui-monospace, monospace; letter-spacing: .14em; }
-.graph-canvas--project { background: #080b10; }
+.graph-canvas--project {
+  background-color: #080b10;
+  background-image:
+    linear-gradient(rgb(255 255 255 / .026) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(255 255 255 / .026) 1px, transparent 1px),
+    radial-gradient(circle at 50% 42%, rgb(35 63 78 / .2), transparent 55%);
+  background-size: 38px 38px, 38px 38px, 100% 100%;
+}
+
 .project-representatives { display: grid; gap: 6px; margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--line); }
 .legend { display: flex; flex-wrap: wrap; gap: 18px; min-height: 42px; align-items: center; padding: 8px 16px; border-top: 1px solid var(--line); color: var(--muted); font-size: 10px; }
 .key { display: inline-grid; place-items: center; width: 18px; height: 18px; margin-right: 4px; border: 1px solid currentColor; border-radius: 50%; font-style: normal; font: 700 10px ui-monospace, monospace; }
@@ -171,4 +179,119 @@ button { color: inherit; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; animation: none !important; }
+}
+
+/* Graph-first shell adapted from Clew base-shell.css lightDock/leftSidebar
+   (85b7af12), Copyright 2026 Aleksandr Vechenkov, MIT; see licenses/clew-MIT.txt. */
+:root { --canvas: #080909; --surface: #111313; --surface-raised: #1b1e1d; --line: #282d2b; --line-strong: #424b47; --text: #e9eeeb; --muted: #99a59f; --focus: #c9e4d7; }
+html, body, #root { width: 100%; height: 100%; overflow: hidden; }
+[hidden] { display: none !important; }
+button:focus-visible, summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+.topbar { position: absolute; top: 16px; left: 100px; right: 22px; height: 28px; padding: 0; border: 0; z-index: 8; background: transparent; gap: 20px; pointer-events: none; }
+.brand { gap: 9px; white-space: nowrap; }
+.brand strong { font-size: 14px; letter-spacing: .08em; }
+.brand small { margin: 0; font-size: 10px; text-transform: none; letter-spacing: .03em; }
+.snapshot { margin-left: auto; gap: 8px; font-size: 10px; }
+.snapshot .badge { font-size: 9px; padding: 5px 8px; }
+.atlas-stats { display: flex; flex-wrap: wrap; gap: 6px; }
+.atlas-stats > span, .snapshot code { color: #a5aea9; background: #0c0e0ddd; border: 1px solid #ffffff16; border-radius: 999px; padding: 5px 9px; font: 10px ui-monospace, monospace; }
+.atlas-stats .atlas-stat--partial { color: #d4b77a; border-color: #d4b77a44; }
+.atlas-workspace { position: absolute; inset: 0; display: block; height: 100%; isolation: isolate; }
+.atlas-workspace .stage { position: absolute; inset: 0; display: block; background: var(--canvas); }
+.atlas-workspace .graph-canvas { position: absolute; inset: 0; }
+.graph-canvas--project { background-color: #080909; background-image: linear-gradient(#ffffff05 1px, transparent 1px), linear-gradient(90deg, #ffffff05 1px, transparent 1px); background-size: 32px 32px; }
+.workspace-dock { position: absolute; z-index: 9; display: flex; flex-direction: column; align-items: center; gap: 5px; width: 58px; top: 65px; left: 18px; padding: 10px 5px; border-radius: 24px; border: 1px solid #ffffff12; background: #0c0e0eea; backdrop-filter: blur(16px); box-shadow: 0 10px 24px #0005; }
+.dock-brand { font: italic 600 23px Georgia, serif; color: #cbd6d0; padding: 1px 0 9px; }
+.dock-button { width: 44px; height: 42px; position: relative; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; border-radius: 14px; border: 1px solid transparent; background: transparent; color: #89968e; cursor: pointer; }
+.dock-button.is-active, .dock-button:hover, .dock-button[aria-expanded="true"] { background: #ffffff0c; color: #e2ece6; border-color: #ffffff12; }
+.dock-button svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.dock-divider { height: 1px; background: #ffffff10; width: 26px; margin: 4px; }
+.dock-tooltip { position: absolute; pointer-events: none; display: none; left: calc(100% + 16px); white-space: nowrap; border-radius: 7px; background: #202522; border: 1px solid var(--line); color: var(--text); padding: 8px 12px; font-size: 11px; }
+.dock-button:hover .dock-tooltip, .dock-button:focus-visible .dock-tooltip { display: block; }
+.floating-panel { border: 1px solid #ffffff15; border-radius: 18px; background: #101211ed; backdrop-filter: blur(24px); box-shadow: 0 24px 64px #0006; }
+.atlas-workspace .rail { position: absolute; z-index: 6; left: 100px; top: 76px; bottom: auto; width: 282px; max-height: calc(100% - 146px); padding: 0 16px 15px; display: flex; gap: 16px; overflow: auto; scrollbar-width: thin; scrollbar-color: #465049 transparent; }
+.panel-heading { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 17px 0 14px; }
+.panel-heading h2 { margin: 0; color: #e0e7e2; font-size: 12px; font-weight: 600; }
+.panel-heading span { display: block; margin-top: 5px; color: #829088; font-size: 10px; }
+.panel-close { border: 0; background: transparent; width: 25px; height: 25px; border-radius: 7px; color: #8a9890; cursor: pointer; font-size: 20px; }
+.panel-close:hover { background: #ffffff0a; color: #fff; }
+.rail .panel-heading { margin-bottom: -6px; }
+.search label { color: #94a299; font-size: 9px; font-weight: 500; }
+.search__row { border-color: #ffffff18; background: #ffffff03; border-radius: 9px; }
+.search input { font-size: 11px; padding: 10px; }
+.search button { color: #becfc4; }
+.rail__section { min-height: 0; margin: 0; }
+.rail__section > summary { cursor: pointer; list-style: none; margin: 0; padding: 5px 0; }
+.rail__section > summary::-webkit-details-marker { display: none; }
+.rail__section > summary::before { content: "›"; color: #718379; margin-right: 0; }
+.rail__section[open] > summary::before { transform: rotate(90deg); }
+.rail__section .section-title h2 { flex: 1; font-size: 11px; font-weight: 500; }
+.rail__section .section-title span { font-size: 9px; }
+.rail__section .item-list { padding-top: 9px; gap: 3px; max-height: 290px; overflow: auto; scrollbar-width: thin; scrollbar-color: #465049 transparent; min-width: 0; }
+.item { min-width: 0; padding: 9px 7px; background: transparent; border-radius: 7px; }
+.item strong { font-size: 11px; font-weight: 450; }
+.item small { font-size: 9px; color: #7a8980; }
+.item:hover { border-color: transparent; background: #ffffff06; }
+.atlas-workspace .stage__toolbar { position: absolute; top: 63px; right: 22px; z-index: 5; min-height: 0; max-width: calc(100% - 420px); padding: 7px; display: flex; gap: 7px; border: 1px solid #ffffff12; border-radius: 12px; background: #0d100edb; backdrop-filter: blur(16px); }
+.stage__toolbar > div:first-child { min-width: 0; padding: 0 10px; max-width: 190px; }
+.stage__toolbar .eyebrow { display: none; }
+.stage__toolbar h1 { font-size: 11px; font-weight: 500; color: #a2b1a8; }
+.dimension-switch { display: flex; gap: 2px; padding-right: 7px; border-right: 1px solid #ffffff12; }
+.dimension-switch button, .help-toggle { color: #87968c; border: 0; border-radius: 7px; padding: 8px 10px; background: transparent; cursor: pointer; font-size: 11px; }
+.dimension-switch button[aria-pressed="true"] { color: #eef5f0; background: #ffffff0d; }
+.help-toggle { order: 9; border: 1px solid #ffffff14; border-radius: 50%; width: 29px; height: 29px; padding: 0; align-self: center; }
+.view-actions, .evidence-switch { border: 0; background: transparent; padding: 0; }
+.view-actions button, .evidence-switch button { min-height: 29px; padding: 0 9px; font-size: 10px; }
+.evidence-switch button.is-active { box-shadow: none; background: #ffffff0d; }
+.environment-filter { font-size: 8px; }
+.atlas-workspace .inspector { position: absolute; top: 144px; right: 22px; z-index: 7; bottom: auto; width: 310px; max-height: calc(100% - 210px); padding: 0 17px 17px; overflow: auto; scrollbar-width: thin; scrollbar-color: #465049 transparent; }
+.inspector__content { padding-top: 10px; border-top-color: #ffffff0d; }
+.inspector .fact { margin-bottom: 12px; }
+.inspector .fact dt { font-size: 8px; color: #83928a; }
+.inspector .fact dd code { font-size: 10px; color: #d1dfd6; }
+.inspector .project-representatives { margin-top: 10px; padding-top: 0; }
+.atlas-workspace .legend { position: absolute; z-index: 5; left: 100px; bottom: 20px; right: 22px; border: 0; background: transparent; padding: 0; gap: 17px; min-height: 22px; pointer-events: none; font-size: 9px; }
+.legend > span { text-shadow: 0 1px 4px #000; }
+.legend .key { border: 0; width: 12px; height: 12px; margin-right: 2px; }
+.legend__action { pointer-events: auto; border-color: #ffffff15; border-radius: 8px; padding: 7px 10px; background: #111512ed; font-size: 9px; }
+.keyboard-help { position: absolute; z-index: 12; top: 117px; right: 22px; max-width: min(360px, calc(100% - 44px)); padding: 0 18px 14px; color: #aebbb3; font-size: 11px; line-height: 1.7; }
+.keyboard-help kbd { border: 1px solid #ffffff22; padding: 1px 4px; border-radius: 4px; }
+.atlas-workspace .mission-panel, .atlas-workspace .git-history-panel { position: absolute; left: 90px; right: 16px; top: 120px; bottom: 60px; border: 1px solid var(--line); border-radius: 14px; }
+.project-canvas { width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
+.project-canvas:active { cursor: grabbing; }
+.map-zones { pointer-events: none; }
+.map-node { cursor: pointer; outline: none; }
+.map-node-halo { vector-effect: non-scaling-stroke; }
+.map-node:focus-visible .map-node-halo, .map-node:hover .map-node-halo { opacity: 1; stroke: #fff; stroke-width: 2; }
+.map-edge { cursor: pointer; outline: none; }
+.map-edge .edge { stroke: #9facaa; stroke-width: .75; pointer-events: none; }
+.map-edge.is-lit .edge, .map-edge:focus-visible .edge { stroke: #effbf3; stroke-width: 1.3; }
+.map-edge .edge--gap { stroke: var(--gap); }
+.map-edge .edge--hypothetical { stroke: var(--future); }
+.map-edge-hit { stroke: transparent; fill: none; stroke-width: 10; vector-effect: non-scaling-stroke; }
+.map-labels { pointer-events: none; font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; fill: #acb9b2; }
+.map-labels text { paint-order: stroke; stroke: #080909; stroke-width: 3px; stroke-linejoin: round; }
+.map-labels .is-selected { fill: #fff; font-weight: 600; }
+@media (max-width: 1000px) {
+  .atlas-stats { display: none; }
+  .atlas-workspace .stage__toolbar { max-width: calc(100% - 110px); }
+  .atlas-workspace .rail { top: 132px; width: 250px; max-height: calc(100% - 200px); }
+  .atlas-workspace .inspector { width: 270px; top: 132px; }
+  .atlas-workspace .legend { gap: 8px; }
+}
+@media (max-width: 650px) {
+  .topbar { left: 16px; right: 16px; top: 14px; }
+  .brand small, .snapshot code { display: none; }
+  .workspace-dock { top: auto; bottom: 12px; left: 50%; transform: translateX(-50%); flex-direction: row; width: auto; max-width: calc(100% - 16px); padding: 5px; gap: 0; border-radius: 18px; }
+  .dock-brand, .dock-divider { display: none; }
+  .dock-button { width: 36px; height: 38px; border-radius: 11px; }
+  .dock-button svg { width: 17px; height: 17px; }
+  .dock-tooltip { display: none !important; }
+  .atlas-workspace .stage__toolbar { top: 55px; left: 16px; right: 16px; max-width: none; }
+  .stage__toolbar > div:first-child { width: auto; }
+  .atlas-workspace .rail, .atlas-workspace .inspector { top: 125px; left: 16px; right: 16px; width: auto; max-height: calc(100% - 215px); }
+  .atlas-workspace .legend { display: none; }
+  .atlas-workspace .mission-panel, .atlas-workspace .git-history-panel { left: 10px; right: 10px; top: 130px; bottom: 75px; }
+  .view-actions button { min-width: 28px; min-height: 28px; }
+  #graph-svg { min-height: 0; }
 }

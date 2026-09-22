@@ -11,6 +11,16 @@ import type {
 
 const NODE_SEGMENTS = 18;
 const COMMUNITY_SEGMENTS = 72;
+const COMMUNITY_COLORS = [
+  "#49d9c5",
+  "#6f9cff",
+  "#a67cff",
+  "#ed9361",
+  "#db6f9d",
+  "#69c982",
+  "#5bbbea",
+  "#d8b95f"
+];
 
 export interface ProjectGraphCallbacks {
   onNodeSelect?: (node: ProjectLayoutNode) => void;
@@ -45,6 +55,7 @@ interface ProjectRenderOptions {
 type NodeMesh = THREE.Mesh<THREE.SphereGeometry, THREE.MeshBasicMaterial>;
 type EdgeLine = THREE.Line<THREE.BufferGeometry, THREE.LineBasicMaterial>;
 type LabelSprite = THREE.Sprite;
+type CommunitySprite = THREE.Sprite;
 
 export interface ProjectGraphRendererHandle {
   render(graph: ProjectMap, layout: ProjectLayout, options?: ProjectRenderOptions): void;
@@ -71,9 +82,11 @@ class ProjectGraphRenderer implements ProjectGraphRendererHandle {
   private hoveredId: string | null = null;
   private nodeObjects: NodeMesh[] = [];
   private edgeObjects: EdgeLine[] = [];
+  private communityObjects: CommunitySprite[] = [];
   private readonly nodeById = new Map<string, NodeMesh>();
   private readonly positionById = new Map<string, THREE.Vector3>();
   private labelObjects: LabelSprite[] = [];
+  private activeLabelIds: Set<string> | null = null;
   private disposables: Array<{ dispose?: () => void }> = [];
   private pointerDown: PointerOrigin | null = null;
   private focusAnimation: FocusAnimation | null = null;
@@ -98,17 +111,18 @@ class ProjectGraphRenderer implements ProjectGraphRendererHandle {
     this.canvas = canvas;
     this.callbacks = callbacks;
 
-    this.scene.background = new THREE.Color(0x080b10);
-    this.scene.fog = new THREE.FogExp2(0x080b10, 0.00055);
+    this.scene.background = null;
+    this.scene.fog = new THREE.FogExp2(0x080b10, 0.00048);
     this.camera.position.set(0, 0, 900);
 
     this.renderer = new THREE.WebGLRenderer({
       canvas,
       antialias: true,
-      alpha: false,
+      alpha: true,
       powerPreference: "high-performance"
     });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    this.renderer.setClearColor(0x080b10, 0);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
 
     this.controls = new OrbitControls(this.camera, canvas);
@@ -193,9 +207,11 @@ class ProjectGraphRenderer implements ProjectGraphRendererHandle {
     this.disposables = [];
     this.nodeObjects = [];
     this.edgeObjects = [];
+    this.communityObjects = [];
     this.nodeById.clear();
     this.positionById.clear();
     this.labelObjects = [];
+    this.activeLabelIds = null;
   }
 
   private addCommunity(
@@ -208,6 +224,26 @@ class ProjectGraphRenderer implements ProjectGraphRendererHandle {
     const center = projectPoint(community.x, community.y, layout, scale);
     center.z = communityDepth(index, communityCount) * 0.72;
     const radius = Math.max(44, community.radius * scale);
+    const communityColor = new THREE.Color(COMMUNITY_COLORS[index % COMMUNITY_COLORS.length]);
+
+    const cloudMaterial = new THREE.SpriteMaterial({
+      map: this.glowTexture,
+      color: communityColor,
+      transparent: true,
+      opacity: 0.065,
+      depthWrite: false,
+      depthTest: false,
+      blending: THREE.NormalBlending
+    });
+    const cloud = new THREE.Sprite(cloudMaterial);
+    cloud.position.copy(center).add(new THREE.Vector3(0, 0, -18));
+    cloud.scale.set(radius * 2.75, radius * 2.2, 1);
+    cloud.renderOrder = -3;
+    cloud.userData = { kind: "community", communityId: community.id, baseOpacity: cloudMaterial.opacity };
+    this.graphGroup.add(cloud);
+    this.communityObjects.push(cloud);
+    this.disposables.push(cloudMaterial);
+
     const points: THREE.Vector3[] = [];
     for (let step = 0; step < COMMUNITY_SEGMENTS; step += 1) {
       const angle = step / COMMUNITY_SEGMENTS * Math.PI * 2;
@@ -219,9 +255,9 @@ class ProjectGraphRenderer implements ProjectGraphRendererHandle {
     }
     const geometry = new THREE.BufferGeometry().setFromPoints(points);
     const material = new THREE.LineBasicMaterial({
-      color: 0x314758,
+      color: communityColor,
       transparent: true,
-      opacity: 0.22,
+      opacity: 0.1,
       depthWrite: false
     });
     const ring = new THREE.LineLoop(geometry, material);
@@ -230,9 +266,9 @@ class ProjectGraphRenderer implements ProjectGraphRendererHandle {
     this.disposables.push(geometry, material);
 
     const label = makeTextSprite(shorten(community.label || `cluster ${index + 1}`, 28), {
-      color: "#71879a",
-      opacity: 0.54,
-      fontSize: 13
+      color: COMMUNITY_COLORS[index % COMMUNITY_COLORS.length],
+      opacity: 0.62,
+      fontSize: 12
     });
     label.position.set(center.x - radius * 0.72, center.y + radius * 0.72, center.z + 4);
     label.scale.multiplyScalar(0.9);
@@ -246,12 +282,12 @@ class ProjectGraphRenderer implements ProjectGraphRendererHandle {
     const material = new THREE.MeshBasicMaterial({
       color: baseColor,
       transparent: true,
-      opacity: 0.96,
+      opacity: 0.9,
       depthWrite: true
     });
     const mesh: NodeMesh = new THREE.Mesh(this.nodeGeometry, material);
     mesh.position.copy(position);
-    mesh.scale.setScalar(Math.max(4, node.radius * 0.92));
+    mesh.scale.setScalar(Math.max(3.2, node.radius * 0.64));
     mesh.userData = { kind: "node", node, baseColor: baseColor.clone() };
     this.graphGroup.add(mesh);
     this.nodeObjects.push(mesh);
@@ -262,14 +298,14 @@ class ProjectGraphRenderer implements ProjectGraphRendererHandle {
       map: this.glowTexture,
       color: baseColor,
       transparent: true,
-      opacity: 0.2,
+      opacity: 0.11,
       depthWrite: false,
       blending: THREE.AdditiveBlending
     });
     const halo = new THREE.Sprite(haloMaterial);
-    const haloSize = Math.max(18, node.radius * 4.7);
-    halo.scale.set(haloSize, haloSize, 1);
-    halo.userData = { kind: "halo", nodeId: String(node.node_id), baseOpacity: 0.2 };
+    const haloSize = Math.max(13, node.radius * 3.4);
+    halo.scale.set(haloSize / mesh.scale.x, haloSize / mesh.scale.y, 1);
+    halo.userData = { kind: "halo", nodeId: String(node.node_id), baseOpacity: 0.11 };
     mesh.add(halo);
     this.disposables.push(haloMaterial);
 
@@ -308,11 +344,11 @@ class ProjectGraphRenderer implements ProjectGraphRendererHandle {
     const source = this.positionById.get(String(edge.source));
     const target = this.positionById.get(String(edge.target));
     if (!source || !target) return;
-    const geometry = new THREE.BufferGeometry().setFromPoints([source, target]);
+    const geometry = new THREE.BufferGeometry().setFromPoints(curvedEdgePoints(source, target, `${edge.source}:${edge.target}`));
     const weight = Math.max(1, Number(edge.weight || 1));
-    const opacity = Math.max(0.08, Math.min(0.42, 0.09 + Math.log2(weight + 1) * 0.055));
+    const opacity = Math.max(0.045, Math.min(0.28, 0.05 + Math.log2(weight + 1) * 0.038));
     const material = new THREE.LineBasicMaterial({
-      color: 0x587086,
+      color: 0x718092,
       transparent: true,
       opacity,
       depthWrite: false
@@ -442,23 +478,31 @@ class ProjectGraphRenderer implements ProjectGraphRendererHandle {
         if (target === focus) neighborhood.add(source);
       }
     }
+    this.activeLabelIds = focus ? neighborhood : null;
+    const focusedCommunity = focus
+      ? this.layout?.nodes.find((node) => String(node.node_id) === focus)?.community
+      : null;
 
     for (const mesh of this.nodeObjects) {
       const id = String(mesh.userData.node.node_id);
       const active = !focus || neighborhood.has(id);
       const direct = id === focus;
-      mesh.material.opacity = active ? 0.98 : 0.12;
+      mesh.material.opacity = active ? 0.94 : 0.075;
       mesh.material.color.copy(mesh.userData.baseColor as THREE.Color);
       if (direct) mesh.material.color.lerp(new THREE.Color(0xffffff), 0.34);
       const halo = mesh.children.find((child) => child.userData.kind === "halo") as LabelSprite | undefined;
-      if (halo) halo.material.opacity = direct ? 0.56 : active ? 0.24 : 0.025;
+      if (halo) halo.material.opacity = direct ? 0.48 : active ? 0.14 : 0.012;
     }
 
     for (const line of this.edgeObjects) {
       const edge = line.userData.edge as GraphEdge;
       const connected = Boolean(focus && (String(edge.source) === focus || String(edge.target) === focus));
-      line.material.opacity = !focus ? Number(line.userData.baseOpacity) : connected ? 0.9 : 0.025;
-      line.material.color.setHex(connected ? 0x72e6d1 : 0x587086);
+      line.material.opacity = !focus ? Number(line.userData.baseOpacity) : connected ? 0.92 : 0.014;
+      line.material.color.setHex(connected ? 0xf1fbff : 0x718092);
+    }
+    for (const cloud of this.communityObjects) {
+      const active = !focus || cloud.userData.communityId === focusedCommunity;
+      cloud.material.opacity = Number(cloud.userData.baseOpacity) * (active ? 1 : 0.24);
     }
     this.updateLabelVisibility();
   }
@@ -468,8 +512,10 @@ class ProjectGraphRenderer implements ProjectGraphRendererHandle {
     const showMinor = distance < 650;
     const focus = this.hoveredId || this.selectedId;
     for (const label of this.labelObjects) {
-      const focused = Boolean(focus && String(label.userData.nodeId) === String(focus));
-      label.visible = Boolean(label.userData.major) || showMinor || focused;
+      const nodeId = String(label.userData.nodeId);
+      const focused = Boolean(focus && nodeId === String(focus));
+      const inFocus = !this.activeLabelIds || this.activeLabelIds.has(nodeId);
+      label.visible = inFocus && (Boolean(label.userData.major) || showMinor || focused);
       label.material.opacity = focused ? 1 : label.userData.major ? 0.84 : 0.66;
     }
   }
@@ -525,6 +571,17 @@ function projectPosition(
   const index = communityIndex.get(node.community) || 0;
   point.z = communityDepth(index, communityCount) + seededSigned(String(node.node_id)) * 58;
   return point;
+}
+
+function curvedEdgePoints(source: THREE.Vector3, target: THREE.Vector3, seed: string): THREE.Vector3[] {
+  const midpoint = source.clone().lerp(target, 0.5);
+  const direction = target.clone().sub(source);
+  const distance = Math.max(1, direction.length());
+  const normal = new THREE.Vector3(-direction.y, direction.x, 0).normalize();
+  const bend = Math.min(42, Math.max(8, distance * 0.085)) * seededSigned(seed);
+  midpoint.addScaledVector(normal, bend);
+  midpoint.z += Math.min(24, distance * 0.035);
+  return new THREE.QuadraticBezierCurve3(source, midpoint, target).getPoints(18);
 }
 
 function projectPoint(x: number, y: number, layout: ProjectLayout, scale: number): THREE.Vector3 {

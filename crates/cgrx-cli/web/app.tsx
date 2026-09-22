@@ -7,6 +7,8 @@ import React, {
   useRef,
   useState
 } from "react";
+import { ProjectCanvas } from "./components/ProjectCanvas";
+import { WorkspaceDock, PanelHeading } from "./components/WorkspaceChrome";
 import { createRoot } from "react-dom/client";
 import { defineWebGitGraph } from "@web-git-graph/web";
 import { edgeStyle, layoutGraph, layoutProjectMap } from "./layout.js";
@@ -48,6 +50,7 @@ import type {
   Mode,
   ProjectLayout,
   ProjectLayoutNode,
+  ProjectNode,
   ProjectMap,
   RefactorCandidate,
   RuntimeStatus,
@@ -162,6 +165,10 @@ function App(): React.JSX.Element {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [freshness, setFreshness] = useState<"connecting" | "live" | "refreshing" | "offline">("connecting");
   const [mode, setMode] = useState<Mode>("project");
+  const [graphDimension, setGraphDimension] = useState<"2d" | "3d">("2d");
+  const [discoveryOpen, setDiscoveryOpen] = useState(true);
+  const [inspectorDismissed, setInspectorDismissed] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const [evidenceMode, setEvidenceMode] = useState<EvidenceMode>("static");
   const [runtimeEnvironment, setRuntimeEnvironment] = useState("");
   const [camera, setCamera] = useState<CameraState>(DEFAULT_CAMERA);
@@ -191,6 +198,19 @@ function App(): React.JSX.Element {
   const [inspector, setInspector] = useState<InspectorState>({ kind: "none", facts: [] });
   const [message, setMessage] = useState("Trace evidence, then compare futures.");
   const [announcement, setAnnouncement] = useState("");
+
+  useEffect(() => { setInspectorDismissed(false); }, [inspector]);
+  useEffect(() => {
+    const keyboard = (event: KeyboardEvent): void => {
+      const target = event.target as HTMLElement;
+      if (target.matches("input, textarea, select") || target.isContentEditable) return;
+      if (event.key === "/") { event.preventDefault(); setDiscoveryOpen(true); requestAnimationFrame(() => document.getElementById("search-input")?.focus()); }
+      if (event.key === "?") setHelpOpen(v => !v);
+      if (event.key === "Escape") { setHelpOpen(false); setInspectorDismissed(true); }
+    };
+    window.addEventListener("keydown", keyboard);
+    return () => window.removeEventListener("keydown", keyboard);
+  }, [inspector]);
 
   const snapshotRef = useRef<Snapshot | null>(null);
   const graphRef = useRef<GraphResponse | null>(null);
@@ -351,7 +371,7 @@ function App(): React.JSX.Element {
     }
   };
 
-  const selectProjectNode = (node: ProjectLayoutNode): void => {
+  const selectProjectNode = (node: ProjectNode): void => {
     setSelectedNodeId(node.node_id);
     setInspector({
       kind: "package",
@@ -586,18 +606,22 @@ function App(): React.JSX.Element {
   return <>
     <a className="skip-link" href="#graph-canvas">Skip to graph</a>
     <header className="topbar">
-      <div className="brand" aria-label="CGRX Evidence Graph Explorer">
-        <span className="brand__mark" aria-hidden="true">CX</span>
-        <span><strong>CGRX</strong><small>Evidence Graph</small></span>
+      <div className="brand" aria-label="CGRX Evidence Graph Explorer"><strong>CGRX</strong><small>Code atlas</small></div>
+      <div className="atlas-stats" aria-label="Repository summary">
+        <span>{currentProjectMap?.nodes.length ?? "—"} packages</span>
+        <span>{currentProjectMap?.edges.length ?? "—"} connections</span>
+        {currentProjectMap?.partial && <span className="atlas-stat--partial">Partial coverage</span>}
       </div>
       <div className="snapshot" aria-live="polite">
         <span className={`badge badge--${freshness === "live" ? "live" : freshness === "connecting" ? "loading" : "stale"}`}>{freshness}</span>
-        <code>{snapshot ? `${snapshot.repo_revision.slice(0, 9)} · g${snapshot.graph_generation}` : "loading snapshot"}</code>
+        <code title={snapshot?.repo_revision}>{snapshot ? snapshot.repo_revision.slice(0, 9) : "loading snapshot"}</code>
       </div>
     </header>
 
-    <main className="workspace">
-      <aside className="rail" aria-label="Graph discovery">
+    <main className={`workspace atlas-workspace${mode === "project" ? " workspace--project" : ""}`}>
+      <WorkspaceDock mode={mode} modes={MODES} onMode={setMode} discoveryOpen={discoveryOpen} onDiscovery={() => setDiscoveryOpen(v => !v)} />
+      <aside id="discovery-panel" className="rail floating-panel" aria-label="Graph discovery" hidden={!discoveryOpen}>
+        <PanelHeading title="Explore repository" detail="Follow the connections in your code" onClose={() => setDiscoveryOpen(false)} />
         <form className="search" role="search" onSubmit={(event) => { void doSearch(event); }}>
           <label htmlFor="search-input">Find a symbol</label>
           <div className="search__row">
@@ -605,7 +629,10 @@ function App(): React.JSX.Element {
             <button type="submit" aria-label="Search">↵</button>
           </div>
         </form>
-        <RailSection title="Matches" count={String(searchTotal)}>
+        {mode === "project" && currentProjectMap && <RailSection title="Packages" count={String(currentProjectMap.nodes.length)} defaultOpen>
+          {currentProjectMap.nodes.map(node => <ItemButton key={String(node.node_id)} title={node.symbol} subtitle={`${node.symbols} symbols · ${node.files} files`} onClick={() => selectProjectNode(node)} />)}
+        </RailSection>}
+        <RailSection key={`matches-${searchTotal}-${searchError}`} title="Matches" count={String(searchTotal)} defaultOpen={searchTotal > 0 || Boolean(searchError)}>
           {searchError ? <p className="error">{searchError}</p> : searchResults.length
             ? searchResults.map((match) => <ItemButton key={`${match.path}:${match.span.start}:${match.symbol}`} title={match.symbol} subtitle={`${match.path}:${match.span.start}`} onClick={() => { void openFocusedGraph(match.symbol, match.path); }} />)
             : <p className="quiet">Search by intent or symbol.</p>}
@@ -642,10 +669,12 @@ function App(): React.JSX.Element {
       <section className="stage" aria-labelledby="graph-title">
         <div className="stage__toolbar">
           <div><p className="eyebrow">{stageEyebrow}</p><h1 id="graph-title">{stageTitle}</h1></div>
-          <div className="mode-switch" role="group" aria-label="Graph mode">
-            {MODES.map((item) => <button key={item.id} type="button" className={mode === item.id ? "is-active" : ""} onClick={() => setMode(item.id)}>{item.label}</button>)}
-          </div>
-          <div className="evidence-switch" role="group" aria-label="Evidence layer">
+          {mode === "project" && <div className="dimension-switch" role="group" aria-label="Graph dimensions">
+            <button type="button" aria-pressed={graphDimension === "2d"} onClick={() => setGraphDimension("2d")}>2D</button>
+            <button type="button" aria-pressed={graphDimension === "3d"} onClick={() => setGraphDimension("3d")}>3D</button>
+          </div>}
+          <button className="help-toggle" aria-label="Graph keyboard help" aria-expanded={helpOpen} onClick={() => setHelpOpen(v => !v)}>?</button>
+          {mode !== "project" && <><div className="evidence-switch" role="group" aria-label="Evidence layer">
             {EVIDENCE_MODES.map((item) => <button key={item.id} type="button" className={evidenceMode === item.id ? "is-active" : ""} onClick={() => selectEvidenceMode(item.id)}>{item.label}</button>)}
           </div>
           <label className="environment-filter" htmlFor="runtime-environment">Environment
@@ -653,7 +682,7 @@ function App(): React.JSX.Element {
               <option value="">All</option>
               {(runtimeStatus?.environments || []).map((environment) => <option key={environment} value={environment}>{environment}</option>)}
             </select>
-          </label>
+          </label></>}
           {mode !== "history" && mode !== "changes" && <div className="view-actions">
             <button type="button" onClick={() => zoom(1 / 1.2)} aria-label="Zoom out">−</button>
             <button type="button" onClick={resetView}>Reset</button>
@@ -661,6 +690,11 @@ function App(): React.JSX.Element {
           </div>}
         </div>
 
+        {helpOpen && <div className="keyboard-help floating-panel" role="region" aria-label="Graph help">
+          <PanelHeading title="Graph controls" onClose={() => setHelpOpen(false)} />
+          <p>Drag the canvas to move · Scroll to zoom</p><p>Click a package to inspect · Double-click to open code</p>
+          <p>2D: drag nodes to arrange · 3D: drag to orbit, right-drag to pan</p><p><kbd>/</kbd> Search · <kbd>Tab</kbd> Navigate · <kbd>Enter</kbd> Inspect · <kbd>Esc</kbd> Close · <kbd>?</kbd> Help</p>
+        </div>}
         {mode === "history" ? <GitHistoryPanel snapshot={snapshot} onInspect={setInspector} onError={setMessage} />
           : mode === "changes" ? <MissionDag projection={changeMissions} onSelect={selectMission} onCopy={() => changeMissions?.agent_handoff && void copy(serializeChangeMissionHandoff(changeMissions), "Change mission handoff copied")} />
             : <div
@@ -686,7 +720,7 @@ function App(): React.JSX.Element {
               }}
             >
               {mode === "project" && currentProjectMap
-                ? <ProjectMapCanvas ref={projectMapHandle} graph={currentProjectMap} selectedId={selectedNodeId} onNodeSelect={selectProjectNode} onNodeOpen={(node) => { const representative = node.representatives?.[0]; if (representative) void openFocusedGraph(representative.symbol, representative.path); }} onEdgeSelect={inspectEdge} />
+                ? <ProjectCanvasSwitch dimension={graphDimension} ref={projectMapHandle} graph={currentProjectMap} selectedId={selectedNodeId} onNodeSelect={selectProjectNode} onNodeOpen={(node) => { const representative = node.representatives?.[0]; if (representative) void openFocusedGraph(representative.symbol, representative.path); }} onEdgeSelect={inspectEdge} />
                 : mode === "compare" && currentGraph && selectedStrategy
                   ? <CompareGraph current={currentGraph} future={projectGraph(currentGraph, selectedStrategy) as GraphResponse} camera={camera} selectedNodeId={selectedNodeId} pins={pinnedPositions} onSelectNode={(node) => { void selectNode(node); }} onInspectEdge={inspectEdge} onNodeDrag={(event, node) => { dragRef.current = { key: String(node.node_id ?? node.id), x: event.clientX, y: event.clientY, origin: { x: node.x, y: node.y } }; }} />
                   : graphForStage
@@ -704,8 +738,8 @@ function App(): React.JSX.Element {
         </footer>}
       </section>
 
-      <aside className="inspector" aria-label="Evidence inspector">
-        <div className="section-title"><h2>Evidence</h2><span>{inspector.kind}</span></div>
+      <aside className="inspector floating-panel" aria-label="Evidence inspector" hidden={inspector.kind === "none" || inspectorDismissed}>
+        <PanelHeading title="Evidence" detail={inspector.kind} onClose={() => setInspectorDismissed(true)} />
         <Inspector inspector={inspector} onOpenRepresentative={(symbol, path) => { void openFocusedGraph(symbol, path); }} />
         {strategySet.length > 0 && selectedStrategy && <StrategyPanel strategies={strategySet} selected={selectedStrategy} onSelect={(strategy) => chooseStrategy(strategy)} onCopyAgent={copyAgent} onCopyMcp={copyMcp} />}
       </aside>
@@ -714,16 +748,20 @@ function App(): React.JSX.Element {
   </>;
 }
 
-function RailSection({ title, count, children, grow = false, maxClass }: { title: string; count: string; children: React.ReactNode; grow?: boolean; maxClass?: string }): React.JSX.Element {
-  return <section className={`rail__section${grow ? " rail__section--grow" : ""}`}>
-    <div className="section-title"><h2>{title}</h2><span>{count}</span></div>
+function RailSection({ title, count, children, maxClass, defaultOpen = false }: { title: string; count: string; children: React.ReactNode; grow?: boolean; maxClass?: string; defaultOpen?: boolean }): React.JSX.Element {
+  return <details className="rail__section" open={defaultOpen || undefined}>
+    <summary className="section-title"><h2>{title}</h2><span>{count}</span></summary>
     <div className="item-list" id={maxClass}>{children}</div>
-  </section>;
+  </details>;
 }
 
 function ItemButton({ title, subtitle, onClick }: { title: string; subtitle: string; onClick: () => void }): React.JSX.Element {
   return <button type="button" className="item" onClick={onClick}><strong>{title}</strong><small>{subtitle}</small></button>;
 }
+
+const ProjectCanvasSwitch = forwardRef<ProjectMapCanvasHandle, ProjectMapCanvasProps & { dimension: "2d" | "3d" }>(function ProjectCanvasSwitch({ dimension, ...props }, ref) {
+  return dimension === "2d" ? <ProjectCanvas {...props} ref={ref} /> : <ProjectMapCanvas {...props} ref={ref} />;
+});
 
 const ProjectMapCanvas = forwardRef<ProjectMapCanvasHandle, ProjectMapCanvasProps>(function ProjectMapCanvas(props, forwardedRef) {
   const canvasRef = useRef<HTMLCanvasElement>(null);

@@ -21,6 +21,17 @@ Upstream: [GIS-Info/web-git-graph](https://github.com/GIS-Info/web-git-graph).
 Both packages are MIT-licensed. The bundled notice is in
 [licenses/web-git-graph-MIT.txt](licenses/web-git-graph-MIT.txt).
 
+## Clew visual graph patterns
+
+The local graph explorer adapts visual and interaction patterns from Clew's
+open-source graph canvas. `clew-geometry.js` adapts the zone contour and convex
+hull implementation, cursor zoom and label placement. The React workspace and
+stylesheet adapt its compact dock and floating-panel composition.
+Upstream: [miuuyy/Clew](https://github.com/miuuyy/Clew), revision
+`85b7af12c992593568f6564ad322c9e3d258a919`.
+Clew is MIT-licensed. The upstream notice is in
+[licenses/clew-MIT.txt](licenses/clew-MIT.txt).
+
 ## Rust dependencies
 
 Dependencies are pinned in Cargo.lock and downloaded during source installation.
