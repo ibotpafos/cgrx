@@ -41,7 +41,8 @@ with tempfile.TemporaryDirectory(prefix="cgrx-scopes-") as directory:
     frames.append({"jsonrpc": "2.0", "id": 100, "method": "tools/call", "params": {
         "name": "search_graph", "arguments": {"repo": directory, "query": "target",
         "scope": {"include": ["."], "exclude": ["src"]}, "limit": 10}}})
-    result = subprocess.run([binary, "serve", "--multi-repo"],
+    result = subprocess.run(
+        [binary, "serve", "--multi-repo", "--response-profile", "full"],
         input="".join(json.dumps(frame) + "\n" for frame in frames),
         text=True, capture_output=True, timeout=60)
     assert result.returncode == 0, result.stderr
