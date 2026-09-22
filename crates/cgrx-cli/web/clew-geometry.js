@@ -124,6 +124,7 @@ export function placeLabels(nodes, camera, width, height, focusIds = new Set()) 
   const result = [];
   const sorted = [...nodes].sort((a, b) => Number(focusIds.has(String(b.node_id))) - Number(focusIds.has(String(a.node_id))) || b.degree - a.degree || String(a.node_id).localeCompare(String(b.node_id)));
   for (const node of sorted) {
+    if (result.length >= (focusIds.size ? 120 : 60)) break;
     if (focusIds.size && !focusIds.has(String(node.node_id))) continue;
     const x = node.x * camera.scale + camera.x;
     const y = node.y * camera.scale + camera.y;

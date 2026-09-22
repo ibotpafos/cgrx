@@ -7,11 +7,13 @@ import React, {
   useRef,
   useState
 } from "react";
+import { projectCodeMap } from "./repository-map.js";
+import { layoutRepositoryMap } from "./dense-layout.js";
 import { ProjectCanvas } from "./components/ProjectCanvas";
 import { WorkspaceDock, PanelHeading } from "./components/WorkspaceChrome";
 import { createRoot } from "react-dom/client";
 import { defineWebGitGraph } from "@web-git-graph/web";
-import { edgeStyle, layoutGraph, layoutProjectMap } from "./layout.js";
+import { edgeStyle, layoutGraph } from "./layout.js";
 import { CgrxGitGraphProvider } from "./git-history.js";
 import {
   createProjectGraphRenderer,
@@ -181,7 +183,16 @@ function App(): React.JSX.Element {
 
   const [currentGraph, setCurrentGraph] = useState<GraphResponse | null>(null);
   const [currentArchitecture, setCurrentArchitecture] = useState<GraphResponse | null>(null);
-  const [currentProjectMap, setCurrentProjectMap] = useState<ProjectMap | null>(null);
+  const [packageMap, setPackageMap] = useState<ProjectMap | null>(null);
+  const [repositoryGraph, setRepositoryGraph] = useState<GraphResponse | null>(null);
+  const [graphDetail, setGraphDetail] = useState<"symbols" | "files" | "packages">("symbols");
+  const [graphScope, setGraphScope] = useState("**");
+  const [scopeDraft, setScopeDraft] = useState("**");
+  const [repositoryError, setRepositoryError] = useState("");
+  const repositoryRequest = useRef(0);
+  const currentProjectMap = useMemo(() => graphDetail === "packages" ? packageMap
+    : repositoryGraph ? projectCodeMap(repositoryGraph, graphDetail) as ProjectMap : null,
+    [graphDetail, packageMap, repositoryGraph]);
   const [architectureIssues, setArchitectureIssues] = useState<ArchitectureIssue[]>([]);
   const [architecturePartial, setArchitecturePartial] = useState(false);
   const [refactors, setRefactors] = useState<RefactorResponse | null>(null);
@@ -249,10 +260,22 @@ function App(): React.JSX.Element {
     await loadFocusedGraph(symbol, path);
   }, [loadFocusedGraph]);
 
+  const loadRepository = useCallback(async (): Promise<void> => {
+    const request = ++repositoryRequest.current;
+    setRepositoryError("");
+    setRepositoryGraph(null);
+    try {
+      const value = await api<GraphResponse>(`/api/repository-graph?scope=${encodeURIComponent(graphScope)}&node_limit=5000&edge_limit=30000`);
+      if (request === repositoryRequest.current) setRepositoryGraph(value);
+    } catch (error) {
+      if (request === repositoryRequest.current) setRepositoryError(errorMessage(error));
+    }
+  }, [graphScope]);
+
   const loadArchitecture = useCallback(async (): Promise<void> => {
     const value = await api<ArchitectureResponse>("/api/architecture?scope=**&package_depth=2&limit=300");
     setCurrentArchitecture(projectArchitecture(value) as GraphResponse);
-    setCurrentProjectMap(projectRepositoryMap(value) as ProjectMap);
+    setPackageMap(projectRepositoryMap(value) as ProjectMap);
     setArchitectureIssues(value.architecture_plan?.issues || []);
     setArchitecturePartial(Boolean(value.partial));
   }, []);
@@ -294,8 +317,8 @@ function App(): React.JSX.Element {
   }, []);
 
   const refreshSecondaryData = useCallback(async (): Promise<void> => {
-    await Promise.all([loadMissions(), loadRuntime(), loadArchitecture(), loadRefactors()]);
-  }, [loadArchitecture, loadMissions, loadRefactors, loadRuntime]);
+    await Promise.all([loadRepository(), loadArchitecture(), loadMissions(), loadRuntime(), loadRefactors()]);
+  }, [loadRepository, loadArchitecture, loadMissions, loadRefactors, loadRuntime]);
 
   const loadStatus = useCallback(async (refreshOnChange = true): Promise<void> => {
     try {
@@ -372,11 +395,16 @@ function App(): React.JSX.Element {
   };
 
   const selectProjectNode = (node: ProjectNode): void => {
+    if (node.kind === "symbol") {
+      void selectNode(node);
+      projectMapHandle.current?.focusNode(node.node_id);
+      return;
+    }
     setSelectedNodeId(node.node_id);
     setInspector({
-      kind: "package",
+      kind: node.kind === "file" ? "file" : "package",
       facts: [
-        ["Package", node.symbol],
+        [node.kind === "file" ? "File" : "Package", node.symbol],
         ["Community", node.community.replace("community:", "")],
         ["Files", node.files],
         ["Symbols", node.symbols],
@@ -389,7 +417,7 @@ function App(): React.JSX.Element {
     projectMapHandle.current?.focusNode(node.node_id);
   };
 
-  const selectNode = async (node: LayoutNode): Promise<void> => {
+  const selectNode = async (node: GraphNode): Promise<void> => {
     setSelectedNodeId(node.node_id);
     const facts: Array<[string, unknown]> = [
       ["Symbol", node.symbol],
@@ -413,9 +441,9 @@ function App(): React.JSX.Element {
       const snippet = await api<SnippetResponse>(
         `/api/snippet?symbol=${encodeURIComponent(node.symbol)}&path=${encodeURIComponent(node.path)}`
       );
-      setInspector({ kind: node.lane || "node", facts, code: snippet.source || snippet.declaration || "Source unavailable." });
+      setInspector(current => current.facts === facts ? { kind: node.lane || "node", facts, code: snippet.source || snippet.declaration || "Source unavailable." } : current);
     } catch (error) {
-      setInspector({ kind: node.lane || "node", facts, error: errorMessage(error) });
+      setInspector(current => current.facts === facts ? { kind: node.lane || "node", facts, error: errorMessage(error) } : current);
     }
   };
 
@@ -427,6 +455,7 @@ function App(): React.JSX.Element {
         ["Relationship", `${source.symbol} → ${target.symbol}`],
         ["Kind", edge.relation],
         ["Confidence", edge.confidence],
+        ...(Number(edge.weight) > 1 ? [["Aggregated relationships", edge.weight] as [string, unknown]] : []),
         ["Resolver", "resolver" in evidence ? evidence.resolver : "indexed"],
         ["Evidence site", "path" in evidence ? `${evidence.path}:${evidence.span?.start ?? "?"}` : "hypothetical"],
         ["Source hash", "source_hash" in evidence ? evidence.source_hash : "not applicable"],
@@ -608,8 +637,9 @@ function App(): React.JSX.Element {
     <header className="topbar">
       <div className="brand" aria-label="CGRX Evidence Graph Explorer"><strong>CGRX</strong><small>Code atlas</small></div>
       <div className="atlas-stats" aria-label="Repository summary">
-        <span>{currentProjectMap?.nodes.length ?? "—"} packages</span>
+        <span>{currentProjectMap?.nodes.length ?? "—"} {graphDetail}</span>
         <span>{currentProjectMap?.edges.length ?? "—"} connections</span>
+        {currentProjectMap?.truncated && <span className="atlas-stat--partial">Showing part of {currentProjectMap.totals?.symbols} symbols / {currentProjectMap.totals?.relationships} links · narrow scope</span>}
         {currentProjectMap?.partial && <span className="atlas-stat--partial">Partial coverage</span>}
       </div>
       <div className="snapshot" aria-live="polite">
@@ -629,8 +659,13 @@ function App(): React.JSX.Element {
             <button type="submit" aria-label="Search">↵</button>
           </div>
         </form>
-        {mode === "project" && currentProjectMap && <RailSection title="Packages" count={String(currentProjectMap.nodes.length)} defaultOpen>
-          {currentProjectMap.nodes.map(node => <ItemButton key={String(node.node_id)} title={node.symbol} subtitle={`${node.symbols} symbols · ${node.files} files`} onClick={() => selectProjectNode(node)} />)}
+        {mode === "project" && graphDetail !== "packages" && <form className="search" onSubmit={e => { e.preventDefault(); setGraphScope(scopeDraft.trim() || "**"); }}>
+          <label htmlFor="graph-scope">Graph scope · path glob</label><div className="search__row"><input id="graph-scope" value={scopeDraft} onChange={e => setScopeDraft(e.target.value)} placeholder="crates/cgrx-core/**"/><button type="submit" aria-label="Apply graph scope">↵</button></div>
+          <small className="quiet">{currentProjectMap?.truncated ? "View limited to 5,000 symbols / 30,000 links. Narrow scope to explore more." : "All indexed symbols in scope · calls and implementations"}</small>
+        </form>}
+        {mode === "project" && currentProjectMap && <RailSection title={graphDetail === "packages" ? "Packages" : graphDetail === "files" ? "Files" : "Symbols"} count={String(currentProjectMap.nodes.length)} defaultOpen>
+          {currentProjectMap.nodes.slice(0, 100).map(node => <ItemButton key={String(node.node_id)} title={node.symbol} subtitle={node.kind === "symbol" ? `${node.path}:${node.span?.start ?? "?"}` : `${node.symbols} symbols · ${node.degree} connections`} onClick={() => selectProjectNode(node)} />)}
+          {currentProjectMap.nodes.length > 100 && <p className="quiet">First 100 shown in list. All {currentProjectMap.nodes.length} nodes are on the map; use search or narrow scope.</p>}
         </RailSection>}
         <RailSection key={`matches-${searchTotal}-${searchError}`} title="Matches" count={String(searchTotal)} defaultOpen={searchTotal > 0 || Boolean(searchError)}>
           {searchError ? <p className="error">{searchError}</p> : searchResults.length
@@ -669,6 +704,9 @@ function App(): React.JSX.Element {
       <section className="stage" aria-labelledby="graph-title">
         <div className="stage__toolbar">
           <div><p className="eyebrow">{stageEyebrow}</p><h1 id="graph-title">{stageTitle}</h1></div>
+          {mode === "project" && <label className="detail-select">Detail<select aria-label="Graph detail" value={graphDetail} onChange={e => { setGraphDetail(e.target.value as typeof graphDetail); setSelectedNodeId(null); setInspector({ kind: "none", facts: [] }); }}>
+            <option value="symbols">Symbols</option><option value="files">Files</option><option value="packages">Packages</option>
+          </select></label>}
           {mode === "project" && <div className="dimension-switch" role="group" aria-label="Graph dimensions">
             <button type="button" aria-pressed={graphDimension === "2d"} onClick={() => setGraphDimension("2d")}>2D</button>
             <button type="button" aria-pressed={graphDimension === "3d"} onClick={() => setGraphDimension("3d")}>3D</button>
@@ -692,7 +730,7 @@ function App(): React.JSX.Element {
 
         {helpOpen && <div className="keyboard-help floating-panel" role="region" aria-label="Graph help">
           <PanelHeading title="Graph controls" onClose={() => setHelpOpen(false)} />
-          <p>Drag the canvas to move · Scroll to zoom</p><p>Click a package to inspect · Double-click to open code</p>
+          <p>Drag the canvas to move · Scroll to zoom</p><p>Click a node to inspect · Double-click to open code</p>
           <p>2D: drag nodes to arrange · 3D: drag to orbit, right-drag to pan</p><p><kbd>/</kbd> Search · <kbd>Tab</kbd> Navigate · <kbd>Enter</kbd> Inspect · <kbd>Esc</kbd> Close · <kbd>?</kbd> Help</p>
         </div>}
         {mode === "history" ? <GitHistoryPanel snapshot={snapshot} onInspect={setInspector} onError={setMessage} />
@@ -721,11 +759,12 @@ function App(): React.JSX.Element {
             >
               {mode === "project" && currentProjectMap
                 ? <ProjectCanvasSwitch dimension={graphDimension} ref={projectMapHandle} graph={currentProjectMap} selectedId={selectedNodeId} onNodeSelect={selectProjectNode} onNodeOpen={(node) => { const representative = node.representatives?.[0]; if (representative) void openFocusedGraph(representative.symbol, representative.path); }} onEdgeSelect={inspectEdge} />
+                : mode === "project" ? <div className="graph-message"><strong>{repositoryError || "Loading repository relationships…"}</strong>{repositoryError && <button onClick={() => void loadRepository()}>Retry</button>}</div>
                 : mode === "compare" && currentGraph && selectedStrategy
                   ? <CompareGraph current={currentGraph} future={projectGraph(currentGraph, selectedStrategy) as GraphResponse} camera={camera} selectedNodeId={selectedNodeId} pins={pinnedPositions} onSelectNode={(node) => { void selectNode(node); }} onInspectEdge={inspectEdge} onNodeDrag={(event, node) => { dragRef.current = { key: String(node.node_id ?? node.id), x: event.clientX, y: event.clientY, origin: { x: node.x, y: node.y } }; }} />
                   : graphForStage
                     ? <SvgGraph graph={graphForStage} camera={camera} selectedNodeId={selectedNodeId} pins={pinnedPositions} onSelectNode={(node) => { void selectNode(node); }} onInspectEdge={inspectEdge} onNodeDrag={(event, node) => { dragRef.current = { key: String(node.node_id ?? node.id), x: event.clientX, y: event.clientY, origin: { x: node.x, y: node.y } }; }} />
-                    : <div className="graph-message"><strong>{message || (mode === "project" ? "Building repository map…" : mode === "architecture" ? "Loading architecture projection…" : "Select a symbol to inspect its neighborhood.")}</strong></div>}
+                    : <div className="graph-message"><strong>{message || (mode === "architecture" ? "Loading architecture projection…" : "Select a symbol to inspect its neighborhood.")}</strong></div>}
             </div>}
 
         {mode !== "history" && mode !== "changes" && <footer className="legend" aria-label="Evidence legend">
@@ -790,7 +829,7 @@ const ProjectMapCanvas = forwardRef<ProjectMapCanvasHandle, ProjectMapCanvasProp
     };
   }, []);
 
-  const layout = useMemo(() => layoutProjectMap(props.graph, { width: size.width, height: size.height, pins: {} }) as ProjectLayout, [props.graph, size.height, size.width]);
+  const layout = useMemo(() => layoutRepositoryMap(props.graph, { width: size.width, height: size.height }) as ProjectLayout, [props.graph, size.height, size.width]);
   useEffect(() => { rendererRef.current?.render(props.graph, layout, { selectedId: props.selectedId }); }, [layout, props.graph]);
   useEffect(() => { rendererRef.current?.setSelected(props.selectedId); }, [props.selectedId]);
   useImperativeHandle(forwardedRef, () => ({

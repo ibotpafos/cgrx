@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { intersectsAny } from "./clew-geometry.js";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import type {
   GraphEdge,
@@ -176,7 +177,7 @@ class ProjectGraphRenderer implements ProjectGraphRendererHandle {
     this.graph = graph;
     this.layout = layout;
     this.selectedId = selectedId == null ? null : String(selectedId);
-    const signature = `${graph.snapshot?.repo_revision || ""}:${graph.snapshot?.graph_generation || ""}:${layout.nodes.length}:${graph.edges?.length || 0}`;
+    const signature = `${graph.snapshot?.repo_revision || ""}:${graph.snapshot?.graph_generation || ""}:${graph.snapshot?.working_tree_digest || ""}:${graph.level || "packages"}:${graph.root.path}:${layout.nodes.length}:${graph.edges?.length || 0}`;
     const shouldFit = this.lastSignature !== signature;
     this.lastSignature = signature;
     this.clearGraph();
@@ -346,7 +347,8 @@ class ProjectGraphRenderer implements ProjectGraphRendererHandle {
     if (!source || !target) return;
     const geometry = new THREE.BufferGeometry().setFromPoints(curvedEdgePoints(source, target, `${edge.source}:${edge.target}`));
     const weight = Math.max(1, Number(edge.weight || 1));
-    const opacity = Math.max(0.045, Math.min(0.28, 0.05 + Math.log2(weight + 1) * 0.038));
+    const opacity = this.graph?.level ? Math.min(0.4, 0.2 + Math.log2(weight + 1) * 0.025)
+      : Math.max(0.045, Math.min(0.28, 0.05 + Math.log2(weight + 1) * 0.038));
     const material = new THREE.LineBasicMaterial({
       color: 0x718092,
       transparent: true,
@@ -511,11 +513,26 @@ class ProjectGraphRenderer implements ProjectGraphRendererHandle {
     const distance = this.camera.position.distanceTo(this.controls.target);
     const showMinor = distance < 650;
     const focus = this.hoveredId || this.selectedId;
-    for (const label of this.labelObjects) {
+    this.camera.updateMatrixWorld();
+    const width = this.canvas.clientWidth, height = this.canvas.clientHeight;
+    const occupied: Array<{ left: number; top: number; right: number; bottom: number }> = [];
+    const labels = focus ? [...this.labelObjects.filter(l => l.userData.nodeId === focus), ...this.labelObjects.filter(l => l.userData.nodeId !== focus)] : this.labelObjects;
+    for (const label of labels) {
       const nodeId = String(label.userData.nodeId);
       const focused = Boolean(focus && nodeId === String(focus));
       const inFocus = !this.activeLabelIds || this.activeLabelIds.has(nodeId);
-      label.visible = inFocus && (Boolean(label.userData.major) || showMinor || focused);
+      label.visible = false;
+      if (!inFocus || (!label.userData.major && !showMinor && !this.activeLabelIds) || occupied.length >= 80) continue;
+      const view = label.position.clone().applyMatrix4(this.camera.matrixWorldInverse);
+      if (view.z >= -this.camera.near) continue;
+      const screen = view.clone().applyMatrix4(this.camera.projectionMatrix);
+      const x = (screen.x + 1) * width / 2, y = (1 - screen.y) * height / 2;
+      const w = label.scale.x * this.camera.projectionMatrix.elements[0]! / -view.z * width / 2;
+      const h = Math.max(12, label.scale.y * this.camera.projectionMatrix.elements[5]! / -view.z * height / 2);
+      const box = { left: x - 3, right: x + w + 3, top: y - h / 2 - 3, bottom: y + h / 2 + 3 };
+      if (box.right < 0 || box.left > width || box.bottom < 0 || box.top > height || intersectsAny(box, occupied)) continue;
+      occupied.push(box);
+      label.visible = true;
       label.material.opacity = focused ? 1 : label.userData.major ? 0.84 : 0.66;
     }
   }
@@ -574,6 +591,10 @@ function projectPosition(
 }
 
 function curvedEdgePoints(source: THREE.Vector3, target: THREE.Vector3, seed: string): THREE.Vector3[] {
+  if (source.distanceToSquared(target) < .0001) {
+    return new THREE.CubicBezierCurve3(source, source.clone().add(new THREE.Vector3(-24, 35, 8)),
+      target.clone().add(new THREE.Vector3(24, 35, 8)), target).getPoints(24);
+  }
   const midpoint = source.clone().lerp(target, 0.5);
   const direction = target.clone().sub(source);
   const distance = Math.max(1, direction.length());

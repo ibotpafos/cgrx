@@ -38,3 +38,9 @@ Dependencies are pinned in Cargo.lock and downloaded during source installation.
 [licenses/dependencies.md](licenses/dependencies.md) lists versions and declared
 licenses. Binary distributions include available dependency license/notice files
 in the licenses directory. Tree-sitter grammars retain their upstream authorship.
+
+## D3 force layout
+
+The symbol/file atlas bundles `d3-force` 3.0.0 and its d3-quadtree,
+d3-dispatch and d3-timer dependencies. Upstream: https://github.com/d3/d3-force.
+Their ISC license notices are retained in [licenses/d3-ISC.txt](licenses/d3-ISC.txt).

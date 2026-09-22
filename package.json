@@ -15,6 +15,7 @@
   "dependencies": {
     "@web-git-graph/protocol": "1.0.7",
     "@web-git-graph/web": "1.0.7",
+    "d3-force": "3.0.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "three": "^0.186.0"

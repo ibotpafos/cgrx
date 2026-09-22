@@ -153,6 +153,11 @@ impl Visualizer {
             "/api/status" => self.status(),
             "/api/runtime-status" => self.api_result(self.runtime_status()),
             "/api/search" => self.api_result(self.search(request)),
+            "/api/repository-graph" => self.api_result(self.runtime.repository_graph(
+                &scope(request, 1),
+                number(request, "node_limit", 5000).unwrap_or(0),
+                number(request, "edge_limit", 30000).unwrap_or(0),
+            )),
             "/api/graph" => self.api_result(self.graph(request)),
             "/api/architecture" => self.api_result(self.architecture(request)),
             "/api/refactors" => self.api_result(self.refactors(request)),

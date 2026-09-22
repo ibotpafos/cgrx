@@ -147,13 +147,18 @@ server binds only to `127.0.0.1`, gives the browser a random process-local
 capability, accepts only GET and HEAD, and never sends graph or source data to
 an external service.
 
-The default `Project map` is a React 2D code atlas with a full-screen canvas,
+The default `Project map` shows indexed symbols and their proven call / implementation
+relationships in a React 2D code atlas with a full-screen canvas,
 soft community regions and collision-aware labels, adapted from
 [Clew](https://github.com/miuuyy/Clew). A compact dock switches between graph,
 architecture, change missions and history; search and evidence open in floating
 panels. Drag to pan, scroll to zoom around the pointer, and drag nodes to arrange
-them for the current view. Click a package to inspect its evidence and representative
-symbols; double-click to open a representative's focused graph. Reset restores
+them for the current view. Click a symbol to inspect its source and double-click to open its focused graph.
+The **Symbols / Files / Packages** selector changes granularity; file views retain
+internal calls as loops and aggregate calls between files. Package mode remains
+available as an architectural summary. Graph scope accepts path globs, for example
+`crates/cgrx-core/**`. The overview loads up to 5,000 symbols and 30,000 relationships,
+shows truncation explicitly, and preserves disconnected indexed symbols. Reset restores
 the layout. Source snapshot changes discard manual positions.
 
 Switch to **3D** for the Three.js map: left-drag orbits, right-drag pans and the

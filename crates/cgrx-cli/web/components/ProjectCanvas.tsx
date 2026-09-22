@@ -1,5 +1,5 @@
 import React, { forwardRef, useEffect, useId, useImperativeHandle, useMemo, useRef, useState } from "react";
-import { layoutProjectMap } from "../layout.js";
+import { layoutRepositoryMap } from "../dense-layout.js";
 import { buildZoneContour, placeLabels, zoomAt } from "../clew-geometry.js";
 import { edgeStyle } from "../layout.js";
 import type { CameraState, GraphEdge, GraphId, ProjectLayout, ProjectLayoutNode, ProjectMap } from "../types";
@@ -28,8 +28,8 @@ export const ProjectCanvas = forwardRef<ProjectCanvasHandle, ProjectCanvasProps>
   const [pins, setPins] = useState<Record<string, { x: number; y: number }>>({});
   const drag = useRef<{ x: number; y: number; camera: CameraState; node?: ProjectLayoutNode; moved: boolean } | null>(null);
   const suppressClick = useRef(false);
-  const baseLayout = useMemo(() => layoutProjectMap(props.graph, { width: 1400, height: 1000 }) as ProjectLayout, [props.graph]);
-  const layout = useMemo(() => layoutProjectMap(props.graph, { width: 1400, height: 1000, pins }) as ProjectLayout, [props.graph, pins]);
+  const baseLayout = useMemo(() => layoutRepositoryMap(props.graph, { width: 1400, height: 1000 }) as ProjectLayout, [props.graph]);
+  const layout = useMemo(() => ({ ...baseLayout, nodes: baseLayout.nodes.map(n => pins[String(n.node_id)] ? { ...n, ...pins[String(n.node_id)], pinned: true } : n) }), [baseLayout, pins]);
   const byId = useMemo(() => new Map(layout.nodes.map(n => [String(n.node_id), n])), [layout]);
   const focus = hovered || (props.selectedId == null ? null : String(props.selectedId));
   const focusIds = useMemo(() => {
@@ -65,7 +65,7 @@ export const ProjectCanvas = forwardRef<ProjectCanvasHandle, ProjectCanvasProps>
     observer.observe(element);
     return () => observer.disconnect();
   }, []);
-  const generation = `${props.graph.snapshot.repo_revision}:${props.graph.snapshot.graph_generation}:${props.graph.snapshot.working_tree_digest}`;
+  const generation = `${props.graph.level || "packages"}:${props.graph.root.path}:${props.graph.root.symbol}:${props.graph.snapshot.repo_revision}:${props.graph.snapshot.graph_generation}:${props.graph.snapshot.working_tree_digest}`;
   useEffect(() => { setPins({}); setHovered(null); }, [generation]);
   useEffect(() => { setCamera(fit()); }, [size.width, size.height, generation]);
   useEffect(() => {
@@ -131,7 +131,7 @@ export const ProjectCanvas = forwardRef<ProjectCanvasHandle, ProjectCanvasProps>
         if (!source || !target) return null;
         const connected = focus === String(edge.source) || focus === String(edge.target);
         const dx = target.x - source.x, dy = target.y - source.y;
-        const d = `M${source.x} ${source.y} Q${(source.x + target.x) / 2 - dy * 0.1} ${(source.y + target.y) / 2 + dx * 0.1} ${target.x} ${target.y}`;
+        const d = source === target ? `M${source.x} ${source.y} c-30 -40 30 -40 0 0` : `M${source.x} ${source.y} Q${(source.x + target.x) / 2 - dy * 0.1} ${(source.y + target.y) / 2 + dx * 0.1} ${target.x} ${target.y}`;
         const style = edgeStyle(edge);
         const activate = (): void => props.onEdgeSelect(edge, source, target);
         return <g key={`${edge.source}:${edge.target}:${i}`} role="button" tabIndex={0} aria-label={`${source.symbol} ${edge.relation} ${target.symbol}, ${edge.confidence || "unknown confidence"}`} className={`map-edge ${connected ? "is-lit" : ""}`} opacity={focus && !connected ? 0.06 : connected ? 0.95 : 0.28} onPointerDown={e => { e.stopPropagation(); suppressClick.current = false; }} onClick={() => { if (!suppressClick.current) activate(); }} onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); activate(); } }}>
@@ -141,12 +141,12 @@ export const ProjectCanvas = forwardRef<ProjectCanvasHandle, ProjectCanvasProps>
       {layout.nodes.map(node => {
         const id = String(node.node_id), selected = String(props.selectedId) === id;
         const active = !focus || focusIds.has(id);
-        const radius = Math.max(3.5, node.radius * .45);
+        const radius = props.graph.level ? Math.max(1.6, node.radius * .32) : Math.max(3.5, node.radius * .45);
         return <g key={id} className={`map-node${selected ? " is-selected" : ""}`} role="button" tabIndex={0} aria-label={`${node.symbol}, ${node.symbols} symbols${node.cycle ? ", cycle candidate" : ""}`} transform={`translate(${node.x} ${node.y})`} opacity={active ? 1 : .14}
           onPointerDown={e => begin(e, node)} onDoubleClick={() => props.onNodeOpen(node)} onPointerEnter={() => { if (!drag.current) setHovered(id); }} onPointerLeave={() => setHovered(null)} onFocus={() => setHovered(id)} onBlur={() => setHovered(null)}
           onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); props.onNodeSelect(node); } }}>
           <title>{node.symbol} · {node.symbols} symbols · {node.files} files</title>
-          <circle r={Math.max(12, radius + 6)} fill="transparent"/>
+          <circle r={props.graph.level ? radius + 3 : Math.max(12, radius + 6)} fill="transparent"/>
           <circle className="map-node-halo" r={radius + 6} fill="none" stroke={node.color} opacity={selected ? .8 : .12}/>
           <circle className="map-node-dot" r={radius} fill={selected || focusIds.has(id) ? "#f4f6f5" : "#9ca8a5"}/>
           {node.cycle && <circle r={radius + 3} fill="none" stroke="#eac16b" strokeDasharray="3 3"/>}

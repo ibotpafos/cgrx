@@ -170,6 +170,7 @@ fn starts_on_loopback_and_requires_capability() {
 fn read_only_api_routes_share_the_current_snapshot() {
     let (_repository, server) = start_server();
     let paths = [
+        "/api/repository-graph?node_limit=5000&edge_limit=30000",
         "/api/runtime-status",
         "/api/search?q=selected&scope=**&limit=8",
         "/api/graph?symbol=selected&path=main.rs&direction=both&depth=1&node_limit=80&edge_limit=160",
@@ -427,5 +428,27 @@ fn serves_embedded_assets_with_security_headers() {
             "{path}: {response}"
         );
         assert!(response.contains(marker), "{path}: {response}");
+    }
+}
+
+#[test]
+fn repository_graph_route_is_bounded_and_capability_protected() {
+    let (_repository, server) = start_server();
+    assert!(request(&server, "GET", "/api/repository-graph", false).starts_with("HTTP/1.1 401"));
+    for query in [
+        "node_limit=0",
+        "node_limit=10001",
+        "edge_limit=50001",
+        "edge_limit=oops",
+    ] {
+        assert!(
+            request(
+                &server,
+                "GET",
+                &format!("/api/repository-graph?{query}"),
+                true
+            )
+            .starts_with("HTTP/1.1 400")
+        );
     }
 }

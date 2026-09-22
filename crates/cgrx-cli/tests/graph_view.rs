@@ -253,3 +253,70 @@ fn graph_view_rejects_invalid_bounds_and_missing_symbols() {
         "cgrx.symbol_not_found"
     );
 }
+
+#[test]
+fn repository_graph_keeps_internal_calls_isolates_and_precise_ids() {
+    let (repository, _state, mut runtime) = graph_runtime();
+    fs::write(
+        repository.path().join("isolated.ts"),
+        "export function disconnected() {}\n",
+    )
+    .unwrap();
+    runtime.refresh(repository.path()).unwrap();
+    let scope = request(80, 160).scope;
+    let graph = runtime.repository_graph(&scope, 5000, 30000).unwrap();
+    let nodes = graph["nodes"].as_array().unwrap();
+    let edges = graph["edges"].as_array().unwrap();
+    assert!(nodes.iter().any(|n| n["symbol"] == "disconnected"));
+    assert_eq!(nodes.len() as u64, graph["total_nodes"].as_u64().unwrap());
+    assert_eq!(edges.len() as u64, graph["total_edges"].as_u64().unwrap());
+    assert_eq!(graph["truncated"], false);
+    assert!(
+        nodes
+            .iter()
+            .all(|n| n["node_id"].as_str().unwrap().parse::<u64>().is_ok())
+    );
+    let selected = nodes
+        .iter()
+        .find(|n| n["symbol"] == "selected" && n["path"] == "service.ts")
+        .unwrap();
+    let target = nodes.iter().find(|n| n["symbol"] == "target").unwrap();
+    assert!(edges.iter().any(|e| e["source"] == selected["node_id"]
+        && e["target"] == target["node_id"]
+        && e["relation"] == "CALLS"
+        && e["evidence"]["path"] == "service.ts"));
+    assert!(
+        edges
+            .iter()
+            .all(|e| nodes.iter().any(|n| n["node_id"] == e["source"])
+                && nodes.iter().any(|n| n["node_id"] == e["target"]))
+    );
+    let bounded = runtime.repository_graph(&scope, 1, 1).unwrap();
+    assert_eq!(bounded["truncated"], true);
+    assert_eq!(bounded["total_nodes"], graph["total_nodes"]);
+    assert!(runtime.repository_graph(&scope, 0, 1).is_err());
+    assert!(runtime.repository_graph(&scope, 10001, 1).is_err());
+    assert!(runtime.repository_graph(&scope, 1, 50001).is_err());
+    let mut narrow = scope;
+    narrow.include = vec!["isolated.ts".into()];
+    let only_isolate = runtime.repository_graph(&narrow, 5000, 30000).unwrap();
+    assert_eq!(only_isolate["nodes"].as_array().unwrap().len(), 1);
+    assert!(only_isolate["edges"].as_array().unwrap().is_empty());
+    fs::write(
+        repository.path().join("service.ts"),
+        "export function target() {}\nexport function selected() {}\n",
+    )
+    .unwrap();
+    runtime.refresh(repository.path()).unwrap();
+    let after = runtime
+        .repository_graph(&request(80, 160).scope, 5000, 30000)
+        .unwrap();
+    assert!(
+        !after["edges"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|e| e["source"] == selected["node_id"] && e["target"] == target["node_id"])
+    );
+    assert_ne!(after["snapshot"], graph["snapshot"]);
+}

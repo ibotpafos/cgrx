@@ -295,3 +295,10 @@ button:focus-visible, summary:focus-visible { outline: 2px solid var(--focus); o
   .view-actions button { min-width: 28px; min-height: 28px; }
   #graph-svg { min-height: 0; }
 }
+.detail-select { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 10px; }
+.detail-select select { color: var(--text); background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 6px; font-size: 11px; }
+.search > small { display: block; font-size: 9px; margin-top: 6px; line-height: 1.5; }
+@media (max-width: 650px) {
+  .workspace--project .stage__toolbar > div:first-child { display: none; }
+  .detail-select { font-size: 0; }
+}

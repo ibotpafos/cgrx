@@ -56,3 +56,33 @@ preview proxy: package selection, keyboard edge inspection, double-click to the
 No browser console warnings or errors were reported. CGRX risk scanning found
 no broken-call candidates, but web coverage is partial; direct source review
 and the executed checks provide the validation for those coverage gaps.
+
+## Symbol-level overview follow-up
+
+Codebase Memory was reviewed as a reference for graph granularity:
+https://github.com/DeusData/codebase-memory-mcp/blob/main/graph-ui/src/hooks/useGraphData.ts
+Its overview loads code nodes with an explicit initial node budget, rather than
+only aggregated package boundaries. CGRX now exposes its own snapshot-bound
+repository symbol graph through `/api/repository-graph` and defaults to symbols.
+The existing proven-arc and scoped-document query helpers are reused. No CBM
+source is copied. Missing resolution remains a coverage gap, never an invented
+edge. Graph nodes and endpoints use decimal strings to preserve u64 identity.
+
+`projectCodeMap` supplies symbol/file projections, including intrafile calls and
+isolates. File edges aggregate by direction and relation, retaining a real
+evidence site. Symbols return the exact stored qualified name, path and span.
+The server reports full scoped node/edge counts separately from bounded output;
+the UI offers path-glob narrowing when the 5,000-node / 30,000-edge view is capped.
+
+D3 force 3.0.0 is adopted for the dense layout, using Barnes–Hut repulsion:
+https://d3js.org/d3-force/many-body . Its ISC license and transitive notices are
+retained. The existing all-pairs package layout would be quadratic at this size.
+Layout runs once per graph, while dragging only overrides node coordinates.
+A local 3,200-node / 9,585-edge synthetic layout completed in about 0.9 seconds;
+this is a layout measurement, not an end-to-end browser benchmark.
+
+Follow-up validation: 28 web tests and 15 Rust graph/HTTP/refresh tests passed.
+The real alpha.12 checkout returned 3,216 symbols and 2,250 proven relationships,
+including 1,851 intrafile links, without truncation. File projection produced
+260 files and 314 aggregated relationships. Selecting `pack_for_path` opened
+its source in the inspector; 2D and 3D overview modes were exercised.
