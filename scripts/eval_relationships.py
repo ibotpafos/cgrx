@@ -72,7 +72,7 @@ def main() -> int:
                 }
             )
         result = subprocess.run(
-            [str(binary), "serve", "--multi-repo"],
+            [str(binary), "serve", "--multi-repo", "--response-profile", "full"],
             input="".join(json.dumps(frame, separators=(",", ":")) + "\n" for frame in frames),
             text=True,
             capture_output=True,
