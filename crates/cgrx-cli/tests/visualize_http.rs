@@ -165,7 +165,8 @@ fn disconnected_client_does_not_stop_project_server() {
     .unwrap();
     let mut prefix = [0; 64];
     stream.read_exact(&mut prefix).expect("response started");
-    stream.shutdown(Shutdown::Both).unwrap();
+    // The peer may already have closed after sending the response prefix.
+    let _ = stream.shutdown(Shutdown::Both);
     drop(stream);
     let catalogue = request(&server, "GET", "/api/projects", true);
     assert!(catalogue.starts_with("HTTP/1.1 200"), "{catalogue}");
