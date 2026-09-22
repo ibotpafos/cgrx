@@ -76,6 +76,7 @@ pub trait ToolBackend: Send + Sync {
         scope: Value,
         package_depth: u8,
         limit: u32,
+        offset: u32,
     ) -> Result<Value, BackendError>;
     fn trace_path(
         &mut self,
@@ -610,7 +611,7 @@ impl Server {
                             "managed repository required",
                         )
                     })?
-                    .get_architecture(args.scope, args.package_depth, 100)
+                    .get_architecture(args.scope, args.package_depth, 100, 0)
                     .map_err(backend_error)?;
                 evaluate_repository_gates(
                     &architecture,
@@ -776,7 +777,12 @@ impl Server {
             ));
         };
         backend
-            .get_architecture(arguments.scope, arguments.package_depth, arguments.limit)
+            .get_architecture(
+                arguments.scope,
+                arguments.package_depth,
+                arguments.limit,
+                arguments.offset,
+            )
             .map_err(backend_error)
     }
 
@@ -1734,6 +1740,7 @@ fn compact_architecture(value: &Value) -> Value {
         .collect::<Vec<_>>();
     let mut compact = json!({
         "at":snapshot_tag(value.get("snapshot")),
+        "page":value.get("page"),
         "relation_kinds":value.get("relation_kinds"),
         "package_cols":["name","files","symbols","fan_in","fan_out"],
         "packages":packages,
@@ -2245,6 +2252,8 @@ struct GetArchitectureArguments {
     package_depth: u8,
     #[serde(default = "default_architecture_limit")]
     limit: u32,
+    #[serde(default)]
+    offset: u32,
 }
 
 const fn default_package_depth() -> u8 {
@@ -2570,7 +2579,7 @@ fn model_visible_schema() -> Value {
             {"name":"orient","description":"Context","inputSchema":{"type":"object","required":["task","budget","mode","scope"],"properties":{"task":{"type":"string"},"budget":{"type":"integer","minimum":1},"mode":{"enum":["FAST","PRECISE","BOUNDED"]},"scope":bounded_scope.clone()}}},
             {"name":"search_graph","description":"Symbols or bodies","inputSchema":{"type":"object","required":["query"],"properties":{"query":{"type":"string"},"language":{"enum":["typescript","go","java","python","rust","c","cpp","csharp","ruby","php","swift","scala","elixir","kotlin"]},"include_body":{"type":"boolean"},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":50}}}},
             {"name":"get_outline","description":"File symbols","inputSchema":{"type":"object","required":["path"],"properties":{"path":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":500}}}},
-            {"name":"get_architecture","description":"Packages, proven boundaries, communities and model-free ranked graph futures for cycles and hotspots","inputSchema":{"type":"object","properties":{"scope":path_or_scope.clone(),"package_depth":{"type":"integer","minimum":1,"maximum":4},"limit":{"type":"integer","minimum":1,"maximum":100}}}},
+            {"name":"get_architecture","description":"Paginated packages, proven boundaries, communities and graph futures","inputSchema":{"type":"object","properties":{"scope":path_or_scope.clone(),"package_depth":{"type":"integer","minimum":1,"maximum":4},"limit":{"type":"integer","minimum":1,"maximum":100},"offset":{"type":"integer","minimum":0,"maximum":1000000}}}},
             {"name":"trace_path","description":"Calls","inputSchema":{"type":"object","required":["symbol"],"properties":{"symbol":{"type":"string"},"path":{"type":"string"},"direction":{"enum":["callers","callees","both"]},"depth":{"type":"integer","minimum":1,"maximum":4},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":50},"evidence":{"enum":["static","observed","all"],"default":"static"}}}},
             {"name":"find_usages","description":"Proven usages","inputSchema":{"type":"object","required":["symbol"],"properties":{"symbol":{"type":"string"},"path":{"type":"string"},"depth":{"type":"integer","minimum":1,"maximum":4},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":500},"evidence":{"enum":["static","observed","all"],"default":"static"}}}},
             {"name":"suggest_refactors","description":"Similar code and hypothetical graph delta","inputSchema":{"type":"object","properties":{"language":{"enum":["typescript","go","java","python","rust","c","cpp","csharp","ruby","php","swift","scala","elixir","kotlin"]},"min_score":{"type":"integer","minimum":0,"maximum":1000},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":50},"max_documents":{"type":"integer","minimum":0,"maximum":1000000,"default":0},"max_pairs":{"type":"integer","minimum":0,"maximum":1000000,"default":0}}}},
@@ -3029,6 +3038,7 @@ mod openai_metadata_tests {
             .collect::<Vec<_>>();
         let structured = json!({
             "snapshot":{"repo_revision":"abc123","working_tree_digest":"00","graph_generation":9},
+            "page":{"offset":0,"limit":50,"next_offset":50,"has_more":true},
             "relation_kinds":["CALLS","IMPLEMENTS","IMPORTS","REFERENCES"],
             "packages":[{"name":"api","files":2,"symbols":4,"fan_in":1,"fan_out":2}],
             "boundaries":[{
@@ -3071,6 +3081,8 @@ mod openai_metadata_tests {
             ])
         );
         assert_eq!(compact["boundaries"][0][5], "api/handler.ts");
+        assert_eq!(compact["page"]["next_offset"], 50);
+        assert_eq!(compact["page"]["has_more"], true);
         assert_eq!(compact["import_resolution"]["proven"], 1);
         assert_eq!(compact["reference_resolution"]["proven"], 2);
         assert_eq!(compact["communities"][0][1], 8);

@@ -280,6 +280,7 @@ impl Visualizer {
             &scope(request, 4),
             number(request, "package_depth", 2)?,
             number(request, "limit", 50)?,
+            number(request, "offset", 0)?,
         )
     }
 

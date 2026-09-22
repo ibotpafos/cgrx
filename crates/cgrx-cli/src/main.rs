@@ -2,16 +2,17 @@ mod multi_repo;
 mod skill;
 mod visualize;
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::env;
 use std::fs;
 use std::io::{self, BufRead, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::Arc;
 use std::time::Instant;
 
 use cgrx_capsule::Tokenizer;
-use cgrx_cli::{Runtime, RuntimeEvidenceFormat, TestRunRecord};
+use cgrx_cli::{OrientPreparation, Runtime, RuntimeEvidenceFormat, TestRunRecord};
 use cgrx_core::{
     CapsuleStatus, EvidenceSelector, Hash32, QueryRequest, RelationKind, RepoSnapshot, Scope,
     canonical_hash,
@@ -308,11 +309,16 @@ fn nearest_rank(sorted: &[u64], percentile: usize) -> u64 {
 }
 
 fn bench(args: &[String]) -> Result<(), String> {
-    if args.first().map(String::as_str) != Some("refresh") {
-        return Err("bench requires the refresh scenario".to_owned());
+    match args.first().map(String::as_str) {
+        Some("refresh") => bench_refresh(&args[1..]),
+        Some("orient") => bench_orient(&args[1..]),
+        _ => Err("bench requires refresh or orient scenario".to_owned()),
     }
+}
+
+fn bench_refresh(args: &[String]) -> Result<(), String> {
     let mut seen = BTreeSet::new();
-    let mut cursor = 1;
+    let mut cursor = 0;
     while cursor < args.len() {
         let argument = args[cursor].as_str();
         if !seen.insert(argument.to_owned()) {
@@ -369,6 +375,96 @@ fn bench(args: &[String]) -> Result<(), String> {
             "warmup_us":warmup_us,
             "warmup_changed":warmup_changed,
             "warm_refresh_us":sample_summary(&warm_refresh_us),
+            "measurement":"wall_clock_monotonic"
+        })
+    );
+    Ok(())
+}
+
+fn bench_orient(args: &[String]) -> Result<(), String> {
+    let mut seen = BTreeSet::new();
+    let mut cursor = 0;
+    while cursor < args.len() {
+        let argument = args[cursor].as_str();
+        if !seen.insert(argument.to_owned()) {
+            return Err(format!("duplicate {argument}"));
+        }
+        match argument {
+            "--json" => cursor += 1,
+            "--root" | "--samples" | "--task" | "--budget" | "--mode" | "--scope" => {
+                if cursor + 1 >= args.len() {
+                    return Err(format!("missing value for {argument}"));
+                }
+                cursor += 2;
+            }
+            _ => return Err(format!("unknown bench orient argument {argument}")),
+        }
+    }
+    if !args.iter().any(|argument| argument == "--json") {
+        return Err("bench orient requires --json".to_owned());
+    }
+    let samples = optional_flag(args, "--samples")
+        .map(|value| parse_u32(value, "samples"))
+        .transpose()?
+        .unwrap_or(20);
+    if !(3..=1_000).contains(&samples) {
+        return Err("samples must be between 3 and 1000".to_owned());
+    }
+    let request = query_request(args)?;
+    let root = Path::new(optional_flag(args, "--root").unwrap_or("."))
+        .canonicalize()
+        .map_err(|error| error.to_string())?;
+    let state = managed_state_path(&root)?;
+    let cold_started = Instant::now();
+    let mut runtime = open_managed_runtime(&root, &state)?;
+    let cold_open_us = cold_started.elapsed().as_micros() as u64;
+    let refresh_started = Instant::now();
+    let refreshed = runtime.refresh(&root).map_err(|error| error.to_string())?;
+    let refresh_us = refresh_started.elapsed().as_micros() as u64;
+    let warmup_started = Instant::now();
+    let warmup = runtime
+        .orient(request.clone())
+        .map_err(|error| error.to_string())?;
+    let warmup_us = warmup_started.elapsed().as_micros() as u64;
+    let mut warm_orient_us = Vec::with_capacity(samples as usize);
+    for _ in 0..samples {
+        let started = Instant::now();
+        runtime
+            .orient(request.clone())
+            .map_err(|error| error.to_string())?;
+        warm_orient_us.push(started.elapsed().as_micros() as u64);
+    }
+    let prepare_started = Instant::now();
+    let prepared = runtime
+        .prepare_orient(&request)
+        .map_err(|error| error.to_string())?;
+    let prepare_us = prepare_started.elapsed().as_micros() as u64;
+    let mut warm_repack_us = Vec::with_capacity(samples as usize);
+    for _ in 0..samples {
+        let started = Instant::now();
+        runtime
+            .orient_prepared(&prepared, request.token_budget)
+            .map_err(|error| error.to_string())?;
+        warm_repack_us.push(started.elapsed().as_micros() as u64);
+    }
+    println!(
+        "{}",
+        json!({
+            "schema_version":1,
+            "scenario":"orient",
+            "engine_version":env!("CARGO_PKG_VERSION"),
+            "snapshot":runtime.snapshot(),
+            "samples":samples,
+            "cold_open_us":cold_open_us,
+            "refresh_us":refresh_us,
+            "refreshed":refreshed,
+            "warmup_us":warmup_us,
+            "warm_orient_us":sample_summary(&warm_orient_us),
+            "prepare_us":prepare_us,
+            "warm_repack_us":sample_summary(&warm_repack_us),
+            "records":warmup.compiled.packed.records.len(),
+            "excluded":warmup.compiled.packed.excluded.len(),
+            "status":warmup.compiled.status,
             "measurement":"wall_clock_monotonic"
         })
     );
@@ -672,13 +768,18 @@ struct RuntimeMcpBackend {
     watch_root: Option<PathBuf>,
     managed_state: Option<PathBuf>,
     expansions: BTreeMap<String, ExpansionState>,
+    orient_preparations: BTreeMap<Hash32, Arc<OrientPreparation>>,
+    orient_preparation_order: VecDeque<Hash32>,
     next_handle_cursor: u64,
 }
+
+const ORIENT_PREPARATION_CACHE_LIMIT: usize = 8;
 
 #[derive(Clone)]
 struct ExpansionState {
     request: QueryRequest,
     emitted: BTreeSet<u64>,
+    prepared: Arc<OrientPreparation>,
 }
 
 impl RuntimeMcpBackend {
@@ -688,6 +789,8 @@ impl RuntimeMcpBackend {
             watch_root,
             managed_state: None,
             expansions: BTreeMap::new(),
+            orient_preparations: BTreeMap::new(),
+            orient_preparation_order: VecDeque::new(),
             next_handle_cursor: 0,
             risk_baseline: None,
         }
@@ -699,6 +802,8 @@ impl RuntimeMcpBackend {
             watch_root: Some(root),
             managed_state: Some(state),
             expansions: BTreeMap::new(),
+            orient_preparations: BTreeMap::new(),
+            orient_preparation_order: VecDeque::new(),
             next_handle_cursor: 0,
             risk_baseline: None,
         }
@@ -726,8 +831,52 @@ impl RuntimeMcpBackend {
         };
         if changed {
             self.expansions.clear();
+            self.orient_preparations.clear();
+            self.orient_preparation_order.clear();
         }
         Ok(())
+    }
+
+    fn orient_preparation(
+        &mut self,
+        query: &QueryRequest,
+    ) -> Result<(Arc<OrientPreparation>, bool), BackendError> {
+        // The local semantic reranker is an external process whose availability can
+        // change while CGRX stays alive. Keep retrying it on fresh orient calls.
+        let cacheable = env::var_os("CGRX_SEMANTIC_RERANK_SOCKET").is_none();
+        let mut cache_query = query.clone();
+        cache_query.token_budget = 0;
+        let cache_key = canonical_hash(&cache_query)
+            .map_err(|error| BackendError::new("cgrx.orient_cache", error.to_string()))?;
+        if cacheable && let Some(prepared) = self.orient_preparations.get(&cache_key).cloned() {
+            if let Some(index) = self
+                .orient_preparation_order
+                .iter()
+                .position(|key| *key == cache_key)
+            {
+                self.orient_preparation_order.remove(index);
+            }
+            self.orient_preparation_order.push_back(cache_key);
+            return Ok((prepared, true));
+        }
+
+        let prepared = Arc::new(
+            self.runtime
+                .prepare_orient(query)
+                .map_err(|error| BackendError::new(error.code(), error.to_string()))?,
+        );
+        if cacheable {
+            while self.orient_preparations.len() >= ORIENT_PREPARATION_CACHE_LIMIT {
+                let Some(evicted) = self.orient_preparation_order.pop_front() else {
+                    break;
+                };
+                self.orient_preparations.remove(&evicted);
+            }
+            self.orient_preparations
+                .insert(cache_key, Arc::clone(&prepared));
+            self.orient_preparation_order.push_back(cache_key);
+        }
+        Ok((prepared, false))
     }
 
     fn issue_handle(&mut self, request: &QueryRequest) -> Result<String, BackendError> {
@@ -866,9 +1015,10 @@ impl ToolBackend for RuntimeMcpBackend {
 
     fn orient(&mut self, query: QueryRequest) -> Result<Value, BackendError> {
         self.refresh()?;
+        let (prepared, preparation_cache_hit) = self.orient_preparation(&query)?;
         let report = self
             .runtime
-            .orient(query.clone())
+            .orient_prepared(&prepared, query.token_budget)
             .map_err(|error| BackendError::new(error.code(), error.to_string()))?;
         let emitted = report
             .compiled
@@ -886,6 +1036,7 @@ impl ToolBackend for RuntimeMcpBackend {
                 ExpansionState {
                     request: query,
                     emitted,
+                    prepared,
                 },
             );
             vec![handle]
@@ -896,6 +1047,13 @@ impl ToolBackend for RuntimeMcpBackend {
             .as_object_mut()
             .expect("orient report serializes as an object")
             .insert("next_handles".to_owned(), json!(next_handles));
+        value
+            .as_object_mut()
+            .expect("orient report serializes as an object")
+            .insert(
+                "preparation_cache_hit".to_owned(),
+                json!(preparation_cache_hit),
+            );
         Ok(value)
     }
 
@@ -917,7 +1075,7 @@ impl ToolBackend for RuntimeMcpBackend {
                 })?;
         let report = self
             .runtime
-            .orient(state.request.clone())
+            .orient_prepared(&state.prepared, state.request.token_budget)
             .map_err(|error| BackendError::new(error.code(), error.to_string()))?;
         let records: Vec<_> = report
             .compiled
@@ -987,13 +1145,16 @@ impl ToolBackend for RuntimeMcpBackend {
         scope: Value,
         package_depth: u8,
         limit: u32,
+        offset: u32,
     ) -> Result<Value, BackendError> {
         self.refresh()?;
         let scope = graph_scope(&scope)?;
         let limit = usize::try_from(limit)
             .map_err(|_| BackendError::new("cgrx.invalid_arguments", "limit is out of range"))?;
+        let offset = usize::try_from(offset)
+            .map_err(|_| BackendError::new("cgrx.invalid_arguments", "offset is out of range"))?;
         self.runtime
-            .get_architecture(&scope, usize::from(package_depth), limit)
+            .get_architecture(&scope, usize::from(package_depth), limit, offset)
             .map_err(|error| BackendError::new(error.code(), error.to_string()))
     }
 
@@ -1249,6 +1410,7 @@ impl ToolBackend for RuntimeMcpBackend {
                 "nodes":self.runtime.graph_node_count(),
                 "edges":self.runtime.graph_edge_count()
             },
+            "similarity_index":self.runtime.similarity_index_status(),
             "freshness":if self.watch_root.is_some() { "WATCHED" } else { "PINNED" },
             "changed_paths":self.runtime.changed_paths(),
             "coverage":bounded_coverage,

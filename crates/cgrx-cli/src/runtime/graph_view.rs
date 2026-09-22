@@ -3,9 +3,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use cgrx_core::{EvidenceSelector, Scope};
 use serde_json::{Value, json};
 
+use super::scan_helpers::ScopedQuery;
 use super::{
-    Runtime, RuntimeError, StoredArc, StoredDocument, coverage_for_scope, coverage_gap_count,
-    coverage_gap_page, definitive_stored_arcs, path_in_scope,
+    Runtime, RuntimeError, StoredArc, StoredDocument, coverage_gap_count, coverage_gap_page,
+    path_in_scope,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -30,16 +31,13 @@ impl Runtime {
     pub fn graph_view(&self, request: GraphViewRequest) -> Result<Value, RuntimeError> {
         validate(&request)?;
         let root = resolve_root(self, &request)?;
-        let documents = self
-            .stored
-            .documents
-            .iter()
-            .filter(|document| {
-                document.provenance == "SYNTAX" && path_in_scope(&document.path, &request.scope)
-            })
+        let mut scoped = ScopedQuery::new(&self.stored, &request.scope, path_in_scope);
+        let documents = scoped
+            .syntax_documents(&self.stored)
+            .into_iter()
             .map(|document| (document.node_id, document))
             .collect::<BTreeMap<_, _>>();
-        let arcs = definitive_stored_arcs(&self.stored, &request.scope);
+        let arcs = scoped.definitive_arcs(&self.stored);
         let mut adjacency = BTreeMap::<u64, Vec<(u64, &'static str, &StoredArc)>>::new();
         for arc in &arcs {
             if matches!(
@@ -168,7 +166,7 @@ impl Runtime {
             .map(|path| json!({"id":format!("file:{path}"),"kind":"file","path":path}))
             .collect::<Vec<_>>();
 
-        let coverage = coverage_for_scope(&self.stored.coverage, &request.scope);
+        let coverage = scoped.coverage(&self.stored.coverage);
         let gap_count = coverage_gap_count(&coverage);
         let mut gaps = coverage_gap_page(&coverage, 0, 20);
         let node_truncated = total_nodes > request.node_limit;
@@ -210,19 +208,16 @@ impl Runtime {
         }
         validate(&request)?;
         let root = resolve_root(self, &request)?;
-        let documents = self
-            .stored
-            .documents
-            .iter()
-            .filter(|document| {
-                document.provenance == "SYNTAX" && path_in_scope(&document.path, &request.scope)
-            })
+        let mut scoped = ScopedQuery::new(&self.stored, &request.scope, path_in_scope);
+        let documents = scoped
+            .syntax_documents(&self.stored)
+            .into_iter()
             .map(|document| (document.node_id, document))
             .collect::<BTreeMap<_, _>>();
         let selected_environments = environments.iter().collect::<BTreeSet<_>>();
         let mut edges = BTreeMap::<(u64, u64), RuntimeGraphEdge>::new();
         if evidence == EvidenceSelector::All {
-            for arc in definitive_stored_arcs(&self.stored, &request.scope) {
+            for arc in scoped.definitive_arcs(&self.stored) {
                 edges
                     .entry((arc.source, arc.target))
                     .or_default()
@@ -426,44 +421,9 @@ fn resolve_root<'a>(
     runtime: &'a Runtime,
     request: &GraphViewRequest,
 ) -> Result<&'a StoredDocument, RuntimeError> {
-    let mut matches = runtime
-        .stored
-        .documents
-        .iter()
-        .filter(|document| {
-            document.provenance == "SYNTAX"
-                && path_in_scope(&document.path, &request.scope)
-                && request
-                    .path
-                    .as_ref()
-                    .is_none_or(|path| path == &document.path)
-                && document.qualified_name == request.symbol
-        })
-        .collect::<Vec<_>>();
-    if matches.is_empty() {
-        let folded = request.symbol.to_lowercase();
-        matches = runtime
-            .stored
-            .documents
-            .iter()
-            .filter(|document| {
-                document.provenance == "SYNTAX"
-                    && path_in_scope(&document.path, &request.scope)
-                    && request
-                        .path
-                        .as_ref()
-                        .is_none_or(|path| path == &document.path)
-                    && document.qualified_name.to_lowercase() == folded
-            })
-            .collect();
-    }
-    matches.sort_by_key(|document| {
-        (
-            document.path.as_str(),
-            document.span_start,
-            document.node_id,
-        )
-    });
+    let mut scoped = ScopedQuery::new(&runtime.stored, &request.scope, path_in_scope);
+    let matches =
+        scoped.matching_symbols(&runtime.stored, &request.symbol, request.path.as_deref());
     match matches.as_slice() {
         [] => Err(RuntimeError::new(
             "cgrx.symbol_not_found",

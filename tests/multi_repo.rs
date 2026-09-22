@@ -184,11 +184,19 @@ fn multi_repo_architecture_returns_snapshot_bound_package_projection() {
     let mut m = Mcp::new(&d.0, "1", &d.0.join("log"));
     let response = m.tool(
         "get_architecture",
-        json!({"repo":repo,"scope":"**","package_depth":1,"limit":20}),
+        json!({"repo":repo,"scope":"**","package_depth":1,"limit":20,"offset":0}),
     );
     assert!(response.get("result").is_some(), "{response}");
     let payload = &response["result"]["structuredContent"];
+    let compact: Value = serde_json::from_str(
+        response["result"]["content"][0]["text"]
+            .as_str()
+            .expect("compact architecture text"),
+    )
+    .expect("compact architecture JSON");
     assert!(payload["snapshot"]["repo_revision"].is_string());
+    assert_eq!(payload["page"]["offset"], 0);
+    assert_eq!(compact["page"]["offset"], 0);
     assert_eq!(
         payload["relation_kinds"],
         json!(["CALLS", "IMPLEMENTS", "IMPORTS", "REFERENCES"])
@@ -196,6 +204,16 @@ fn multi_repo_architecture_returns_snapshot_bound_package_projection() {
     assert_eq!(payload["packages"][0]["name"], ".");
     assert_eq!(payload["packages"][0]["symbols"], 2);
     assert_eq!(payload["partial"], false);
+
+    let next = m.tool(
+        "get_architecture",
+        json!({"repo":repo,"scope":"**","package_depth":1,"limit":1,"offset":1}),
+    );
+    let next_payload = &next["result"]["structuredContent"];
+    assert_eq!(next_payload["snapshot"], payload["snapshot"]);
+    assert_eq!(next_payload["page"]["offset"], 1);
+    assert_eq!(next_payload["page"]["limit"], 1);
+    assert!(next_payload["packages"].as_array().unwrap().is_empty());
 }
 #[test]
 fn multi_repo_invalid_flags() {

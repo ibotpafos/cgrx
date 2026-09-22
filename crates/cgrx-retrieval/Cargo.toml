@@ -9,4 +9,3 @@ cgrx-core = { path = "../cgrx-core" }
 cgrx-languages = { path = "../cgrx-languages" }
 cgrx-store = { path = "../cgrx-store" }
 blake3 = "1.8.7"
-fst = "0.4.7"

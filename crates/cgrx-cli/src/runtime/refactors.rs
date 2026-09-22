@@ -2,14 +2,18 @@ mod strategies;
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, RwLock};
+use std::thread;
 
-use cgrx_core::RelationKind;
-use cgrx_core::Scope;
+use cgrx_core::{Hash32, RelationKind, RepoSnapshot, Scope};
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
+use super::scan_helpers::syntax_document;
 use super::{
-    Runtime, RuntimeError, StoredArc, StoredDocument, coverage_for_scope, coverage_gap_count,
-    coverage_gap_page, definitive_stored_arcs, pack_for_path, path_in_scope,
+    Runtime, RuntimeError, StoredArc, StoredDocument, StoredIndex, coverage_for_scope,
+    coverage_gap_count, coverage_gap_page, definitive_stored_arcs, pack_for_path, path_in_scope,
 };
 
 const MIN_BODY_TOKENS: usize = 8;
@@ -17,6 +21,12 @@ const SHINGLE_WIDTH: usize = 4;
 const DEFAULT_DOCUMENT_LIMIT: usize = 20_000;
 const DEFAULT_PAIR_LIMIT: usize = 100_000;
 const DEFAULT_EVIDENCE_LIMIT: usize = 2_000;
+const SIMILARITY_INDEX_VERSION: u16 = 2;
+const BACKGROUND_DOCUMENT_LIMIT: usize = 100_000;
+const BACKGROUND_PAIR_LIMIT: usize = DEFAULT_PAIR_LIMIT;
+const BACKGROUND_FUNCTIONAL_PAIR_LIMIT: usize = 50_000;
+const RELATED_SCORE_FLOOR: u16 = 600;
+const RELATED_SHINGLE_FLOOR: u16 = 650;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct RefactorFingerprint {
@@ -27,13 +37,246 @@ struct RefactorFingerprint {
     eligible: bool,
 }
 
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 struct Similarity {
     body_tokens: u16,
     ordered_shingles: u16,
     callees: u16,
     size: u16,
     total: u16,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+struct SimilarityDocument {
+    node_id: u64,
+    language: String,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+struct SimilarityPair {
+    left_node_id: u64,
+    right_node_id: u64,
+    basis: Similarity,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub(super) struct SimilarityIndex {
+    version: u16,
+    documents_total: usize,
+    inspected_pairs: usize,
+    #[serde(default)]
+    functional_inspected_pairs: usize,
+    documents_truncated: bool,
+    pairs_truncated: bool,
+    #[serde(default)]
+    functional_pairs_truncated: bool,
+    documents: Vec<SimilarityDocument>,
+    exact_groups: BTreeMap<String, Vec<u64>>,
+    pairs: Vec<SimilarityPair>,
+    #[serde(default)]
+    functional_pairs: Vec<SimilarityPair>,
+}
+
+#[derive(Clone)]
+struct SimilaritySourceDocument {
+    node_id: u64,
+    path: String,
+    search_text: String,
+    semantic_fingerprint: Option<String>,
+    span_start: usize,
+    span_end: usize,
+}
+
+struct SimilarityBuildInput {
+    documents: Vec<SimilaritySourceDocument>,
+    arcs: Vec<StoredArc>,
+    path_hashes: BTreeMap<String, Hash32>,
+}
+
+impl SimilarityBuildInput {
+    fn from_stored(stored: &StoredIndex) -> Self {
+        let documents = stored
+            .documents
+            .iter()
+            .filter(|document| document.provenance == "SYNTAX")
+            .map(|document| SimilaritySourceDocument {
+                node_id: document.node_id,
+                path: document.path.clone(),
+                search_text: document.search_text.clone(),
+                semantic_fingerprint: document.semantic_fingerprint.clone(),
+                span_start: document.span_start,
+                span_end: document.span_end,
+            })
+            .collect::<Vec<_>>();
+        let arcs = stored
+            .arcs
+            .iter()
+            .filter(|arc| matches!(arc.kind, RelationKind::Calls | RelationKind::Implements))
+            .cloned()
+            .collect::<Vec<_>>();
+        let evidence_paths = arcs
+            .iter()
+            .filter_map(|arc| arc.evidence.as_ref().map(|evidence| evidence.path.as_str()))
+            .collect::<BTreeSet<_>>();
+        let path_hashes = evidence_paths
+            .into_iter()
+            .filter_map(|path| {
+                stored
+                    .path_hashes
+                    .get(path)
+                    .copied()
+                    .map(|hash| (path.to_owned(), hash))
+            })
+            .collect();
+        Self {
+            documents,
+            arcs,
+            path_hashes,
+        }
+    }
+}
+
+struct SimilarityBackgroundState {
+    snapshot: RepoSnapshot,
+    index: Option<Arc<SimilarityIndex>>,
+    building: bool,
+    spawn_failed: bool,
+}
+
+struct SimilarityBackgroundShared {
+    epoch: AtomicU64,
+    state: RwLock<SimilarityBackgroundState>,
+}
+
+pub(super) struct SimilarityBackground {
+    shared: Arc<SimilarityBackgroundShared>,
+}
+
+impl SimilarityBackground {
+    pub(super) fn ready(snapshot: RepoSnapshot, index: SimilarityIndex) -> Self {
+        Self {
+            shared: Arc::new(SimilarityBackgroundShared {
+                epoch: AtomicU64::new(0),
+                state: RwLock::new(SimilarityBackgroundState {
+                    snapshot,
+                    index: index.is_current().then(|| Arc::new(index)),
+                    building: false,
+                    spawn_failed: false,
+                }),
+            }),
+        }
+    }
+
+    fn read_state(&self) -> std::sync::RwLockReadGuard<'_, SimilarityBackgroundState> {
+        self.shared
+            .state
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    fn write_state(&self) -> std::sync::RwLockWriteGuard<'_, SimilarityBackgroundState> {
+        self.shared
+            .state
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    fn ready_index(&self, snapshot: &RepoSnapshot) -> Option<Arc<SimilarityIndex>> {
+        let state = self.read_state();
+        (state.snapshot == *snapshot)
+            .then(|| state.index.clone())
+            .flatten()
+            .filter(|index| index.is_current())
+    }
+
+    fn status_json(&self, snapshot: &RepoSnapshot, used: bool) -> Value {
+        let state = self.read_state();
+        let current = state.snapshot == *snapshot;
+        let mut status = if current {
+            state.index.as_deref().map_or_else(
+                || SimilarityIndex::default().status_json(false),
+                |index| index.status_json(used),
+            )
+        } else {
+            SimilarityIndex::default().status_json(false)
+        };
+        status["background"] = true.into();
+        status["building"] = (current && state.building).into();
+        status["spawn_failed"] = (current && state.spawn_failed).into();
+        status
+    }
+
+    fn schedule(&self, snapshot: RepoSnapshot, input: SimilarityBuildInput) {
+        let epoch = self.shared.epoch.fetch_add(1, Ordering::AcqRel) + 1;
+        {
+            let mut state = self.write_state();
+            state.snapshot = snapshot.clone();
+            state.index = None;
+            state.building = true;
+            state.spawn_failed = false;
+        }
+        let shared = Arc::clone(&self.shared);
+        let worker_snapshot = snapshot.clone();
+        let spawn = thread::Builder::new()
+            .name("cgrx-similarity-index".to_owned())
+            .spawn(move || {
+                let index = build_similarity_index_from_input(&input);
+                if shared.epoch.load(Ordering::Acquire) != epoch {
+                    return;
+                }
+                let mut state = shared
+                    .state
+                    .write()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner);
+                if state.snapshot != worker_snapshot
+                    || shared.epoch.load(Ordering::Acquire) != epoch
+                {
+                    return;
+                }
+                state.index = Some(Arc::new(index));
+                state.building = false;
+                state.spawn_failed = false;
+            });
+        if spawn.is_err() {
+            let mut state = self.write_state();
+            if state.snapshot == snapshot && self.shared.epoch.load(Ordering::Acquire) == epoch {
+                state.building = false;
+                state.spawn_failed = true;
+            }
+        }
+    }
+}
+
+impl SimilarityIndex {
+    pub(super) const fn is_current(&self) -> bool {
+        self.version == SIMILARITY_INDEX_VERSION
+    }
+
+    fn is_complete(&self) -> bool {
+        self.is_current() && !self.documents_truncated && !self.pairs_truncated
+    }
+
+    fn related_complete(&self) -> bool {
+        self.is_complete() && !self.functional_pairs_truncated
+    }
+
+    fn status_json(&self, used: bool) -> Value {
+        json!({
+            "version":self.version,
+            "ready":self.is_current(),
+            "complete":self.is_complete(),
+            "used":used,
+            "documents":self.documents.len(),
+            "documents_total":self.documents_total,
+            "pairs":self.pairs.len(),
+            "inspected_pairs":self.inspected_pairs,
+            "functional_pairs":self.functional_pairs.len(),
+            "functional_inspected_pairs":self.functional_inspected_pairs,
+            "documents_truncated":self.documents_truncated,
+            "pairs_truncated":self.pairs_truncated,
+            "functional_pairs_truncated":self.functional_pairs_truncated
+        })
+    }
 }
 
 fn normalized_tokens(source: &str) -> Vec<String> {
@@ -229,6 +472,194 @@ fn fingerprint_text(source: &str) -> RefactorFingerprint {
     }
 }
 
+pub(super) fn rebuild_similarity_index(stored: &mut StoredIndex) {
+    let input = SimilarityBuildInput::from_stored(stored);
+    stored.similarity_index = build_similarity_index_from_input(&input);
+}
+
+fn build_similarity_index_from_input(input: &SimilarityBuildInput) -> SimilarityIndex {
+    let mut exact_groups = BTreeMap::<String, Vec<u64>>::new();
+    for document in &input.documents {
+        if let Some(fingerprint) = &document.semantic_fingerprint {
+            exact_groups
+                .entry(fingerprint.clone())
+                .or_default()
+                .push(document.node_id);
+        }
+    }
+    exact_groups.retain(|_, members| {
+        members.sort_unstable();
+        members.dedup();
+        members.len() > 1
+    });
+
+    let mut selected = input
+        .documents
+        .iter()
+        .filter_map(|document| {
+            let language = pack_for_path(Path::new(&document.path))?.id();
+            is_callable_candidate(language, &document.search_text).then_some((document, language))
+        })
+        .collect::<Vec<_>>();
+    selected.sort_by_key(|(document, _)| {
+        (
+            document.path.as_str(),
+            document.span_start,
+            document.span_end,
+            document.node_id,
+        )
+    });
+    let documents_total = selected.len();
+    let documents_truncated = selected.len() > BACKGROUND_DOCUMENT_LIMIT;
+    selected.truncate(BACKGROUND_DOCUMENT_LIMIT);
+
+    let documents = selected
+        .iter()
+        .map(|(document, language)| SimilarityDocument {
+            node_id: document.node_id,
+            language: (*language).to_owned(),
+        })
+        .collect::<Vec<_>>();
+    let fingerprints = selected
+        .iter()
+        .map(|(document, language)| (*language, fingerprint_text(&document.search_text)))
+        .collect::<Vec<_>>();
+
+    let mut buckets = BTreeMap::<(&str, &str), Vec<usize>>::new();
+    for (index, (language, fingerprint)) in fingerprints.iter().enumerate() {
+        if !fingerprint.eligible {
+            continue;
+        }
+        for shingle in &fingerprint.shingles {
+            buckets
+                .entry((*language, shingle.as_str()))
+                .or_default()
+                .push(index);
+        }
+    }
+    let mut ordered_buckets = buckets.into_iter().collect::<Vec<_>>();
+    ordered_buckets.sort_by(|left, right| {
+        left.1
+            .len()
+            .cmp(&right.1.len())
+            .then_with(|| left.0.cmp(&right.0))
+    });
+
+    let mut raw_pairs = BTreeSet::new();
+    let mut pairs_truncated = false;
+    'buckets: for (_, members) in ordered_buckets {
+        for (offset, left) in members.iter().enumerate() {
+            for right in members.iter().skip(offset + 1) {
+                let pair = (*left.min(right), *left.max(right));
+                if !raw_pairs.contains(&pair) && raw_pairs.len() >= BACKGROUND_PAIR_LIMIT {
+                    pairs_truncated = true;
+                    break 'buckets;
+                }
+                raw_pairs.insert(pair);
+            }
+        }
+    }
+    let inspected_pairs = raw_pairs.len();
+
+    let index_by_node = documents
+        .iter()
+        .enumerate()
+        .map(|(index, document)| (document.node_id, index))
+        .collect::<BTreeMap<_, _>>();
+    let live_nodes = input
+        .documents
+        .iter()
+        .map(|document| document.node_id)
+        .collect::<BTreeSet<_>>();
+    let mut functional_buckets = BTreeMap::<(&str, RelationKind, u64), Vec<usize>>::new();
+    for arc in &input.arcs {
+        if !matches!(arc.kind, RelationKind::Calls | RelationKind::Implements)
+            || !live_nodes.contains(&arc.target)
+        {
+            continue;
+        }
+        let Some(source_index) = index_by_node.get(&arc.source).copied() else {
+            continue;
+        };
+        let Some(evidence) = arc.evidence.as_ref() else {
+            continue;
+        };
+        if !evidence.is_definitive()
+            || input.path_hashes.get(&evidence.path) != Some(&evidence.source_hash)
+        {
+            continue;
+        }
+        functional_buckets
+            .entry((
+                documents[source_index].language.as_str(),
+                arc.kind,
+                arc.target,
+            ))
+            .or_default()
+            .push(source_index);
+    }
+    let mut ordered_functional_buckets = functional_buckets.into_iter().collect::<Vec<_>>();
+    ordered_functional_buckets.sort_by(|left, right| {
+        left.1
+            .len()
+            .cmp(&right.1.len())
+            .then_with(|| left.0.cmp(&right.0))
+    });
+    let mut raw_functional_pairs = BTreeSet::new();
+    let mut functional_pairs_truncated = false;
+    'functional: for (_, mut members) in ordered_functional_buckets {
+        members.sort_unstable();
+        members.dedup();
+        for (offset, left) in members.iter().enumerate() {
+            for right in members.iter().skip(offset + 1) {
+                let pair = (*left.min(right), *left.max(right));
+                if raw_functional_pairs.contains(&pair) {
+                    continue;
+                }
+                if raw_functional_pairs.len() >= BACKGROUND_FUNCTIONAL_PAIR_LIMIT {
+                    functional_pairs_truncated = true;
+                    break 'functional;
+                }
+                raw_functional_pairs.insert(pair);
+            }
+        }
+    }
+    let functional_inspected_pairs = raw_functional_pairs.len();
+    let mut functional_pairs = raw_functional_pairs
+        .into_iter()
+        .map(|(left_index, right_index)| SimilarityPair {
+            left_node_id: documents[left_index].node_id,
+            right_node_id: documents[right_index].node_id,
+            basis: similarity(&fingerprints[left_index].1, &fingerprints[right_index].1),
+        })
+        .collect::<Vec<_>>();
+    functional_pairs.sort_by_key(|pair| (pair.left_node_id, pair.right_node_id));
+
+    let mut pairs = raw_pairs
+        .into_iter()
+        .map(|(left_index, right_index)| SimilarityPair {
+            left_node_id: documents[left_index].node_id,
+            right_node_id: documents[right_index].node_id,
+            basis: similarity(&fingerprints[left_index].1, &fingerprints[right_index].1),
+        })
+        .collect::<Vec<_>>();
+    pairs.sort_by_key(|pair| (pair.left_node_id, pair.right_node_id));
+
+    SimilarityIndex {
+        version: SIMILARITY_INDEX_VERSION,
+        documents_total,
+        inspected_pairs,
+        functional_inspected_pairs,
+        documents_truncated,
+        pairs_truncated,
+        functional_pairs_truncated,
+        documents,
+        exact_groups,
+        pairs,
+        functional_pairs,
+    }
+}
+
 fn jaccard<T: Ord>(left: &BTreeSet<T>, right: &BTreeSet<T>) -> u16 {
     let union = left.union(right).count();
     if union == 0 {
@@ -247,11 +678,7 @@ fn similarity(left: &RefactorFingerprint, right: &RefactorFingerprint) -> Simila
     } else {
         ((left.token_count.min(right.token_count) * 1000) / largest) as u16
     };
-    let total = ((u32::from(body_tokens) * 35
-        + u32::from(ordered_shingles) * 35
-        + u32::from(callees) * 20
-        + u32::from(size) * 10)
-        / 100) as u16;
+    let total = weighted_similarity(body_tokens, ordered_shingles, callees, size);
 
     Similarity {
         body_tokens,
@@ -262,6 +689,36 @@ fn similarity(left: &RefactorFingerprint, right: &RefactorFingerprint) -> Simila
     }
 }
 
+fn weighted_similarity(body_tokens: u16, ordered_shingles: u16, callees: u16, size: u16) -> u16 {
+    ((u32::from(body_tokens) * 35
+        + u32::from(ordered_shingles) * 35
+        + u32::from(callees) * 20
+        + u32::from(size) * 10)
+        / 100) as u16
+}
+
+fn score_pair(
+    basis: Similarity,
+    left_node_id: u64,
+    right_node_id: u64,
+    outgoing: &BTreeMap<u64, BTreeSet<(RelationKind, u64)>>,
+) -> Similarity {
+    let callees = match (outgoing.get(&left_node_id), outgoing.get(&right_node_id)) {
+        (Some(left), Some(right)) => jaccard(left, right),
+        _ => 0,
+    };
+    Similarity {
+        callees,
+        total: weighted_similarity(
+            basis.body_tokens,
+            basis.ordered_shingles,
+            callees,
+            basis.size,
+        ),
+        ..basis
+    }
+}
+
 struct CandidateDocument<'a> {
     document: &'a StoredDocument,
     language: &'static str,
@@ -269,12 +726,503 @@ struct CandidateDocument<'a> {
 }
 
 struct RefactorCandidate<'a> {
-    left: &'a CandidateDocument<'a>,
-    right: &'a CandidateDocument<'a>,
+    left: &'a StoredDocument,
+    right: &'a StoredDocument,
+    language: String,
     similarity: Similarity,
 }
 
+struct CandidateScan<'a> {
+    candidates: Vec<RefactorCandidate<'a>>,
+    inspected_documents: usize,
+    inspected_pairs: usize,
+    partial: bool,
+    gaps: BTreeSet<&'static str>,
+    index_used: bool,
+}
+
+fn scan_candidates_from_index<'a>(
+    stored: &'a StoredIndex,
+    index: &SimilarityIndex,
+    scope: &Scope,
+    language: Option<&str>,
+    min_score: u16,
+    outgoing: &BTreeMap<u64, BTreeSet<(RelationKind, u64)>>,
+) -> Option<CandidateScan<'a>> {
+    if !index.is_current() || index.documents_truncated {
+        return None;
+    }
+    let language_by_node = index
+        .documents
+        .iter()
+        .map(|document| (document.node_id, document.language.as_str()))
+        .collect::<BTreeMap<_, _>>();
+    let mut selected = index
+        .documents
+        .iter()
+        .filter_map(|indexed| {
+            let document = syntax_document(stored, indexed.node_id)?;
+            (path_in_scope(&document.path, scope)
+                && language.is_none_or(|expected| expected == indexed.language))
+            .then_some(document)
+        })
+        .collect::<Vec<_>>();
+    selected.sort_by_key(|document| {
+        (
+            document.path.as_str(),
+            document.span_start,
+            document.span_end,
+            document.node_id,
+        )
+    });
+    let mut gaps = BTreeSet::new();
+    let document_budget_truncated = selected.len() > DEFAULT_DOCUMENT_LIMIT;
+    let partial = index.pairs_truncated || document_budget_truncated;
+    if index.pairs_truncated {
+        gaps.insert("SIMILARITY_PAIR_BUDGET");
+    }
+    if document_budget_truncated {
+        gaps.insert("REFACTOR_DOCUMENT_BUDGET");
+        selected.truncate(DEFAULT_DOCUMENT_LIMIT);
+    }
+    let inspected_documents = selected.len();
+    let selected_nodes = selected
+        .iter()
+        .map(|document| document.node_id)
+        .collect::<BTreeSet<_>>();
+    let pairs = index
+        .pairs
+        .iter()
+        .filter(|pair| {
+            selected_nodes.contains(&pair.left_node_id)
+                && selected_nodes.contains(&pair.right_node_id)
+        })
+        .collect::<Vec<_>>();
+    if pairs.len() > DEFAULT_PAIR_LIMIT {
+        return None;
+    }
+    let inspected_pairs = pairs.len();
+    let candidates = pairs
+        .into_iter()
+        .filter_map(|pair| {
+            let left = syntax_document(stored, pair.left_node_id)?;
+            let right = syntax_document(stored, pair.right_node_id)?;
+            let score = score_pair(pair.basis, pair.left_node_id, pair.right_node_id, outgoing);
+            (score.total >= min_score && (score.callees > 0 || score.ordered_shingles >= 820)).then(
+                || RefactorCandidate {
+                    left,
+                    right,
+                    language: language_by_node
+                        .get(&pair.left_node_id)
+                        .copied()
+                        .unwrap_or_default()
+                        .to_owned(),
+                    similarity: score,
+                },
+            )
+        })
+        .collect();
+    Some(CandidateScan {
+        candidates,
+        inspected_documents,
+        inspected_pairs,
+        partial,
+        gaps,
+        index_used: true,
+    })
+}
+
+fn scan_candidates_direct<'a>(
+    stored: &'a StoredIndex,
+    scope: &Scope,
+    language: Option<&str>,
+    min_score: u16,
+    max_documents: usize,
+    max_pairs: usize,
+    outgoing: &BTreeMap<u64, BTreeSet<(RelationKind, u64)>>,
+) -> CandidateScan<'a> {
+    let mut selected = stored
+        .documents
+        .iter()
+        .filter(|document| document.provenance == "SYNTAX" && path_in_scope(&document.path, scope))
+        .filter_map(|document| {
+            let document_language = pack_for_path(Path::new(&document.path))?.id();
+            (language.is_none_or(|expected| expected == document_language)
+                && is_callable_candidate(document_language, &document.search_text))
+            .then_some((document, document_language))
+        })
+        .collect::<Vec<_>>();
+    selected.sort_by_key(|(document, _)| {
+        (
+            document.path.as_str(),
+            document.span_start,
+            document.span_end,
+            document.node_id,
+        )
+    });
+
+    let mut gaps = BTreeSet::new();
+    let document_limit = if max_documents == 0 {
+        DEFAULT_DOCUMENT_LIMIT
+    } else {
+        max_documents
+    };
+    let mut partial = selected.len() > document_limit;
+    if partial {
+        gaps.insert("REFACTOR_DOCUMENT_BUDGET");
+        selected.truncate(document_limit);
+    }
+
+    let documents = selected
+        .into_iter()
+        .map(|(document, document_language)| CandidateDocument {
+            document,
+            language: document_language,
+            fingerprint: fingerprint_text(&document.search_text),
+        })
+        .collect::<Vec<_>>();
+
+    let mut buckets = BTreeMap::<(&str, &str), Vec<usize>>::new();
+    for (index, document) in documents.iter().enumerate() {
+        if !document.fingerprint.eligible {
+            continue;
+        }
+        for shingle in &document.fingerprint.shingles {
+            buckets
+                .entry((document.language, shingle))
+                .or_default()
+                .push(index);
+        }
+    }
+    let mut ordered_buckets = buckets.into_iter().collect::<Vec<_>>();
+    ordered_buckets.sort_by(|left, right| {
+        left.1
+            .len()
+            .cmp(&right.1.len())
+            .then_with(|| left.0.cmp(&right.0))
+    });
+
+    let mut pairs = BTreeSet::new();
+    'buckets: for (_, members) in ordered_buckets {
+        for (offset, left) in members.iter().enumerate() {
+            for right in members.iter().skip(offset + 1) {
+                let pair = (*left.min(right), *left.max(right));
+                let pair_limit = if max_pairs == 0 {
+                    DEFAULT_PAIR_LIMIT
+                } else {
+                    max_pairs
+                };
+                if !pairs.contains(&pair) && pairs.len() >= pair_limit {
+                    partial = true;
+                    gaps.insert("REFACTOR_PAIR_BUDGET");
+                    break 'buckets;
+                }
+                pairs.insert(pair);
+            }
+        }
+    }
+
+    let inspected_pairs = pairs.len();
+    let candidates = pairs
+        .into_iter()
+        .filter_map(|(left_index, right_index)| {
+            let left = &documents[left_index];
+            let right = &documents[right_index];
+            let basis = similarity(&left.fingerprint, &right.fingerprint);
+            let score = score_pair(
+                basis,
+                left.document.node_id,
+                right.document.node_id,
+                outgoing,
+            );
+            (score.total >= min_score && (score.callees > 0 || score.ordered_shingles >= 820)).then(
+                || RefactorCandidate {
+                    left: left.document,
+                    right: right.document,
+                    language: left.language.to_owned(),
+                    similarity: score,
+                },
+            )
+        })
+        .collect();
+    CandidateScan {
+        candidates,
+        inspected_documents: documents.len(),
+        inspected_pairs,
+        partial,
+        gaps,
+        index_used: false,
+    }
+}
+
 impl Runtime {
+    pub(super) fn schedule_similarity_index_rebuild(&self) {
+        let input = SimilarityBuildInput::from_stored(&self.stored);
+        self.similarity_background
+            .schedule(self.stored.snapshot.clone(), input);
+    }
+
+    #[must_use]
+    pub fn similarity_index_status(&self) -> Value {
+        self.similarity_background
+            .status_json(self.snapshot(), false)
+    }
+
+    pub(super) fn background_similarity_lookup(
+        &self,
+        root: &StoredDocument,
+        scope: &Scope,
+        limit: usize,
+    ) -> Value {
+        let Some(index) = self.similarity_background.ready_index(self.snapshot()) else {
+            return self.direct_similarity_lookup(root, scope, limit);
+        };
+        let exact_nodes = root
+            .semantic_fingerprint
+            .as_ref()
+            .and_then(|fingerprint| index.exact_groups.get(fingerprint));
+        let mut exact = exact_nodes
+            .into_iter()
+            .flatten()
+            .filter(|node_id| **node_id != root.node_id)
+            .filter_map(|node_id| syntax_document(&self.stored, *node_id))
+            .filter(|document| path_in_scope(&document.path, scope))
+            .collect::<Vec<_>>();
+        exact.sort_by_key(|document| {
+            (
+                document.path.as_str(),
+                document.span_start,
+                document.node_id,
+            )
+        });
+        let exact_matched = exact.len();
+        let exact_rows = exact
+            .into_iter()
+            .take(limit)
+            .map(similarity_node_json)
+            .collect::<Vec<_>>();
+
+        let definitive = definitive_stored_arcs(&self.stored, scope);
+        let mut outgoing = BTreeMap::<u64, BTreeSet<(RelationKind, u64)>>::new();
+        for arc in definitive {
+            outgoing
+                .entry(arc.source)
+                .or_default()
+                .insert((arc.kind, arc.target));
+        }
+        let exact_ids = exact_nodes
+            .into_iter()
+            .flatten()
+            .copied()
+            .collect::<BTreeSet<_>>();
+        let mut seen_related = BTreeSet::new();
+        let mut related = index
+            .pairs
+            .iter()
+            .chain(index.functional_pairs.iter())
+            .filter_map(|pair| {
+                let other = if pair.left_node_id == root.node_id {
+                    pair.right_node_id
+                } else if pair.right_node_id == root.node_id {
+                    pair.left_node_id
+                } else {
+                    return None;
+                };
+                if !seen_related.insert(other) {
+                    return None;
+                }
+                if exact_ids.contains(&other) {
+                    return None;
+                }
+                let document = syntax_document(&self.stored, other)?;
+                if !path_in_scope(&document.path, scope) {
+                    return None;
+                }
+                let score = score_pair(pair.basis, root.node_id, other, &outgoing);
+                ((score.total >= RELATED_SCORE_FLOOR
+                    && score.ordered_shingles >= RELATED_SHINGLE_FLOOR)
+                    || score.callees >= 500)
+                    .then_some((document, score))
+            })
+            .collect::<Vec<_>>();
+        related.sort_by(|left, right| {
+            rank_similarity(right.1)
+                .cmp(&rank_similarity(left.1))
+                .then_with(|| {
+                    (left.0.path.as_str(), left.0.span_start, left.0.node_id).cmp(&(
+                        right.0.path.as_str(),
+                        right.0.span_start,
+                        right.0.node_id,
+                    ))
+                })
+        });
+        let similar_matched = related.len();
+        let similar_rows = related
+            .into_iter()
+            .take(limit)
+            .map(|(document, score)| {
+                let relationship = if score.ordered_shingles >= 900 && score.body_tokens >= 900 {
+                    "near_duplicate"
+                } else if score.callees >= 700 {
+                    "similar_functionality"
+                } else {
+                    "similar_structure"
+                };
+                let mut value = similarity_node_json(document);
+                value["relationship"] = relationship.into();
+                value["similarity"] = json!({
+                    "body_tokens":score.body_tokens,
+                    "ordered_shingles":score.ordered_shingles,
+                    "callees":score.callees,
+                    "size":score.size,
+                    "total":score.total
+                });
+                value
+            })
+            .collect::<Vec<_>>();
+
+        json!({
+            "matches":exact_rows,
+            "matched":exact_matched,
+            "truncated":exact_matched > limit,
+            "similar_matches":similar_rows,
+            "similar_matched":similar_matched,
+            "similar_truncated":similar_matched > limit,
+            "similarity_partial":!index.related_complete(),
+            "similarity_index":self.similarity_background.status_json(self.snapshot(), true)
+        })
+    }
+
+    fn direct_similarity_lookup(
+        &self,
+        root: &StoredDocument,
+        scope: &Scope,
+        limit: usize,
+    ) -> Value {
+        let mut exact = self
+            .stored
+            .documents
+            .iter()
+            .filter(|document| {
+                document.provenance == "SYNTAX"
+                    && document.node_id != root.node_id
+                    && path_in_scope(&document.path, scope)
+                    && root.semantic_fingerprint.is_some()
+                    && document.semantic_fingerprint == root.semantic_fingerprint
+            })
+            .collect::<Vec<_>>();
+        exact.sort_by_key(|document| {
+            (
+                document.path.as_str(),
+                document.span_start,
+                document.node_id,
+            )
+        });
+        let exact_matched = exact.len();
+        let exact_ids = exact
+            .iter()
+            .map(|document| document.node_id)
+            .collect::<BTreeSet<_>>();
+        let exact_rows = exact
+            .into_iter()
+            .take(limit)
+            .map(similarity_node_json)
+            .collect::<Vec<_>>();
+
+        let definitive = definitive_stored_arcs(&self.stored, scope);
+        let mut outgoing = BTreeMap::<u64, BTreeSet<(RelationKind, u64)>>::new();
+        for arc in definitive {
+            outgoing
+                .entry(arc.source)
+                .or_default()
+                .insert((arc.kind, arc.target));
+        }
+        let root_language = pack_for_path(Path::new(&root.path)).map(|pack| pack.id());
+        let root_fingerprint = fingerprint_text(&root.search_text);
+        let mut related = if root_fingerprint.eligible {
+            self.stored
+                .documents
+                .iter()
+                .filter(|document| {
+                    document.provenance == "SYNTAX"
+                        && document.node_id != root.node_id
+                        && !exact_ids.contains(&document.node_id)
+                        && path_in_scope(&document.path, scope)
+                })
+                .filter_map(|document| {
+                    let language = pack_for_path(Path::new(&document.path))?.id();
+                    if Some(language) != root_language
+                        || !is_callable_candidate(language, &document.search_text)
+                    {
+                        return None;
+                    }
+                    let candidate_fingerprint = fingerprint_text(&document.search_text);
+                    if !candidate_fingerprint.eligible {
+                        return None;
+                    }
+                    let basis = similarity(&root_fingerprint, &candidate_fingerprint);
+                    let score = score_pair(basis, root.node_id, document.node_id, &outgoing);
+                    ((score.total >= RELATED_SCORE_FLOOR
+                        && score.ordered_shingles >= RELATED_SHINGLE_FLOOR)
+                        || score.callees >= 500)
+                        .then_some((document, score))
+                })
+                .collect::<Vec<_>>()
+        } else {
+            Vec::new()
+        };
+        related.sort_by(|left, right| {
+            rank_similarity(right.1)
+                .cmp(&rank_similarity(left.1))
+                .then_with(|| {
+                    (left.0.path.as_str(), left.0.span_start, left.0.node_id).cmp(&(
+                        right.0.path.as_str(),
+                        right.0.span_start,
+                        right.0.node_id,
+                    ))
+                })
+        });
+        let similar_matched = related.len();
+        let similar_rows = related
+            .into_iter()
+            .take(limit)
+            .map(|(document, score)| {
+                let relationship = if score.ordered_shingles >= 900 && score.body_tokens >= 900 {
+                    "near_duplicate"
+                } else if score.callees >= 700 {
+                    "similar_functionality"
+                } else {
+                    "similar_structure"
+                };
+                let mut value = similarity_node_json(document);
+                value["relationship"] = relationship.into();
+                value["similarity"] = json!({
+                    "body_tokens":score.body_tokens,
+                    "ordered_shingles":score.ordered_shingles,
+                    "callees":score.callees,
+                    "size":score.size,
+                    "total":score.total
+                });
+                value
+            })
+            .collect::<Vec<_>>();
+        let mut status = self
+            .similarity_background
+            .status_json(self.snapshot(), false);
+        status["fallback"] = "direct_root_scan".into();
+
+        json!({
+            "matches":exact_rows,
+            "matched":exact_matched,
+            "truncated":exact_matched > limit,
+            "similar_matches":similar_rows,
+            "similar_matched":similar_matched,
+            "similar_truncated":similar_matched > limit,
+            "similarity_partial":false,
+            "similarity_index":status
+        })
+    }
+
     pub fn suggest_refactors(
         &self,
         scope: &Scope,
@@ -307,110 +1255,31 @@ impl Runtime {
                 .or_default()
                 .insert((arc.kind, arc.target));
         }
-
-        let mut selected = self
-            .stored
-            .documents
-            .iter()
-            .filter(|document| {
-                document.provenance == "SYNTAX" && path_in_scope(&document.path, scope)
-            })
-            .filter_map(|document| {
-                let document_language = pack_for_path(Path::new(&document.path))?.id();
-                (language.is_none_or(|expected| expected == document_language)
-                    && is_callable_candidate(document_language, &document.search_text))
-                .then_some((document, document_language))
-            })
-            .collect::<Vec<_>>();
-        selected.sort_by_key(|(document, _)| {
-            (
-                document.path.as_str(),
-                document.span_start,
-                document.span_end,
-                document.node_id,
+        let background_index = (max_documents == 0 && max_pairs == 0)
+            .then(|| self.similarity_background.ready_index(self.snapshot()))
+            .flatten();
+        let indexed_scan = background_index.as_deref().and_then(|index| {
+            scan_candidates_from_index(&self.stored, index, scope, language, min_score, &outgoing)
+        });
+        let scan = indexed_scan.unwrap_or_else(|| {
+            scan_candidates_direct(
+                &self.stored,
+                scope,
+                language,
+                min_score,
+                max_documents,
+                max_pairs,
+                &outgoing,
             )
         });
-
-        let mut gaps = BTreeSet::new();
-        let document_limit = if max_documents == 0 {
-            DEFAULT_DOCUMENT_LIMIT
-        } else {
-            max_documents
-        };
-        let mut partial = selected.len() > document_limit;
-        if partial {
-            gaps.insert("REFACTOR_DOCUMENT_BUDGET");
-            selected.truncate(document_limit);
-        }
-
-        let documents = selected
-            .into_iter()
-            .map(|(document, document_language)| {
-                let mut fingerprint = fingerprint_text(&document.search_text);
-                fingerprint.outgoing = outgoing.remove(&document.node_id).unwrap_or_default();
-                CandidateDocument {
-                    document,
-                    language: document_language,
-                    fingerprint,
-                }
-            })
-            .collect::<Vec<_>>();
-
-        let mut buckets = BTreeMap::<(&str, &str), Vec<usize>>::new();
-        for (index, document) in documents.iter().enumerate() {
-            if !document.fingerprint.eligible {
-                continue;
-            }
-            for shingle in &document.fingerprint.shingles {
-                buckets
-                    .entry((document.language, shingle))
-                    .or_default()
-                    .push(index);
-            }
-        }
-        let mut ordered_buckets = buckets.into_iter().collect::<Vec<_>>();
-        ordered_buckets.sort_by(|left, right| {
-            left.1
-                .len()
-                .cmp(&right.1.len())
-                .then_with(|| left.0.cmp(&right.0))
-        });
-
-        let mut pairs = BTreeSet::new();
-        'buckets: for (_, members) in ordered_buckets {
-            for (offset, left) in members.iter().enumerate() {
-                for right in members.iter().skip(offset + 1) {
-                    let pair = (*left.min(right), *left.max(right));
-                    let pair_limit = if max_pairs == 0 {
-                        DEFAULT_PAIR_LIMIT
-                    } else {
-                        max_pairs
-                    };
-                    if !pairs.contains(&pair) && pairs.len() >= pair_limit {
-                        partial = true;
-                        gaps.insert("REFACTOR_PAIR_BUDGET");
-                        break 'buckets;
-                    }
-                    pairs.insert(pair);
-                }
-            }
-        }
-
-        let inspected_pairs = pairs.len();
-        let mut candidates = pairs
-            .into_iter()
-            .filter_map(|(left_index, right_index)| {
-                let left = &documents[left_index];
-                let right = &documents[right_index];
-                let score = similarity(&left.fingerprint, &right.fingerprint);
-                (score.total >= min_score && (score.callees > 0 || score.ordered_shingles >= 820))
-                    .then_some(RefactorCandidate {
-                        left,
-                        right,
-                        similarity: score,
-                    })
-            })
-            .collect::<Vec<_>>();
+        let CandidateScan {
+            mut candidates,
+            inspected_documents,
+            inspected_pairs,
+            mut partial,
+            mut gaps,
+            index_used,
+        } = scan;
         candidates.sort_by(|left, right| {
             rank_similarity(right.similarity)
                 .cmp(&rank_similarity(left.similarity))
@@ -424,13 +1293,6 @@ impl Runtime {
         }
         candidates.truncate(limit);
 
-        let by_node = self
-            .stored
-            .documents
-            .iter()
-            .filter(|document| document.provenance == "SYNTAX")
-            .map(|document| (document.node_id, document))
-            .collect::<BTreeMap<_, _>>();
         let observations = self.load_current_observations()?;
         let mut evidence_count = 0;
         let mut values = Vec::with_capacity(candidates.len());
@@ -438,7 +1300,8 @@ impl Runtime {
             let (mut value, evidence_truncated) = candidate_json(
                 &candidate,
                 &definitive,
-                &by_node,
+                &self.stored,
+                &outgoing,
                 self.snapshot(),
                 &mut evidence_count,
             );
@@ -473,8 +1336,9 @@ impl Runtime {
             "coverage_gaps":coverage_gaps,
             "coverage_gap_count":coverage_gap_count,
             "coverage_gaps_truncated":index_gap_count > 20,
-            "inspected_documents":documents.len(),
+            "inspected_documents":inspected_documents,
             "inspected_pairs":inspected_pairs,
+            "similarity_index":self.similarity_background.status_json(self.snapshot(), index_used),
             "limitations":[
                 "Candidates require review; structural similarity is not proof that code should be merged.",
                 "Projections are hypothetical and never mutate source or the stored graph.",
@@ -484,13 +1348,23 @@ impl Runtime {
     }
 }
 
+fn similarity_node_json(document: &StoredDocument) -> Value {
+    json!({
+        "qualified_name":document.qualified_name,
+        "path":document.path,
+        "span_start":document.span_start,
+        "span_end":document.span_end,
+        "node_id":document.node_id
+    })
+}
+
 fn runtime_profile(
     candidate: &RefactorCandidate<'_>,
     observations: Option<&cgrx_store::ObservationSnapshot>,
     definitive: &[&StoredArc],
 ) -> Value {
-    let left = candidate.left.document.node_id;
-    let right = candidate.right.document.node_id;
+    let left = candidate.left.node_id;
+    let right = candidate.right.node_id;
     let static_pairs = definitive
         .iter()
         .map(|arc| (arc.source, arc.target))
@@ -548,29 +1422,27 @@ fn candidate_identity<'a>(
     candidate: &'a RefactorCandidate<'a>,
 ) -> (&'a str, usize, &'a str, usize) {
     (
-        candidate.left.document.path.as_str(),
-        candidate.left.document.span_start,
-        candidate.right.document.path.as_str(),
-        candidate.right.document.span_start,
+        candidate.left.path.as_str(),
+        candidate.left.span_start,
+        candidate.right.path.as_str(),
+        candidate.right.span_start,
     )
 }
 
 fn candidate_json(
     candidate: &RefactorCandidate<'_>,
     definitive: &[&StoredArc],
-    by_node: &BTreeMap<u64, &StoredDocument>,
+    stored: &StoredIndex,
+    outgoing: &BTreeMap<u64, BTreeSet<(RelationKind, u64)>>,
     snapshot: &cgrx_core::RepoSnapshot,
     evidence_count: &mut usize,
 ) -> (Value, bool) {
-    let left = candidate.left.document;
-    let right = candidate.right.document;
-    let shared = candidate
-        .left
-        .fingerprint
-        .outgoing
-        .intersection(&candidate.right.fingerprint.outgoing)
-        .copied()
-        .collect::<Vec<_>>();
+    let left = candidate.left;
+    let right = candidate.right;
+    let shared = match (outgoing.get(&left.node_id), outgoing.get(&right.node_id)) {
+        (Some(left), Some(right)) => left.intersection(right).copied().collect::<Vec<_>>(),
+        _ => Vec::new(),
+    };
     let projection_id = projection_id(snapshot, left.node_id, right.node_id);
     let helper = json!({
         "id":format!("virtual:{projection_id}:helper"),
@@ -582,7 +1454,7 @@ fn candidate_json(
     let mut included_shared = Vec::new();
     let mut shared_callees = Vec::new();
     for (relation, target) in &shared {
-        let Some(target_document) = by_node.get(target) else {
+        let Some(target_document) = syntax_document(stored, *target) else {
             continue;
         };
         let proofs = definitive
@@ -616,7 +1488,7 @@ fn candidate_json(
             evidence_truncated = true;
             continue;
         }
-        if let Some(value) = edge_json(arc, by_node) {
+        if let Some(value) = edge_json(arc, stored) {
             preserve.push(value);
         }
     }
@@ -634,7 +1506,7 @@ fn candidate_json(
     let move_to_helper = included_shared
         .iter()
         .filter_map(|(relation, target)| {
-            by_node.get(target).map(|target_document| {
+            syntax_document(stored, *target).map(|target_document| {
                 json!({
                     "relation":relation,
                     "from":[node_json(left),node_json(right)],
@@ -659,7 +1531,7 @@ fn candidate_json(
         json!({
             "kind":"extract_shared_helper",
             "confidence":"candidate",
-            "language":candidate.left.language,
+            "language":candidate.language,
             "left":node_json(left),
             "right":node_json(right),
             "similarity":{
@@ -696,11 +1568,11 @@ fn node_json(document: &StoredDocument) -> Value {
     })
 }
 
-fn edge_json(arc: &StoredArc, by_node: &BTreeMap<u64, &StoredDocument>) -> Option<Value> {
+fn edge_json(arc: &StoredArc, stored: &StoredIndex) -> Option<Value> {
     Some(json!({
         "relation":arc.kind,
-        "source":node_json(by_node.get(&arc.source)?),
-        "target":node_json(by_node.get(&arc.target)?),
+        "source":node_json(syntax_document(stored, arc.source)?),
+        "target":node_json(syntax_document(stored, arc.target)?),
         "confidence":"PROVEN",
         "evidence":arc.evidence
     }))

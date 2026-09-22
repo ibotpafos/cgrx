@@ -63,13 +63,14 @@ use std::fmt;
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::sync::RwLock;
 
 use cgrx_capsule::{EvidencePacker, EvidenceRecord, PackInput, Tokenizer};
 #[cfg(test)]
 use cgrx_cgcr::SourceRange;
 use cgrx_cgcr::{
     CgcrEngine, CompileRequest, CompiledContext, CostTable, CoverageMetadata, ObligationCompiler,
-    Probe, ProbeError, ProbeFact, ProbeOracle, RemainingBudget, ResolvedAnchor,
+    ObligationSet, Probe, ProbeError, ProbeFact, ProbeOracle, RemainingBudget, ResolvedAnchor,
 };
 use cgrx_core::{ByteRange, EdgeEvidence, Hash32, QueryRequest, RelationKind, RepoSnapshot, Scope};
 #[cfg(test)]
@@ -77,10 +78,10 @@ use cgrx_core::{ConfidenceClass, ResolverClass};
 use cgrx_languages::ts_imports::TsFileFacts;
 use cgrx_languages::{Span, pack_for_path};
 use cgrx_retrieval::{
-    BaseGraph, Candidate, CandidateProvenance, GraphArc, GraphDocument, RetrievalEngine,
-    ScoreComponents, SnapshotView, path_in_scope,
+    Candidate, CandidateProvenance, CandidateSet, GraphArc, GraphDocumentRef, RetrievalEngine,
+    ScoreComponents, path_in_scope,
 };
-use cgrx_store::{DeltaOverlay, GenerationReader, GenerationWriter};
+use cgrx_store::{GenerationReader, GenerationWriter};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -114,6 +115,19 @@ pub struct OrientReport {
     pub compiled: CompiledContext,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub semantic_rerank: Option<SemanticRerankReport>,
+}
+
+#[derive(Clone, Debug)]
+pub struct OrientPreparation {
+    snapshot: RepoSnapshot,
+    candidates: CandidateSet,
+    records: Vec<EvidenceRecord>,
+    obligations: ObligationSet,
+    required_anchors: Vec<u64>,
+    allow_disconnected_required_anchors: bool,
+    semantic_rerank: Option<SemanticRerankReport>,
+    index_input_bytes: u64,
+    probe_input_bytes: u64,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -250,6 +264,10 @@ struct StoredIndex {
     path_hashes: BTreeMap<String, Hash32>,
     documents: Vec<StoredDocument>,
     arcs: Vec<StoredArc>,
+    #[serde(skip)]
+    query_index: scan_helpers::QueryIndex,
+    #[serde(default)]
+    similarity_index: refactors::SimilarityIndex,
     coverage: CoverageMetadata,
 }
 
@@ -264,6 +282,8 @@ struct StoredTsFileFacts {
 pub struct Runtime {
     state_root: PathBuf,
     stored: StoredIndex,
+    similarity_background: refactors::SimilarityBackground,
+    architecture_cache: RwLock<BTreeMap<String, Value>>,
     base_snapshot: RepoSnapshot,
     base_path_hashes: BTreeMap<String, Hash32>,
     changed_paths: BTreeSet<String>,
@@ -315,6 +335,7 @@ fn open_current_report(state: &Path, snapshot: &RepoSnapshot) -> Option<IndexRep
     let stored: StoredIndex = serde_json::from_slice(&bytes).ok()?;
     if stored.snapshot != *snapshot
         || stored.extraction_revision != EXTRACTION_REVISION
+        || !stored.similarity_index.is_current()
         || reader.read_segment(TERMS_SEGMENT).ok().as_deref() != Some(TERMS_MARKER)
     {
         return None;
@@ -473,11 +494,15 @@ impl Runtime {
         let status = git_bytes(
             &root,
             &[
+                "-c",
+                "core.untrackedCache=true",
                 "status",
                 "--porcelain=v2",
                 "--branch",
+                "--no-ahead-behind",
                 "-z",
                 "--untracked-files=normal",
+                "--no-renames",
                 "--",
             ],
         )?;
@@ -716,6 +741,7 @@ impl Runtime {
         }
         self.stored.arcs = rebuild_refreshed_arcs(&self.stored);
         normalize_stored(&mut self.stored);
+        self.stored.similarity_index = Default::default();
         self.changed_paths = changed_paths(&self.base_path_hashes, &self.stored.path_hashes);
         self.stored.snapshot = if self.changed_paths.is_empty() {
             self.base_snapshot.clone()
@@ -730,6 +756,10 @@ impl Runtime {
             }
         };
         self.stored.indexed_files = self.stored.path_hashes.len() as u64;
+        if let Ok(mut cache) = self.architecture_cache.write() {
+            cache.clear();
+        }
+        self.schedule_similarity_index_rebuild();
         Ok(self.stored.snapshot != previous_snapshot)
     }
 
@@ -773,12 +803,21 @@ impl Runtime {
             ));
         }
         normalize_stored(&mut stored);
+        if !stored.similarity_index.is_current() {
+            refactors::rebuild_similarity_index(&mut stored);
+        }
         let base_traversal_truncated = stored.coverage.traversal_truncated;
+        let similarity_background = refactors::SimilarityBackground::ready(
+            stored.snapshot.clone(),
+            stored.similarity_index.clone(),
+        );
         Ok(Self {
             state_root: state.to_path_buf(),
             base_snapshot: stored.snapshot.clone(),
             base_path_hashes: stored.path_hashes.clone(),
             stored,
+            similarity_background,
+            architecture_cache: RwLock::new(BTreeMap::new()),
             changed_paths: BTreeSet::new(),
             refresh_input_bytes: 0,
             source_fingerprints: BTreeMap::new(),
@@ -789,55 +828,52 @@ impl Runtime {
     }
 
     pub fn orient(&self, request: QueryRequest) -> Result<OrientReport, RuntimeError> {
-        let base = BaseGraph {
-            generation: self.stored.snapshot.graph_generation,
-            path_hashes: self.stored.path_hashes.clone(),
-            edges: Vec::new(),
-            documents: self
-                .stored
-                .documents
-                .iter()
-                .map(|document| GraphDocument {
-                    node_id: document.node_id,
-                    qualified_name: document.qualified_name.clone(),
-                    path: document.path.clone(),
-                    text: if document.search_text.is_empty() {
-                        document.text.clone()
-                    } else {
-                        document.search_text.clone()
-                    },
-                    span: Span {
-                        start: document.span_start,
-                        end: document.span_end,
-                    },
-                    provenance: CandidateProvenance::Syntax,
-                    semantic_fingerprint: None,
-                })
-                .collect(),
-            arcs: definitive_stored_arcs(&self.stored, &request.scope)
-                .into_iter()
-                .map(|arc| GraphArc {
-                    source: arc.source,
-                    target: arc.target,
-                    kind: arc.kind,
-                    evidence: arc.evidence.clone().expect("definitive arc has evidence"),
-                })
-                .collect(),
-        };
-        let overlay = DeltaOverlay::new(base.generation);
-        let view = SnapshotView::new(&base, &overlay)
-            .map_err(|error| RuntimeError::new("view", error.to_string()))?;
+        let token_budget = request.token_budget;
+        let prepared = self.prepare_orient(&request)?;
+        self.orient_prepared(&prepared, token_budget)
+    }
+
+    pub fn prepare_orient(
+        &self,
+        request: &QueryRequest,
+    ) -> Result<OrientPreparation, RuntimeError> {
+        let mut scoped = ScopedQuery::new(&self.stored, &request.scope, path_in_scope);
+        let scoped_documents = scoped.documents(&self.stored);
+        let scoped_arcs = scoped
+            .definitive_arcs(&self.stored)
+            .into_iter()
+            .map(|arc| GraphArc {
+                source: arc.source,
+                target: arc.target,
+                kind: arc.kind,
+                evidence: arc.evidence.clone().expect("definitive arc has evidence"),
+            })
+            .collect::<Vec<_>>();
+        let graph_documents = scoped_documents
+            .iter()
+            .map(|document| GraphDocumentRef {
+                node_id: document.node_id,
+                qualified_name: document.qualified_name.as_str(),
+                path: document.path.as_str(),
+                text: if document.search_text.is_empty() {
+                    document.text.as_str()
+                } else {
+                    document.search_text.as_str()
+                },
+                span: Span {
+                    start: document.span_start,
+                    end: document.span_end,
+                },
+                provenance: CandidateProvenance::Syntax,
+                semantic_fingerprint: None,
+            })
+            .collect::<Vec<_>>();
         let mut candidates = RetrievalEngine::default()
-            .retrieve(&request, &view)
+            .retrieve_scoped_refs(request, &graph_documents, &scoped_arcs)
             .map_err(|error| RuntimeError::new("retrieve", error.to_string()))?;
-        let exact_symbols = exact_symbol_ids(&request.task, &self.stored.documents, &request.scope);
+        let exact_symbols = exact_symbol_ids(&request.task, &scoped_documents);
         let intent_evidence = if exact_symbols.is_empty() {
-            task_evidence_ids(
-                &request.task,
-                &self.stored.documents,
-                &base.arcs,
-                &request.scope,
-            )
+            task_evidence_ids(&request.task, &scoped_documents, &scoped_arcs)
         } else {
             Vec::new()
         };
@@ -846,15 +882,15 @@ impl Runtime {
         } else if !intent_evidence.is_empty() {
             intent_evidence
         } else {
-            definition_body_ids(&request.task, &self.stored.documents, &request.scope)
+            definition_body_ids(&request.task, &scoped_documents)
         };
         let required_task_anchors = task_evidence.clone();
         if !task_evidence.is_empty() && request.scope.relation_kinds.contains(&RelationKind::Calls)
         {
             task_evidence = graph_evidence_ids(
                 &task_evidence,
-                &base.arcs,
-                &self.stored.documents,
+                &scoped_arcs,
+                &scoped_documents,
                 &request.scope,
             );
         }
@@ -863,10 +899,9 @@ impl Runtime {
             candidates.candidates = task_evidence
                 .iter()
                 .filter_map(|node_id| {
-                    let document = self
-                        .stored
-                        .documents
+                    let document = scoped_documents
                         .iter()
+                        .copied()
                         .find(|document| document.node_id == *node_id)?;
                     Some(Candidate {
                         node_id: document.node_id,
@@ -896,9 +931,7 @@ impl Runtime {
                 })
                 .collect();
         } else if request.scope.relation_kinds.contains(&RelationKind::Calls) {
-            let call_nodes: std::collections::BTreeSet<_> = self
-                .stored
-                .documents
+            let call_nodes: std::collections::BTreeSet<_> = scoped_documents
                 .iter()
                 .filter(|document| document.provenance == "CALLS")
                 .map(|document| document.node_id)
@@ -920,9 +953,7 @@ impl Runtime {
                 .take(semantic_rerank::MAX_CANDIDATES)
                 .map(|candidate| candidate.node_id)
                 .collect::<BTreeSet<_>>();
-            let candidate_text = self
-                .stored
-                .documents
+            let candidate_text = scoped_documents
                 .iter()
                 .filter(|document| candidate_ids.contains(&document.node_id))
                 .map(|document| {
@@ -948,21 +979,20 @@ impl Runtime {
             })
             .collect();
         let scoped_coverage = coverage_for_scope(&self.stored.coverage, &request.scope);
-        let obligations = ObligationCompiler::compile(&request, &anchors, &scoped_coverage, None);
+        let obligations = ObligationCompiler::compile(request, &anchors, &scoped_coverage, None);
         let obligation_ids: Vec<_> = obligations
             .obligations
             .iter()
             .map(|obligation| obligation.id.clone())
             .collect();
-        let neighbors = neighbor_map(&base.arcs, &request.scope);
+        let neighbors = neighbor_map(&scoped_arcs, &request.scope);
         let records: Vec<_> = candidates
             .candidates
             .iter()
             .filter_map(|candidate| {
-                let document = self
-                    .stored
-                    .documents
+                let document = scoped_documents
                     .iter()
+                    .copied()
                     .find(|document| document.node_id == candidate.node_id)?;
                 Some(EvidenceRecord {
                     node_id: candidate.node_id,
@@ -980,8 +1010,6 @@ impl Runtime {
                 })
             })
             .collect();
-        let tokenizer = Tokenizer::o200k_base()
-            .map_err(|error| RuntimeError::new("tokenizer", error.to_string()))?;
         let required_anchors = if task_selected {
             required_task_anchors
         } else {
@@ -991,17 +1019,43 @@ impl Runtime {
                 .map(|candidate| vec![candidate.node_id])
                 .unwrap_or_default()
         };
-        let mut initial_pack = EvidencePacker::pack(PackInput {
-            candidates: &candidates,
+        Ok(OrientPreparation {
+            snapshot: self.stored.snapshot.clone(),
+            candidates,
             records,
-            obligations: obligation_ids,
+            obligations,
             required_anchors,
             allow_disconnected_required_anchors: task_selected,
+            semantic_rerank,
+            index_input_bytes: self.stored.index_input_bytes,
+            probe_input_bytes: self.refresh_input_bytes,
+        })
+    }
+
+    pub fn orient_prepared(
+        &self,
+        prepared: &OrientPreparation,
+        token_budget: u32,
+    ) -> Result<OrientReport, RuntimeError> {
+        let tokenizer = Tokenizer::o200k_base()
+            .map_err(|error| RuntimeError::new("tokenizer", error.to_string()))?;
+        let obligation_ids = prepared
+            .obligations
+            .obligations
+            .iter()
+            .map(|obligation| obligation.id.clone())
+            .collect();
+        let mut initial_pack = EvidencePacker::pack(PackInput {
+            candidates: &prepared.candidates,
+            records: prepared.records.clone(),
+            obligations: obligation_ids,
+            required_anchors: prepared.required_anchors.clone(),
+            allow_disconnected_required_anchors: prepared.allow_disconnected_required_anchors,
             tokenizer: &tokenizer,
-            budget: request.token_budget,
+            budget: token_budget,
         });
-        initial_pack.accounting.index_input_bytes = self.stored.index_input_bytes;
-        initial_pack.accounting.probe_input_bytes = self.refresh_input_bytes;
+        initial_pack.accounting.index_input_bytes = prepared.index_input_bytes;
+        initial_pack.accounting.probe_input_bytes = prepared.probe_input_bytes;
         initial_pack
             .verify_accounting()
             .map_err(|error| RuntimeError::new("accounting", error.to_string()))?;
@@ -1020,9 +1074,9 @@ impl Runtime {
         }
         let engine = CgcrEngine::new(NoopOracle, CostTable::default());
         let compiled = engine.compile(CompileRequest {
-            obligations,
+            obligations: prepared.obligations.clone(),
             initial_pack,
-            pinned_snapshot: self.stored.snapshot.clone(),
+            pinned_snapshot: prepared.snapshot.clone(),
             current_snapshot: self.stored.snapshot.clone(),
             pinned_source_hashes: self.stored.path_hashes.clone(),
             counterexamples: Vec::new(),
@@ -1030,9 +1084,9 @@ impl Runtime {
             tokenizer,
         });
         Ok(OrientReport {
-            snapshot: self.stored.snapshot.clone(),
+            snapshot: prepared.snapshot.clone(),
             compiled,
-            semantic_rerank,
+            semantic_rerank: prepared.semantic_rerank.clone(),
         })
     }
 

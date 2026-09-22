@@ -1,12 +1,12 @@
 use crate::fusion::LaneHit;
-use crate::graph::GraphDocument;
+use crate::graph::RetrievalDocument;
 use std::collections::BTreeSet;
 
 /// Deterministic structural-fingerprint lane. Finds symbols whose normalized
 /// body matches the body of the symbol named in the query — catches renamed
 /// or lightly rewritten duplicates. No external models: the signal is
 /// structural only (name tokens + normalized body hash).
-pub(crate) fn rank(query: &str, documents: &[GraphDocument]) -> Vec<LaneHit> {
+pub(crate) fn rank<D: RetrievalDocument>(query: &str, documents: &[D]) -> Vec<LaneHit> {
     if documents.is_empty() {
         return Vec::new();
     }
@@ -18,12 +18,12 @@ pub(crate) fn rank(query: &str, documents: &[GraphDocument]) -> Vec<LaneHit> {
     // If the query names a known symbol, adopt its body hash as the target.
     let matched_body_hash = documents
         .iter()
-        .find(|doc| tokenize(&document_key(doc)).is_subset(&query_tokens))
-        .and_then(|doc| structural_body(&doc.text));
+        .find(|doc| tokenize(doc.qualified_name()).is_subset(&query_tokens))
+        .and_then(|doc| structural_body(doc.text()));
 
     let mut hits = Vec::new();
     for document in documents {
-        let name_tokens = tokenize(&document.qualified_name);
+        let name_tokens = tokenize(document.qualified_name());
         if name_tokens.is_empty() {
             continue;
         }
@@ -40,7 +40,7 @@ pub(crate) fn rank(query: &str, documents: &[GraphDocument]) -> Vec<LaneHit> {
 
         // Body-hash match: only when the query named a specific symbol whose
         // body we can propagate. Renamed symbols with identical bodies score.
-        let body_score = match (&matched_body_hash, structural_body(&document.text)) {
+        let body_score = match (&matched_body_hash, structural_body(document.text())) {
             (Some(target), Some(doc_hash)) if *target == doc_hash => 300_000.0,
             _ => 0.0,
         };
@@ -48,7 +48,7 @@ pub(crate) fn rank(query: &str, documents: &[GraphDocument]) -> Vec<LaneHit> {
         let total = name_score + body_score;
         if total > 0.0 {
             hits.push(LaneHit {
-                node_id: document.node_id,
+                node_id: document.node_id(),
                 raw_score: total.round() as u64,
             });
         }
@@ -61,11 +61,6 @@ pub(crate) fn rank(query: &str, documents: &[GraphDocument]) -> Vec<LaneHit> {
             .then_with(|| left.node_id.cmp(&right.node_id))
     });
     hits
-}
-
-/// Stable key for matching query to a document's identity.
-fn document_key(document: &GraphDocument) -> String {
-    document.qualified_name.clone()
 }
 
 /// Whitespace-normalized body hash.
@@ -120,6 +115,7 @@ fn tokenize(value: &str) -> BTreeSet<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::graph::GraphDocument;
 
     #[test]
     fn tokenize_splits_camel_and_path() {

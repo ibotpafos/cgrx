@@ -25,6 +25,88 @@ use super::{
 #[allow(dead_code)]
 const UNTRACKED_SCAN_ENTRY_LIMIT: usize = 64;
 
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub(super) struct QueryIndex {
+    ready: bool,
+    document_indices_by_path: BTreeMap<String, Vec<usize>>,
+    syntax_documents_by_node: BTreeMap<u64, Vec<usize>>,
+    syntax_documents_by_name: BTreeMap<String, Vec<usize>>,
+    syntax_documents_by_folded_name: BTreeMap<String, Vec<usize>>,
+    syntax_document_indices_by_path: BTreeMap<String, Vec<usize>>,
+    definitive_arc_indices: Vec<usize>,
+    incoming_definitive_arcs: BTreeMap<u64, Vec<usize>>,
+    outgoing_definitive_arcs: BTreeMap<u64, Vec<usize>>,
+}
+
+pub(super) fn rebuild_query_index(stored: &mut StoredIndex) {
+    let mut document_indices_by_path = BTreeMap::<String, Vec<usize>>::new();
+    let mut syntax_documents_by_node = BTreeMap::<u64, Vec<usize>>::new();
+    let mut syntax_documents_by_name = BTreeMap::<String, Vec<usize>>::new();
+    let mut syntax_documents_by_folded_name = BTreeMap::<String, Vec<usize>>::new();
+    let mut syntax_document_indices_by_path = BTreeMap::<String, Vec<usize>>::new();
+    let mut live_nodes = BTreeSet::new();
+    for (index, document) in stored.documents.iter().enumerate() {
+        document_indices_by_path
+            .entry(document.path.clone())
+            .or_default()
+            .push(index);
+        if document.provenance != "SYNTAX" {
+            continue;
+        }
+        syntax_documents_by_node
+            .entry(document.node_id)
+            .or_default()
+            .push(index);
+        syntax_documents_by_name
+            .entry(document.qualified_name.clone())
+            .or_default()
+            .push(index);
+        syntax_documents_by_folded_name
+            .entry(document.qualified_name.to_lowercase())
+            .or_default()
+            .push(index);
+        syntax_document_indices_by_path
+            .entry(document.path.clone())
+            .or_default()
+            .push(index);
+        live_nodes.insert(document.node_id);
+    }
+    let mut definitive_arc_indices = Vec::new();
+    let mut incoming_definitive_arcs = BTreeMap::<u64, Vec<usize>>::new();
+    let mut outgoing_definitive_arcs = BTreeMap::<u64, Vec<usize>>::new();
+    for (index, arc) in stored.arcs.iter().enumerate() {
+        let Some(evidence) = arc.evidence.as_ref() else {
+            continue;
+        };
+        if live_nodes.contains(&arc.source)
+            && live_nodes.contains(&arc.target)
+            && evidence.is_definitive()
+            && stored.path_hashes.get(&evidence.path) == Some(&evidence.source_hash)
+        {
+            definitive_arc_indices.push(index);
+            incoming_definitive_arcs
+                .entry(arc.target)
+                .or_default()
+                .push(index);
+            outgoing_definitive_arcs
+                .entry(arc.source)
+                .or_default()
+                .push(index);
+        }
+    }
+    stored.query_index = QueryIndex {
+        ready: true,
+        document_indices_by_path,
+        syntax_documents_by_node,
+        syntax_documents_by_name,
+        syntax_documents_by_folded_name,
+        syntax_document_indices_by_path,
+        definitive_arc_indices,
+        incoming_definitive_arcs,
+        outgoing_definitive_arcs,
+    };
+}
+
 pub(super) fn crosses_nested_git_boundary(
     root: &Path,
     relative: &Path,
@@ -296,6 +378,10 @@ pub(super) fn normalize_stored(stored: &mut StoredIndex) {
     }
     super::php_resolution::normalize(stored);
     refresh_proof_gaps(stored);
+    // QueryIndex stores positions into the normalized documents/arcs vectors.
+    // Rebuild it unconditionally after every normalization pass so an early
+    // proof-gap return cannot leave indices from the previous watched snapshot.
+    rebuild_query_index(stored);
 }
 
 // Re-evaluate unresolved bindings, including PHP type references. A site is
@@ -385,14 +471,31 @@ impl<'a, F: FnMut(&str, &Scope) -> bool> ScopedQuery<'a, F> {
             live: BTreeSet::new(),
             matches_scope,
         };
-        query.live = stored
-            .documents
-            .iter()
-            .filter(|document| {
-                document.provenance == "SYNTAX" && query.contains_path(&document.path)
-            })
-            .map(|document| document.node_id)
-            .collect();
+        query.live = if stored.query_index.ready {
+            stored
+                .query_index
+                .syntax_document_indices_by_path
+                .iter()
+                .filter(|(path, _)| query.contains_path(path))
+                .flat_map(|(_, indices)| {
+                    indices.iter().filter_map(|index| {
+                        stored
+                            .documents
+                            .get(*index)
+                            .map(|document| document.node_id)
+                    })
+                })
+                .collect()
+        } else {
+            stored
+                .documents
+                .iter()
+                .filter(|document| {
+                    document.provenance == "SYNTAX" && query.contains_path(&document.path)
+                })
+                .map(|document| document.node_id)
+                .collect()
+        };
         query
     }
 
@@ -409,10 +512,211 @@ impl<'a, F: FnMut(&str, &Scope) -> bool> ScopedQuery<'a, F> {
         })
     }
 
+    pub(super) fn documents<'s: 'a>(&mut self, stored: &'s StoredIndex) -> Vec<&'s StoredDocument> {
+        if stored.query_index.ready {
+            let mut documents = Vec::new();
+            for (path, indices) in &stored.query_index.document_indices_by_path {
+                if !self.contains_path(path) {
+                    continue;
+                }
+                documents.extend(
+                    indices
+                        .iter()
+                        .filter_map(|index| stored.documents.get(*index)),
+                );
+            }
+            return documents;
+        }
+        stored
+            .documents
+            .iter()
+            .filter(|document| self.contains_path(&document.path))
+            .collect()
+    }
+
+    pub(super) fn syntax_documents<'s: 'a>(
+        &mut self,
+        stored: &'s StoredIndex,
+    ) -> Vec<&'s StoredDocument> {
+        if stored.query_index.ready {
+            let mut documents = Vec::new();
+            for (path, indices) in &stored.query_index.syntax_document_indices_by_path {
+                if !self.contains_path(path) {
+                    continue;
+                }
+                documents.extend(
+                    indices
+                        .iter()
+                        .filter_map(|index| stored.documents.get(*index)),
+                );
+            }
+            return documents;
+        }
+        stored
+            .documents
+            .iter()
+            .filter(|document| {
+                document.provenance == "SYNTAX" && self.contains_path(&document.path)
+            })
+            .collect()
+    }
+
+    pub(super) fn matching_symbols<'s: 'a>(
+        &mut self,
+        stored: &'s StoredIndex,
+        symbol: &str,
+        path: Option<&str>,
+    ) -> Vec<&'s StoredDocument> {
+        if !stored.query_index.ready {
+            let mut exact = stored
+                .documents
+                .iter()
+                .filter(|document| {
+                    document.provenance == "SYNTAX"
+                        && self.contains_path(&document.path)
+                        && path.is_none_or(|path| document.path == path)
+                        && document.qualified_name == symbol
+                })
+                .collect::<Vec<_>>();
+            if exact.is_empty() {
+                let folded = symbol.to_lowercase();
+                exact = stored
+                    .documents
+                    .iter()
+                    .filter(|document| {
+                        document.provenance == "SYNTAX"
+                            && self.contains_path(&document.path)
+                            && path.is_none_or(|path| document.path == path)
+                            && document.qualified_name.to_lowercase() == folded
+                    })
+                    .collect();
+            }
+            exact.sort_by_key(|document| {
+                (
+                    document.path.as_str(),
+                    document.span_start,
+                    document.node_id,
+                )
+            });
+            return exact;
+        }
+
+        let collect = |indices: Option<&Vec<usize>>, this: &mut Self| {
+            indices
+                .into_iter()
+                .flatten()
+                .filter_map(|index| stored.documents.get(*index))
+                .filter(|document| {
+                    this.contains_path(&document.path)
+                        && path.is_none_or(|path| document.path == path)
+                })
+                .collect::<Vec<_>>()
+        };
+        let mut matches = collect(
+            stored.query_index.syntax_documents_by_name.get(symbol),
+            self,
+        );
+        if matches.is_empty() {
+            let folded = symbol.to_lowercase();
+            matches = collect(
+                stored
+                    .query_index
+                    .syntax_documents_by_folded_name
+                    .get(&folded),
+                self,
+            );
+        }
+        matches.sort_by_key(|document| {
+            (
+                document.path.as_str(),
+                document.span_start,
+                document.node_id,
+            )
+        });
+        matches
+    }
+
+    fn indexed_arcs_for<'s: 'a>(
+        &mut self,
+        stored: &'s StoredIndex,
+        indices: &[usize],
+    ) -> Vec<&'s StoredArc> {
+        indices
+            .iter()
+            .filter_map(|index| stored.arcs.get(*index))
+            .filter(|arc| {
+                self.scope.relation_kinds.contains(&arc.kind)
+                    && self.live.contains(&arc.source)
+                    && self.live.contains(&arc.target)
+                    && arc
+                        .evidence
+                        .as_ref()
+                        .is_some_and(|evidence| self.contains_path(&evidence.path))
+            })
+            .collect()
+    }
+
+    pub(super) fn incoming_arcs<'s: 'a>(
+        &mut self,
+        stored: &'s StoredIndex,
+        node_id: u64,
+    ) -> Vec<&'s StoredArc> {
+        if stored.query_index.ready {
+            let indices = stored
+                .query_index
+                .incoming_definitive_arcs
+                .get(&node_id)
+                .map(Vec::as_slice)
+                .unwrap_or_default();
+            return self.indexed_arcs_for(stored, indices);
+        }
+        self.definitive_arcs(stored)
+            .into_iter()
+            .filter(|arc| arc.target == node_id)
+            .collect()
+    }
+
+    pub(super) fn outgoing_arcs<'s: 'a>(
+        &mut self,
+        stored: &'s StoredIndex,
+        node_id: u64,
+    ) -> Vec<&'s StoredArc> {
+        if stored.query_index.ready {
+            let indices = stored
+                .query_index
+                .outgoing_definitive_arcs
+                .get(&node_id)
+                .map(Vec::as_slice)
+                .unwrap_or_default();
+            return self.indexed_arcs_for(stored, indices);
+        }
+        self.definitive_arcs(stored)
+            .into_iter()
+            .filter(|arc| arc.source == node_id)
+            .collect()
+    }
+
     pub(super) fn definitive_arcs<'s: 'a>(
         &mut self,
         stored: &'s StoredIndex,
     ) -> Vec<&'s StoredArc> {
+        if stored.query_index.ready {
+            return stored
+                .query_index
+                .definitive_arc_indices
+                .iter()
+                .filter_map(|index| stored.arcs.get(*index))
+                .filter(|arc| {
+                    self.scope.relation_kinds.contains(&arc.kind)
+                        && self.live.contains(&arc.source)
+                        && self.live.contains(&arc.target)
+                        && arc
+                            .evidence
+                            .as_ref()
+                            .is_some_and(|evidence| self.contains_path(&evidence.path))
+                })
+                .collect();
+        }
         stored
             .arcs
             .iter()
@@ -435,6 +739,87 @@ pub(super) fn definitive_stored_arcs<'a>(
     scope: &Scope,
 ) -> Vec<&'a StoredArc> {
     ScopedQuery::new(stored, scope, path_in_scope).definitive_arcs(stored)
+}
+
+pub(super) fn matching_symbols<'a>(
+    stored: &'a StoredIndex,
+    symbol: &str,
+    path: Option<&str>,
+) -> Vec<&'a StoredDocument> {
+    if !stored.query_index.ready {
+        let mut exact = stored
+            .documents
+            .iter()
+            .filter(|document| {
+                document.provenance == "SYNTAX"
+                    && path.is_none_or(|path| document.path == path)
+                    && document.qualified_name == symbol
+            })
+            .collect::<Vec<_>>();
+        if exact.is_empty() {
+            let folded = symbol.to_lowercase();
+            exact = stored
+                .documents
+                .iter()
+                .filter(|document| {
+                    document.provenance == "SYNTAX"
+                        && path.is_none_or(|path| document.path == path)
+                        && document.qualified_name.to_lowercase() == folded
+                })
+                .collect();
+        }
+        exact.sort_by_key(|document| {
+            (
+                document.path.as_str(),
+                document.span_start,
+                document.node_id,
+            )
+        });
+        return exact;
+    }
+
+    let collect = |indices: Option<&Vec<usize>>| {
+        indices
+            .into_iter()
+            .flatten()
+            .filter_map(|index| stored.documents.get(*index))
+            .filter(|document| path.is_none_or(|path| document.path == path))
+            .collect::<Vec<_>>()
+    };
+    let mut matches = collect(stored.query_index.syntax_documents_by_name.get(symbol));
+    if matches.is_empty() {
+        let folded = symbol.to_lowercase();
+        matches = collect(
+            stored
+                .query_index
+                .syntax_documents_by_folded_name
+                .get(&folded),
+        );
+    }
+    matches.sort_by_key(|document| {
+        (
+            document.path.as_str(),
+            document.span_start,
+            document.node_id,
+        )
+    });
+    matches
+}
+
+pub(super) fn syntax_document(stored: &StoredIndex, node_id: u64) -> Option<&StoredDocument> {
+    if stored.query_index.ready {
+        let indices = stored.query_index.syntax_documents_by_node.get(&node_id)?;
+        let [index] = indices.as_slice() else {
+            return None;
+        };
+        return stored.documents.get(*index);
+    }
+    let mut matches = stored
+        .documents
+        .iter()
+        .filter(|document| document.provenance == "SYNTAX" && document.node_id == node_id);
+    let document = matches.next()?;
+    matches.next().is_none().then_some(document)
 }
 
 pub(super) fn rebuild_refreshed_arcs(stored: &StoredIndex) -> Vec<StoredArc> {

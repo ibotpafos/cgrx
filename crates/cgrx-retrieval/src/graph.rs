@@ -31,6 +31,78 @@ pub struct GraphDocument {
     pub semantic_fingerprint: Option<String>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct GraphDocumentRef<'a> {
+    pub node_id: u64,
+    pub qualified_name: &'a str,
+    pub path: &'a str,
+    pub text: &'a str,
+    pub span: Span,
+    pub provenance: CandidateProvenance,
+    pub semantic_fingerprint: Option<&'a str>,
+}
+
+pub(crate) trait RetrievalDocument {
+    fn node_id(&self) -> u64;
+    fn qualified_name(&self) -> &str;
+    fn path(&self) -> &str;
+    fn text(&self) -> &str;
+    fn span(&self) -> Span;
+    fn provenance(&self) -> CandidateProvenance;
+}
+
+impl RetrievalDocument for GraphDocument {
+    fn node_id(&self) -> u64 {
+        self.node_id
+    }
+
+    fn qualified_name(&self) -> &str {
+        &self.qualified_name
+    }
+
+    fn path(&self) -> &str {
+        &self.path
+    }
+
+    fn text(&self) -> &str {
+        &self.text
+    }
+
+    fn span(&self) -> Span {
+        self.span
+    }
+
+    fn provenance(&self) -> CandidateProvenance {
+        self.provenance
+    }
+}
+
+impl RetrievalDocument for GraphDocumentRef<'_> {
+    fn node_id(&self) -> u64 {
+        self.node_id
+    }
+
+    fn qualified_name(&self) -> &str {
+        self.qualified_name
+    }
+
+    fn path(&self) -> &str {
+        self.path
+    }
+
+    fn text(&self) -> &str {
+        self.text
+    }
+
+    fn span(&self) -> Span {
+        self.span
+    }
+
+    fn provenance(&self) -> CandidateProvenance {
+        self.provenance
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct GraphArc {
     pub source: u64,
@@ -192,11 +264,28 @@ impl<'a> SnapshotView<'a> {
     }
 
     pub fn definitive_arcs(&self) -> impl Iterator<Item = &GraphArc> {
-        let live_nodes: std::collections::BTreeSet<_> = self
-            .documents()
-            .into_iter()
-            .map(|document| document.node_id)
-            .collect();
+        let mut live_nodes = std::collections::BTreeSet::new();
+        let mut base_endpoint_visible = BTreeMap::new();
+        for document in &self.base.documents {
+            let visible = !self.overlay.is_shadowed(Path::new(&document.path));
+            if visible {
+                live_nodes.insert(document.node_id);
+            }
+            base_endpoint_visible
+                .entry(document.node_id)
+                .or_insert(visible);
+        }
+        live_nodes.extend(self.overlay.records().iter().filter_map(|record| {
+            let DeltaRecord::UpsertNode { key, path, node } = record else {
+                return None;
+            };
+            matches!(
+                self.overlay.change(Path::new(path)),
+                Some(cgrx_store::PathChange::Active { current, .. })
+                    if current == key.source_hash
+            )
+            .then(|| stable_node_id(path, node.span, &node.name))
+        }));
         self.base.arcs.iter().filter(move |arc| {
             let evidence_path = Path::new(&arc.evidence.path);
             arc.evidence.is_definitive()
@@ -204,18 +293,8 @@ impl<'a> SnapshotView<'a> {
                 && live_nodes.contains(&arc.target)
                 && !self.overlay.is_shadowed(evidence_path)
                 && self.base.path_hashes.get(&arc.evidence.path) == Some(&arc.evidence.source_hash)
-                && self
-                    .base
-                    .documents
-                    .iter()
-                    .find(|document| document.node_id == arc.source)
-                    .is_some_and(|document| !self.overlay.is_shadowed(Path::new(&document.path)))
-                && self
-                    .base
-                    .documents
-                    .iter()
-                    .find(|document| document.node_id == arc.target)
-                    .is_some_and(|document| !self.overlay.is_shadowed(Path::new(&document.path)))
+                && base_endpoint_visible.get(&arc.source) == Some(&true)
+                && base_endpoint_visible.get(&arc.target) == Some(&true)
         })
     }
 }

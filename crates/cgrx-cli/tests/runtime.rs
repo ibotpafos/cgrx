@@ -229,6 +229,11 @@ fn suggest_refactors_projects_shared_helper_for_every_supported_extension() {
             .suggest_refactors(&calls_scope(path), Some(language), 760, 20, 0, 0)
             .expect("suggest refactors");
         assert_eq!(result["total"], 1, "{path}: {result}");
+        assert_eq!(
+            result["similarity_index"]["ready"], true,
+            "{path}: {result}"
+        );
+        assert_eq!(result["similarity_index"]["used"], true, "{path}: {result}");
         if path == "similar.ts" {
             assert!(
                 result["inspected_pairs"].as_u64().unwrap() > result["total"].as_u64().unwrap(),
@@ -268,7 +273,76 @@ fn suggest_refactors_projects_shared_helper_for_every_supported_extension() {
                 .expect("repeat suggestions"),
             "{path} ordering must be deterministic"
         );
+        if path == "similar.rs" {
+            let direct = runtime
+                .suggest_refactors(&calls_scope(path), Some(language), 760, 20, 20_000, 100_000)
+                .expect("direct fallback suggestions");
+            assert_eq!(direct["similarity_index"]["used"], false, "{direct}");
+            assert_eq!(result["total"], direct["total"]);
+            assert_eq!(result["candidates"], direct["candidates"]);
+        }
     }
+}
+
+#[test]
+fn similarity_projection_rebuilds_in_background_after_refresh() {
+    let repository = refactor_repository();
+    let state = TestDirectory::new("refactor-background-state");
+    Runtime::index(repository.path(), state.path()).expect("index repository");
+    let mut runtime = Runtime::open(state.path()).expect("open runtime");
+    let initial_status = runtime.similarity_index_status();
+    assert_eq!(initial_status["background"], true, "{initial_status}");
+    assert_eq!(initial_status["ready"], true, "{initial_status}");
+    assert_eq!(initial_status["building"], false, "{initial_status}");
+
+    fs::write(
+        repository.path().join("similar.rs"),
+        "fn save_rs(value: i32) {}\nfn first_rs(input: i32) -> i32 { let prepared = input + 1; save_rs(prepared); prepared }\nfn second_rs(value: i32) -> i32 { let output = value + 8; save_rs(output); output }\n",
+    )
+    .expect("update refactor fixture");
+    assert!(runtime.refresh(repository.path()).expect("refresh source"));
+
+    let during = runtime.similarity_index_status();
+    assert_eq!(during["background"], true, "{during}");
+    assert_eq!(during["spawn_failed"], false, "{during}");
+    assert!(
+        during["building"] == true || during["ready"] == true,
+        "background rebuild must be running or already complete: {during}"
+    );
+
+    let direct = runtime
+        .suggest_refactors(
+            &calls_scope("similar.rs"),
+            Some("rust"),
+            760,
+            20,
+            20_000,
+            100_000,
+        )
+        .expect("direct suggestions while background index settles");
+    assert_eq!(direct["total"], 1, "{direct}");
+
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        let status = runtime.similarity_index_status();
+        assert_eq!(status["spawn_failed"], false, "{status}");
+        if status["ready"] == true {
+            assert_eq!(status["building"], false, "{status}");
+            break;
+        }
+        assert_eq!(status["building"], true, "{status}");
+        assert!(
+            Instant::now() < deadline,
+            "background similarity rebuild timed out"
+        );
+        std::thread::sleep(Duration::from_millis(1));
+    }
+
+    let indexed = runtime
+        .suggest_refactors(&calls_scope("similar.rs"), Some("rust"), 760, 20, 0, 0)
+        .expect("indexed suggestions after background rebuild");
+    assert_eq!(indexed["similarity_index"]["used"], true, "{indexed}");
+    assert_eq!(indexed["candidates"], direct["candidates"]);
 }
 
 #[test]

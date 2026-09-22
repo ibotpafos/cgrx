@@ -1,4 +1,6 @@
-use crate::graph::{CandidateProvenance, GraphDocument, SnapshotView};
+use crate::graph::{
+    CandidateProvenance, GraphArc, GraphDocument, GraphDocumentRef, RetrievalDocument, SnapshotView,
+};
 use crate::{bm25, exact, structural};
 use cgrx_core::{QueryRequest, RelationKind, Scope};
 use cgrx_languages::Span;
@@ -118,9 +120,54 @@ impl RetrievalEngine {
             .into_iter()
             .filter(|document| path_in_scope(&document.path, &request.scope))
             .collect();
+        self.retrieve_scoped_with_arcs(request, &documents, view.definitive_arcs())
+    }
+
+    /// Retrieve from documents and arcs that were already scoped and freshness-validated.
+    ///
+    /// This avoids rebuilding a `SnapshotView` for runtimes that have already performed
+    /// their own revision and evidence checks.
+    pub fn retrieve_scoped(
+        &self,
+        request: &QueryRequest,
+        documents: &[GraphDocument],
+        arcs: &[GraphArc],
+    ) -> Result<CandidateSet, RetrievalError> {
+        debug_assert!(
+            documents
+                .iter()
+                .all(|document| path_in_scope(&document.path, &request.scope))
+        );
+        self.retrieve_scoped_with_arcs(request, documents, arcs.iter())
+    }
+
+    /// Retrieve from borrowed documents and arcs that were already scoped and freshness-validated.
+    ///
+    /// This keeps large source/search text borrowed from the runtime index instead of cloning it
+    /// solely for first-pass retrieval.
+    pub fn retrieve_scoped_refs(
+        &self,
+        request: &QueryRequest,
+        documents: &[GraphDocumentRef<'_>],
+        arcs: &[GraphArc],
+    ) -> Result<CandidateSet, RetrievalError> {
+        debug_assert!(
+            documents
+                .iter()
+                .all(|document| path_in_scope(document.path(), &request.scope))
+        );
+        self.retrieve_scoped_with_arcs(request, documents, arcs.iter())
+    }
+
+    fn retrieve_scoped_with_arcs<'a, D: RetrievalDocument>(
+        &self,
+        request: &QueryRequest,
+        documents: &[D],
+        arcs: impl IntoIterator<Item = &'a GraphArc>,
+    ) -> Result<CandidateSet, RetrievalError> {
         let exact_hits =
-            exact::rank(&request.task, &documents).map_err(RetrievalError::ExactIndex)?;
-        let bm25_hits = bm25::rank(&request.task, &documents);
+            exact::rank(&request.task, documents).map_err(RetrievalError::ExactIndex)?;
+        let bm25_hits = bm25::rank(&request.task, documents);
         let roots: Vec<_> = if exact_hits.is_empty() {
             bm25_hits.iter().take(4).map(|hit| hit.node_id).collect()
         } else {
@@ -128,18 +175,18 @@ impl RetrievalEngine {
         };
         let (graph_hits, uncertainties) = graph_rank(
             &roots,
-            &documents,
-            view,
+            documents,
+            arcs,
             &request.scope.relation_kinds,
             request.scope.max_depth,
         );
         let structural_hits = if self.hybrid.unwrap_or_else(hybrid_enabled) {
-            structural::rank(&request.task, &documents)
+            structural::rank(&request.task, documents)
         } else {
             Vec::new()
         };
         Ok(fuse(
-            &documents,
+            documents,
             &exact_hits,
             &bm25_hits,
             &graph_hits,
@@ -162,8 +209,8 @@ fn hybrid_enabled() -> bool {
         .unwrap_or(false)
 }
 
-fn fuse(
-    documents: &[GraphDocument],
+fn fuse<D: RetrievalDocument>(
+    documents: &[D],
     exact: &[LaneHit],
     bm25: &[LaneHit],
     graph: &[LaneHit],
@@ -171,7 +218,7 @@ fn fuse(
     uncertainties: Vec<Uncertainty>,
     profile: FusionProfile,
 ) -> CandidateSet {
-    let by_id: BTreeMap<_, _> = documents.iter().map(|doc| (doc.node_id, doc)).collect();
+    let by_id: BTreeMap<_, _> = documents.iter().map(|doc| (doc.node_id(), doc)).collect();
     let mut scores = BTreeMap::<u64, ScoreComponents>::new();
     let mut reasons = BTreeMap::<u64, BTreeSet<&'static str>>::new();
     add_lane(
@@ -217,10 +264,10 @@ fn fuse(
             Some(Candidate {
                 node_id,
                 semantic_fingerprint: None,
-                qualified_name: document.qualified_name.clone(),
-                path: document.path.clone(),
-                span: document.span,
-                provenance: document.provenance,
+                qualified_name: document.qualified_name().to_owned(),
+                path: document.path().to_owned(),
+                span: document.span(),
+                provenance: document.provenance(),
                 scores,
                 selection_reason: reasons[&node_id]
                     .iter()
@@ -266,17 +313,17 @@ fn add_lane<F: Fn(&mut ScoreComponents, u64)>(
     }
 }
 
-fn graph_rank(
+fn graph_rank<'a, D: RetrievalDocument>(
     roots: &[u64],
-    documents: &[GraphDocument],
-    view: &SnapshotView<'_>,
+    documents: &[D],
+    arcs: impl IntoIterator<Item = &'a GraphArc>,
     kinds: &[RelationKind],
     max_depth: u8,
 ) -> (Vec<LaneHit>, Vec<Uncertainty>) {
-    let by_id: BTreeMap<_, _> = documents.iter().map(|doc| (doc.node_id, doc)).collect();
+    let by_id: BTreeMap<_, _> = documents.iter().map(|doc| (doc.node_id(), doc)).collect();
     let allowed: BTreeSet<_> = kinds.iter().copied().map(relation_code).collect();
     let mut adjacency = BTreeMap::<u64, Vec<u64>>::new();
-    for arc in view.definitive_arcs() {
+    for arc in arcs {
         if allowed.contains(&relation_code(arc.kind)) {
             adjacency.entry(arc.source).or_default().push(arc.target);
         }
@@ -285,7 +332,7 @@ fn graph_rank(
         values.sort_by_key(|node_id| {
             by_id
                 .get(node_id)
-                .map_or((u64::MAX, *node_id), |doc| (path_id(&doc.path), *node_id))
+                .map_or((u64::MAX, *node_id), |doc| (path_id(doc.path()), *node_id))
         });
         values.dedup();
     }
@@ -302,7 +349,7 @@ fn graph_rank(
                 }
             }
         }
-        next.sort_by_key(|node_id| (path_id(&by_id[node_id].path), *node_id));
+        next.sort_by_key(|node_id| (path_id(by_id[node_id].path()), *node_id));
         for node_id in &next {
             hits.push(LaneHit {
                 node_id: *node_id,
@@ -467,6 +514,39 @@ mod tests {
         assert_eq!(engine.hybrid, None);
         assert_eq!(enabled.hybrid, Some(true));
         assert_eq!(disabled.hybrid, Some(false));
+    }
+
+    #[test]
+    fn borrowed_documents_produce_identical_candidates() {
+        let docs = vec![
+            doc(1, "processData", "let x = 1; let y = 2; return x + y;"),
+            doc(2, "transformValue", "let x = 1; let y = 2; return x + y;"),
+            doc(3, "unrelated", "fn nothing() {}"),
+        ];
+        let borrowed = docs
+            .iter()
+            .map(|document| GraphDocumentRef {
+                node_id: document.node_id,
+                qualified_name: &document.qualified_name,
+                path: &document.path,
+                text: &document.text,
+                span: document.span,
+                provenance: document.provenance,
+                semantic_fingerprint: document.semantic_fingerprint.as_deref(),
+            })
+            .collect::<Vec<_>>();
+        let request = QueryRequest {
+            task: "transformValue".to_owned(),
+            scope: base_scope(),
+            mode: Mode::Precise,
+            token_budget: 1000,
+        };
+        let engine = RetrievalEngine::default().with_hybrid(true);
+        let owned = engine.retrieve_scoped(&request, &docs, &[]).unwrap();
+        let borrowed = engine
+            .retrieve_scoped_refs(&request, &borrowed, &[])
+            .unwrap();
+        assert_eq!(borrowed, owned);
     }
 
     #[test]

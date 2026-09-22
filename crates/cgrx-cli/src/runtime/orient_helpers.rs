@@ -12,22 +12,18 @@ use cgrx_retrieval::GraphArc;
 
 const GRAPH_FANOUT_LIMIT: usize = 8;
 
-use super::{StoredDocument, path_in_scope};
+use super::StoredDocument;
 use crate::intent::{TaskIntent, classify};
 
 pub(super) fn task_evidence_ids(
     task: &str,
-    documents: &[StoredDocument],
+    documents: &[&StoredDocument],
     arcs: &[GraphArc],
-    scope: &Scope,
 ) -> Vec<u64> {
     let has_tag = |document: &StoredDocument, tag: &str| {
         document.semantic_tags.iter().any(|value| value == tag)
     };
-    let scoped: Vec<_> = documents
-        .iter()
-        .filter(|document| path_in_scope(&document.path, scope))
-        .collect();
+    let scoped = documents;
     let mut selected: Vec<_> = match classify(task) {
         TaskIntent::DecoratedRoute => scoped
             .iter()
@@ -97,11 +93,7 @@ pub(super) fn task_evidence_ids(
         .collect()
 }
 
-pub(super) fn exact_symbol_ids(
-    task: &str,
-    documents: &[StoredDocument],
-    scope: &Scope,
-) -> Vec<u64> {
+pub(super) fn exact_symbol_ids(task: &str, documents: &[&StoredDocument]) -> Vec<u64> {
     let exact_terms: BTreeSet<_> = task
         .split(|character: char| !character.is_alphanumeric() && character != '_')
         .filter(|term| term.len() >= 4)
@@ -118,7 +110,7 @@ pub(super) fn exact_symbol_ids(
     let folded_terms: BTreeSet<_> = exact_terms.iter().copied().map(str::to_lowercase).collect();
     let mut selected: Vec<_> = documents
         .iter()
-        .filter(|document| path_in_scope(&document.path, scope))
+        .copied()
         .filter(|document| document.provenance == "SYNTAX")
         .filter(|document| folded_terms.contains(&document.qualified_name.to_lowercase()))
         .collect();
@@ -144,25 +136,27 @@ pub(super) fn exact_symbol_ids(
         .collect()
 }
 
-pub(super) fn definition_body_ids(
-    task: &str,
-    documents: &[StoredDocument],
-    scope: &Scope,
-) -> Vec<u64> {
+pub(super) fn definition_body_ids(task: &str, documents: &[&StoredDocument]) -> Vec<u64> {
     let terms = lexical_terms(task);
     if terms.len() < 3 {
         return Vec::new();
     }
+    let ordered_terms = terms.iter().map(String::as_str).collect::<Vec<_>>();
+    let mut matched_terms = vec![false; ordered_terms.len()];
     let mut scored: Vec<_> = documents
         .iter()
-        .filter(|document| path_in_scope(&document.path, scope))
+        .copied()
         .filter(|document| document.provenance == "SYNTAX")
         .filter_map(|document| {
-            let haystack = lexical_terms(&format!(
-                "{} {} {}",
-                document.qualified_name, document.path, document.search_text
-            ));
-            let score = terms.intersection(&haystack).count();
+            let score = lexical_overlap_score(
+                &ordered_terms,
+                &mut matched_terms,
+                [
+                    document.qualified_name.as_str(),
+                    document.path.as_str(),
+                    document.search_text.as_str(),
+                ],
+            );
             (score >= 2).then_some((document, score))
         })
         .collect();
@@ -199,31 +193,47 @@ pub(super) fn definition_body_ids(
 }
 
 pub(super) fn lexical_terms(text: &str) -> BTreeSet<String> {
-    let normalized: String = text
-        .to_lowercase()
-        .chars()
-        .map(|character| {
-            if character.is_alphanumeric() {
-                character
-            } else {
-                ' '
-            }
-        })
-        .collect();
+    let normalized = text.to_lowercase();
     normalized
-        .split_whitespace()
+        .split(|character: char| !character.is_alphanumeric())
         .filter(|term| term.chars().count() >= 4)
-        .map(|term| {
-            for suffix in ["ing", "ers", "er", "ed", "es", "s"] {
-                if let Some(stem) = term.strip_suffix(suffix)
-                    && stem.chars().count() >= 4
-                {
-                    return stem.to_owned();
+        .map(|term| stem_lexical_term(term).to_owned())
+        .collect()
+}
+
+fn lexical_overlap_score(terms: &[&str], matched: &mut [bool], values: [&str; 3]) -> usize {
+    matched.fill(false);
+    let mut score = 0;
+    for value in values {
+        let normalized = value.to_lowercase();
+        for term in normalized
+            .split(|character: char| !character.is_alphanumeric())
+            .filter(|term| term.chars().count() >= 4)
+        {
+            let stem = stem_lexical_term(term);
+            if let Ok(index) = terms.binary_search(&stem)
+                && !matched[index]
+            {
+                matched[index] = true;
+                score += 1;
+                if score == terms.len() {
+                    return score;
                 }
             }
-            term.to_owned()
-        })
-        .collect()
+        }
+    }
+    score
+}
+
+fn stem_lexical_term(term: &str) -> &str {
+    for suffix in ["ing", "ers", "er", "ed", "es", "s"] {
+        if let Some(stem) = term.strip_suffix(suffix)
+            && stem.chars().count() >= 4
+        {
+            return stem;
+        }
+    }
+    term
 }
 
 pub(super) fn neighbor_map(arcs: &[GraphArc], scope: &Scope) -> BTreeMap<u64, Vec<u64>> {
@@ -246,14 +256,10 @@ pub(super) fn neighbor_map(arcs: &[GraphArc], scope: &Scope) -> BTreeMap<u64, Ve
 pub(super) fn graph_evidence_ids(
     roots: &[u64],
     arcs: &[GraphArc],
-    documents: &[StoredDocument],
+    documents: &[&StoredDocument],
     scope: &Scope,
 ) -> Vec<u64> {
-    let scoped: BTreeSet<_> = documents
-        .iter()
-        .filter(|document| path_in_scope(&document.path, scope))
-        .map(|document| document.node_id)
-        .collect();
+    let scoped: BTreeSet<_> = documents.iter().map(|document| document.node_id).collect();
     let mut adjacency = BTreeMap::<u64, Vec<u64>>::new();
     for arc in arcs
         .iter()
@@ -298,3 +304,65 @@ pub(super) fn graph_evidence_ids(
 }
 
 // stable_node_id and generation_id are defined in helpers.rs
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn legacy_lexical_terms(text: &str) -> BTreeSet<String> {
+        let normalized: String = text
+            .to_lowercase()
+            .chars()
+            .map(|character| {
+                if character.is_alphanumeric() {
+                    character
+                } else {
+                    ' '
+                }
+            })
+            .collect();
+        normalized
+            .split_whitespace()
+            .filter(|term| term.chars().count() >= 4)
+            .map(|term| {
+                for suffix in ["ing", "ers", "er", "ed", "es", "s"] {
+                    if let Some(stem) = term.strip_suffix(suffix)
+                        && stem.chars().count() >= 4
+                    {
+                        return stem.to_owned();
+                    }
+                }
+                term.to_owned()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn lexical_terms_preserve_previous_normalization() {
+        for sample in [
+            "Optimize orient/retrieval workers",
+            "src/runtime::GraphQuery connected-values",
+            "Пример Поиска_Связей и symbols42",
+        ] {
+            assert_eq!(lexical_terms(sample), legacy_lexical_terms(sample));
+        }
+    }
+
+    #[test]
+    fn lexical_overlap_matches_set_intersection_without_building_document_set() {
+        let terms = lexical_terms("optimize orient retrieval workers");
+        let ordered = terms.iter().map(String::as_str).collect::<Vec<_>>();
+        let values = [
+            "OrientWorker",
+            "crates/cgrx-retrieval/src/fusion.rs",
+            "optimize retrieval pipeline and worker scoring",
+        ];
+        let legacy_haystack = lexical_terms(&values.join(" "));
+        let expected = terms.intersection(&legacy_haystack).count();
+        let mut matched = vec![false; ordered.len()];
+        assert_eq!(
+            lexical_overlap_score(&ordered, &mut matched, values),
+            expected
+        );
+    }
+}

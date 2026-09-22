@@ -457,6 +457,56 @@ fn orient_without_state_uses_the_managed_root_and_emits_real_records() {
 }
 
 #[test]
+fn bench_orient_measures_warm_queries_without_reopening_runtime() {
+    let repository = TestDirectory::new("bench-orient-repo");
+    git(repository.path(), &["init", "-q"]);
+    git(
+        repository.path(),
+        &["config", "user.email", "test@example.invalid"],
+    );
+    git(repository.path(), &["config", "user.name", "CGRX Test"]);
+    fs::write(
+        repository.path().join("main.rs"),
+        b"fn target() -> u32 { 42 }\n",
+    )
+    .expect("write fixture");
+    git(repository.path(), &["add", "main.rs"]);
+    git(repository.path(), &["commit", "-qm", "fixture"]);
+
+    let output = cli()
+        .args(["bench", "orient", "--root"])
+        .arg(repository.path())
+        .args([
+            "--samples",
+            "3",
+            "--task",
+            "target",
+            "--budget",
+            "800",
+            "--scope",
+            "main.rs",
+            "--json",
+        ])
+        .output()
+        .expect("orient benchmark executes");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("benchmark emits JSON");
+    assert_eq!(report["scenario"], "orient");
+    assert_eq!(report["samples"], 3);
+    assert_eq!(report["records"], 1);
+    assert!(report["warm_orient_us"]["sum"].as_u64().is_some());
+    assert!(report["warm_orient_us"]["max"].as_u64().is_some());
+    assert!(report["prepare_us"].as_u64().is_some());
+    assert!(report["warm_repack_us"]["sum"].as_u64().is_some());
+    assert!(report["warm_repack_us"]["max"].as_u64().is_some());
+}
+
+#[test]
 fn expand_without_a_live_server_fails_with_an_actionable_error() {
     let output = cli()
         .args(["expand", "--handle", "cgrx1.dead", "--budget", "64"])
@@ -552,6 +602,7 @@ fn serve_state_routes_mcp_calls_to_the_persistent_runtime() {
     let mut child = cli()
         .args(["serve", "--state"])
         .arg(state.path())
+        .env_remove("CGRX_SEMANTIC_RERANK_SOCKET")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()
@@ -1193,6 +1244,114 @@ fn serve_state_expands_real_revision_bound_evidence_once() {
 
     drop(stdin);
     assert!(child.wait().expect("serve exits at EOF").success());
+}
+
+#[test]
+fn serve_state_reuses_orient_preparation_across_budgets() {
+    let repository = TestDirectory::new("orient-cache-repo");
+    let state = TestDirectory::new("orient-cache-state");
+    git(repository.path(), &["init", "-q"]);
+    git(
+        repository.path(),
+        &["config", "user.email", "test@example.invalid"],
+    );
+    git(repository.path(), &["config", "user.name", "CGRX Test"]);
+    fs::write(
+        repository.path().join("main.ts"),
+        b"export function cachedTarget() { return 42; }\n",
+    )
+    .expect("write fixture");
+    git(repository.path(), &["add", "main.ts"]);
+    git(repository.path(), &["commit", "-qm", "fixture"]);
+
+    let indexed = cli()
+        .args(["index", "--root"])
+        .arg(repository.path())
+        .arg("--state")
+        .arg(state.path())
+        .arg("--json")
+        .output()
+        .expect("index executes");
+    assert!(indexed.status.success());
+
+    let mut child = cli()
+        .args(["serve", "--state"])
+        .arg(state.path())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("serve starts");
+    let mut stdin = child.stdin.take().expect("stdin is piped");
+    let mut stdout = BufReader::new(child.stdout.take().expect("stdout is piped"));
+    let request = |id: u8, budget: u32| {
+        serde_json::json!({
+            "jsonrpc":"2.0",
+            "id":id,
+            "method":"tools/call",
+            "params":{"name":"orient","arguments":{
+                "task":"cachedTarget",
+                "budget":budget,
+                "mode":"BOUNDED",
+                "scope":{"include":["**"],"exclude":[],"relation_kinds":["CALLS"],"max_depth":4}
+            }}
+        })
+    };
+
+    writeln!(stdin, "{}", request(1, 1)).expect("first orient writes");
+    stdin.flush().expect("first orient flushes");
+    let first = read_json_line(&mut stdout);
+    assert_eq!(
+        first["result"]["structuredContent"]["preparation_cache_hit"],
+        false
+    );
+
+    writeln!(stdin, "{}", request(2, 800)).expect("second orient writes");
+    stdin.flush().expect("second orient flushes");
+    let second = read_json_line(&mut stdout);
+    let payload = &second["result"]["structuredContent"];
+    assert_eq!(payload["preparation_cache_hit"], true);
+    assert_eq!(
+        payload["compiled"]["packed"]["records"][0]["path"],
+        "main.ts"
+    );
+    assert_eq!(
+        payload["compiled"]["packed"]["records"][0]["text"],
+        "cachedTarget"
+    );
+
+    drop(stdin);
+    assert!(child.wait().expect("serve exits at EOF").success());
+
+    let mut reranked_child = cli()
+        .args(["serve", "--state"])
+        .arg(state.path())
+        .env(
+            "CGRX_SEMANTIC_RERANK_SOCKET",
+            state.path().join("missing-reranker.sock"),
+        )
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("reranked serve starts");
+    let mut reranked_stdin = reranked_child.stdin.take().expect("stdin is piped");
+    let mut reranked_stdout =
+        BufReader::new(reranked_child.stdout.take().expect("stdout is piped"));
+    for id in [3, 4] {
+        writeln!(reranked_stdin, "{}", request(id, 800)).expect("reranked orient writes");
+        reranked_stdin.flush().expect("reranked orient flushes");
+        let response = read_json_line(&mut reranked_stdout);
+        assert_eq!(
+            response["result"]["structuredContent"]["preparation_cache_hit"], false,
+            "semantic reranker sessions must retry fresh preparation"
+        );
+    }
+    drop(reranked_stdin);
+    assert!(
+        reranked_child
+            .wait()
+            .expect("reranked serve exits at EOF")
+            .success()
+    );
 }
 
 #[test]

@@ -8,6 +8,49 @@ mod test_runs;
 pub use test_runs::{TestCaseResult, TestOutcome, TestRunRecord};
 
 const EVIDENCE_BYTES: usize = 2 * 1024 * 1024;
+const GAP_EXCLUDED: u8 = 1 << 0;
+const GAP_STALE: u8 = 1 << 1;
+const GAP_PARSER: u8 = 1 << 2;
+const GAP_DYNAMIC: u8 = 1 << 3;
+
+#[derive(Default)]
+struct CoverageGapIndex {
+    by_path: BTreeMap<String, u8>,
+}
+
+impl CoverageGapIndex {
+    fn new(coverage: &CoverageMetadata) -> Self {
+        let mut index = Self::default();
+        for path in &coverage.excluded_paths {
+            *index.by_path.entry(path.clone()).or_default() |= GAP_EXCLUDED;
+        }
+        for path in &coverage.stale_paths {
+            *index.by_path.entry(path.clone()).or_default() |= GAP_STALE;
+        }
+        for range in &coverage.parser_error_ranges {
+            *index.by_path.entry(range.path.clone()).or_default() |= GAP_PARSER;
+        }
+        for dispatch in &coverage.dynamic_dispatch {
+            *index
+                .by_path
+                .entry(dynamic_dispatch_path(dispatch).to_owned())
+                .or_default() |= GAP_DYNAMIC;
+        }
+        index
+    }
+
+    fn reasons(&self, path: &str) -> impl Iterator<Item = &'static str> {
+        let flags = self.by_path.get(path).copied().unwrap_or_default();
+        [
+            (GAP_EXCLUDED, "EXCLUDED_PATH"),
+            (GAP_STALE, "STALE_PATH"),
+            (GAP_PARSER, "PARSER_ERROR_RANGE"),
+            (GAP_DYNAMIC, "DYNAMIC_DISPATCH"),
+        ]
+        .into_iter()
+        .filter_map(move |(mask, code)| (flags & mask != 0).then_some(code))
+    }
+}
 
 pub struct RiskBaseline {
     snapshot: RepoSnapshot,
@@ -116,7 +159,10 @@ impl Runtime {
             }
             gaps.insert((".".to_owned(), "INDEX_TRAVERSAL_TRUNCATED".to_owned()));
         }
+        let baseline_gap_index = CoverageGapIndex::new(&baseline.coverage);
+        let current_gap_index = CoverageGapIndex::new(&self.stored.coverage);
         let mut current = BTreeMap::<(&str, &str), Vec<&StoredDocument>>::new();
+        let mut current_by_id = BTreeMap::<u64, Vec<&StoredDocument>>::new();
         let mut names = BTreeSet::new();
         let mut calls = BTreeMap::<(&str, &str), Vec<&StoredDocument>>::new();
         for d in self.stored.documents.iter().take(config.max_documents) {
@@ -125,6 +171,7 @@ impl Runtime {
                     .entry((&d.path, &d.qualified_name))
                     .or_default()
                     .push(d);
+                current_by_id.entry(d.node_id).or_default().push(d);
                 names.insert(d.qualified_name.as_str());
             }
             if d.provenance == "CALLS" {
@@ -156,7 +203,7 @@ impl Runtime {
             })
             .collect();
         for path in &self.changed_paths {
-            for reason in path_gaps(&self.stored.coverage, path) {
+            for reason in current_gap_index.reasons(path) {
                 gaps.insert((path.clone(), reason.to_owned()));
             }
             if !self.stored.path_hashes.contains_key(path)
@@ -200,8 +247,8 @@ impl Runtime {
             let mut material_gap = false;
             let mut relation_gap = false;
             for path in [&caller.path, &target.path] {
-                for coverage in [&baseline.coverage, &self.stored.coverage] {
-                    for reason in path_gaps(coverage, path) {
+                for gap_index in [&baseline_gap_index, &current_gap_index] {
+                    for reason in gap_index.reasons(path) {
                         gaps.insert((path.clone(), reason.to_owned()));
                         relation_gap = true;
                         // Missing other calls is not counter-evidence to a
@@ -325,7 +372,12 @@ impl Runtime {
         let mut verification_plan = review::build(
             &self.stored,
             &impacts,
-            &live_pairs,
+            review::ReviewIndex {
+                pairs: &live_pairs,
+                by_name: &current,
+                by_id: &current_by_id,
+                coverage_gaps: &current_gap_index,
+            },
             &mut evidence,
             limit,
             &mut gaps,
@@ -373,26 +425,6 @@ fn all_scope() -> Scope {
 fn body_hash(d: &StoredDocument) -> Hash32 {
     Hash32(*blake3::hash(d.search_text.as_bytes()).as_bytes())
 }
-fn path_gaps(c: &CoverageMetadata, p: &str) -> Vec<&'static str> {
-    let mut reasons = Vec::new();
-    if c.excluded_paths.iter().any(|x| x == p) {
-        reasons.push("EXCLUDED_PATH");
-    }
-    if c.stale_paths.iter().any(|x| x == p) {
-        reasons.push("STALE_PATH");
-    }
-    if c.parser_error_ranges.iter().any(|x| x.path == p) {
-        reasons.push("PARSER_ERROR_RANGE");
-    }
-    if c.dynamic_dispatch
-        .iter()
-        .any(|x| dynamic_dispatch_path(x) == p)
-    {
-        reasons.push("DYNAMIC_DISPATCH");
-    }
-    reasons
-}
-
 struct EvidenceReader<'a> {
     root: &'a Path,
     hashes: &'a BTreeMap<String, Hash32>,

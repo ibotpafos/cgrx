@@ -16,6 +16,7 @@ use super::extraction::extract_sources_parallel;
 use super::git_helpers::{GitBlobBatch, parse_committed_tree};
 use super::git_helpers::{git_bytes, git_text, store_writer_error};
 use super::helpers::generation_id;
+use super::refactors::rebuild_similarity_index;
 use super::scan_helpers::refresh_proof_gaps;
 use super::ts_helpers::{is_ts_inventory_path, is_ts_resolution_config, scan_ts_inventory};
 use super::{
@@ -270,6 +271,8 @@ pub(super) fn index_source(
         path_hashes,
         documents,
         arcs,
+        query_index: Default::default(),
+        similarity_index: Default::default(),
         coverage: CoverageMetadata {
             excluded_paths,
             parser_error_ranges,
@@ -278,6 +281,7 @@ pub(super) fn index_source(
         },
     };
     refresh_proof_gaps(&mut stored);
+    rebuild_similarity_index(&mut stored);
     let nodes = serde_json::to_vec(&stored)
         .map_err(|error| RuntimeError::new("serialize", error.to_string()))?;
     let segments: [(&str, &[u8]); 3] = [

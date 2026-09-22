@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "build:web": "esbuild crates/cgrx-cli/web/app.tsx --bundle --format=esm --target=es2024 --minify --legal-comments=none --outfile=crates/cgrx-cli/web/app.js && node scripts/normalize_web_bundle.mjs",
     "build:web-vendor": "esbuild crates/cgrx-cli/web/vendor-entry.ts --bundle --format=esm --minify --legal-comments=none --outfile=crates/cgrx-cli/web/vendor/web-git-graph.js && esbuild crates/cgrx-cli/web/git-history.ts --bundle --format=esm --minify --legal-comments=none --outfile=crates/cgrx-cli/web/vendor/git-history.js && esbuild crates/cgrx-cli/web/runtime-evidence.ts --bundle --format=esm --minify --legal-comments=none --outfile=crates/cgrx-cli/web/vendor/runtime-evidence.js",
     "typecheck:web": "tsc --noEmit",
     "verify:web-csp": "node scripts/verify_web_git_graph_csp.mjs",
@@ -13,9 +14,15 @@
   },
   "dependencies": {
     "@web-git-graph/protocol": "1.0.7",
-    "@web-git-graph/web": "1.0.7"
+    "@web-git-graph/web": "1.0.7",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "three": "^0.186.0"
   },
   "devDependencies": {
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@types/three": "^0.186.0",
     "esbuild": "0.25.10",
     "typescript": "6.0.2"
   }

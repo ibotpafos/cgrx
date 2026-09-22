@@ -11,6 +11,8 @@ use cgrx_core::{Hash32, Scope};
 use cgrx_languages::Span;
 
 #[cfg(test)]
+use super::scan_helpers::{rebuild_query_index, syntax_document};
+#[cfg(test)]
 use super::*;
 
 #[cfg(test)]
@@ -237,6 +239,7 @@ mod proof_edge_tests {
             }),
         };
         runtime.stored.arcs.push(preserved.clone());
+        rebuild_query_index(&mut runtime.stored);
         (repository, state, runtime, preserved)
     }
 
@@ -406,6 +409,8 @@ mod proof_edge_tests {
         // by path, not globally: nonadjacent collisions really do survive.
         normalize_stored(&mut runtime.stored);
         assert_eq!(runtime.stored.documents.len(), 4);
+        assert!(syntax_document(&runtime.stored, 1).is_none());
+        assert!(syntax_document(&runtime.stored, 2).is_none());
         let scope = Scope {
             exclude: vec!["z*.rs".into()],
             ..proof_scope()
@@ -535,6 +540,7 @@ mod proof_edge_tests {
                 evidence.span = ByteRange::new(30, 40);
             }
             runtime.stored.arcs = vec![arc, repeated];
+            rebuild_query_index(&mut runtime.stored);
             let baseline = uncached_definitive_arcs(&runtime.stored, &scope);
             assert_eq!(baseline.len(), expected * 2, "{case}");
             assert_eq!(
@@ -559,6 +565,7 @@ mod proof_edge_tests {
         let mut implements = proof.clone();
         implements.kind = RelationKind::Implements;
         runtime.stored.arcs = vec![proof.clone(), proof, implements];
+        rebuild_query_index(&mut runtime.stored);
         let mut scope = proof_scope();
         scope.relation_kinds.push(RelationKind::Implements);
         assert_eq!(definitive_stored_arcs(&runtime.stored, &scope).len(), 3);
@@ -622,6 +629,7 @@ mod proof_edge_tests {
             },
         ];
         runtime.stored.coverage.traversal_truncated = true;
+        rebuild_query_index(&mut runtime.stored);
         let scope = Scope {
             include: vec!["**/*.rs".into()],
             exclude: vec!["excluded.rs".into(), "rejected-*.rs".into()],
@@ -709,6 +717,8 @@ mod proof_edge_tests {
                 kind: RelationKind::Calls,
                 evidence: None,
             }],
+            query_index: Default::default(),
+            similarity_index: Default::default(),
             coverage: CoverageMetadata::default(),
         };
         normalize_stored(&mut stored);
@@ -752,6 +762,8 @@ mod proof_edge_tests {
                 syntax(2, "trait", "src/trait.rs", 41, 80),
             ],
             arcs: vec![preserved.clone()],
+            query_index: Default::default(),
+            similarity_index: Default::default(),
             coverage: CoverageMetadata::default(),
         };
 
@@ -859,6 +871,8 @@ mod proof_edge_tests {
                     kind: RelationKind::Calls,
                     evidence: None,
                 }],
+                query_index: Default::default(),
+                similarity_index: Default::default(),
                 coverage: CoverageMetadata::default(),
             };
             normalize_stored(&mut stored);
@@ -903,6 +917,8 @@ mod proof_edge_tests {
                 call(3, "target", "main.py", 20, 28),
             ],
             arcs: vec![legacy],
+            query_index: Default::default(),
+            similarity_index: Default::default(),
             coverage: CoverageMetadata::default(),
         };
         normalize_stored(&mut stored);

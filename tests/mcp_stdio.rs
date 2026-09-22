@@ -312,6 +312,14 @@ fn tools_list_advertises_bounded_graph_search_and_trace() {
         architecture["inputSchema"]["properties"]["limit"]["maximum"],
         100
     );
+    assert_eq!(
+        architecture["inputSchema"]["properties"]["offset"]["minimum"],
+        0
+    );
+    assert_eq!(
+        architecture["inputSchema"]["properties"]["offset"]["maximum"],
+        1_000_000
+    );
 }
 
 #[test]
