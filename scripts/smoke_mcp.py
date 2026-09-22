@@ -48,7 +48,8 @@ with tempfile.TemporaryDirectory(prefix="cgrx-smoke-") as directory:
             "name": "check_repository_gates", "arguments": {"repo": directory,
             "scope": "**", "package_depth": 1}}},
     ]
-    result = subprocess.run([binary, "serve", "--multi-repo"],
+    result = subprocess.run(
+        [binary, "serve", "--multi-repo", "--response-profile", "full"],
                             input="".join(json.dumps(f) + "\n" for f in frames),
                             text=True, capture_output=True, timeout=60)
     assert result.returncode == 0, result.stderr

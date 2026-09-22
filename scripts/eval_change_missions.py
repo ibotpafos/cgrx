@@ -38,7 +38,7 @@ def repository(root, name, files):
 class Mcp:
     def __init__(self, binary):
         self.process = subprocess.Popen(
-            [binary, "serve", "--multi-repo"],
+            [binary, "serve", "--multi-repo", "--response-profile", "full"],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,

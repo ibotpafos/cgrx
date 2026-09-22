@@ -2,7 +2,10 @@
 use super::{RuntimeMcpBackend, managed_state_path, open_managed_runtime};
 use cgrx_capsule::Tokenizer;
 use cgrx_core::{Hash32, RepoSnapshot};
-use cgrx_mcp::{JsonRpcError, JsonRpcRequest, JsonRpcResponse, Server, model_visible_schema_json};
+use cgrx_mcp::{
+    JsonRpcError, JsonRpcRequest, JsonRpcResponse, ResponseProfile, Server,
+    model_visible_schema_json, resolve_response_profile,
+};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 use std::fs::{self, OpenOptions};
@@ -42,12 +45,14 @@ struct Router {
     transport: Server,
     entries: BTreeMap<PathBuf, Entry>,
     max_repos: usize,
+    response_profile: ResponseProfile,
     clock: u64,
     nonce: String,
 }
 
 pub(super) fn serve(args: &[String]) -> Result<(), String> {
     let mut max_repos = 4;
+    let mut response_profile_arg = None;
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
@@ -58,11 +63,23 @@ pub(super) fn serve(args: &[String]) -> Result<(), String> {
                     .filter(|n| (1..=16).contains(n))
                     .ok_or("--max-repos requires an integer from 1 to 16")?;
             }
-            _ => return Err("multi-repo accepts only --multi-repo and --max-repos; root/state/watch-root are mutually exclusive".to_owned()),
+            "--response-profile" => {
+                i += 1;
+                response_profile_arg = Some(
+                    args.get(i)
+                        .ok_or("--response-profile requires full or token-efficient")?
+                        .as_str(),
+                );
+            }
+            _ => return Err("multi-repo accepts only --multi-repo, --max-repos, and --response-profile; root/state/watch-root are mutually exclusive".to_owned()),
         }
         i += 1;
     }
-    let mut router = Router::new(max_repos);
+    let response_profile = resolve_response_profile(
+        std::env::var("CGRX_RESPONSE_PROFILE").ok().as_deref(),
+        response_profile_arg,
+    );
+    let mut router = Router::new(max_repos, response_profile);
     let stdin = io::stdin();
     let mut stdout = io::stdout().lock();
     for line in stdin.lock().lines() {
@@ -80,15 +97,17 @@ pub(super) fn serve(args: &[String]) -> Result<(), String> {
 }
 
 impl Router {
-    fn new(max_repos: usize) -> Self {
+    fn new(max_repos: usize, response_profile: ResponseProfile) -> Self {
         Self {
             transport: Server::new(RepoSnapshot {
                 repo_revision: String::new(),
                 working_tree_digest: Hash32([0; 32]),
                 graph_generation: 0,
-            }),
+            })
+            .with_response_profile(response_profile),
             entries: BTreeMap::new(),
             max_repos,
+            response_profile,
             clock: 0,
             nonce: format!(
                 "{}-{}",
@@ -238,7 +257,8 @@ impl Router {
                             runtime,
                             root.clone(),
                             state,
-                        ));
+                        ))
+                        .with_response_profile(self.response_profile);
                         if let Ok(store) = cgrx_store::MemoryStore::open(&root) {
                             server.set_memory_store(store);
                         }
@@ -268,7 +288,9 @@ impl Router {
                 .expect("backend JSON response");
         if let Some(result) = response.get_mut("result") {
             // Only public continuation fields are rewritten, never sealed RCC/QBEC data.
-            decorate(&mut result["structuredContent"], &root, entry);
+            if let Some(structured) = result.get_mut("structuredContent") {
+                decorate(structured, &root, entry);
+            }
             if let Some(content) = result["content"].as_array_mut() {
                 for item in content {
                     if item["type"] == "text"
