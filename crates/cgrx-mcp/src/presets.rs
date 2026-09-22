@@ -14,6 +14,73 @@
 use serde::Deserialize;
 use std::str::FromStr;
 
+/// Controls how much of each tool result is returned in `structuredContent`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ResponseProfile {
+    /// Return the complete machine-readable result alongside compact text.
+    Full,
+    /// Return the compact model-visible projection in both result channels.
+    TokenEfficient,
+}
+
+impl Default for ResponseProfile {
+    fn default() -> Self {
+        Self::TokenEfficient
+    }
+}
+
+impl ResponseProfile {
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Full => "full",
+            Self::TokenEfficient => "token-efficient",
+        }
+    }
+}
+
+impl FromStr for ResponseProfile {
+    type Err = String;
+
+    fn from_str(input: &str) -> Result<Self, Self::Err> {
+        match input.trim().to_ascii_lowercase().as_str() {
+            "full" => Ok(Self::Full),
+            "token-efficient" | "token_efficient" | "compact" => Ok(Self::TokenEfficient),
+            other => Err(format!("unknown response profile: {other}")),
+        }
+    }
+}
+
+impl std::fmt::Display for ResponseProfile {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.label())
+    }
+}
+
+/// Resolve the response profile with environment configuration taking precedence.
+#[must_use]
+pub fn resolve_response_profile(
+    env_value: Option<&str>,
+    cli_value: Option<&str>,
+) -> ResponseProfile {
+    if let Some(raw) = env_value {
+        let value = raw.trim();
+        if !value.is_empty() {
+            return ResponseProfile::from_str(value).unwrap_or_else(|error| {
+                eprintln!("warning: {error}; falling back to token-efficient");
+                ResponseProfile::TokenEfficient
+            });
+        }
+    }
+    if let Some(raw) = cli_value {
+        return raw.parse().unwrap_or_else(|error| {
+            eprintln!("warning: {error}; falling back to token-efficient");
+            ResponseProfile::TokenEfficient
+        });
+    }
+    ResponseProfile::default()
+}
+
 /// The set of tools exposed by the MCP server.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Toolset {
@@ -266,5 +333,26 @@ mod tests {
     fn deserialize_from_string() {
         let t: Toolset = serde_json::from_str("\"minimal\"").unwrap();
         assert_eq!(t, Toolset::Minimal);
+    }
+
+    #[test]
+    fn response_profile_defaults_to_token_efficient() {
+        assert_eq!(ResponseProfile::default(), ResponseProfile::TokenEfficient);
+        assert_eq!(
+            resolve_response_profile(None, None),
+            ResponseProfile::TokenEfficient
+        );
+    }
+
+    #[test]
+    fn response_profile_accepts_compact_alias_and_prefers_environment() {
+        assert_eq!(
+            "compact".parse::<ResponseProfile>().unwrap(),
+            ResponseProfile::TokenEfficient
+        );
+        assert_eq!(
+            resolve_response_profile(Some("full"), Some("token-efficient")),
+            ResponseProfile::Full
+        );
     }
 }

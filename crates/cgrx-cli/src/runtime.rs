@@ -15,6 +15,7 @@ mod php_resolution;
 mod refactors;
 mod risks;
 mod scan_helpers;
+mod scip_resolution;
 pub mod security;
 mod semantic_rerank;
 mod target_types;
@@ -107,6 +108,12 @@ pub struct IndexReport {
     pub snapshot: RepoSnapshot,
     pub index_input_bytes: u64,
     pub indexed_files: u64,
+    #[serde(default, skip_serializing_if = "is_zero_u64")]
+    pub scip_edges: u64,
+}
+
+const fn is_zero_u64(value: &u64) -> bool {
+    *value == 0
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -261,6 +268,8 @@ struct StoredIndex {
     snapshot: RepoSnapshot,
     index_input_bytes: u64,
     indexed_files: u64,
+    #[serde(default)]
+    scip_edges: u64,
     path_hashes: BTreeMap<String, Hash32>,
     documents: Vec<StoredDocument>,
     arcs: Vec<StoredArc>,
@@ -344,6 +353,7 @@ fn open_current_report(state: &Path, snapshot: &RepoSnapshot) -> Option<IndexRep
         snapshot: snapshot.clone(),
         index_input_bytes: stored.index_input_bytes,
         indexed_files: stored.indexed_files,
+        scip_edges: stored.scip_edges,
     })
 }
 
@@ -764,19 +774,36 @@ impl Runtime {
     }
 
     pub fn index(root: &Path, state: &Path) -> Result<IndexReport, RuntimeError> {
-        Self::index_source(root, state, false)
+        Self::index_source(root, state, false, None)
+    }
+
+    pub fn index_with_scip(
+        root: &Path,
+        state: &Path,
+        scip_index: &Path,
+    ) -> Result<IndexReport, RuntimeError> {
+        Self::index_source(root, state, false, Some(scip_index))
     }
 
     pub fn index_committed_head(root: &Path, state: &Path) -> Result<IndexReport, RuntimeError> {
-        Self::index_source(root, state, true)
+        Self::index_source(root, state, true, None)
+    }
+
+    pub fn index_committed_head_with_scip(
+        root: &Path,
+        state: &Path,
+        scip_index: &Path,
+    ) -> Result<IndexReport, RuntimeError> {
+        Self::index_source(root, state, true, Some(scip_index))
     }
 
     fn index_source(
         root: &Path,
         state: &Path,
         committed_head: bool,
+        scip_index: Option<&Path>,
     ) -> Result<IndexReport, RuntimeError> {
-        index_helpers::index_source(root, state, committed_head)
+        index_helpers::index_source(root, state, committed_head, scip_index)
     }
 
     pub fn open(state: &Path) -> Result<Self, RuntimeError> {

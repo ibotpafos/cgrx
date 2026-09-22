@@ -9,7 +9,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 static TEST_DIRECTORY_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 fn cli() -> Command {
-    Command::new(env!("CARGO_BIN_EXE_cgrx"))
+    let mut command = Command::new(env!("CARGO_BIN_EXE_cgrx"));
+    command.env("CGRX_RESPONSE_PROFILE", "full");
+    command
 }
 
 struct TestDirectory(PathBuf);
@@ -154,8 +156,8 @@ fn schema_count_is_machine_readable_and_within_reviewed_runtime_tool_budget() {
         .expect("schema count is numeric");
     // 2700 covered the 16-tool schema before find_similar (duplicate-body
     // lookup over deterministic fingerprints) joined the reviewed surface.
-    // Bumped to 4100 after adding detect_dead_code (22nd tool).
-    assert!(count <= 4100, "schema count was {count}");
+    // Bumped to 4150 after orient added optional adaptive budget presets.
+    assert!(count <= 4150, "schema count was {count}");
 }
 
 #[test]

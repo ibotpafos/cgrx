@@ -6,7 +6,7 @@ mod protocol;
 mod sarif;
 mod tools;
 
-pub use presets::{Toolset, resolve_toolset};
+pub use presets::{ResponseProfile, Toolset, resolve_response_profile, resolve_toolset};
 pub use protocol::{JsonRpcError, JsonRpcRequest, JsonRpcResponse};
 pub use sarif::{
     LineResolver, SarifResult, gate_to_sarif, severity_level, to_sarif, verdict_level,

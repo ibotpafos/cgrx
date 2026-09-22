@@ -60,7 +60,14 @@ struct Mcp {
 impl Mcp {
     fn new(cwd: &Path, cap: &str, log: &Path) -> Self {
         let mut child = Command::new(env!("CARGO_BIN_EXE_cgrx"))
-            .args(["serve", "--multi-repo", "--max-repos", cap])
+            .args([
+                "serve",
+                "--multi-repo",
+                "--max-repos",
+                cap,
+                "--response-profile",
+                "full",
+            ])
             .current_dir(cwd)
             .env("CGRX_USAGE_LOG", log)
             .env("CGRX_CLIENT", "test")
@@ -234,6 +241,33 @@ fn multi_repo_invalid_flags() {
             .unwrap();
         assert_eq!(r.status.code(), Some(2));
     }
+}
+
+#[test]
+fn multi_repo_defaults_to_token_efficient_responses() {
+    let directory = Dir::new();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_cgrx"))
+        .args(["serve", "--multi-repo"])
+        .current_dir(&directory.0)
+        .env_remove("CGRX_RESPONSE_PROFILE")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    writeln!(
+        child.stdin.take().unwrap(),
+        "{}",
+        json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{}})
+    )
+    .unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.success());
+    let response: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert!(
+        response["result"]["instructions"]
+            .as_str()
+            .is_some_and(|instructions| instructions.contains("response profile: token-efficient"))
+    );
 }
 #[test]
 fn multi_repo_isolation_identity_errors_and_privacy() {
@@ -441,6 +475,7 @@ fn multi_repo_live_identical_repositories_reject_foreign_handles_and_preserve_co
     let mut single = Command::new(env!("CARGO_BIN_EXE_cgrx"))
         .args(["serve", "--root"])
         .arg(&a)
+        .args(["--response-profile", "full"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()

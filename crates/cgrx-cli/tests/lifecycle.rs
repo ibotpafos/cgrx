@@ -271,6 +271,7 @@ impl Mcp {
             process: Process::spawn(
                 Command::new(env!("CARGO_BIN_EXE_cgrx"))
                     .args(["serve", "--multi-repo"])
+                    .env("CGRX_RESPONSE_PROFILE", "full")
                     .current_dir(cwd),
             ),
             next_id: 1,

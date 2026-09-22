@@ -14,6 +14,21 @@ read-only CI reporter) without changing any tool behavior.
 
 The default toolset is **`standard`**.
 
+## Response profiles
+
+MCP serving defaults to `token-efficient`. It returns the existing compact
+projection in `content` and omits optional `structuredContent`, so clients do not
+place a second copy in model context. Select `full` only for programmatic clients
+that consume internal report fields:
+
+```bash
+CGRX_RESPONSE_PROFILE=full cgrx serve --multi-repo
+cgrx serve --multi-repo --response-profile full
+```
+
+`CGRX_RESPONSE_PROFILE` takes precedence over `--response-profile`. Accepted
+values are `token-efficient` (also `compact`) and `full`.
+
 `memory_record` and `memory_recall` are not part of any preset, so they are
 not enabled under any of the three presets (they remain available through the
 full tool schema and via the dedicated CLI subcommands).

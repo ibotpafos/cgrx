@@ -388,6 +388,21 @@ pub(super) fn normalize_stored(stored: &mut StoredIndex) {
 // discharged only by the expected relation with a current source hash. The v1
 // coverage schema stores these binding gaps in its legacy dynamic_dispatch list.
 pub(super) fn refresh_proof_gaps(stored: &mut StoredIndex) {
+    let dynamic_sites: BTreeMap<_, _> = stored
+        .documents
+        .iter()
+        .filter(|doc| {
+            doc.semantic_tags
+                .iter()
+                .any(|tag| tag == "DYNAMIC_DISPATCH" || tag == "DYNAMIC_PROPERTY")
+        })
+        .map(|doc| {
+            (
+                format!("{}:{}-{}", doc.path, doc.span_start, doc.span_end),
+                (doc.path.clone(), doc.span_start, doc.span_end),
+            )
+        })
+        .collect();
     let sites: BTreeMap<_, _> = stored
         .documents
         .iter()
@@ -407,6 +422,10 @@ pub(super) fn refresh_proof_gaps(stored: &mut StoredIndex) {
                     .semantic_tags
                     .iter()
                     .any(|tag| tag == "TS_IMPORT_CALL" || tag == "TS_IMPORT_REJECTED")
+                || doc
+                    .semantic_tags
+                    .iter()
+                    .any(|tag| tag == "DYNAMIC_DISPATCH" || tag == "DYNAMIC_PROPERTY")
                 || doc.path.ends_with(".rs")
                     && doc.provenance == "CALLS"
                     && doc.qualified_name.contains("::")
@@ -444,10 +463,31 @@ pub(super) fn refresh_proof_gaps(stored: &mut StoredIndex) {
         .coverage
         .dynamic_dispatch
         .retain(|location| !sites.contains_key(location));
-    stored
-        .coverage
-        .dynamic_dispatch
-        .extend(sites.keys().filter(|site| !proven.contains(*site)).cloned());
+    stored.coverage.dynamic_dispatch.extend(
+        sites
+            .keys()
+            .filter(|site| !proven.contains(*site) && !dynamic_sites.contains_key(*site))
+            .cloned(),
+    );
+    let unresolved_dynamic: Vec<_> = dynamic_sites
+        .iter()
+        .filter(|(location, _)| !proven.contains(*location))
+        .collect();
+    stored.coverage.dynamic_dispatch.extend(
+        unresolved_dynamic
+            .iter()
+            .filter(|(_, (path, start, end))| {
+                !unresolved_dynamic
+                    .iter()
+                    .any(|(_, (outer_path, outer_start, outer_end))| {
+                        outer_path == path
+                            && (outer_start, outer_end) != (start, end)
+                            && outer_start <= start
+                            && outer_end >= end
+                    })
+            })
+            .map(|(location, _)| (*location).clone()),
+    );
     stored.coverage.dynamic_dispatch.sort();
     stored.coverage.dynamic_dispatch.dedup();
 }

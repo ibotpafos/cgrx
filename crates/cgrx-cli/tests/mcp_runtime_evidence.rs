@@ -68,6 +68,7 @@ fn multi_repo_mcp_imports_and_traces_observed_calls_without_inline_payloads() {
         + "\n";
     let mut child = Command::new(env!("CARGO_BIN_EXE_cgrx"))
         .args(["serve", "--multi-repo"])
+        .env("CGRX_RESPONSE_PROFILE", "full")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

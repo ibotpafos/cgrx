@@ -162,3 +162,25 @@ fn calls_is_not_misclassified_as_the_word_all() {
         vec!["O1", "O5", "O6"]
     );
 }
+
+#[test]
+fn dynamic_dispatch_uncertainty_is_aggregated_by_path() {
+    let metadata = CoverageMetadata {
+        dynamic_dispatch: vec![
+            "src/service.rs:10-20".to_owned(),
+            "src/service.rs:30-40".to_owned(),
+            "src/other.rs:1-5".to_owned(),
+        ],
+        ..CoverageMetadata::default()
+    };
+    let set = ObligationCompiler::compile(&request("all calls"), &[anchor()], &metadata, None);
+    let dynamic: Vec<_> = set
+        .uncertainties
+        .iter()
+        .filter(|item| item.kind == UncertaintyKind::DynamicDispatch)
+        .collect();
+    assert_eq!(dynamic.len(), 2);
+    assert_eq!(dynamic[0].path.as_deref(), Some("src/other.rs"));
+    assert_eq!(dynamic[1].path.as_deref(), Some("src/service.rs"));
+    assert!(dynamic[1].detail.starts_with("2 unresolved"));
+}
