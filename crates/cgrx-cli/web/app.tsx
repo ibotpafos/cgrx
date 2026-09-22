@@ -8,7 +8,7 @@ import React, {
   useState
 } from "react";
 import { projectCodeMap } from "./repository-map.js";
-import { layoutRepositoryMap } from "./dense-layout.js";
+import { useProjectLayout } from "./components/useProjectLayout";
 import { ProjectPicker } from "./components/ProjectPicker";
 import type { ProjectCatalogue } from "./components/ProjectPicker";
 import { ProjectCanvas } from "./components/ProjectCanvas";
@@ -348,7 +348,7 @@ function App(): React.JSX.Element {
       const previousKey = snapshotKey(snapshotRef.current);
       const nextKey = snapshotKey(value.snapshot);
       const changed = Boolean(previousKey && previousKey !== nextKey);
-      setSnapshot(value.snapshot);
+      if (previousKey !== nextKey) setSnapshot(value.snapshot);
       snapshotRef.current = value.snapshot;
       setFreshness(changed ? "refreshing" : "live");
       if (changed && refreshOnChange) {
@@ -854,8 +854,8 @@ const ProjectMapCanvas = forwardRef<ProjectMapCanvasHandle, ProjectMapCanvasProp
     };
   }, []);
 
-  const layout = useMemo(() => layoutRepositoryMap(props.graph, { width: size.width, height: size.height }) as ProjectLayout, [props.graph, size.height, size.width]);
-  useEffect(() => { rendererRef.current?.render(props.graph, layout, { selectedId: props.selectedId }); }, [layout, props.graph]);
+  const { layout, pending, error } = useProjectLayout(props.graph, size.width, size.height);
+  useEffect(() => { rendererRef.current?.render(props.graph, layout || { width: size.width, height: size.height, nodes: [], communities: [] }, { selectedId: props.selectedId }); }, [layout, props.graph, size.width, size.height]);
   useEffect(() => { rendererRef.current?.setSelected(props.selectedId); }, [props.selectedId]);
   useImperativeHandle(forwardedRef, () => ({
     zoom: (factor) => rendererRef.current?.zoom(factor),
@@ -863,7 +863,7 @@ const ProjectMapCanvas = forwardRef<ProjectMapCanvasHandle, ProjectMapCanvasProp
     focusNode: (nodeId) => rendererRef.current?.focusNode(nodeId)
   }), []);
 
-  return <canvas ref={canvasRef} className="project-three-canvas" aria-label="Three-dimensional repository dependency map" />;
+  return <><canvas ref={canvasRef} className="project-three-canvas" aria-label="Three-dimensional repository dependency map" aria-busy={pending} />{(pending || error) && <p className="layout-status" role="status">{error || "Arranging repository graph…"}</p>}</>;
 });
 
 function SvgGraph({ graph, camera, selectedNodeId, pins, onSelectNode, onInspectEdge, onNodeDrag }: {

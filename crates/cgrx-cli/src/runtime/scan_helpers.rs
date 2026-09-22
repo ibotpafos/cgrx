@@ -469,27 +469,37 @@ pub(super) fn refresh_proof_gaps(stored: &mut StoredIndex) {
             .filter(|site| !proven.contains(*site) && !dynamic_sites.contains_key(*site))
             .cloned(),
     );
-    let unresolved_dynamic: Vec<_> = dynamic_sites
+    let unresolved_dynamic = dynamic_sites
         .iter()
         .filter(|(location, _)| !proven.contains(*location))
+        .map(|(location, (path, start, end))| (path.as_str(), *start, *end, location.as_str()))
         .collect();
     stored.coverage.dynamic_dispatch.extend(
-        unresolved_dynamic
-            .iter()
-            .filter(|(_, (path, start, end))| {
-                !unresolved_dynamic
-                    .iter()
-                    .any(|(_, (outer_path, outer_start, outer_end))| {
-                        outer_path == path
-                            && (outer_start, outer_end) != (start, end)
-                            && outer_start <= start
-                            && outer_end >= end
-                    })
-            })
-            .map(|(location, _)| (*location).clone()),
+        outermost_dynamic_sites(unresolved_dynamic)
+            .into_iter()
+            .map(str::to_owned),
     );
     stored.coverage.dynamic_dispatch.sort();
     stored.coverage.dynamic_dispatch.dedup();
+}
+
+// Sort by file, then opening position, with enclosing spans first. A running
+// maximum end replaces comparing every unresolved site with every other site.
+fn outermost_dynamic_sites<'a>(mut sites: Vec<(&'a str, usize, usize, &'a str)>) -> Vec<&'a str> {
+    sites.sort_unstable_by_key(|(path, start, end, _)| (*path, *start, std::cmp::Reverse(*end)));
+    let mut outer: Option<(&str, usize, usize)> = None;
+    let mut result = Vec::new();
+    for (path, start, end, location) in sites {
+        let contained =
+            outer.is_some_and(|(p, s, e)| p == path && end <= e && (start, end) != (s, e));
+        if !contained {
+            result.push(location);
+        }
+        if outer.is_none_or(|(p, _, e)| p != path || end > e) {
+            outer = Some((path, start, end));
+        }
+    }
+    result
 }
 
 // Bounded by distinct consulted document/evidence/coverage paths, and dropped
@@ -996,4 +1006,47 @@ pub(super) fn working_tree_digest(
         hasher.update(b"\0");
     }
     Hash32(*hasher.finalize().as_bytes())
+}
+
+#[cfg(test)]
+mod proof_gap_tests {
+    use super::outermost_dynamic_sites;
+
+    #[test]
+    fn sweep_matches_pairwise_containment_for_overlapping_and_nested_sites() {
+        // Include equal starts/ends, empty spans, duplicates and separate files.
+        let sites: Vec<_> = ["a.rs", "b.rs"]
+            .into_iter()
+            .flat_map(|path| {
+                (0..24).flat_map(move |start| {
+                    (start..24).map(move |end| (path, start, end, format!("{path}:{start}-{end}")))
+                })
+            })
+            .collect();
+        for stride in [1, 2, 5, 7, 11, 19] {
+            let selected: Vec<_> = sites
+                .iter()
+                .step_by(stride)
+                .map(|(p, s, e, l)| (*p, *s, *e, l.as_str()))
+                .rev()
+                .collect();
+            let mut expected: Vec<_> = selected
+                .iter()
+                .filter(|(p, s, e, _)| {
+                    !selected
+                        .iter()
+                        .any(|(op, os, oe, _)| op == p && (os, oe) != (s, e) && os <= s && oe >= e)
+                })
+                .map(|(_, _, _, l)| *l)
+                .collect();
+            let mut actual = outermost_dynamic_sites(selected);
+            expected.sort();
+            actual.sort();
+            assert_eq!(actual, expected);
+        }
+        assert_eq!(
+            outermost_dynamic_sites(vec![("a", 1, 3, "x"), ("a", 1, 3, "y")]).len(),
+            2
+        );
+    }
 }

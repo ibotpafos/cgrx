@@ -6,3 +6,4 @@ pub(super) const GIT_HISTORY: &str = include_str!("../../web/vendor/git-history.
 pub(super) const RUNTIME_EVIDENCE: &str = include_str!("../../web/vendor/runtime-evidence.js");
 pub(super) const WEB_GIT_GRAPH: &str = include_str!("../../web/vendor/web-git-graph.js");
 pub(super) const APP: &str = include_str!("../../web/app.js");
+pub(super) const LAYOUT_WORKER: &str = include_str!("../../web/layout-worker.bundle.js");

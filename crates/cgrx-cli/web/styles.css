@@ -319,3 +319,5 @@ button:focus-visible, summary:focus-visible { outline: 2px solid var(--focus); o
 .project-icon { font-size: 19px; color: #9db6a8; }
 .project-state { font-size: 8px; flex-shrink: 0; }
 .project-link.is-active .project-state { color: #b3d9c2; }
+
+.layout-status { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: var(--muted); pointer-events: none; }

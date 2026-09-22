@@ -154,8 +154,15 @@ fn request(server: &Server, method: &str, path: &str, authorized: bool) -> Strin
 fn disconnected_client_does_not_stop_project_server() {
     let (_repository, server) = start_server();
     let mut stream = TcpStream::connect(&server.address).expect("connect visualizer");
-    stream.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
-    write!(stream, "GET /assets/app.js HTTP/1.1\r\nHost: {}\r\n\r\n", server.address).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(3)))
+        .unwrap();
+    write!(
+        stream,
+        "GET /assets/app.js HTTP/1.1\r\nHost: {}\r\n\r\n",
+        server.address
+    )
+    .unwrap();
     let mut prefix = [0; 64];
     stream.read_exact(&mut prefix).expect("response started");
     stream.shutdown(Shutdown::Both).unwrap();
@@ -416,6 +423,7 @@ fn serves_embedded_assets_with_security_headers() {
         ("/", "text/html", "id=\"root\""),
         ("/assets/styles.css", "text/css", "--surface"),
         ("/assets/layout.js", "text/javascript", "layoutGraph"),
+        ("/assets/layout-worker.js", "text/javascript", "postMessage"),
         (
             "/assets/state.js",
             "text/javascript",

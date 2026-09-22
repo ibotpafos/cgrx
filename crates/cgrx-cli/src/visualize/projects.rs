@@ -70,12 +70,11 @@ impl ProjectServer {
                     self.truncated = true;
                     break;
                 }
-                if let Ok(entry) = entry {
-                    if !entry.file_name().to_string_lossy().starts_with('.')
-                        && entry.path().join(".git").exists()
-                    {
-                        candidates.push(entry.path());
-                    }
+                if let Ok(entry) = entry
+                    && !entry.file_name().to_string_lossy().starts_with('.')
+                    && entry.path().join(".git").exists()
+                {
+                    candidates.push(entry.path());
                 }
             }
             candidates.sort();
@@ -201,10 +200,10 @@ impl ProjectServer {
                     token: self.token.clone(),
                 },
             );
-            if self.open.len() > MAX_OPEN_PROJECTS {
-                if let Some(oldest) = self.recent.pop_front() {
-                    self.open.remove(&oldest);
-                }
+            if self.open.len() > MAX_OPEN_PROJECTS
+                && let Some(oldest) = self.recent.pop_front()
+            {
+                self.open.remove(&oldest);
             }
         }
         self.recent.retain(|previous| previous != &id);

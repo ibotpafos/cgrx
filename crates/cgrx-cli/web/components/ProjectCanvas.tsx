@@ -1,5 +1,5 @@
 import React, { forwardRef, useEffect, useId, useImperativeHandle, useMemo, useRef, useState } from "react";
-import { layoutRepositoryMap } from "../dense-layout.js";
+import { useProjectLayout } from "./useProjectLayout";
 import { buildZoneContour, placeLabels, zoomAt } from "../clew-geometry.js";
 import { edgeStyle } from "../layout.js";
 import type { CameraState, GraphEdge, GraphId, ProjectLayout, ProjectLayoutNode, ProjectMap } from "../types";
@@ -17,6 +17,8 @@ export interface ProjectCanvasProps {
   onEdgeSelect: (edge: GraphEdge, source: ProjectLayoutNode, target: ProjectLayoutNode) => void;
 }
 
+const EMPTY_LAYOUT: ProjectLayout = { width: 1400, height: 1000, nodes: [], communities: [] };
+
 // React projection of Clew's graph canvas interaction and contour primitives.
 // Edges and communities come exclusively from the CGRX evidence projection.
 export const ProjectCanvas = forwardRef<ProjectCanvasHandle, ProjectCanvasProps>(function ProjectCanvas(props, ref) {
@@ -28,7 +30,8 @@ export const ProjectCanvas = forwardRef<ProjectCanvasHandle, ProjectCanvasProps>
   const [pins, setPins] = useState<Record<string, { x: number; y: number }>>({});
   const drag = useRef<{ x: number; y: number; camera: CameraState; node?: ProjectLayoutNode; moved: boolean } | null>(null);
   const suppressClick = useRef(false);
-  const baseLayout = useMemo(() => layoutRepositoryMap(props.graph, { width: 1400, height: 1000 }) as ProjectLayout, [props.graph]);
+  const { layout: computedLayout, pending, error } = useProjectLayout(props.graph);
+  const baseLayout = computedLayout || EMPTY_LAYOUT;
   const layout = useMemo(() => ({ ...baseLayout, nodes: baseLayout.nodes.map(n => pins[String(n.node_id)] ? { ...n, ...pins[String(n.node_id)], pinned: true } : n) }), [baseLayout, pins]);
   const byId = useMemo(() => new Map(layout.nodes.map(n => [String(n.node_id), n])), [layout]);
   const focus = hovered || (props.selectedId == null ? null : String(props.selectedId));
@@ -41,11 +44,18 @@ export const ProjectCanvas = forwardRef<ProjectCanvasHandle, ProjectCanvasProps>
     return ids;
   }, [focus, props.graph.edges]);
   const labels = useMemo(() => placeLabels(layout.nodes, camera, size.width, size.height, focusIds), [layout, camera, size, focusIds]);
-  const zones = useMemo(() => layout.communities.map((community, index) => {
-    const nodes = layout.nodes.filter(n => n.community === community.id);
-    const contour = buildZoneContour(nodes, 0.55);
-    return { ...community, index, color: nodes[0]?.color || "#7fa69e", path: contour.map((p: {x: number; y: number}, i: number) => `${i ? "L" : "M"}${p.x} ${p.y}`).join(" ") + "Z" };
-  }), [layout]);
+  const zones = useMemo(() => {
+    const members = new Map<string, ProjectLayoutNode[]>();
+    for (const node of layout.nodes) {
+      if (!members.has(node.community)) members.set(node.community, []);
+      members.get(node.community)!.push(node);
+    }
+    return layout.communities.map((community, index) => {
+      const nodes = members.get(community.id) || [];
+      const contour = buildZoneContour(nodes, 0.55);
+      return { ...community, index, color: nodes[0]?.color || "#7fa69e", path: contour.map((p: {x: number; y: number}, i: number) => `${i ? "L" : "M"}${p.x} ${p.y}`).join(" ") + "Z" };
+    });
+  }, [layout]);
 
   const fit = (nodes = baseLayout.nodes): CameraState => {
     if (!nodes.length) return { x: 0, y: 0, scale: 1 };
@@ -67,7 +77,7 @@ export const ProjectCanvas = forwardRef<ProjectCanvasHandle, ProjectCanvasProps>
   }, []);
   const generation = `${props.graph.level || "packages"}:${props.graph.root.path}:${props.graph.root.symbol}:${props.graph.snapshot.repo_revision}:${props.graph.snapshot.graph_generation}:${props.graph.snapshot.working_tree_digest}`;
   useEffect(() => { setPins({}); setHovered(null); }, [generation]);
-  useEffect(() => { setCamera(fit()); }, [size.width, size.height, generation]);
+  useEffect(() => { setCamera(fit()); }, [size.width, size.height, generation, baseLayout]);
   useEffect(() => {
     const element = svg.current;
     if (!element) return;
@@ -122,7 +132,8 @@ export const ProjectCanvas = forwardRef<ProjectCanvasHandle, ProjectCanvasProps>
     if (event.type === "pointerup" && start?.node && !start.moved) props.onNodeSelect(start.node);
   };
 
-  return <svg ref={svg} className="project-canvas" viewBox={`0 0 ${size.width} ${size.height}`} aria-label="Repository dependency graph" role="group" onPointerDown={e => begin(e)} onPointerMove={move} onPointerUp={end} onPointerCancel={end} onLostPointerCapture={() => { drag.current = null; }}>
+  return <svg ref={svg} className="project-canvas" viewBox={`0 0 ${size.width} ${size.height}`} aria-label="Repository dependency graph" aria-busy={pending} role="group" onPointerDown={e => begin(e)} onPointerMove={move} onPointerUp={end} onPointerCancel={end} onLostPointerCapture={() => { drag.current = null; }}>
+    {(pending || error) && <text x={size.width / 2} y={size.height / 2} textAnchor="middle" fill="#a9b8b0" role="status">{error || "Arranging repository graph…"}</text>}
     <defs>{zones.map(zone => <radialGradient key={zone.id} id={`${prefix}-zone-${zone.index}`}><stop offset="0" stopColor={zone.color} stopOpacity=".2"/><stop offset=".6" stopColor={zone.color} stopOpacity=".08"/><stop offset="1" stopColor={zone.color} stopOpacity="0"/></radialGradient>)}</defs>
     <g transform={`translate(${camera.x} ${camera.y}) scale(${camera.scale})`}>
       <g className="map-zones" aria-hidden="true">{zones.map(zone => <path key={zone.id} d={zone.path} fill={`url(#${prefix}-zone-${zone.index})`} />)}</g>

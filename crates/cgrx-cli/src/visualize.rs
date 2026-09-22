@@ -167,6 +167,7 @@ impl Visualizer {
         let response = match request.path.as_str() {
             "/" | "/index.html" => HttpResponse::html(assets::INDEX),
             "/assets/styles.css" => HttpResponse::css(assets::STYLES),
+            "/assets/layout-worker.js" => HttpResponse::javascript(assets::LAYOUT_WORKER),
             "/assets/layout.js" => HttpResponse::javascript(assets::LAYOUT),
             "/assets/state.js" => HttpResponse::javascript(assets::STATE),
             "/assets/git-history.js" => HttpResponse::javascript(assets::GIT_HISTORY),

@@ -36,8 +36,13 @@ export function layoutRepositoryMap(graph, viewport = {}) {
       n.y = height / 2 + (n.y - (minY + maxY) / 2) * scale;
     }
   }
+  const membersByCommunity = new Map();
+  for (const node of nodes) {
+    if (!membersByCommunity.has(node.community)) membersByCommunity.set(node.community, []);
+    membersByCommunity.get(node.community).push(node);
+  }
   const communities = graph.communities.map(g => {
-    const members = nodes.filter(n => n.community === g.id);
+    const members = membersByCommunity.get(g.id) || [];
     const x = members.reduce((s, n) => s + n.x, 0) / Math.max(1, members.length);
     const y = members.reduce((s, n) => s + n.y, 0) / Math.max(1, members.length);
     return { ...g, x, y, radius: Math.max(35, ...members.map(n => Math.hypot(n.x - x, n.y - y) + 18)) };
