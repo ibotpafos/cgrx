@@ -49,7 +49,7 @@ roadmap. The four phases toward competitive parity are:
 ## Install with one command
 
 ~~~sh
-curl -fsSL https://raw.githubusercontent.com/ibotpafos/cgrx/v0.1.0-alpha.12/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/ibotpafos/cgrx/v0.1.0-alpha.13/install.sh | sh
 ~~~
 
 Installs to `$HOME/.local/bin/cgrx`, without sudo. Apple Silicon macOS downloads
@@ -82,7 +82,7 @@ Native Windows is not supported.
 ~~~sh
 git clone https://github.com/ibotpafos/cgrx.git
 cd cgrx
-git checkout v0.1.0-alpha.12
+git checkout v0.1.0-alpha.13
 cargo install --locked --path crates/cgrx-cli
 ~~~
 
@@ -147,15 +147,36 @@ server binds only to `127.0.0.1`, gives the browser a random process-local
 capability, accepts only GET and HEAD, and never sends graph or source data to
 an external service.
 
-The default `Project map` shows the whole repository at package granularity as
-a Three.js/WebGL star field. Packages are grouped into weighted dependency
-communities, proven package boundaries become weighted links, cycle candidates
-are marked, and high-degree packages receive labels. Hovering a package dims the
-rest of the galaxy and exposes its immediate neighborhood; selecting it focuses
-the camera and fills the inspector. Double-click a package to drill into one of
-its representative symbols. Left-drag orbits, right-drag pans, the wheel zooms
-toward the pointer, and Reset fits the repository again. Labels progressively
-appear as the camera moves closer.
+The **Projects** panel lists local Git repositories next to the launch repository.
+Use `cgrx visualize --repo /path/to/repo --projects-dir /path/to/projects` to choose
+another projects directory; repeat `--projects-dir` for multiple locations.
+Discovery checks only immediate children, skips hidden directories and does not
+index other projects until selected. Search the list by name or path. **New**
+means no managed index exists yet; the first selection builds it. The selected
+project is stored in the page URL, so refresh/back navigation preserve it. Every
+API request (including source, runtime evidence and Git history) selects the same
+project explicitly. Up to four project runtimes are cached; switching back reloads
+an evicted index. Refresh the project list to discover newly added repositories.
+
+The default `Project map` shows indexed symbols and their proven call / implementation
+relationships in a React 2D code atlas with a full-screen canvas,
+soft community regions and collision-aware labels, adapted from
+[Clew](https://github.com/miuuyy/Clew). A compact dock switches between graph,
+architecture, change missions and history; search and evidence open in floating
+panels. Drag to pan, scroll to zoom around the pointer, and drag nodes to arrange
+them for the current view. Click a symbol to inspect its source and double-click to open its focused graph.
+The **Symbols / Files / Packages** selector changes granularity; file views retain
+internal calls as loops and aggregate calls between files. Package mode remains
+available as an architectural summary. Graph scope accepts path globs, for example
+`crates/cgrx-core/**`. The overview loads up to 5,000 symbols and 30,000 relationships,
+shows truncation explicitly, and preserves disconnected indexed symbols. Reset restores
+the layout. Source snapshot changes discard manual positions.
+
+Switch to **3D** for the Three.js map: left-drag orbits, right-drag pans and the
+wheel zooms. Press `/` to search, `?` for controls and Escape to close evidence
+or help. The 2D graph supports Tab/Enter navigation. Partial coverage stays visible
+in the status strip; an edge's inspector retains its original proof metadata.
+See [adaptation notes](docs/research/clew-explorer.md) and the retained MIT notice.
 
 The focused graph keeps candidate tests below the selected symbol. Current
 proven edges, known coverage gaps, hypothetical refactor edges, conditional

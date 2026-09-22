@@ -28,6 +28,92 @@ pub struct GraphViewRequest {
 }
 
 impl Runtime {
+    /// Repository-wide symbol topology. Keep disconnected symbols and every
+    /// definitive relationship between returned nodes, not just package boundaries.
+    pub fn repository_graph(
+        &self,
+        scope: &Scope,
+        node_limit: usize,
+        edge_limit: usize,
+    ) -> Result<Value, RuntimeError> {
+        if !(1..=10_000).contains(&node_limit) || !(1..=50_000).contains(&edge_limit) {
+            return Err(RuntimeError::public(
+                "cgrx.invalid_arguments",
+                "node_limit must be 1..10000 and edge_limit must be 1..50000",
+            ));
+        }
+        let mut scoped = ScopedQuery::new(&self.stored, scope, path_in_scope);
+        let documents = scoped
+            .syntax_documents(&self.stored)
+            .into_iter()
+            .map(|document| (document.node_id, document))
+            .collect::<BTreeMap<_, _>>();
+        let mut arcs = scoped.definitive_arcs(&self.stored);
+        arcs.retain(|arc| {
+            documents.contains_key(&arc.source) && documents.contains_key(&arc.target)
+        });
+        arcs.sort_by_key(|arc| (arc.source, arc.target, arc.kind));
+        arcs.dedup_by_key(|arc| (arc.source, arc.target, arc.kind));
+        let total_edges = arcs.len();
+        let mut degree = BTreeMap::<u64, usize>::new();
+        for arc in &arcs {
+            *degree.entry(arc.source).or_default() += 1;
+            *degree.entry(arc.target).or_default() += 1;
+        }
+        let mut ranked = documents.values().copied().collect::<Vec<_>>();
+        ranked.sort_by_key(|document| {
+            (
+                std::cmp::Reverse(degree.get(&document.node_id).copied().unwrap_or(0)),
+                document.path.as_str(),
+                document.span_start,
+                document.node_id,
+            )
+        });
+        let total_nodes = ranked.len();
+        ranked.truncate(node_limit);
+        let included = ranked
+            .iter()
+            .map(|document| document.node_id)
+            .collect::<BTreeSet<_>>();
+        arcs.retain(|arc| included.contains(&arc.source) && included.contains(&arc.target));
+        arcs.truncate(edge_limit);
+        let nodes = ranked
+            .into_iter()
+            .map(|document| {
+                let mut value = node_value(
+                    document,
+                    &self.stored.path_hashes[&document.path],
+                    "entrypoints",
+                    0,
+                );
+                // IDs must survive a JavaScript JSON parse without losing u64 precision.
+                value["node_id"] = json!(document.node_id.to_string());
+                value["kind"] = json!("symbol");
+                value
+            })
+            .collect::<Vec<_>>();
+        let edges = arcs
+            .into_iter()
+            .map(|arc| {
+                json!({
+                    "source":arc.source.to_string(), "target":arc.target.to_string(),
+                    "relation":arc.kind, "confidence":"PROVEN", "status":"current",
+                    "evidence":arc.evidence
+                })
+            })
+            .collect::<Vec<_>>();
+        let truncated = nodes.len() < total_nodes || edges.len() < total_edges;
+        let coverage = scoped.coverage(&self.stored.coverage);
+        let gap_count = coverage_gap_count(&coverage);
+        Ok(json!({
+            "snapshot":self.snapshot(), "root":{"symbol":"Repository symbols", "path":scope.include.join(",")},
+            "nodes":nodes, "edges":edges, "total_nodes":total_nodes, "total_edges":total_edges,
+            "truncated":truncated, "partial":truncated || gap_count > 0,
+            "coverage_gap_count":gap_count, "coverage_gaps":coverage_gap_page(&coverage, 0, 20),
+            "coverage_gaps_truncated":gap_count > 20
+        }))
+    }
+
     pub fn graph_view(&self, request: GraphViewRequest) -> Result<Value, RuntimeError> {
         validate(&request)?;
         let root = resolve_root(self, &request)?;

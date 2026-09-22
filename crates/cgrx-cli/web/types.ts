@@ -69,6 +69,9 @@ export interface GraphRoot {
 }
 
 export interface GraphResponse {
+  total_nodes?: number;
+  total_edges?: number;
+  truncated?: boolean;
   snapshot: Snapshot;
   root: GraphRoot;
   nodes: GraphNode[];
@@ -129,6 +132,8 @@ export interface ProjectCommunity {
 }
 
 export interface ProjectMap {
+  level?: "symbols" | "files";
+  truncated?: boolean;
   snapshot: Snapshot;
   root: GraphRoot;
   nodes: ProjectNode[];

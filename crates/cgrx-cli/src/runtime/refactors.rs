@@ -625,12 +625,13 @@ fn build_similarity_index_from_input(input: &SimilarityBuildInput) -> Similarity
         }
     }
     let functional_inspected_pairs = raw_functional_pairs.len();
+    let compact = compact_fingerprints(&fingerprints);
     let mut functional_pairs = raw_functional_pairs
         .into_iter()
         .map(|(left_index, right_index)| SimilarityPair {
             left_node_id: documents[left_index].node_id,
             right_node_id: documents[right_index].node_id,
-            basis: similarity(&fingerprints[left_index].1, &fingerprints[right_index].1),
+            basis: compact_similarity(&compact[left_index], &compact[right_index]),
         })
         .collect::<Vec<_>>();
     functional_pairs.sort_by_key(|pair| (pair.left_node_id, pair.right_node_id));
@@ -640,7 +641,7 @@ fn build_similarity_index_from_input(input: &SimilarityBuildInput) -> Similarity
         .map(|(left_index, right_index)| SimilarityPair {
             left_node_id: documents[left_index].node_id,
             right_node_id: documents[right_index].node_id,
-            basis: similarity(&fingerprints[left_index].1, &fingerprints[right_index].1),
+            basis: compact_similarity(&compact[left_index], &compact[right_index]),
         })
         .collect::<Vec<_>>();
     pairs.sort_by_key(|pair| (pair.left_node_id, pair.right_node_id));
@@ -660,12 +661,87 @@ fn build_similarity_index_from_input(input: &SimilarityBuildInput) -> Similarity
     }
 }
 
-fn jaccard<T: Ord>(left: &BTreeSet<T>, right: &BTreeSet<T>) -> u16 {
-    let union = left.union(right).count();
-    if union == 0 {
-        return 0;
+struct CompactFingerprint {
+    tokens: Vec<usize>,
+    shingles: Vec<usize>,
+    token_count: usize,
+}
+
+fn compact_fingerprints(fingerprints: &[(&str, RefactorFingerprint)]) -> Vec<CompactFingerprint> {
+    fn intern<'a>(
+        values: &'a BTreeSet<String>,
+        dictionary: &mut BTreeMap<&'a str, usize>,
+    ) -> Vec<usize> {
+        let mut ids: Vec<_> = values
+            .iter()
+            .map(|value| {
+                let next = dictionary.len();
+                *dictionary.entry(value.as_str()).or_insert(next)
+            })
+            .collect();
+        ids.sort_unstable();
+        ids
     }
-    ((left.intersection(right).count() * 1000) / union) as u16
+    let mut tokens = BTreeMap::new();
+    let mut shingles = BTreeMap::new();
+    fingerprints
+        .iter()
+        .map(|(_, fingerprint)| CompactFingerprint {
+            tokens: intern(&fingerprint.tokens, &mut tokens),
+            shingles: intern(&fingerprint.shingles, &mut shingles),
+            token_count: fingerprint.token_count,
+        })
+        .collect()
+}
+
+fn jaccard_count(intersection: usize, left: usize, right: usize) -> u16 {
+    let union = left + right - intersection;
+    if union == 0 {
+        0
+    } else {
+        ((intersection * 1000) / union) as u16
+    }
+}
+
+fn compact_jaccard(left: &[usize], right: &[usize]) -> u16 {
+    let (mut a, mut b, mut intersection) = (0, 0, 0);
+    while a < left.len() && b < right.len() {
+        match left[a].cmp(&right[b]) {
+            std::cmp::Ordering::Less => a += 1,
+            std::cmp::Ordering::Greater => b += 1,
+            std::cmp::Ordering::Equal => {
+                intersection += 1;
+                a += 1;
+                b += 1;
+            }
+        }
+    }
+    jaccard_count(intersection, left.len(), right.len())
+}
+
+fn compact_similarity(left: &CompactFingerprint, right: &CompactFingerprint) -> Similarity {
+    let body_tokens = compact_jaccard(&left.tokens, &right.tokens);
+    let ordered_shingles = compact_jaccard(&left.shingles, &right.shingles);
+    let largest = left.token_count.max(right.token_count);
+    let size = if largest == 0 {
+        0
+    } else {
+        ((left.token_count.min(right.token_count) * 1000) / largest) as u16
+    };
+    // The background index stores text-only bases. Live call evidence is added
+    // by score_pair for the requested snapshot, as before.
+    Similarity {
+        body_tokens,
+        ordered_shingles,
+        callees: 0,
+        size,
+        total: weighted_similarity(body_tokens, ordered_shingles, 0, size),
+    }
+}
+
+fn jaccard<T: Ord>(left: &BTreeSet<T>, right: &BTreeSet<T>) -> u16 {
+    let intersection = left.intersection(right).count();
+    jaccard_count(intersection, left.len(), right.len())
 }
 
 fn similarity(left: &RefactorFingerprint, right: &RefactorFingerprint) -> Similarity {
@@ -1603,6 +1679,31 @@ mod tests {
         Similarity, fingerprint_text, is_callable_candidate, jaccard, normalized_tokens,
         rank_similarity, reserve_evidence, similarity,
     };
+
+    #[test]
+    fn compact_scores_preserve_exact_string_set_scores() {
+        let sources = [
+            "",
+            "fn a() {}",
+            "fn b() {}",
+            "fn walk(x: i32) { for i in 0..x { emit(i); } }",
+            "fn other(y: i32) { for k in 0..y { print(k); } }",
+            "fn map(x: i32) -> i32 { x + 1 }",
+        ];
+        let fingerprints: Vec<_> = sources
+            .iter()
+            .map(|source| ("rust", fingerprint_text(source)))
+            .collect();
+        let compact = super::compact_fingerprints(&fingerprints);
+        for left in 0..sources.len() {
+            for right in 0..sources.len() {
+                assert_eq!(
+                    super::compact_similarity(&compact[left], &compact[right]),
+                    similarity(&fingerprints[left].1, &fingerprints[right].1)
+                );
+            }
+        }
+    }
 
     #[test]
     fn normalization_ignores_local_spelling_and_literal_values() {
