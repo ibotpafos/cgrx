@@ -91,7 +91,7 @@ $HOME/.cargo/bin/cgrx в примерах. Архив не подписан Deve
 Для CLI OpenAI Codex:
 
 ~~~sh
-codex mcp add cgrx -- "$HOME/.cargo/bin/cgrx" serve --multi-repo
+codex mcp add cgrx -- "$HOME/.cargo/bin/cgrx" serve --multi-repo --response-profile token-efficient
 codex mcp list
 ~~~
 
@@ -101,7 +101,7 @@ codex mcp list
 ~~~toml
 [mcp_servers.cgrx]
 command = "/absolute/path/to/cgrx"
-args = ["serve", "--multi-repo"]
+args = ["serve", "--multi-repo", "--response-profile", "token-efficient"]
 ~~~
 
 Замените command реальным абсолютным путём. Не полагайтесь на разворачивание
@@ -150,6 +150,21 @@ args = ["serve", "--multi-repo"]
 обновляются в рабочем представлении. Первый запрос на большой базе может
 быть долгим. Индекс создаётся автоматически в Git metadata.
 repo должен указывать на корень, а не на подкаталог.
+
+Для точного разрешения вызовов методов можно подключить SCIP-индекс. Например,
+для Rust:
+
+~~~sh
+rust-analyzer scip .
+cgrx serve --root . --scip index.scip
+~~~
+
+CGRX добавляет только те `SCIP_CONFIRMED` рёбра, чьи пути и диапазоны однозначно
+совпали с текущим исходным кодом. Хэш `index.scip` входит в generation ID, поэтому
+после обновления семантического индекса старый синтаксический кэш не используется.
+Только единственная конкретная цель закрывает gap. Trait, abstract, protocol,
+specification и pure-virtual методы остаются в покрытии как `DYNAMIC_DISPATCH`,
+поскольку их runtime-реализация по-прежнему не определена однозначно.
 
 Использование агентом описано в устанавливаемом
 [`cgrx-code-discovery` skill](agent-usage.md). Пустой граф при неполном

@@ -1,5 +1,5 @@
 use cgrx_core::{Hash32, RepoSnapshot};
-use cgrx_mcp::Server;
+use cgrx_mcp::{ResponseProfile, Server};
 use serde_json::{Value, json};
 use std::fs;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -146,6 +146,37 @@ fn unknown_handle_is_typed_error_not_empty_context() {
     assert_eq!(response["error"]["code"], -32004);
     assert_eq!(response["error"]["data"]["code"], "cgrx.handle_not_found");
     assert!(response.get("result").is_none());
+}
+
+#[test]
+fn token_efficient_profile_does_not_duplicate_full_orient_report() {
+    let mut server = Server::new(snapshot()).with_response_profile(ResponseProfile::TokenEfficient);
+    let response = dispatch(
+        &mut server,
+        json!({
+            "jsonrpc":"2.0",
+            "id":2,
+            "method":"tools/call",
+            "params":{
+                "name":"orient",
+                "arguments":{
+                    "task":"find charge callers",
+                    "mode":"BOUNDED",
+                    "scope":{"include":["src/**"],"exclude":[],"relation_kinds":["CALLS"],"max_depth":2}
+                }
+            }
+        }),
+    );
+    let visible: Value = serde_json::from_str(
+        response["result"]["content"][0]["text"]
+            .as_str()
+            .expect("compact text"),
+    )
+    .expect("compact JSON");
+    assert!(response["result"].get("structuredContent").is_none());
+    assert_eq!(visible["budget"], 600);
+    assert!(visible.get("rcc").is_none());
+    assert!(visible.get("qbec").is_none());
 }
 
 #[test]

@@ -19,7 +19,7 @@ use cgrx_core::{
 };
 use cgrx_mcp::{
     BackendError, Server, ToolBackend, Toolset, gate_to_sarif, model_visible_schema_json,
-    resolve_toolset, revision_bound_handle,
+    resolve_response_profile, resolve_toolset, revision_bound_handle,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -675,7 +675,13 @@ fn index(args: &[String]) -> Result<(), String> {
     }
     let root = Path::new(flag(args, "--root")?);
     let state = Path::new(flag(args, "--state")?);
-    let report = Runtime::index(root, state).map_err(|error| error.to_string())?;
+    let report = if let Some(path) = optional_flag(args, "--scip") {
+        let path = repository_relative_path(root, path);
+        Runtime::index_with_scip(root, state, &path)
+    } else {
+        Runtime::index(root, state)
+    }
+    .map_err(|error| error.to_string())?;
     println!(
         "{}",
         serde_json::to_string(&report).map_err(|error| error.to_string())?
@@ -751,6 +757,9 @@ fn init(path: Option<PathBuf>) -> Result<(), String> {
 
 fn serve(args: &[String]) -> Result<(), String> {
     if args.iter().any(|a| a == "--multi-repo") {
+        if optional_flag(args, "--scip").is_some() {
+            return Err("serve --scip requires a single --root repository".to_owned());
+        }
         return multi_repo::serve(args);
     }
     if args.iter().any(|a| a == "--max-repos") {
@@ -761,7 +770,14 @@ fn serve(args: &[String]) -> Result<(), String> {
         env::var("CGRX_TOOLSET").ok().as_deref(),
         optional_flag(args, "--toolset"),
     );
+    let response_profile = resolve_response_profile(
+        env::var("CGRX_RESPONSE_PROFILE").ok().as_deref(),
+        optional_flag(args, "--response-profile"),
+    );
     let root = optional_flag(args, "--root").map(PathBuf::from);
+    if optional_flag(args, "--scip").is_some() && root.is_none() {
+        return Err("serve --scip requires --root".to_owned());
+    }
     if root.is_some()
         && (optional_flag(args, "--state").is_some()
             || optional_flag(args, "--watch-root").is_some())
@@ -781,18 +797,25 @@ fn serve(args: &[String]) -> Result<(), String> {
             RuntimeMcpBackend::new(runtime, None)
         };
         (
-            Server::with_backend(backend).with_toolset(toolset),
+            Server::with_backend(backend)
+                .with_toolset(toolset)
+                .with_response_profile(response_profile),
             memory_root,
         )
     } else {
         let root = root.unwrap_or_else(|| PathBuf::from("."));
         let root = root.canonicalize().map_err(|error| error.to_string())?;
+        let scip_index =
+            optional_flag(args, "--scip").map(|path| repository_relative_path(&root, path));
         let state = managed_state_path(&root)?;
-        let runtime = open_managed_runtime(&root, &state)?;
+        let runtime = open_managed_runtime_with_scip(&root, &state, scip_index.as_deref())?;
         let memory_root = Some(root.clone());
         (
-            Server::with_backend(RuntimeMcpBackend::managed(runtime, root, state))
-                .with_toolset(toolset),
+            Server::with_backend(RuntimeMcpBackend::managed_with_scip(
+                runtime, root, state, scip_index,
+            ))
+            .with_toolset(toolset)
+            .with_response_profile(response_profile),
             memory_root,
         )
     };
@@ -841,14 +864,41 @@ fn managed_state_path(root: &Path) -> Result<PathBuf, String> {
     })
 }
 
+fn repository_relative_path(root: &Path, path: &str) -> PathBuf {
+    let path = PathBuf::from(path);
+    if path.is_absolute() {
+        path
+    } else {
+        root.join(path)
+    }
+}
+
 fn open_managed_runtime(root: &Path, state: &Path) -> Result<Runtime, String> {
+    open_managed_runtime_with_scip(root, state, None)
+}
+
+fn open_managed_runtime_with_scip(
+    root: &Path,
+    state: &Path,
+    scip_index: Option<&Path>,
+) -> Result<Runtime, String> {
     let current = state.join(".cgrx/CURRENT");
-    if !current.is_file() {
-        Runtime::index_committed_head(root, state).map_err(|error| error.to_string())?;
+    if scip_index.is_some() || !current.is_file() {
+        if let Some(path) = scip_index {
+            Runtime::index_committed_head_with_scip(root, state, path)
+        } else {
+            Runtime::index_committed_head(root, state)
+        }
+        .map_err(|error| error.to_string())?;
     }
     match Runtime::open(state) {
         Err(error) if error.code() == "extraction_revision" => {
-            Runtime::index_committed_head(root, state).map_err(|error| error.to_string())?;
+            if let Some(path) = scip_index {
+                Runtime::index_committed_head_with_scip(root, state, path)
+            } else {
+                Runtime::index_committed_head(root, state)
+            }
+            .map_err(|error| error.to_string())?;
             Runtime::open(state).map_err(|error| error.to_string())
         }
         result => result.map_err(|error| error.to_string()),
@@ -860,6 +910,7 @@ struct RuntimeMcpBackend {
     runtime: Runtime,
     watch_root: Option<PathBuf>,
     managed_state: Option<PathBuf>,
+    scip_index: Option<PathBuf>,
     expansions: BTreeMap<String, ExpansionState>,
     orient_preparations: BTreeMap<Hash32, Arc<OrientPreparation>>,
     orient_preparation_order: VecDeque<Hash32>,
@@ -881,6 +932,7 @@ impl RuntimeMcpBackend {
             runtime,
             watch_root,
             managed_state: None,
+            scip_index: None,
             expansions: BTreeMap::new(),
             orient_preparations: BTreeMap::new(),
             orient_preparation_order: VecDeque::new(),
@@ -890,10 +942,20 @@ impl RuntimeMcpBackend {
     }
 
     fn managed(runtime: Runtime, root: PathBuf, state: PathBuf) -> Self {
+        Self::managed_with_scip(runtime, root, state, None)
+    }
+
+    fn managed_with_scip(
+        runtime: Runtime,
+        root: PathBuf,
+        state: PathBuf,
+        scip_index: Option<PathBuf>,
+    ) -> Self {
         Self {
             runtime,
             watch_root: Some(root),
             managed_state: Some(state),
+            scip_index,
             expansions: BTreeMap::new(),
             orient_preparations: BTreeMap::new(),
             orient_preparation_order: VecDeque::new(),
@@ -910,8 +972,12 @@ impl RuntimeMcpBackend {
             Ok(changed) => changed,
             Err(error) if error.code() == "revision_changed" && self.managed_state.is_some() => {
                 let state = self.managed_state.as_ref().expect("managed state exists");
-                Runtime::index_committed_head(root, state)
-                    .map_err(|error| BackendError::new(error.code(), error.to_string()))?;
+                let indexed = if let Some(path) = &self.scip_index {
+                    Runtime::index_committed_head_with_scip(root, state, path)
+                } else {
+                    Runtime::index_committed_head(root, state)
+                };
+                indexed.map_err(|error| BackendError::new(error.code(), error.to_string()))?;
                 self.risk_baseline = None;
                 self.runtime = Runtime::open(state)
                     .map_err(|error| BackendError::new(error.code(), error.to_string()))?;
@@ -1108,6 +1174,7 @@ impl ToolBackend for RuntimeMcpBackend {
 
     fn orient(&mut self, query: QueryRequest) -> Result<Value, BackendError> {
         self.refresh()?;
+        let budget = query.token_budget;
         let (prepared, preparation_cache_hit) = self.orient_preparation(&query)?;
         let report = self
             .runtime
@@ -1147,6 +1214,10 @@ impl ToolBackend for RuntimeMcpBackend {
                 "preparation_cache_hit".to_owned(),
                 json!(preparation_cache_hit),
             );
+        value
+            .as_object_mut()
+            .expect("orient report serializes as an object")
+            .insert("budget".to_owned(), json!(budget));
         Ok(value)
     }
 
@@ -1490,6 +1561,24 @@ impl ToolBackend for RuntimeMcpBackend {
         let coverage_gap_count = coverage_gaps.len();
         let coverage_gaps_truncated = coverage_gap_count > COVERAGE_OUTPUT_LIMIT;
         coverage_gaps.truncate(COVERAGE_OUTPUT_LIMIT);
+        let dynamic_dispatch_paths = coverage
+            .dynamic_dispatch
+            .iter()
+            .map(|location| {
+                location
+                    .rsplit_once(':')
+                    .map_or(location.as_str(), |(path, _)| path)
+            })
+            .collect::<BTreeSet<_>>()
+            .len();
+        let coverage_summary = json!({
+            "excluded_paths": coverage.excluded_paths.len(),
+            "parser_error_ranges": coverage.parser_error_ranges.len(),
+            "stale_paths": coverage.stale_paths.len(),
+            "dynamic_dispatch_sites": coverage.dynamic_dispatch.len(),
+            "dynamic_dispatch_paths": dynamic_dispatch_paths,
+            "traversal_truncated": coverage.traversal_truncated
+        });
         let bounded_coverage = json!({
             "excluded_paths":coverage.excluded_paths.iter().take(COVERAGE_OUTPUT_LIMIT).collect::<Vec<_>>(),
             "parser_error_ranges":coverage.parser_error_ranges.iter().take(COVERAGE_OUTPUT_LIMIT).collect::<Vec<_>>(),
@@ -1507,6 +1596,7 @@ impl ToolBackend for RuntimeMcpBackend {
             "freshness":if self.watch_root.is_some() { "WATCHED" } else { "PINNED" },
             "changed_paths":self.runtime.changed_paths(),
             "coverage":bounded_coverage,
+            "coverage_summary":coverage_summary,
             "coverage_gap_count":coverage_gap_count,
             "coverage_gaps":coverage_gaps,
             "coverage_gaps_truncated":coverage_gaps_truncated

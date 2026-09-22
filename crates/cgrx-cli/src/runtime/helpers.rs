@@ -2,6 +2,7 @@
 
 use std::path::Path;
 
+use cgrx_core::Hash32;
 use cgrx_languages::Span;
 
 use super::EXTRACTION_REVISION;
@@ -61,11 +62,15 @@ pub(super) fn stable_node_id(path: &str, span: Span, name: &str) -> u64 {
     u64::from_le_bytes(bytes)
 }
 
-/// Generation ID from revision + extraction revision.
-pub(super) fn generation_id(revision: &str) -> u64 {
+/// Generation ID from revision, extraction revision, and optional semantic input.
+pub(super) fn generation_id_with_semantic(revision: &str, semantic: Option<Hash32>) -> u64 {
     let mut hasher = blake3::Hasher::new();
     hasher.update(revision.as_bytes());
     hasher.update(&EXTRACTION_REVISION.to_le_bytes());
+    if let Some(semantic) = semantic {
+        hasher.update(b"SCIP\0");
+        hasher.update(&semantic.0);
+    }
     let digest = hasher.finalize();
     let mut bytes = [0_u8; 8];
     bytes.copy_from_slice(&digest.as_bytes()[..8]);

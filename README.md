@@ -95,7 +95,7 @@ A macOS Apple Silicon binary with SHA-256 checksums is available on the release 
 OpenAI Codex CLI:
 
 ~~~sh
-codex mcp add cgrx -- "$HOME/.local/bin/cgrx" serve --multi-repo
+codex mcp add cgrx -- "$HOME/.local/bin/cgrx" serve --multi-repo --response-profile token-efficient
 ~~~
 
 Restart the MCP client after configuration changes. Every tool request must
@@ -108,6 +108,30 @@ include the absolute Git worktree root in **repo**. Example status arguments:
 CGRX writes its managed index under Git metadata, not into source files.
 See [installation](docs/installation.md) for OpenCode, binary installation,
 updates, uninstalling and troubleshooting.
+
+The MCP server defaults to the `token-efficient` response profile: it returns
+only the compact text result and omits the optional `structuredContent`, avoiding
+both the full report and a duplicate compact report in model context. Use `--response-profile full` or
+`CGRX_RESPONSE_PROFILE=full` for programmatic clients that need every internal
+field. `orient` accepts `quick`, `standard`, and `deep` budget presets; when its
+budget is omitted, CGRX chooses a 400-1000 token first-pass budget from the mode,
+task, and scope.
+
+Compiler-backed method resolution is available through a SCIP index. For Rust,
+generate it with rust-analyzer and pass it when the managed MCP server starts:
+
+~~~sh
+rust-analyzer scip .
+cgrx serve --root . --scip index.scip
+~~~
+
+For an explicit index destination, use `cgrx index --root . --state /path/to/state
+--scip /path/to/index.scip --json`. CGRX matches SCIP definition and reference
+ranges against the current source before adding `SCIP_CONFIRMED` call edges. The
+SCIP file hash is part of the graph generation, so replacing the semantic index
+cannot reuse a syntax-only cache. Only a unique concrete target closes the gap;
+trait, abstract, protocol, specification, and pure-virtual method targets remain
+visible as `DYNAMIC_DISPATCH` because their runtime implementation is still open.
 
 ## Explore the graph locally
 

@@ -11,7 +11,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
-use crate::{JsonRpcError, JsonRpcRequest, JsonRpcResponse, Toolset};
+use crate::{JsonRpcError, JsonRpcRequest, JsonRpcResponse, ResponseProfile, Toolset};
 
 const PROTOCOL_VERSION: &str = "2025-06-18";
 
@@ -22,6 +22,7 @@ pub struct Server {
     usage_log: Option<UsageLog>,
     metrics_log: Option<MetricsLog>,
     toolset: Toolset,
+    response_profile: ResponseProfile,
 }
 
 struct UsageLog {
@@ -244,6 +245,8 @@ impl Server {
             // Library/programmatic default is permissive; the `serve` command narrows
             // this to the resolved (default: standard) toolset.
             toolset: Toolset::Full,
+            // Programmatic users keep the complete result unless they opt in.
+            response_profile: ResponseProfile::Full,
         }
     }
 
@@ -256,6 +259,7 @@ impl Server {
             usage_log: None,
             metrics_log: None,
             toolset: Toolset::Full,
+            response_profile: ResponseProfile::Full,
         }
     }
 
@@ -263,6 +267,13 @@ impl Server {
     #[must_use]
     pub fn with_toolset(mut self, toolset: Toolset) -> Self {
         self.toolset = toolset;
+        self
+    }
+
+    /// Select whether MCP responses contain full or compact structured output.
+    #[must_use]
+    pub fn with_response_profile(mut self, response_profile: ResponseProfile) -> Self {
+        self.response_profile = response_profile;
         self
     }
 
@@ -430,8 +441,8 @@ impl Server {
                 "capabilities": {"tools": {"listChanged": false}},
                 "serverInfo": {"name": "cgrx", "version": env!("CARGO_PKG_VERSION")},
                 "instructions": format!(
-                    "Use status first to verify revision and freshness. Multi-repo calls require repo: absolute Git worktree root. Search symbols, trace calls, read snippets, then check coverage for evidence paths. Read source for partial or missing coverage; empty results do not prove no bugs. scan_risks yields candidates, not confirmed defects. Handles belong to one repo and live session. Tools update local indexes/caches, not source files. Active toolset: {}.",
-                    self.toolset.label()
+                    "Use status first to verify revision and freshness. Multi-repo calls require repo: absolute Git worktree root. For broad work use orient with a narrow scope, then expand its handle, then read only material snippets. Search symbols before tracing calls. Check coverage for evidence paths; read source for gaps. Empty results do not prove absence. Handles belong to one repo and live session. Active toolset: {}; response profile: {}.",
+                    self.toolset.label(), self.response_profile.label()
                 )
             })),
             "tools/list" => Ok(json!({"tools": model_visible_schema()})),
@@ -654,25 +665,23 @@ impl Server {
             }
         };
         let visible = model_visible_result(&call.name, &structured);
-        let compact_wire = self
-            .usage_log
-            .as_ref()
-            .is_some_and(|usage| matches!(usage.client.as_str(), "codex" | "opencode"));
-        let wire_structured =
-            wire_structured_result(&call.name, &structured, &visible, compact_wire);
-        Ok(json!({
+        let mut result = json!({
             "content": [{"type": "text", "text": serde_json::to_string(&visible).expect("tool result serializes")}],
-            "structuredContent": wire_structured,
             "isError": false
-        }))
+        });
+        if self.response_profile == ResponseProfile::Full {
+            result["structuredContent"] = structured;
+        }
+        Ok(result)
     }
 
     fn orient(&mut self, arguments: OrientArguments) -> Result<Value, JsonRpcError> {
+        let budget = arguments.resolved_budget()?;
         let query = QueryRequest {
             task: arguments.task,
             scope: arguments.scope,
             mode: arguments.mode,
-            token_budget: arguments.budget,
+            token_budget: budget,
         };
         if let Some(backend) = &mut self.backend {
             return backend.orient(query).map_err(backend_error);
@@ -715,7 +724,7 @@ impl Server {
         }
         .bind_capsule(&rcc);
         verify_hashes(&rcc, &qbec).map_err(internal_error)?;
-        Ok(json!({"rcc": rcc, "qbec": qbec, "next_handles": [handle]}))
+        Ok(json!({"rcc": rcc, "qbec": qbec, "next_handles": [handle], "budget": budget}))
     }
 
     fn search_graph(&mut self, arguments: SearchGraphArguments) -> Result<Value, JsonRpcError> {
@@ -1129,22 +1138,6 @@ impl Server {
     }
 }
 
-fn wire_structured_result(
-    tool: &str,
-    structured: &Value,
-    visible: &Value,
-    compact_wire: bool,
-) -> Value {
-    if !compact_wire || !matches!(tool, "orient" | "check_index_coverage") {
-        return structured.clone();
-    }
-    let mut compact = visible.clone();
-    if let (Some(object), Some(snapshot)) = (compact.as_object_mut(), structured.get("snapshot")) {
-        object.insert("snapshot".to_owned(), snapshot.clone());
-    }
-    compact
-}
-
 fn model_visible_result(tool: &str, structured: &Value) -> Value {
     match tool {
         "scan_risks" => compact_risks(structured),
@@ -1554,7 +1547,9 @@ fn compact_orient(value: &Value) -> Value {
         "cols": ["path", "start", "end", "text", "provenance"],
         "records": records,
         "n": records.len(),
+        "budget": value.get("budget"),
         "gaps": uncertainties,
+        "gap_kinds": compact_uncertainty_counts(value.pointer("/compiled/obligations/uncertainties")),
         "residual": residual,
         "semantic_rerank": value.get("semantic_rerank"),
         "next": value.get("next_handles"),
@@ -2018,9 +2013,26 @@ fn compact_status(value: &Value) -> Value {
         "graph": value.get("graph"),
         "changed": value.get("changed_paths"),
         "gaps_n": value.get("coverage_gap_count"),
+        "gap_kinds": value.get("coverage_summary"),
         "gaps": gaps,
         "more": value.get("coverage_gaps_truncated"),
     })
+}
+
+fn compact_uncertainty_counts(uncertainties: Option<&Value>) -> Value {
+    let mut counts = serde_json::Map::new();
+    for uncertainty in uncertainties
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        let Some(kind) = uncertainty.get("kind").and_then(Value::as_str) else {
+            continue;
+        };
+        let count = counts.get(kind).and_then(Value::as_u64).unwrap_or(0) + 1;
+        counts.insert(kind.to_owned(), json!(count));
+    }
+    Value::Object(counts)
 }
 
 fn compact_snippet(value: &Value) -> Value {
@@ -2219,9 +2231,88 @@ struct ToolCall {
 #[derive(Deserialize)]
 struct OrientArguments {
     task: String,
-    budget: u32,
+    #[serde(default)]
+    budget: Option<u32>,
+    #[serde(default)]
+    budget_preset: Option<BudgetPreset>,
     mode: Mode,
     scope: Scope,
+}
+
+#[derive(Clone, Copy, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum BudgetPreset {
+    Quick,
+    Standard,
+    Deep,
+}
+
+impl BudgetPreset {
+    const fn tokens(self) -> u32 {
+        match self {
+            Self::Quick => 400,
+            Self::Standard => 800,
+            Self::Deep => 1_600,
+        }
+    }
+}
+
+impl OrientArguments {
+    fn resolved_budget(&self) -> Result<u32, JsonRpcError> {
+        if self.budget.is_some() && self.budget_preset.is_some() {
+            return Err(JsonRpcError::typed(
+                -32602,
+                "cgrx.invalid_arguments",
+                "use budget or budget_preset, not both",
+            ));
+        }
+        let budget = self
+            .budget
+            .or_else(|| self.budget_preset.map(BudgetPreset::tokens))
+            .unwrap_or_else(|| adaptive_orient_budget(&self.task, self.mode, &self.scope));
+        if budget == 0 {
+            return Err(JsonRpcError::typed(
+                -32602,
+                "cgrx.invalid_arguments",
+                "budget must be greater than zero",
+            ));
+        }
+        Ok(budget)
+    }
+}
+
+fn adaptive_orient_budget(task: &str, mode: Mode, scope: &Scope) -> u32 {
+    let mut budget = match mode {
+        Mode::Fast => 400,
+        Mode::Bounded => 600,
+        Mode::Precise => 1_000,
+    };
+    let normalized = task.to_ascii_lowercase();
+    let complex = [
+        "architecture",
+        "refactor",
+        "migration",
+        "impact",
+        "архитект",
+        "рефактор",
+        "миграц",
+        "влияни",
+    ]
+    .iter()
+    .any(|marker| normalized.contains(marker));
+    if complex {
+        budget = budget.max(1_000);
+    } else if task.len() > 120
+        || scope.include.len() > 2
+        || (scope.max_depth > 2
+            && scope
+                .include
+                .iter()
+                .any(|path| matches!(path.as_str(), "**" | "**/*")))
+    {
+        budget = budget.max(800);
+    }
+    budget
 }
 
 #[derive(Deserialize)]
@@ -2603,7 +2694,7 @@ fn model_visible_schema() -> Value {
             {"name":"check_change_gates","description":"Snapshot-bound conservative change gate over findings, impacts, missions and graph coverage; no tests or LLM executed.","inputSchema":{"type":"object","properties":{"limit":{"type":"integer","minimum":1,"maximum":50},"fail_on":{"enum":["error","warning","none"],"default":"error"},"max_warning_findings":{"type":"integer","minimum":0,"maximum":10000,"default":0},"max_blocked_missions":{"type":"integer","minimum":0,"maximum":10000,"default":0},"max_coverage_gaps":{"type":"integer","minimum":0,"maximum":10000,"default":0},"max_unverified_impacts":{"type":"integer","minimum":0,"maximum":10000,"default":0},"runs":{"type":"array","items":{"type":"object","properties":{"runner_command":{"type":"string"},"revision":{"type":"string"},"results":{"type":"array","items":{"type":"object","properties":{"path":{"type":"string"},"symbol":{"type":"string"},"status":{"enum":["passed","failed"]},"source_hash":{"type":"string"}}}}}}}}}},
             {"name":"check_repository_gates","description":"Snapshot-bound architecture gate over package cycles, graph coupling, unresolved local dependencies and coverage; no LLM executed.","inputSchema":{"type":"object","properties":{"scope":path_or_scope.clone(),"package_depth":{"type":"integer","minimum":1,"maximum":4,"default":2},"fail_on":{"enum":["error","warning","none"],"default":"error"},"max_package_cycles":{"type":"integer","minimum":0,"maximum":1000000,"default":0},"max_package_fan_out":{"type":"integer","minimum":0,"maximum":1000000,"default":20},"max_symbol_fan_in":{"type":"integer","minimum":0,"maximum":1000000,"default":50},"max_unresolved_local_dependencies":{"type":"integer","minimum":0,"maximum":1000000,"default":0},"max_coverage_gaps":{"type":"integer","minimum":0,"maximum":1000000,"default":0}}}},
             {"name":"ingest_runtime_evidence","description":"Import revision-pinned runtime call evidence from a local file.","inputSchema":{"type":"object","required":["input_path"],"properties":{"input_path":{"type":"string"},"format":{"enum":["auto","ndjson","otlp-json"],"default":"auto"},"revision":{"type":"string"},"environment":{"type":"string"}}}},
-            {"name":"orient","description":"Context","inputSchema":{"type":"object","required":["task","budget","mode","scope"],"properties":{"task":{"type":"string"},"budget":{"type":"integer","minimum":1},"mode":{"enum":["FAST","PRECISE","BOUNDED"]},"scope":bounded_scope.clone()}}},
+            {"name":"orient","description":"Adaptive context","inputSchema":{"type":"object","required":["task","mode","scope"],"properties":{"task":{"type":"string"},"budget":{"type":"integer","minimum":1},"budget_preset":{"enum":["quick","standard","deep"]},"mode":{"enum":["FAST","PRECISE","BOUNDED"]},"scope":bounded_scope.clone()}}},
             {"name":"search_graph","description":"Symbols or bodies","inputSchema":{"type":"object","required":["query"],"properties":{"query":{"type":"string"},"language":{"enum":["typescript","go","java","python","rust","c","cpp","csharp","ruby","php","swift","scala","elixir","kotlin"]},"include_body":{"type":"boolean"},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":50}}}},
             {"name":"get_outline","description":"File symbols","inputSchema":{"type":"object","required":["path"],"properties":{"path":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":500}}}},
             {"name":"get_architecture","description":"Paginated packages, proven boundaries, communities and graph futures","inputSchema":{"type":"object","properties":{"scope":path_or_scope.clone(),"package_depth":{"type":"integer","minimum":1,"maximum":4},"limit":{"type":"integer","minimum":1,"maximum":100},"offset":{"type":"integer","minimum":0,"maximum":1000000}}}},
@@ -3213,74 +3304,6 @@ mod openai_metadata_tests {
             encoded.len() < 4_000,
             "compact payload bytes: {}",
             encoded.len()
-        );
-    }
-
-    #[test]
-    fn high_volume_wire_payloads_drop_duplicate_structured_detail() {
-        let snapshot = json!({
-            "repo_revision":"abc123",
-            "working_tree_digest":"00",
-            "graph_generation":9
-        });
-        let orient = json!({
-            "snapshot":snapshot,
-            "compiled":{
-                "status":"SATISFIED",
-                "packed":{"records":[{
-                    "path":"src/lib.rs",
-                    "span_start":1,
-                    "span_end":2,
-                    "text":"fn tiny() {}".repeat(64),
-                    "provenance":"SYNTAX"
-                }]},
-                "obligations":{"uncertainties":[]},
-                "residual":[],
-                "proof":"x".repeat(200_000)
-            },
-            "next_handles":[]
-        });
-        let orient_visible = model_visible_result("orient", &orient);
-        let orient_wire = wire_structured_result("orient", &orient, &orient_visible, true);
-        assert_eq!(orient_wire["snapshot"], orient["snapshot"]);
-        assert!(orient_wire.get("compiled").is_none());
-        assert!(
-            serde_json::to_vec(&orient_wire).unwrap().len()
-                < serde_json::to_vec(&orient).unwrap().len() / 10
-        );
-        assert_eq!(
-            wire_structured_result("orient", &orient, &orient_visible, false),
-            orient
-        );
-
-        let coverage = json!({
-            "snapshot":snapshot,
-            "paths":[{
-                "path":"src/lib.rs",
-                "status":"INDEXED",
-                "gap_count":0,
-                "details":"y".repeat(100_000)
-            }],
-            "scopes":[],
-            "summary":{"indexed":1},
-            "scope_summary":{}
-        });
-        let coverage_visible = model_visible_result("check_index_coverage", &coverage);
-        let coverage_wire =
-            wire_structured_result("check_index_coverage", &coverage, &coverage_visible, true);
-        assert_eq!(coverage_wire["snapshot"], coverage["snapshot"]);
-        assert!(coverage_wire["rows"].is_array());
-        assert!(
-            !serde_json::to_string(&coverage_wire)
-                .unwrap()
-                .contains(&"y".repeat(1_000))
-        );
-
-        let search = json!({"snapshot":snapshot,"results":[]});
-        let search_visible = model_visible_result("search_graph", &search);
-        assert_eq!(
-            wire_structured_result("search_graph", &search, &search_visible, true),
-            search
         );
     }
 

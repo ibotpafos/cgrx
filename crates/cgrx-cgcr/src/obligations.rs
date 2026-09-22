@@ -1,6 +1,7 @@
 use cgrx_capsule::ObligationId;
 use cgrx_core::{QueryRequest, Scope};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 use crate::{CoverageMetadata, Uncertainty, UncertaintyKind};
 
@@ -213,13 +214,22 @@ fn inventory(coverage: &CoverageMetadata) -> Vec<Uncertainty> {
             detail: "bounded traversal ended with a remaining frontier".to_owned(),
         });
     }
+    let mut dynamic_dispatch_by_path = BTreeMap::<&str, usize>::new();
     for callsite in &coverage.dynamic_dispatch {
+        let path = callsite
+            .rsplit_once(':')
+            .map_or(callsite.as_str(), |(path, _)| path);
+        *dynamic_dispatch_by_path.entry(path).or_default() += 1;
+    }
+    for (path, count) in dynamic_dispatch_by_path {
         result.push(Uncertainty {
             kind: UncertaintyKind::DynamicDispatch,
-            path: None,
+            path: Some(path.to_owned()),
             start: None,
             end: None,
-            detail: callsite.clone(),
+            detail: format!(
+                "{count} unresolved dispatch site(s); inspect path coverage for locations"
+            ),
         });
     }
     result

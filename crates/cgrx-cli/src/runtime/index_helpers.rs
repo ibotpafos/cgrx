@@ -15,7 +15,7 @@ use super::arc_resolution::{go_module_name, rebuild_arcs_with_cargo};
 use super::extraction::extract_sources_parallel;
 use super::git_helpers::{GitBlobBatch, parse_committed_tree};
 use super::git_helpers::{git_bytes, git_text, store_writer_error};
-use super::helpers::generation_id;
+use super::helpers::generation_id_with_semantic;
 use super::refactors::rebuild_similarity_index;
 use super::scan_helpers::refresh_proof_gaps;
 use super::ts_helpers::{is_ts_inventory_path, is_ts_resolution_config, scan_ts_inventory};
@@ -29,6 +29,7 @@ pub(super) fn index_source(
     root: &Path,
     state: &Path,
     committed_head: bool,
+    scip_index: Option<&Path>,
 ) -> Result<IndexReport, RuntimeError> {
     let root = root
         .canonicalize()
@@ -65,7 +66,13 @@ pub(super) fn index_source(
     paths.sort();
     let working_tree_digest =
         Hash32(*blake3::hash(if committed_head { &[] } else { &status }).as_bytes());
-    let graph_generation = generation_id(&revision);
+    let scip_bytes = scip_index
+        .map(super::scip_resolution::read_index)
+        .transpose()?;
+    let scip_hash = scip_bytes
+        .as_deref()
+        .map(|bytes| Hash32(*blake3::hash(bytes).as_bytes()));
+    let graph_generation = generation_id_with_semantic(&revision, scip_hash);
     let snapshot = RepoSnapshot {
         repo_revision: revision,
         working_tree_digest,
@@ -213,6 +220,14 @@ pub(super) fn index_source(
         &ts_files,
         &ts_resolution_configs,
     );
+    let scip_edges = if let Some(bytes) = scip_bytes.as_deref() {
+        let imported = super::scip_resolution::resolve(bytes, &sources, &documents, &path_hashes)?;
+        let count = imported.len() as u64;
+        arcs.extend(imported);
+        count
+    } else {
+        0
+    };
 
     // Add CONTAINS arcs: each file's first SYNTAX symbol contains all others
     {
@@ -268,6 +283,7 @@ pub(super) fn index_source(
         snapshot: snapshot.clone(),
         index_input_bytes,
         indexed_files,
+        scip_edges,
         path_hashes,
         documents,
         arcs,
@@ -313,5 +329,6 @@ pub(super) fn index_source(
         snapshot,
         index_input_bytes,
         indexed_files,
+        scip_edges,
     })
 }
