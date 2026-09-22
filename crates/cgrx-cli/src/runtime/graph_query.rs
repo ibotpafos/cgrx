@@ -9,8 +9,8 @@ use cgrx_core::{RelationKind, Scope};
 use cgrx_languages::pack_for_path;
 use serde_json::{Value, json};
 
-use super::scan_helpers::ScopedQuery;
-use super::{RuntimeError, StoredArc, coverage_gap_count, path_in_scope};
+use super::scan_helpers::{ScopedQuery, matching_symbols as matching_symbol_documents};
+use super::{RuntimeError, coverage_gap_count, path_in_scope};
 
 impl super::Runtime {
     pub fn get_outline(&self, path: &str, limit: usize) -> Result<Value, RuntimeError> {
@@ -37,12 +37,7 @@ impl super::Runtime {
             max_depth: 0,
         };
         let mut scoped = ScopedQuery::new(&self.stored, &scope, path_in_scope);
-        let mut documents: Vec<_> = self
-            .stored
-            .documents
-            .iter()
-            .filter(|document| document.provenance == "SYNTAX" && document.path == path)
-            .collect();
+        let mut documents = scoped.syntax_documents(&self.stored);
         documents.sort_by_key(|document| (document.span_start, document.node_id));
         let total = documents.len();
         let symbols: Vec<_> = documents
@@ -97,17 +92,14 @@ impl super::Runtime {
             *caller_counts.entry(target).or_default() += 1;
             *callee_counts.entry(source).or_default() += 1;
         }
-        let mut matches: Vec<_> = self
-            .stored
-            .documents
-            .iter()
+        let mut matches: Vec<_> = scoped
+            .syntax_documents(&self.stored)
+            .into_iter()
             .filter(|document| {
-                document.provenance == "SYNTAX"
-                    && scoped.contains_path(&document.path)
-                    && language.is_none_or(|language| {
-                        pack_for_path(Path::new(&document.path))
-                            .is_some_and(|pack| pack.id() == language)
-                    })
+                language.is_none_or(|language| {
+                    pack_for_path(Path::new(&document.path))
+                        .is_some_and(|pack| pack.id() == language)
+                })
             })
             .filter_map(|document| {
                 let name = document.qualified_name.to_lowercase();
@@ -198,18 +190,13 @@ impl super::Runtime {
             }
         }
         // Find SYNTAX documents with zero incoming calls
-        let mut candidates: Vec<_> = self
-            .stored
-            .documents
-            .iter()
+        let mut candidates: Vec<_> = scoped
+            .syntax_documents(&self.stored)
+            .into_iter()
             .filter(|document| {
-                document.provenance == "SYNTAX"
-                    && scoped.contains_path(&document.path)
-                    && language.is_none_or(|lang| {
-                        pack_for_path(Path::new(&document.path))
-                            .is_some_and(|pack| pack.id() == lang)
-                    })
-                    && !incoming.contains_key(&document.node_id)
+                language.is_none_or(|lang| {
+                    pack_for_path(Path::new(&document.path)).is_some_and(|pack| pack.id() == lang)
+                }) && !incoming.contains_key(&document.node_id)
             })
             .map(|document| {
                 let outgoing = arcs
@@ -257,32 +244,7 @@ impl super::Runtime {
             ));
         }
         let mut scoped = ScopedQuery::new(&self.stored, scope, path_in_scope);
-        let mut roots: Vec<_> = self
-            .stored
-            .documents
-            .iter()
-            .filter(|document| {
-                document.provenance == "SYNTAX"
-                    && scoped.contains_path(&document.path)
-                    && path.is_none_or(|path| document.path == path)
-                    && document.qualified_name == symbol
-            })
-            .collect();
-        if roots.is_empty() {
-            let folded = symbol.to_lowercase();
-            roots = self
-                .stored
-                .documents
-                .iter()
-                .filter(|document| {
-                    document.provenance == "SYNTAX"
-                        && scoped.contains_path(&document.path)
-                        && path.is_none_or(|path| document.path == path)
-                        && document.qualified_name.to_lowercase() == folded
-                })
-                .collect();
-        }
-        roots.sort_by_key(|document| (&document.path, document.span_start, document.node_id));
+        let roots = scoped.matching_symbols(&self.stored, symbol, path);
         let root = match roots.as_slice() {
             [] => {
                 return Err(RuntimeError::new(
@@ -310,47 +272,18 @@ impl super::Runtime {
             "span_end": root.span_end,
             "node_id": root.node_id,
         });
-        let Some(fingerprint) = &root.semantic_fingerprint else {
-            return Ok(json!({
-                "root": root_json,
-                "fingerprint": Value::Null,
-                "matches": [],
-                "matched": 0,
-                "truncated": false,
-            }));
-        };
-        let matches: Vec<_> = self
-            .stored
-            .documents
-            .iter()
-            .filter(|document| {
-                document.provenance == "SYNTAX"
-                    && document.node_id != root.node_id
-                    && scoped.contains_path(&document.path)
-                    && document.semantic_fingerprint.as_ref() == Some(fingerprint)
-            })
-            .collect();
-        let matched = matches.len();
-        let truncated = matched > limit;
-        let rows = matches
-            .into_iter()
-            .take(limit)
-            .map(|document| {
-                json!({
-                    "qualified_name": document.qualified_name,
-                    "path": document.path,
-                    "span_start": document.span_start,
-                    "span_end": document.span_end,
-                    "node_id": document.node_id,
-                })
-            })
-            .collect::<Vec<_>>();
+        let lookup = self.background_similarity_lookup(root, scope, limit);
         Ok(json!({
             "root": root_json,
-            "fingerprint": fingerprint,
-            "matches": rows,
-            "matched": matched,
-            "truncated": truncated,
+            "fingerprint": root.semantic_fingerprint,
+            "matches": lookup["matches"],
+            "matched": lookup["matched"],
+            "truncated": lookup["truncated"],
+            "similar_matches":lookup["similar_matches"],
+            "similar_matched":lookup["similar_matched"],
+            "similar_truncated":lookup["similar_truncated"],
+            "similarity_partial":lookup["similarity_partial"],
+            "similarity_index":lookup["similarity_index"]
         }))
     }
 
@@ -374,32 +307,8 @@ impl super::Runtime {
             ));
         }
         let mut scoped = ScopedQuery::new(&self.stored, scope, path_in_scope);
-        let mut roots: Vec<_> = self
-            .stored
-            .documents
-            .iter()
-            .filter(|document| {
-                document.provenance == "SYNTAX"
-                    && scoped.contains_path(&document.path)
-                    && path.is_none_or(|path| document.path == path)
-            })
-            .filter(|document| document.qualified_name == symbol)
-            .collect();
-        if roots.is_empty() {
-            let folded = symbol.to_lowercase();
-            roots = self
-                .stored
-                .documents
-                .iter()
-                .filter(|document| {
-                    document.provenance == "SYNTAX"
-                        && scoped.contains_path(&document.path)
-                        && path.is_none_or(|path| document.path == path)
-                        && document.qualified_name.to_lowercase() == folded
-                })
-                .collect();
-        }
-        roots.sort_by_key(|document| (&document.path, document.span_start, document.node_id));
+        let roots = scoped.matching_symbols(&self.stored, symbol, path);
+        let scoped_documents = scoped.syntax_documents(&self.stored);
         let root = match roots.as_slice() {
             [] => {
                 return Err(RuntimeError::new(
@@ -420,53 +329,49 @@ impl super::Runtime {
                 ));
             }
         };
-        let by_id: BTreeMap<_, _> = self
-            .stored
-            .documents
+        let by_id: BTreeMap<_, _> = scoped_documents
             .iter()
-            .filter(|document| {
-                document.provenance == "SYNTAX" && scoped.contains_path(&document.path)
-            })
+            .copied()
             .map(|document| (document.node_id, document))
             .collect();
-        let mut adjacency = BTreeMap::<u64, Vec<(u64, &'static str)>>::new();
-        for arc in scoped.definitive_arcs(&self.stored) {
-            debug_assert!(by_id.contains_key(&arc.source) && by_id.contains_key(&arc.target));
-            if matches!(direction, "callees" | "both") {
-                adjacency
-                    .entry(arc.source)
-                    .or_default()
-                    .push((arc.target, "callees"));
-            }
-            if matches!(direction, "callers" | "both") {
-                adjacency
-                    .entry(arc.target)
-                    .or_default()
-                    .push((arc.source, "callers"));
-            }
-        }
-        for neighbors in adjacency.values_mut() {
-            neighbors.sort_by_key(|(node_id, edge_direction)| {
-                let document = by_id[node_id];
-                (
-                    &document.path,
-                    document.span_start,
-                    *edge_direction,
-                    *node_id,
-                )
-            });
-            neighbors.dedup();
-        }
         let mut visited = BTreeSet::from([root.node_id]);
         let mut frontier = vec![root.node_id];
         let mut traced = Vec::new();
         for hop in 1..=depth {
             let mut next = Vec::new();
             for source in &frontier {
-                for (target, edge_direction) in adjacency.get(source).into_iter().flatten() {
-                    if visited.insert(*target) {
-                        traced.push((*target, hop, *edge_direction));
-                        next.push(*target);
+                let mut neighbors = Vec::<(u64, &'static str)>::new();
+                if matches!(direction, "callees" | "both") {
+                    neighbors.extend(
+                        scoped
+                            .outgoing_arcs(&self.stored, *source)
+                            .into_iter()
+                            .map(|arc| (arc.target, "callees")),
+                    );
+                }
+                if matches!(direction, "callers" | "both") {
+                    neighbors.extend(
+                        scoped
+                            .incoming_arcs(&self.stored, *source)
+                            .into_iter()
+                            .map(|arc| (arc.source, "callers")),
+                    );
+                }
+                neighbors.sort_by_key(|(node_id, edge_direction)| {
+                    let document = by_id[node_id];
+                    (
+                        &document.path,
+                        document.span_start,
+                        *edge_direction,
+                        *node_id,
+                    )
+                });
+                neighbors.dedup();
+                for (target, edge_direction) in neighbors {
+                    debug_assert!(by_id.contains_key(&target));
+                    if visited.insert(target) {
+                        traced.push((target, hop, edge_direction));
+                        next.push(target);
                     }
                 }
             }
@@ -537,32 +442,8 @@ impl super::Runtime {
             ));
         }
         let mut scoped = ScopedQuery::new(&self.stored, scope, path_in_scope);
-        let mut roots: Vec<_> = self
-            .stored
-            .documents
-            .iter()
-            .filter(|document| {
-                document.provenance == "SYNTAX"
-                    && scoped.contains_path(&document.path)
-                    && path.is_none_or(|path| document.path == path)
-                    && document.qualified_name == symbol
-            })
-            .collect();
-        if roots.is_empty() {
-            let folded = symbol.to_lowercase();
-            roots = self
-                .stored
-                .documents
-                .iter()
-                .filter(|document| {
-                    document.provenance == "SYNTAX"
-                        && scoped.contains_path(&document.path)
-                        && path.is_none_or(|path| document.path == path)
-                        && document.qualified_name.to_lowercase() == folded
-                })
-                .collect();
-        }
-        roots.sort_by_key(|document| (&document.path, document.span_start, document.node_id));
+        let roots = scoped.matching_symbols(&self.stored, symbol, path);
+        let scoped_documents = scoped.syntax_documents(&self.stored);
         let root = match roots.as_slice() {
             [] => {
                 return Err(RuntimeError::new(
@@ -583,25 +464,11 @@ impl super::Runtime {
                 ));
             }
         };
-        let by_id: BTreeMap<_, _> = self
-            .stored
-            .documents
+        let by_id: BTreeMap<_, _> = scoped_documents
             .iter()
-            .filter(|document| {
-                document.provenance == "SYNTAX" && scoped.contains_path(&document.path)
-            })
+            .copied()
             .map(|document| (document.node_id, document))
             .collect();
-        let mut incoming = BTreeMap::<u64, Vec<&StoredArc>>::new();
-        for arc in scoped.definitive_arcs(&self.stored) {
-            incoming.entry(arc.target).or_default().push(arc);
-        }
-        for arcs in incoming.values_mut() {
-            arcs.sort_by_key(|arc| {
-                let evidence = arc.evidence.as_ref().expect("definitive edge evidence");
-                (&evidence.path, evidence.span.start, arc.kind, arc.source)
-            });
-        }
         let mut visited = BTreeSet::from([root.node_id]);
         let mut frontier = vec![root.node_id];
         let mut usages = Vec::new();
@@ -611,7 +478,12 @@ impl super::Runtime {
                 let Some(target) = by_id.get(target_id).copied() else {
                     continue;
                 };
-                for arc in incoming.get(target_id).into_iter().flatten() {
+                let mut incoming = scoped.incoming_arcs(&self.stored, *target_id);
+                incoming.sort_by_key(|arc| {
+                    let evidence = arc.evidence.as_ref().expect("definitive edge evidence");
+                    (&evidence.path, evidence.span.start, arc.kind, arc.source)
+                });
+                for arc in incoming {
                     if visited.contains(&arc.source) {
                         continue;
                     }
@@ -692,30 +564,7 @@ impl super::Runtime {
                 "symbol must be non-empty and path, when supplied, must be non-empty",
             ));
         }
-        let mut matches: Vec<_> = self
-            .stored
-            .documents
-            .iter()
-            .filter(|document| {
-                document.provenance == "SYNTAX"
-                    && path.is_none_or(|path| document.path == path)
-                    && document.qualified_name == symbol
-            })
-            .collect();
-        if matches.is_empty() {
-            let folded = symbol.to_lowercase();
-            matches = self
-                .stored
-                .documents
-                .iter()
-                .filter(|document| {
-                    document.provenance == "SYNTAX"
-                        && path.is_none_or(|path| document.path == path)
-                        && document.qualified_name.to_lowercase() == folded
-                })
-                .collect();
-        }
-        matches.sort_by_key(|document| (&document.path, document.span_start, document.node_id));
+        let matches = matching_symbol_documents(&self.stored, symbol, path);
         let document = match matches.as_slice() {
             [] => {
                 return Err(RuntimeError::new(
@@ -770,30 +619,7 @@ impl super::Runtime {
         let depth = depth.min(4);
 
         // 1. Get definition
-        let mut matches: Vec<_> = self
-            .stored
-            .documents
-            .iter()
-            .filter(|document| {
-                document.provenance == "SYNTAX"
-                    && path.is_none_or(|path| document.path == path)
-                    && document.qualified_name == symbol
-            })
-            .collect();
-        if matches.is_empty() {
-            let folded = symbol.to_lowercase();
-            matches = self
-                .stored
-                .documents
-                .iter()
-                .filter(|document| {
-                    document.provenance == "SYNTAX"
-                        && path.is_none_or(|path| document.path == path)
-                        && document.qualified_name.to_lowercase() == folded
-                })
-                .collect();
-        }
-        matches.sort_by_key(|document| (&document.path, document.span_start, document.node_id));
+        let matches = matching_symbol_documents(&self.stored, symbol, path);
         let document = match matches.as_slice() {
             [] => {
                 return Err(RuntimeError::new(
@@ -825,32 +651,26 @@ impl super::Runtime {
 
         // 2. Get callers (incoming calls)
         let mut scoped = ScopedQuery::new(&self.stored, scope, path_in_scope);
-        let by_id: BTreeMap<_, _> = self
-            .stored
-            .documents
-            .iter()
-            .filter(|document| {
-                document.provenance == "SYNTAX" && scoped.contains_path(&document.path)
-            })
+        let by_id: BTreeMap<_, _> = scoped
+            .syntax_documents(&self.stored)
+            .into_iter()
             .map(|document| (document.node_id, document))
             .collect();
 
         let mut callers = Vec::new();
         let mut callees = Vec::new();
 
-        for arc in scoped.definitive_arcs(&self.stored) {
-            if arc.target == document.node_id
-                && let Some(source) = by_id.get(&arc.source)
-            {
+        for arc in scoped.incoming_arcs(&self.stored, document.node_id) {
+            if let Some(source) = by_id.get(&arc.source) {
                 callers.push(json!({
                     "symbol": source.qualified_name,
                     "path": source.path,
                     "span": {"start": source.span_start, "end": source.span_end},
                 }));
             }
-            if arc.source == document.node_id
-                && let Some(target) = by_id.get(&arc.target)
-            {
+        }
+        for arc in scoped.outgoing_arcs(&self.stored, document.node_id) {
+            if let Some(target) = by_id.get(&arc.target) {
                 callees.push(json!({
                     "symbol": target.qualified_name,
                     "path": target.path,
@@ -863,11 +683,6 @@ impl super::Runtime {
         callees.truncate(limit);
 
         // 3. Get usages (deeper trace)
-        let mut incoming = BTreeMap::<u64, Vec<&StoredArc>>::new();
-        for arc in scoped.definitive_arcs(&self.stored) {
-            incoming.entry(arc.target).or_default().push(arc);
-        }
-
         let mut visited = BTreeSet::from([document.node_id]);
         let mut frontier = vec![document.node_id];
         let mut usages = Vec::new();
@@ -875,7 +690,7 @@ impl super::Runtime {
         for hop in 1..=depth {
             let mut next = BTreeSet::new();
             for target_id in &frontier {
-                for arc in incoming.get(target_id).into_iter().flatten() {
+                for arc in scoped.incoming_arcs(&self.stored, *target_id) {
                     if visited.contains(&arc.source) {
                         continue;
                     }

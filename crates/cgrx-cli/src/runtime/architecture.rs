@@ -6,10 +6,12 @@ use cgrx_core::{
 use serde_json::{Value, json};
 
 use super::arc_resolution::go_module_for;
+use super::scan_helpers::ScopedQuery;
 use super::{
-    Runtime, RuntimeError, coverage_for_scope, coverage_gap_count, coverage_gap_page,
-    definitive_stored_arcs, path_in_scope, ts_config_modules,
+    Runtime, RuntimeError, coverage_gap_count, coverage_gap_page, path_in_scope, ts_config_modules,
 };
+
+const ARCHITECTURE_CACHE_ENTRY_LIMIT: usize = 8;
 
 #[derive(Default)]
 struct PackageStats {
@@ -51,21 +53,28 @@ impl Runtime {
         scope: &Scope,
         package_depth: usize,
         limit: usize,
+        offset: usize,
     ) -> Result<Value, RuntimeError> {
-        if !(1..=4).contains(&package_depth) || !(1..=100).contains(&limit) {
+        if !(1..=4).contains(&package_depth) || !(1..=500).contains(&limit) || offset > 1_000_000 {
             return Err(RuntimeError::new(
                 "cgrx.invalid_arguments",
-                "package_depth must be 1..4; limit must be 1..100",
+                "package_depth must be 1..4; limit must be 1..500; offset must be 0..1000000",
             ));
         }
 
-        let documents = self
-            .stored
-            .documents
+        let cache_key = architecture_cache_key(scope, package_depth, limit, offset);
+        if let Ok(cache) = self.architecture_cache.read()
+            && let Some(cached) = cache.get(&cache_key)
+        {
+            return Ok(cached.clone());
+        }
+
+        let mut scoped = ScopedQuery::new(&self.stored, scope, path_in_scope);
+        let scoped_documents = scoped.documents(&self.stored);
+        let documents = scoped_documents
             .iter()
-            .filter(|document| {
-                document.provenance == "SYNTAX" && path_in_scope(&document.path, scope)
-            })
+            .copied()
+            .filter(|document| document.provenance == "SYNTAX")
             .map(|document| (document.node_id, document))
             .collect::<BTreeMap<_, _>>();
         let mut package_by_node = BTreeMap::new();
@@ -89,7 +98,7 @@ impl Runtime {
             stats.symbols += 1;
         }
 
-        let arcs = definitive_stored_arcs(&self.stored, scope);
+        let arcs = scoped.definitive_arcs(&self.stored);
         let mut incoming = BTreeMap::<u64, usize>::new();
         let mut boundaries = BTreeMap::<(String, String), BoundaryStats>::new();
         let mut package_adjacency = BTreeMap::<String, BTreeSet<String>>::new();
@@ -174,9 +183,11 @@ impl Runtime {
         let mut external_imports = 0usize;
         let mut out_of_scope_imports = 0usize;
         let mut unresolved_imports = Vec::new();
-        for import in self.stored.documents.iter().filter(|document| {
-            document.provenance == "IMPORTS" && path_in_scope(&document.path, scope)
-        }) {
+        for import in scoped_documents
+            .iter()
+            .copied()
+            .filter(|document| document.provenance == "IMPORTS")
+        {
             for specifier in import_specifiers(&import.path, &import.text) {
                 let resolution = resolve_import(
                     &import.path,
@@ -252,9 +263,11 @@ impl Runtime {
         let mut external_references = 0usize;
         let mut out_of_scope_references = 0usize;
         let mut unresolved_references = Vec::new();
-        for reference in self.stored.documents.iter().filter(|document| {
-            document.provenance == "REFERENCES" && path_in_scope(&document.path, scope)
-        }) {
+        for reference in scoped_documents
+            .iter()
+            .copied()
+            .filter(|document| document.provenance == "REFERENCES")
+        {
             let resolution = resolve_import(
                 &reference.path,
                 &reference.qualified_name,
@@ -325,15 +338,11 @@ impl Runtime {
         }
 
         let total_packages = package_stats.len();
-        let visible_package_names = package_stats
-            .keys()
-            .take(limit)
-            .cloned()
-            .collect::<BTreeSet<_>>();
-        let packages = visible_package_names
+        let packages = package_stats
             .iter()
-            .map(|name| {
-                let stats = package_stats.get(name).expect("visible package");
+            .skip(offset)
+            .take(limit)
+            .map(|(name, stats)| {
                 json!({
                     "name":name,
                     "files":stats.files.len(),
@@ -358,9 +367,7 @@ impl Runtime {
             .collect::<Vec<_>>();
         let boundary_values = boundaries
             .iter()
-            .filter(|((source, target), _)| {
-                visible_package_names.contains(source) && visible_package_names.contains(target)
-            })
+            .skip(offset)
             .take(limit)
             .map(|((source, target), boundary)| {
                 json!({
@@ -389,7 +396,8 @@ impl Runtime {
         });
         let total_hotspots = hotspot_rows.len();
         let hotspots = hotspot_rows
-            .into_iter()
+            .iter()
+            .skip(offset)
             .take(limit)
             .map(|(document, fan_in)| {
                 json!({
@@ -402,19 +410,23 @@ impl Runtime {
             .collect::<Vec<_>>();
 
         let package_names = package_stats.keys().cloned().collect::<BTreeSet<_>>();
-        let mut cycles = strongly_connected_components(&package_names, &package_adjacency)
+        let mut all_cycles = strongly_connected_components(&package_names, &package_adjacency)
             .into_iter()
             .filter(|component| component.len() > 1)
             .map(|packages| json!({"packages":packages,"kind":"PACKAGE_DEPENDENCY_CYCLE"}))
             .collect::<Vec<_>>();
-        cycles.sort_by_key(|cycle| cycle["packages"].to_string());
-        let total_cycles = cycles.len();
-        cycles.truncate(limit);
+        all_cycles.sort_by_key(|cycle| cycle["packages"].to_string());
+        let total_cycles = all_cycles.len();
+        let cycles = all_cycles
+            .into_iter()
+            .skip(offset)
+            .take(limit)
+            .collect::<Vec<_>>();
 
         let community_detection = detect_semantic_communities(&package_names, &semantic_adjacency);
         let community_modularity = community_detection.modularity;
         let community_iterations = community_detection.iterations;
-        let mut communities = community_detection
+        let mut all_communities = community_detection
             .communities
             .into_iter()
             .map(|community| {
@@ -427,7 +439,7 @@ impl Runtime {
                 })
             })
             .collect::<Vec<_>>();
-        communities.sort_by(|left, right| {
+        all_communities.sort_by(|left, right| {
             let left_items = left["packages"].as_array().expect("packages");
             let right_items = right["packages"].as_array().expect("packages");
             right_items.len().cmp(&left_items.len()).then_with(|| {
@@ -436,15 +448,19 @@ impl Runtime {
                     .cmp(&right["packages"].to_string())
             })
         });
-        let total_communities = communities.len();
-        communities.truncate(limit);
+        let total_communities = all_communities.len();
+        let communities = all_communities
+            .into_iter()
+            .skip(offset)
+            .take(limit)
+            .collect::<Vec<_>>();
 
         let symbol_nodes = documents.keys().copied().collect::<BTreeSet<_>>();
         let symbol_detection = detect_semantic_communities(&symbol_nodes, &symbol_adjacency);
         let symbol_modularity = symbol_detection.modularity;
         let symbol_iterations = symbol_detection.iterations;
         let mut clustered_symbol_count = 0usize;
-        let mut symbol_communities = symbol_detection
+        let mut all_symbol_communities = symbol_detection
             .communities
             .into_iter()
             .filter(|community| community.internal_weight > 0)
@@ -525,26 +541,43 @@ impl Runtime {
                 })
             })
             .collect::<Vec<_>>();
-        symbol_communities.sort_by(|left, right| {
+        all_symbol_communities.sort_by(|left, right| {
             right["members"]
                 .as_u64()
                 .cmp(&left["members"].as_u64())
                 .then_with(|| left["label"].as_str().cmp(&right["label"].as_str()))
         });
-        let total_symbol_communities = symbol_communities.len();
+        let total_symbol_communities = all_symbol_communities.len();
         let unclustered_symbols = documents.len().saturating_sub(clustered_symbol_count);
-        symbol_communities.truncate(limit);
+        let symbol_communities = all_symbol_communities
+            .into_iter()
+            .skip(offset)
+            .take(limit)
+            .collect::<Vec<_>>();
 
-        let coverage = coverage_for_scope(&self.stored.coverage, scope);
+        let coverage = scoped.coverage(&self.stored.coverage);
         let coverage_gap_count = coverage_gap_count(&coverage);
         let unresolved_import_count = unresolved_imports.len();
         let unresolved_reference_count = unresolved_references.len();
-        let packages_truncated = total_packages > limit;
-        let boundaries_truncated = total_boundaries > boundary_values.len();
-        let hotspots_truncated = total_hotspots > limit;
-        let cycles_truncated = total_cycles > limit;
-        let communities_truncated = total_communities > limit;
-        let symbol_communities_truncated = total_symbol_communities > limit;
+        let page_end = offset.saturating_add(limit);
+        let packages_has_more = total_packages > page_end;
+        let boundaries_has_more = total_boundaries > page_end;
+        let hotspots_has_more = total_hotspots > page_end;
+        let cycles_has_more = total_cycles > page_end;
+        let communities_has_more = total_communities > page_end;
+        let symbol_communities_has_more = total_symbol_communities > page_end;
+        let has_more = packages_has_more
+            || boundaries_has_more
+            || hotspots_has_more
+            || cycles_has_more
+            || communities_has_more
+            || symbol_communities_has_more;
+        let packages_truncated = offset > 0 || packages_has_more;
+        let boundaries_truncated = offset > 0 || boundaries_has_more;
+        let hotspots_truncated = offset > 0 || hotspots_has_more;
+        let cycles_truncated = offset > 0 || cycles_has_more;
+        let communities_truncated = offset > 0 || communities_has_more;
+        let symbol_communities_truncated = offset > 0 || symbol_communities_has_more;
         let truncated = packages_truncated
             || boundaries_truncated
             || hotspots_truncated
@@ -573,13 +606,33 @@ impl Runtime {
                 .into_iter()
                 .take(20usize.saturating_sub(gaps.len())),
         );
+        let next_offset = has_more.then_some(page_end);
         if truncated {
-            gaps.push(json!({"code":"ARCHITECTURE_RESULT_LIMIT"}));
+            gaps.push(json!({
+                "code":"ARCHITECTURE_RESULT_LIMIT",
+                "offset":offset,
+                "limit":limit,
+                "next_offset":next_offset
+            }));
         }
 
-        Ok(json!({
+        let result = json!({
             "snapshot":self.snapshot(),
             "package_depth":package_depth,
+            "page":{
+                "offset":offset,
+                "limit":limit,
+                "next_offset":next_offset,
+                "has_more":has_more,
+                "sections":{
+                    "packages":{"returned":packages.len(),"total":total_packages,"has_more":packages_has_more},
+                    "boundaries":{"returned":boundary_values.len(),"total":total_boundaries,"has_more":boundaries_has_more},
+                    "hotspots":{"returned":hotspots.len(),"total":total_hotspots,"has_more":hotspots_has_more},
+                    "cycles":{"returned":cycles.len(),"total":total_cycles,"has_more":cycles_has_more},
+                    "communities":{"returned":communities.len(),"total":total_communities,"has_more":communities_has_more},
+                    "symbol_communities":{"returned":symbol_communities.len(),"total":total_symbol_communities,"has_more":symbol_communities_has_more}
+                }
+            },
             "relation_kinds":["CALLS","IMPLEMENTS","IMPORTS","REFERENCES"],
             "packages":packages,
             "boundaries":boundary_values,
@@ -634,8 +687,25 @@ impl Runtime {
                 "Symbol communities use proven CALLS and IMPLEMENTS only; unconnected or unresolved symbols are counted as unclustered instead of guessed into a cluster.",
                 "Missing or unresolved relationships remain coverage gaps, not absent dependencies."
             ]
-        }))
+        });
+        if let Ok(mut cache) = self.architecture_cache.write() {
+            if cache.len() >= ARCHITECTURE_CACHE_ENTRY_LIMIT && !cache.contains_key(&cache_key) {
+                cache.clear();
+            }
+            cache.insert(cache_key, result.clone());
+        }
+        Ok(result)
     }
+}
+
+fn architecture_cache_key(
+    scope: &Scope,
+    package_depth: usize,
+    limit: usize,
+    offset: usize,
+) -> String {
+    serde_json::to_string(&(scope, package_depth, limit, offset))
+        .expect("architecture cache key serializes")
 }
 
 fn architecture_plan(

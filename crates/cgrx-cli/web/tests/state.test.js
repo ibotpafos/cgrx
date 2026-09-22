@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { architectureAgentHandoff, createState, projectArchitecture, projectArchitectureFuture, projectChangeMissions, projectGraph, reduce, serializeAgentPlan, serializeChangeMissionHandoff, summarizeBoundedResult } from "../state.js";
+import { architectureAgentHandoff, createState, projectArchitecture, projectArchitectureFuture, projectChangeMissions, projectGraph, projectRepositoryMap, reduce, serializeAgentPlan, serializeChangeMissionHandoff, summarizeBoundedResult } from "../state.js";
 
 const snapshot = {
   repo_revision: "a".repeat(40),
@@ -20,10 +20,34 @@ test("state keeps selection and camera for the same graph identity", () => {
 });
 
 test("state exposes code and Git history modes", () => {
-  for (const mode of ["current", "architecture", "changes", "preview", "compare", "history"]) {
+  assert.equal(createState(snapshot).mode, "project");
+  for (const mode of ["project", "current", "architecture", "changes", "preview", "compare", "history"]) {
     assert.equal(reduce(createState(snapshot), { type: "mode", mode }).mode, mode);
   }
   assert.throws(() => reduce(createState(snapshot), { type: "mode", mode: "unknown" }));
+});
+
+test("project repository map groups packages and exposes symbol representatives", () => {
+  const graph = projectRepositoryMap({
+    snapshot,
+    package_depth: 2,
+    packages: [
+      { name: "clients/web", files: 20, symbols: 40, fan_in: 4, fan_out: 9 },
+      { name: "services/api", files: 12, symbols: 31, fan_in: 8, fan_out: 3 }
+    ],
+    boundaries: [{ source: "clients/web", target: "services/api", edges: 7, relations: ["CALLS", "IMPORTS"], confidence: "PROVEN" }],
+    communities: [{ packages: ["clients/web", "services/api"], cohesion: .8, internal_weight: 14, cut_weight: 2 }],
+    symbol_communities: [{ top_nodes: [{ node_id: 9, symbol: "connect", path: "clients/web/connect.ts", weighted_degree: 12 }] }],
+    cycles: [{ packages: ["clients/web", "services/api"] }],
+    totals: { packages: 2, boundaries: 1 },
+    partial: false
+  });
+  assert.equal(graph.nodes.length, 2);
+  assert.equal(graph.nodes[0].community, "community:0");
+  assert.equal(graph.nodes[0].representatives[0].symbol, "connect");
+  assert.equal(graph.nodes[0].cycle, true);
+  assert.equal(graph.edges[0].weight, 7);
+  assert.equal(graph.communities[0].packages.length, 2);
 });
 
 test("new snapshot invalidates strategies and older graph responses", () => {

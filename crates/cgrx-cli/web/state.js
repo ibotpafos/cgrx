@@ -1,9 +1,9 @@
-const MODES = new Set(["current", "architecture", "changes", "preview", "compare", "history"]);
+const MODES = new Set(["project", "current", "architecture", "changes", "preview", "compare", "history"]);
 
 export function createState(snapshot = null) {
   return {
     snapshot,
-    mode: "current",
+    mode: "project",
     selectedNodeId: null,
     selectedStrategyId: null,
     camera: { x: 0, y: 0, scale: 1 },
@@ -221,6 +221,83 @@ export function projectArchitecture(value) {
     containers: [],
     partial: value.partial,
     coverage_gap_count: value.coverage_gap_count
+  };
+}
+
+export function projectRepositoryMap(value) {
+  const packages = value.packages || [];
+  const packageNames = packages.map((item) => item.name).sort((left, right) => right.length - left.length);
+  const packageToCommunity = new Map();
+  const communities = (value.communities || []).map((community, index) => {
+    const id = `community:${index}`;
+    for (const packageName of community.packages || []) packageToCommunity.set(packageName, id);
+    return {
+      id,
+      label: (community.packages || [])[0] || `cluster ${index + 1}`,
+      packages: community.packages || [],
+      cohesion: Number(community.cohesion || 0),
+      internal_weight: Number(community.internal_weight || 0),
+      cut_weight: Number(community.cut_weight || 0)
+    };
+  });
+  const unclustered = packages.filter((item) => !packageToCommunity.has(item.name)).map((item) => item.name);
+  if (unclustered.length) {
+    communities.push({
+      id: "community:unclustered",
+      label: "unclustered",
+      packages: unclustered,
+      cohesion: 0,
+      internal_weight: 0,
+      cut_weight: 0
+    });
+  }
+
+  const representatives = new Map(packages.map((item) => [item.name, []]));
+  const packageForPath = (path) => packageNames.find((name) => path === name || path.startsWith(`${name}/`));
+  for (const community of value.symbol_communities || []) {
+    for (const node of community.top_nodes || []) {
+      const packageName = packageForPath(node.path || "");
+      if (!packageName) continue;
+      const rows = representatives.get(packageName);
+      if (!rows.some((candidate) => candidate.node_id === node.node_id) && rows.length < 6) rows.push(node);
+    }
+  }
+
+  const cyclic = new Set((value.cycles || []).flatMap((cycle) => cycle.packages || []));
+  const nodes = packages.map((item) => ({
+    node_id: `package:${item.name}`,
+    symbol: item.name,
+    path: item.name,
+    kind: "project-package",
+    community: packageToCommunity.get(item.name) || "community:unclustered",
+    files: Number(item.files || 0),
+    symbols: Number(item.symbols || 0),
+    fan_in: Number(item.fan_in || 0),
+    fan_out: Number(item.fan_out || 0),
+    degree: Number(item.fan_in || 0) + Number(item.fan_out || 0),
+    cycle: cyclic.has(item.name),
+    representatives: representatives.get(item.name) || [],
+    status: "current"
+  }));
+  const edges = (value.boundaries || []).map((item) => ({
+    source: `package:${item.source}`,
+    target: `package:${item.target}`,
+    relation: (item.relations || []).join("+") || "DEPENDENCY",
+    confidence: item.confidence || "PROVEN",
+    weight: Number(item.edges || 1),
+    status: "current",
+    evidence: item.evidence?.[0]
+  }));
+  return {
+    snapshot: value.snapshot,
+    root: { symbol: "Project map", path: "." },
+    nodes,
+    edges,
+    communities,
+    totals: value.totals || {},
+    partial: Boolean(value.partial),
+    coverage_gap_count: Number(value.coverage_gap_count || 0),
+    package_depth: value.package_depth
   };
 }
 

@@ -123,13 +123,21 @@ server binds only to `127.0.0.1`, gives the browser a random process-local
 capability, accepts only GET and HEAD, and never sends graph or source data to
 an external service.
 
-The default graph is a bounded neighborhood arranged as callers → selected
-entry point → callees, with candidate tests below. Current proven edges, known
-coverage gaps, hypothetical refactor edges, conditional removals and not-run
-tests have separate colors, line patterns and text marks. Search and the
-evidence inspector remain available without pointer-only interaction. Dragging
-a node pins it, arrow keys pan the canvas, and Reset restores the deterministic
-layout.
+The default `Project map` shows the whole repository at package granularity as
+a Three.js/WebGL star field. Packages are grouped into weighted dependency
+communities, proven package boundaries become weighted links, cycle candidates
+are marked, and high-degree packages receive labels. Hovering a package dims the
+rest of the galaxy and exposes its immediate neighborhood; selecting it focuses
+the camera and fills the inspector. Double-click a package to drill into one of
+its representative symbols. Left-drag orbits, right-drag pans, the wheel zooms
+toward the pointer, and Reset fits the repository again. Labels progressively
+appear as the camera moves closer.
+
+The focused graph keeps candidate tests below the selected symbol. Current
+proven edges, known coverage gaps, hypothetical refactor edges, conditional
+removals and not-run tests have separate colors, line patterns and text marks.
+Search and the evidence inspector remain available without pointer-only
+interaction.
 
 The Architecture futures rail turns package cycles and high-fan-in hotspots
 from `get_architecture` into three selectable graph projections. Each strategy
@@ -250,9 +258,10 @@ is not required by the released executable.
 | status | Snapshot, graph counts, freshness, coverage |
 | search_graph | Bounded symbol/body discovery with optional language filter |
 | get_outline | File symbols and definition spans without bodies |
-| get_architecture | Packages, proven call, implementation, local-import and static-reference boundaries, hotspots, cycles and weighted semantic communities |
+| get_architecture | Paginated packages, proven call, implementation, local-import and static-reference boundaries, hotspots, cycles and weighted semantic communities |
 | trace_path | Caller/callee traversal |
 | find_usages | Proven direct or transitive incoming call/implementation sites |
+| find_similar | Exact duplicate bodies plus scored structural and shared-callee similarity |
 | get_code_snippet | Exact source definition |
 | check_index_coverage | Recorded gaps for paths/scopes |
 | orient | Budgeted task context |
@@ -277,7 +286,10 @@ type or qualified symbol usage; calls and unqualified dynamic names are omitted.
 External targets stay outside the graph, while ambiguous local targets become
 explicit coverage gaps. Every cross-package boundary carries exact source
 evidence. Results are bound to the current snapshot and report truncation,
-resolution counts and coverage gaps. General traversal remains limited to
+resolution counts and coverage gaps. `limit` bounds every returned architecture
+collection and `offset` resumes all collections deterministically;
+`page.next_offset` is returned while any collection has more rows. Callers must
+keep the snapshot identity stable while walking pages. General traversal remains limited to
 `CALLS` and `IMPLEMENTS`. Communities optimize deterministic weighted modularity
 over proven package relationships (`CALLS`/`IMPLEMENTS` 4, `IMPORTS` 2,
 `REFERENCES` 1). Every community reports internal and cut weight plus cohesion;
@@ -293,12 +305,32 @@ resolver class. `depth` defaults to 1 and is capped at 4; transitive rows includ
 `hop` and the immediate `via` target so every step remains inspectable. It fails
 on ambiguous symbols unless `path` disambiguates them.
 
+`find_similar` keeps exact duplicate bodies in `matches` and reports heuristic
+near-duplicates, similar structure and shared proven functionality separately in
+`similar_matches`. The latter never upgrades a heuristic match into a proven
+duplicate. Indexing and watched refresh maintain a bounded snapshot-local
+similarity projection from normalized body shingles and definitive
+`CALLS`/`IMPLEMENTS` targets; status exposes whether that projection is ready,
+complete or truncated. Initial indexing persists a ready projection. Watched
+source refreshes invalidate the old projection immediately and rebuild the new
+snapshot on a generation-bound background worker; a stale worker cannot publish
+into a newer snapshot. While that worker is building, `find_similar` uses a
+current direct root scan and reports the background state instead of reusing
+stale similarity data.
+
 `suggest_refactors` compares callable bodies within one supported language and
 returns review candidates for extracting a shared helper. Each candidate also
 contains three deterministic strategy paths and a compact structured agent
 handoff. Each response is tied
 to the current revision, working-tree digest and graph generation; the managed
-runtime refreshes changed source before analysis. Existing entry points are
+runtime refreshes changed source before analysis. Default-budget requests reuse
+the precomputed similarity projection instead of rebuilding body fingerprints,
+shingle buckets and candidate pairs on every call. A projection that hit its
+pair cap remains usable as a fast candidate layer and marks the response
+`partial` with `SIMILARITY_PAIR_BUDGET`; callers that need a wider recheck can
+request explicit document/pair budgets and use the bounded direct scan. If the
+projection is still building or its document cap was hit, CGRX falls back to
+the direct scan. Existing entry points are
 preserved, projected edges are marked `hypothetical`, blocked removals retain
 their gaps, and no source or stored graph is changed. Empty or partial results apply only to the requested scope,
 threshold and reported budgets and coverage gaps.
@@ -407,7 +439,18 @@ python3 scripts/eval_relationships.py target/release/cgrx
 python3 scripts/eval_change_missions.py target/release/cgrx
 python3 scripts/eval_refactors.py target/release/cgrx
 python3 scripts/benchmark_architecture.py --help
+./target/release/cgrx bench orient --root . --samples 20 --task Runtime --budget 800 --scope 'crates/**' --json
 ~~~
+
+`bench orient` separates cold runtime open, working-tree refresh, full warm
+orientation, one-time preparation, and prepared repacking. This makes the cost
+of `orient`/`expand` resumability measurable without mixing it with process
+startup. A live MCP session keeps a bounded cache of eight prepared orientations
+per snapshot and reuses them across token budgets. `expand` always reuses the
+preparation that issued its handle. Fresh `orient` calls bypass this cache while
+`CGRX_SEMANTIC_RERANK_SOCKET` is enabled so a local Laya/semantic reranker can
+recover or change scores without restarting CGRX. Any observed source change
+invalidates the preparation cache together with expansion handles.
 
 The relationship evaluator copies the public synthetic fixture into a temporary
 committed repository, queries the real stdio MCP server, and reports exact

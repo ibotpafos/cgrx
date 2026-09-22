@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { edgeStyle, layoutGraph } from "../layout.js";
+import { edgeStyle, layoutGraph, layoutProjectMap } from "../layout.js";
 
 const graph = {
   nodes: [
@@ -55,4 +55,25 @@ test("layoutGraph preserves explicit node pins until reset", () => {
     y: 92,
     pinned: true
   });
+});
+
+test("layoutProjectMap produces a deterministic clustered star field", () => {
+  const project = {
+    communities: [
+      { id: "community:0", label: "clients", packages: ["clients/web", "clients/mobile"] },
+      { id: "community:1", label: "services", packages: ["services/api"] }
+    ],
+    nodes: [
+      { node_id: "package:clients/web", symbol: "clients/web", community: "community:0", degree: 12 },
+      { node_id: "package:clients/mobile", symbol: "clients/mobile", community: "community:0", degree: 4 },
+      { node_id: "package:services/api", symbol: "services/api", community: "community:1", degree: 20 }
+    ]
+  };
+  const first = layoutProjectMap(project, { width: 1200, height: 760 });
+  const second = layoutProjectMap({ ...project, nodes: [...project.nodes].reverse() }, { width: 1200, height: 760 });
+  assert.deepEqual(first, second);
+  assert.equal(first.communities.length, 2);
+  assert.equal(first.nodes.length, 3);
+  assert.ok(first.nodes.every((node) => Number.isFinite(node.x) && Number.isFinite(node.y) && node.radius >= 6));
+  assert.ok(first.nodes.some((node) => node.showLabel));
 });

@@ -250,13 +250,9 @@ impl Runtime {
             ));
         }
         let mut scoped = ScopedQuery::new(&self.stored, scope, path_in_scope);
-        let documents = self
-            .stored
-            .documents
-            .iter()
-            .filter(|document| {
-                document.provenance == "SYNTAX" && scoped.contains_path(&document.path)
-            })
+        let documents = scoped
+            .syntax_documents(&self.stored)
+            .into_iter()
             .map(|document| (document.node_id, document))
             .collect::<BTreeMap<_, _>>();
         let static_edges = scoped
@@ -266,37 +262,50 @@ impl Runtime {
             .collect::<BTreeSet<_>>();
         let snapshot = self.load_current_observations()?;
         let observed_edges = snapshot.map_or_else(Vec::new, |snapshot| snapshot.edges);
+        let mut observed_incoming = BTreeMap::new();
+        let mut observed_outgoing = BTreeMap::new();
+        for edge in &observed_edges {
+            observed_incoming
+                .entry(edge.target)
+                .or_insert_with(Vec::new)
+                .push(edge);
+            observed_outgoing
+                .entry(edge.source)
+                .or_insert_with(Vec::new)
+                .push(edge);
+        }
+        let mut static_incoming = BTreeMap::<u64, Vec<u64>>::new();
+        let mut static_outgoing = BTreeMap::<u64, Vec<u64>>::new();
+        for &(source, target) in &static_edges {
+            static_incoming.entry(target).or_default().push(source);
+            static_outgoing.entry(source).or_default().push(target);
+        }
         let mut rows = Vec::new();
         for (&node_id, document) in &documents {
-            let incoming = observed_edges
-                .iter()
-                .filter(|edge| edge.target == node_id)
-                .collect::<Vec<_>>();
-            let outgoing = observed_edges
-                .iter()
-                .filter(|edge| edge.source == node_id)
-                .collect::<Vec<_>>();
+            let incoming = observed_incoming
+                .get(&node_id)
+                .map(Vec::as_slice)
+                .unwrap_or_default();
+            let outgoing = observed_outgoing
+                .get(&node_id)
+                .map(Vec::as_slice)
+                .unwrap_or_default();
             if incoming.is_empty() && outgoing.is_empty() {
                 continue;
             }
             let observed_count = incoming
                 .iter()
-                .chain(&outgoing)
+                .chain(outgoing.iter())
                 .fold(0_u64, |sum, edge| sum.saturating_add(edge.count));
-            let static_callers = static_edges
-                .iter()
-                .filter(|(_, target)| *target == node_id)
-                .count();
-            let static_callees = static_edges
-                .iter()
-                .filter(|(source, _)| *source == node_id)
-                .count();
+            let static_callers = static_incoming.get(&node_id).map_or(0, Vec::len);
+            let static_callees = static_outgoing.get(&node_id).map_or(0, Vec::len);
             let divergent_edges = incoming
                 .iter()
-                .chain(&outgoing)
+                .chain(outgoing.iter())
                 .filter(|edge| !static_edges.contains(&(edge.source, edge.target)))
                 .count();
-            let runtime_blast_radius = caller_blast_radius(node_id, &static_edges, &documents, 4);
+            let runtime_blast_radius =
+                caller_blast_radius(node_id, &static_incoming, &documents, 4);
             let count_score = observed_count.min(100).saturating_mul(4) as usize;
             let divergence_score = divergent_edges.saturating_mul(120);
             let blast_score = runtime_blast_radius.saturating_mul(30);
@@ -444,13 +453,9 @@ impl Runtime {
             ));
         }
         let mut scoped = ScopedQuery::new(&self.stored, scope, path_in_scope);
-        let by_id: BTreeMap<_, _> = self
-            .stored
-            .documents
-            .iter()
-            .filter(|document| {
-                document.provenance == "SYNTAX" && scoped.contains_path(&document.path)
-            })
+        let by_id: BTreeMap<_, _> = scoped
+            .syntax_documents(&self.stored)
+            .into_iter()
             .map(|document| (document.node_id, document))
             .collect();
         let root = unique_root(by_id.values().copied(), symbol, path)?;
@@ -692,7 +697,7 @@ fn runtime_gap(code: &str, endpoint: &RuntimeEndpoint) -> ObservationGap {
 
 fn caller_blast_radius(
     root: u64,
-    edges: &BTreeSet<(u64, u64)>,
+    incoming: &BTreeMap<u64, Vec<u64>>,
     documents: &BTreeMap<u64, &StoredDocument>,
     depth: u8,
 ) -> usize {
@@ -701,10 +706,7 @@ fn caller_blast_radius(
     for _ in 0..depth {
         let mut next = Vec::new();
         for target in &frontier {
-            for (source, _) in edges
-                .iter()
-                .filter(|(_, edge_target)| edge_target == target)
-            {
+            for source in incoming.get(target).into_iter().flatten() {
                 if documents.contains_key(source) && visited.insert(*source) {
                     next.push(*source);
                 }

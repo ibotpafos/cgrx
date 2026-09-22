@@ -102,7 +102,7 @@ fn architecture_projects_proven_package_boundaries_cycles_and_hotspots() {
     let (_repository, _state, runtime) = architecture_runtime();
 
     let result = runtime
-        .get_architecture(&scope(), 1, 20)
+        .get_architecture(&scope(), 1, 20, 0)
         .expect("architecture projection");
 
     assert_eq!(
@@ -174,29 +174,19 @@ fn architecture_projects_proven_package_boundaries_cycles_and_hotspots() {
     assert_eq!(
         result,
         runtime
-            .get_architecture(&scope(), 1, 20)
+            .get_architecture(&scope(), 1, 20, 0)
             .expect("repeat architecture projection")
     );
 
     let bounded = runtime
-        .get_architecture(&scope(), 1, 1)
+        .get_architecture(&scope(), 1, 1, 0)
         .expect("bounded architecture projection");
-    let visible_packages = bounded["packages"]
-        .as_array()
-        .expect("packages")
-        .iter()
-        .map(|package| package["name"].as_str().expect("package name"))
-        .collect::<std::collections::BTreeSet<_>>();
-    assert!(
-        bounded["boundaries"]
-            .as_array()
-            .expect("boundaries")
-            .iter()
-            .all(
-                |boundary| visible_packages.contains(boundary["source"].as_str().unwrap())
-                    && visible_packages.contains(boundary["target"].as_str().unwrap())
-            )
-    );
+    assert_eq!(bounded["page"]["offset"], 0);
+    assert_eq!(bounded["page"]["limit"], 1);
+    assert_eq!(bounded["page"]["next_offset"], 1);
+    assert_eq!(bounded["page"]["has_more"], true);
+    assert!(bounded["packages"].as_array().unwrap().len() <= 1);
+    assert!(bounded["boundaries"].as_array().unwrap().len() <= 1);
     assert_eq!(bounded["truncated"], true);
     assert_eq!(
         bounded["architecture_plan"]["issues"][0]["strategies"][0]["policy"],
@@ -209,10 +199,53 @@ fn architecture_projects_proven_package_boundaries_cycles_and_hotspots() {
 }
 
 #[test]
+fn architecture_pages_are_deterministic_and_resumable() {
+    let (_repository, _state, runtime) = architecture_runtime();
+    let full = runtime
+        .get_architecture(&scope(), 1, 20, 0)
+        .expect("full architecture projection");
+
+    let mut offset = 0usize;
+    let mut packages = Vec::new();
+    let mut boundaries = Vec::new();
+    loop {
+        let page = runtime
+            .get_architecture(&scope(), 1, 1, offset)
+            .expect("architecture page");
+        assert_eq!(page["page"]["offset"], offset);
+        assert_eq!(page["page"]["limit"], 1);
+        assert!(
+            page["coverage_gaps"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|gap| gap["code"] == "ARCHITECTURE_RESULT_LIMIT")
+        );
+        packages.extend(page["packages"].as_array().unwrap().iter().cloned());
+        boundaries.extend(page["boundaries"].as_array().unwrap().iter().cloned());
+
+        let Some(next) = page["page"]["next_offset"].as_u64() else {
+            assert_eq!(page["page"]["has_more"], false);
+            break;
+        };
+        assert_eq!(next as usize, offset + 1);
+        offset = next as usize;
+    }
+
+    assert_eq!(packages, full["packages"].as_array().unwrap().clone());
+    assert_eq!(boundaries, full["boundaries"].as_array().unwrap().clone());
+    assert_eq!(
+        runtime.get_architecture(&scope(), 1, 1, 0).unwrap(),
+        runtime.get_architecture(&scope(), 1, 1, 0).unwrap(),
+        "the first page must be byte-stable for the same snapshot"
+    );
+}
+
+#[test]
 fn architecture_exposes_bounded_symbol_communities_with_representatives() {
     let (_repository, _state, runtime) = architecture_runtime();
 
-    let result = runtime.get_architecture(&scope(), 1, 20).unwrap();
+    let result = runtime.get_architecture(&scope(), 1, 20, 0).unwrap();
     assert_eq!(
         result["symbol_community_detection"]["method"],
         "DETERMINISTIC_WEIGHTED_MODULARITY"
@@ -245,7 +278,7 @@ fn architecture_exposes_bounded_symbol_communities_with_representatives() {
     }));
     assert_eq!(
         result,
-        runtime.get_architecture(&scope(), 1, 20).unwrap(),
+        runtime.get_architecture(&scope(), 1, 20, 0).unwrap(),
         "symbol communities must be byte-stable for the same snapshot"
     );
 }
@@ -288,7 +321,7 @@ fn architecture_finds_deterministic_weighted_semantic_communities() {
     Runtime::index(repository.path(), state.path()).expect("index repository");
     let runtime = Runtime::open(state.path()).expect("open runtime");
 
-    let result = runtime.get_architecture(&scope(), 1, 20).unwrap();
+    let result = runtime.get_architecture(&scope(), 1, 20, 0).unwrap();
     let communities = result["communities"]
         .as_array()
         .unwrap()
@@ -325,7 +358,7 @@ fn architecture_finds_deterministic_weighted_semantic_communities() {
     );
     assert_eq!(
         result,
-        runtime.get_architecture(&scope(), 1, 20).unwrap(),
+        runtime.get_architecture(&scope(), 1, 20, 0).unwrap(),
         "community detection must be byte-stable for the same snapshot"
     );
 }
@@ -361,7 +394,7 @@ fn architecture_plans_high_fan_in_hotspot_futures_without_a_model() {
     Runtime::index(repository.path(), state.path()).unwrap();
     let runtime = Runtime::open(state.path()).unwrap();
 
-    let result = runtime.get_architecture(&scope(), 1, 20).unwrap();
+    let result = runtime.get_architecture(&scope(), 1, 20, 0).unwrap();
     let issues = result["architecture_plan"]["issues"].as_array().unwrap();
     assert_eq!(issues.len(), 1);
     assert_eq!(issues[0]["kind"], "HIGH_FAN_IN_HOTSPOT");
@@ -441,7 +474,7 @@ fn architecture_proves_repo_local_imports_for_every_supported_language_and_refre
     Runtime::index(repository.path(), state.path()).expect("index repository");
     let mut runtime = Runtime::open(state.path()).expect("open runtime");
 
-    let result = runtime.get_architecture(&scope(), 2, 100).unwrap();
+    let result = runtime.get_architecture(&scope(), 2, 100, 0).unwrap();
     let imports = result["boundaries"]
         .as_array()
         .unwrap()
@@ -502,7 +535,7 @@ fn architecture_proves_repo_local_imports_for_every_supported_language_and_refre
     )
     .unwrap();
     assert!(runtime.refresh(repository.path()).unwrap());
-    let refreshed = runtime.get_architecture(&scope(), 2, 100).unwrap();
+    let refreshed = runtime.get_architecture(&scope(), 2, 100, 0).unwrap();
     assert!(
         refreshed["boundaries"]
             .as_array()
@@ -606,7 +639,7 @@ fn architecture_proves_used_local_references_for_every_supported_language() {
     Runtime::index(repository.path(), state.path()).expect("index repository");
     let mut runtime = Runtime::open(state.path()).expect("open runtime");
 
-    let result = runtime.get_architecture(&scope(), 2, 100).unwrap();
+    let result = runtime.get_architecture(&scope(), 2, 100, 0).unwrap();
     let references = result["boundaries"]
         .as_array()
         .unwrap()
@@ -670,7 +703,7 @@ fn architecture_proves_used_local_references_for_every_supported_language() {
     )
     .unwrap();
     assert!(runtime.refresh(repository.path()).unwrap());
-    let refreshed = runtime.get_architecture(&scope(), 2, 100).unwrap();
+    let refreshed = runtime.get_architecture(&scope(), 2, 100, 0).unwrap();
     assert!(
         refreshed["boundaries"]
             .as_array()
@@ -706,10 +739,16 @@ fn architecture_proves_used_local_references_for_every_supported_language() {
 #[test]
 fn architecture_rejects_unbounded_or_invalid_requests() {
     let (_repository, _state, runtime) = architecture_runtime();
-    for (depth, limit) in [(0, 20), (5, 20), (1, 0), (1, 101)] {
+    for (depth, limit, offset) in [
+        (0, 20, 0),
+        (5, 20, 0),
+        (1, 0, 0),
+        (1, 501, 0),
+        (1, 20, 1_000_001),
+    ] {
         assert_eq!(
             runtime
-                .get_architecture(&scope(), depth, limit)
+                .get_architecture(&scope(), depth, limit, offset)
                 .expect_err("invalid architecture request")
                 .code(),
             "cgrx.invalid_arguments"

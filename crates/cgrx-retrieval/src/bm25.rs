@@ -1,48 +1,72 @@
 use crate::fusion::LaneHit;
-use crate::graph::GraphDocument;
-use std::collections::{BTreeMap, BTreeSet};
+use crate::graph::RetrievalDocument;
+use std::collections::BTreeMap;
 
-pub(crate) fn rank(query: &str, documents: &[GraphDocument]) -> Vec<LaneHit> {
+#[derive(Clone, Debug)]
+struct DocumentStats {
+    length: usize,
+    term_frequency: Vec<usize>,
+}
+
+pub(crate) fn rank<D: RetrievalDocument>(query: &str, documents: &[D]) -> Vec<LaneHit> {
     let query_tokens = tokenize(query);
     if query_tokens.is_empty() || documents.is_empty() {
         return Vec::new();
     }
-    let tokenized: Vec<Vec<String>> = documents
-        .iter()
-        .map(|document| {
-            let mut value = tokenize(&document.qualified_name);
-            value.extend(tokenize(&document.path));
-            value.extend(tokenize(&document.text));
-            value
-        })
-        .collect();
-    let average_length =
-        tokenized.iter().map(Vec::len).sum::<usize>() as f64 / tokenized.len().max(1) as f64;
-    let mut document_frequency = BTreeMap::<&str, usize>::new();
-    for tokens in &tokenized {
-        let unique: BTreeSet<_> = tokens.iter().map(String::as_str).collect();
-        for token in unique {
-            *document_frequency.entry(token).or_default() += 1;
+
+    let mut query_index = BTreeMap::<String, usize>::new();
+    for token in &query_tokens {
+        if !query_index.contains_key(token) {
+            let index = query_index.len();
+            query_index.insert(token.clone(), index);
         }
     }
+    let mut document_frequency = vec![0_usize; query_index.len()];
+    let mut total_length = 0_usize;
+    let mut stats = Vec::with_capacity(documents.len());
+    let mut token_buffer = String::new();
+    for document in documents {
+        let mut length = 0_usize;
+        let mut term_frequency = vec![0_usize; query_index.len()];
+        for value in [document.qualified_name(), document.path(), document.text()] {
+            visit_tokens_with_buffer(value, &mut token_buffer, |token| {
+                length = length.saturating_add(1);
+                if let Some(index) = query_index.get(token) {
+                    term_frequency[*index] = term_frequency[*index].saturating_add(1);
+                }
+            });
+        }
+        for (index, frequency) in term_frequency.iter().enumerate() {
+            if *frequency > 0 {
+                document_frequency[index] = document_frequency[index].saturating_add(1);
+            }
+        }
+        total_length = total_length.saturating_add(length);
+        stats.push(DocumentStats {
+            length,
+            term_frequency,
+        });
+    }
+    let average_length = total_length as f64 / stats.len().max(1) as f64;
     let count = documents.len() as f64;
     let mut hits = Vec::new();
-    for (document, tokens) in documents.iter().zip(&tokenized) {
+    for (document, stats) in documents.iter().zip(&stats) {
         let mut score = 0.0_f64;
         for query_token in &query_tokens {
-            let term_frequency = tokens.iter().filter(|token| *token == query_token).count() as f64;
+            let index = query_index[query_token];
+            let term_frequency = stats.term_frequency[index] as f64;
             if term_frequency == 0.0 {
                 continue;
             }
-            let frequency = *document_frequency.get(query_token.as_str()).unwrap_or(&0) as f64;
+            let frequency = document_frequency[index] as f64;
             let inverse = (1.0 + (count - frequency + 0.5) / (frequency + 0.5)).ln();
             let denominator = term_frequency
-                + 1.2 * (1.0 - 0.75 + 0.75 * tokens.len() as f64 / average_length.max(1.0));
+                + 1.2 * (1.0 - 0.75 + 0.75 * stats.length as f64 / average_length.max(1.0));
             score += inverse * (term_frequency * 2.2 / denominator);
         }
         if score > 0.0 {
             hits.push(LaneHit {
-                node_id: document.node_id,
+                node_id: document.node_id(),
                 raw_score: (score * 1_000_000.0).round() as u64,
             });
         }
@@ -58,27 +82,39 @@ pub(crate) fn rank(query: &str, documents: &[GraphDocument]) -> Vec<LaneHit> {
 
 pub(crate) fn tokenize(value: &str) -> Vec<String> {
     let mut tokens = Vec::new();
+    visit_tokens(value, |token| tokens.push(token.to_owned()));
+    tokens
+}
+
+fn visit_tokens(value: &str, visit: impl FnMut(&str)) {
     let mut current = String::new();
+    visit_tokens_with_buffer(value, &mut current, visit);
+}
+
+fn visit_tokens_with_buffer(value: &str, current: &mut String, mut visit: impl FnMut(&str)) {
+    current.clear();
     let mut previous_lowercase = false;
     for character in value.chars() {
         if character.is_alphanumeric() {
             if character.is_uppercase() && previous_lowercase && !current.is_empty() {
-                tokens.push(current.to_lowercase());
+                current.make_ascii_lowercase();
+                visit(current);
                 current.clear();
             }
             previous_lowercase = character.is_lowercase();
             current.extend(character.to_lowercase());
         } else {
             if !current.is_empty() {
-                tokens.push(std::mem::take(&mut current));
+                visit(current);
+                current.clear();
             }
             previous_lowercase = false;
         }
     }
     if !current.is_empty() {
-        tokens.push(current);
+        visit(current);
     }
-    tokens
+    current.clear();
 }
 
 #[cfg(test)]

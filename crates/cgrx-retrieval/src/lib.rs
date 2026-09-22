@@ -9,5 +9,6 @@ pub use fusion::{
     Uncertainty, path_in_scope,
 };
 pub use graph::{
-    BaseGraph, CandidateProvenance, GraphArc, GraphDocument, GraphEdge, SnapshotView, ViewError,
+    BaseGraph, CandidateProvenance, GraphArc, GraphDocument, GraphDocumentRef, GraphEdge,
+    SnapshotView, ViewError,
 };

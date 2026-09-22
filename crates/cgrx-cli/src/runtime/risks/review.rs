@@ -1,29 +1,27 @@
 //! Bounded test-selection hints. Proven CALLS do not prove test discovery.
-use super::RuntimeConfig;
 use super::*;
+
+pub(super) struct ReviewIndex<'a> {
+    pub(super) pairs: &'a BTreeMap<(u64, u64), &'a EdgeEvidence>,
+    pub(super) by_name: &'a BTreeMap<(&'a str, &'a str), Vec<&'a StoredDocument>>,
+    pub(super) by_id: &'a BTreeMap<u64, Vec<&'a StoredDocument>>,
+    pub(super) coverage_gaps: &'a CoverageGapIndex,
+}
 
 pub(super) fn build(
     stored: &StoredIndex,
     impacts: &[Value],
-    pairs: &BTreeMap<(u64, u64), &EdgeEvidence>,
+    index: ReviewIndex<'_>,
     reader: &mut EvidenceReader<'_>,
     limit: usize,
     gaps: &mut BTreeSet<(String, String)>,
 ) -> Value {
-    let mut by_name = BTreeMap::<(&str, &str), Vec<&StoredDocument>>::new();
-    let mut by_id = BTreeMap::new();
-    for doc in stored
-        .documents
-        .iter()
-        .take(RuntimeConfig::default().max_documents)
-        .filter(|d| d.provenance == "SYNTAX")
-    {
-        by_name
-            .entry((&doc.path, &doc.qualified_name))
-            .or_default()
-            .push(doc);
-        by_id.insert(doc.node_id, doc);
-    }
+    let ReviewIndex {
+        pairs,
+        by_name,
+        by_id,
+        coverage_gaps,
+    } = index;
     let mut incoming = BTreeMap::<u64, Vec<(u64, &EdgeEvidence)>>::new();
     for (&(source, target), &proof) in pairs {
         incoming.entry(target).or_default().push((source, proof));
@@ -60,17 +58,19 @@ pub(super) fn build(
         }
         let mut candidates = vec![(*caller, None)];
         if let Some(edges) = incoming.get(&caller.node_id) {
-            candidates.extend(
-                edges
-                    .iter()
-                    .filter_map(|(id, proof)| by_id.get(id).map(|d| (*d, Some(*proof)))),
-            );
+            candidates.extend(edges.iter().filter_map(|(id, proof)| {
+                let documents = by_id.get(id)?;
+                let [document] = documents.as_slice() else {
+                    return None;
+                };
+                Some((*document, Some(*proof)))
+            }));
         }
         for (test, upstream) in candidates {
             if !test_convention(test) || !dedup.insert((test.node_id, target.node_id)) {
                 continue;
             }
-            let reasons = path_gaps(&stored.coverage, &test.path);
+            let reasons = coverage_gaps.reasons(&test.path).collect::<Vec<_>>();
             // An unrelated unresolved call does not invalidate this proven
             // positive edge. Keep its uncertainty visible, but abstain for
             // parser/stale/excluded source where the candidate itself is unsafe.

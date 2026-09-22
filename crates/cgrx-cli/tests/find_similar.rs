@@ -122,6 +122,78 @@ fn find_similar_matches_identical_bodies_across_files_and_names() {
 }
 
 #[test]
+fn find_similar_returns_scored_near_duplicates_without_promoting_them_to_exact_matches() {
+    let f = Fixture::new(&[
+        (
+            "a.rs",
+            "fn target(input: i32) -> i32 {\n    let prepared = input + 1;\n    prepared * 2\n}\n",
+        ),
+        (
+            "b.rs",
+            "fn related(value: i32) -> i32 {\n    let output = value + 9;\n    output * 7\n}\n",
+        ),
+    ]);
+    let runtime = f.runtime();
+
+    let result = runtime
+        .find_similar("target", None, 20, &Fixture::scope())
+        .unwrap();
+    assert_eq!(result["matched"], 0, "near matches must stay heuristic");
+    assert_eq!(result["matches"], serde_json::json!([]));
+    assert_eq!(result["similarity_index"]["ready"], true);
+    assert_eq!(result["similarity_index"]["used"], true);
+    assert_eq!(result["similarity_partial"], false);
+    assert_eq!(result["similar_matched"], 1, "{result}");
+    assert_eq!(result["similar_matches"][0]["qualified_name"], "related");
+    assert!(
+        result["similar_matches"][0]["similarity"]["total"]
+            .as_u64()
+            .unwrap()
+            >= 600,
+        "{result}"
+    );
+    assert!(
+        matches!(
+            result["similar_matches"][0]["relationship"].as_str(),
+            Some("near_duplicate" | "similar_structure" | "similar_functionality")
+        ),
+        "{result}"
+    );
+}
+
+#[test]
+fn find_similar_links_different_structure_through_shared_proven_functionality() {
+    let f = Fixture::new(&[(
+        "main.rs",
+        "fn persist(value: i32) { let _ = value; }\n\
+         fn first(input: i32) { if input > 0 { persist(input); } }\n\
+         fn second(values: &[i32]) { for value in values { persist(*value); } }\n",
+    )]);
+    let runtime = f.runtime();
+
+    let result = runtime
+        .find_similar("first", Some("main.rs"), 20, &Fixture::scope())
+        .unwrap();
+    assert_eq!(result["matched"], 0, "{result}");
+    assert_eq!(result["similarity_partial"], false, "{result}");
+    let functional = result["similar_matches"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|candidate| candidate["qualified_name"] == "second")
+        .expect("shared proven callee should produce a related-code candidate");
+    assert_eq!(functional["relationship"], "similar_functionality");
+    assert_eq!(functional["similarity"]["callees"], 1000);
+    assert!(
+        result["similarity_index"]["functional_pairs"]
+            .as_u64()
+            .unwrap()
+            >= 1,
+        "{result}"
+    );
+}
+
+#[test]
 fn find_similar_fingerprints_are_stable_across_reopen_and_reindex() {
     let f = Fixture::new(&[
         ("a.rs", &duplicate_body("target")),

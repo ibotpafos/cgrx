@@ -155,12 +155,32 @@ with streaming, pagination, and caller-configurable limits.
     `DOCUMENT_LIMIT: usize = 20_000`, `PAIR_LIMIT: usize = 100_000`.
   - `crates/cgrx-core/src/runtime_evidence.rs:10-11` —
     `MAX_TRACE_SPANS: usize = 100_000`, `MAX_TRACE_CALLS: usize = 100_000`.
-- These are safety caps, not scale features. P2 first step: `suggest_refactors`
-  now accepts optional `max_documents` and `max_pairs` arguments (default 0 = use
-  original safety caps), so callers on large monorepos can raise or lower the
-  budgets explicitly. Remaining work: streaming/pagination for `orient`/`expand`
-  and `get_architecture` so large monorepos return bounded, resumable pages
-  instead of truncating.
+- These are safety caps, not scale features. P2 first step: indexing maintains a
+  persisted bounded snapshot-local similarity projection and watched refreshes
+  rebuild it on a generation-bound background worker, with up to
+  100,000 callable documents, 100,000 structural pairs and 50,000 shared-callee
+  functional pairs. `find_similar` keeps exact duplicate evidence separate from
+  heuristic structural/functional matches, while default-budget
+  `suggest_refactors` reuses the projection instead of rebuilding fingerprints
+  and candidate buckets per request. A stale worker cannot publish into a newer
+  snapshot. A pair-truncated projection stays useful as a fast partial
+  `suggest_refactors` candidate layer and reports `SIMILARITY_PAIR_BUDGET`;
+  explicit document/pair budgets force the wider direct scan when the caller
+  needs a recheck. A building or document-truncated projection falls back to
+  direct scanning. `find_similar` uses a current direct root scan while
+  rebuilding and reports projection status and truncation explicitly. `suggest_refactors`
+  also accepts optional `max_documents` and `max_pairs` arguments (default 0 =
+  use original safety caps), so callers on large monorepos can raise or lower
+  the direct-scan budgets explicitly. `get_architecture` now returns deterministic resumable
+  pages using `limit`, `offset` and `page.next_offset`, while preserving totals,
+  truncation and coverage-gap semantics. `orient` now separates expensive
+  retrieval/preparation from budget-dependent packing: `expand` reuses the
+  snapshot-bound preparation instead of rerunning retrieval, and live MCP
+  sessions keep a bounded per-snapshot preparation cache for repeated `orient`
+  calls when no external semantic reranker is active. `bench orient` measures
+  full warm orientation and prepared repacking separately. Remaining work:
+  reducing first-pass `orient` preparation cost and the full in-memory
+  architecture calculation itself on very large monorepos.
 - **Measured today:** `docs/benchmarks/architecture-communities-2026-09-07.md`
   and `docs/benchmarks/architecture-futures-2026-09-07.md` pin five-project
   runs; the same harness should be re-run on a large single-repository corpus to

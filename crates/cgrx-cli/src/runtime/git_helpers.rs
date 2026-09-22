@@ -201,7 +201,12 @@ pub(super) fn refresh_status(bytes: &[u8]) -> Result<(String, BTreeSet<String>),
 }
 
 pub(super) fn coverage_for_scope(coverage: &CoverageMetadata, scope: &Scope) -> CoverageMetadata {
-    coverage_for_scope_with_matcher(coverage, scope, &mut path_in_scope)
+    let mut paths = BTreeMap::<&str, bool>::new();
+    coverage_for_scope_with_matcher(coverage, scope, &mut |path, scope| {
+        *paths
+            .entry(path)
+            .or_insert_with(|| path_in_scope(path, scope))
+    })
 }
 
 pub(super) fn coverage_for_scope_with_matcher<'a>(
