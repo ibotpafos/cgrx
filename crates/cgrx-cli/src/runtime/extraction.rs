@@ -130,99 +130,99 @@ fn apply_ts_call_facts(
     facts: Option<&TsFileFacts>,
     documents: &mut Vec<StoredDocument>,
 ) -> BTreeSet<[usize; 2]> {
-let ts_receiver_spans: BTreeSet<_> = facts
-    .into_iter()
-    .flat_map(|facts| facts.receiver_calls.iter().map(|receiver| receiver.call))
-    .collect();
-if let Some(facts) = facts {
-    for site in &facts.sites {
-        let tag = match &site.binding {
-            SiteBinding::Candidate(_) => "TS_IMPORT_CALL",
-            SiteBinding::Rejected => "TS_IMPORT_REJECTED",
-            SiteBinding::NotImport => continue,
-        };
-        if let Some(document) = documents.iter_mut().find(|document| {
-            document.provenance == "CALLS"
-                && document.span_start == site.call[0]
-                && document.span_end == site.call[1]
-        }) {
-            document
-                .semantic_tags
-                .retain(|value| value != "DYNAMIC_DISPATCH");
-            if !document.semantic_tags.iter().any(|value| value == tag) {
-                document.semantic_tags.push(tag.to_owned());
-            }
-            continue;
-        }
-        let SiteBinding::Candidate(import) = &site.binding else {
-            continue;
-        };
-        let span = Span {
-            start: site.call[0],
-            end: site.call[1],
-        };
-        let slice = slice_source(
-            source,
-            ByteRange::new(span.start, span.end),
-            ContextWindow::lines(0),
-        );
-        let text = String::from_utf8_lossy(&slice.bytes).into_owned();
-        let identity = format!("call:{}", import.local);
-        documents.push(plain_document(
-            relative,
-            DocumentSeed {
-                node_id: stable_node_id(relative, span, &identity),
-                qualified_name: import.local.clone(),
-                text: text.clone(),
-                search_text: text,
-                span,
-                provenance: "CALLS",
-                semantic_tags: vec!["EXACT_CALL".to_owned(), tag.to_owned()],
-            },
-        ));
-    }
-    for receiver in &facts.receiver_calls {
-        let span = Span {
-            start: receiver.call[0],
-            end: receiver.call[1],
-        };
-        if let Some(document) = documents.iter_mut().find(|document| {
-            document.provenance == "CALLS"
-                && document.span_start == span.start
-                && document.span_end == span.end
-                && document.qualified_name == receiver.method
-        }) {
-            document
-                .semantic_tags
-                .retain(|value| value != "DYNAMIC_DISPATCH");
-            for tag in ["EXACT_CALL", "TS_RECEIVER_CALL"] {
+    let ts_receiver_spans: BTreeSet<_> = facts
+        .into_iter()
+        .flat_map(|facts| facts.receiver_calls.iter().map(|receiver| receiver.call))
+        .collect();
+    if let Some(facts) = facts {
+        for site in &facts.sites {
+            let tag = match &site.binding {
+                SiteBinding::Candidate(_) => "TS_IMPORT_CALL",
+                SiteBinding::Rejected => "TS_IMPORT_REJECTED",
+                SiteBinding::NotImport => continue,
+            };
+            if let Some(document) = documents.iter_mut().find(|document| {
+                document.provenance == "CALLS"
+                    && document.span_start == site.call[0]
+                    && document.span_end == site.call[1]
+            }) {
+                document
+                    .semantic_tags
+                    .retain(|value| value != "DYNAMIC_DISPATCH");
                 if !document.semantic_tags.iter().any(|value| value == tag) {
                     document.semantic_tags.push(tag.to_owned());
                 }
+                continue;
             }
-            continue;
+            let SiteBinding::Candidate(import) = &site.binding else {
+                continue;
+            };
+            let span = Span {
+                start: site.call[0],
+                end: site.call[1],
+            };
+            let slice = slice_source(
+                source,
+                ByteRange::new(span.start, span.end),
+                ContextWindow::lines(0),
+            );
+            let text = String::from_utf8_lossy(&slice.bytes).into_owned();
+            let identity = format!("call:{}", import.local);
+            documents.push(plain_document(
+                relative,
+                DocumentSeed {
+                    node_id: stable_node_id(relative, span, &identity),
+                    qualified_name: import.local.clone(),
+                    text: text.clone(),
+                    search_text: text,
+                    span,
+                    provenance: "CALLS",
+                    semantic_tags: vec!["EXACT_CALL".to_owned(), tag.to_owned()],
+                },
+            ));
         }
-        let slice = slice_source(
-            source,
-            ByteRange::new(span.start, span.end),
-            ContextWindow::lines(0),
-        );
-        let text = String::from_utf8_lossy(&slice.bytes).into_owned();
-        let identity = format!("call:{}", receiver.method);
-        documents.push(plain_document(
-            relative,
-            DocumentSeed {
-                node_id: stable_node_id(relative, span, &identity),
-                qualified_name: receiver.method.clone(),
-                text: text.clone(),
-                search_text: text,
-                span,
-                provenance: "CALLS",
-                semantic_tags: vec!["EXACT_CALL".to_owned(), "TS_RECEIVER_CALL".to_owned()],
-            },
-        ));
+        for receiver in &facts.receiver_calls {
+            let span = Span {
+                start: receiver.call[0],
+                end: receiver.call[1],
+            };
+            if let Some(document) = documents.iter_mut().find(|document| {
+                document.provenance == "CALLS"
+                    && document.span_start == span.start
+                    && document.span_end == span.end
+                    && document.qualified_name == receiver.method
+            }) {
+                document
+                    .semantic_tags
+                    .retain(|value| value != "DYNAMIC_DISPATCH");
+                for tag in ["EXACT_CALL", "TS_RECEIVER_CALL"] {
+                    if !document.semantic_tags.iter().any(|value| value == tag) {
+                        document.semantic_tags.push(tag.to_owned());
+                    }
+                }
+                continue;
+            }
+            let slice = slice_source(
+                source,
+                ByteRange::new(span.start, span.end),
+                ContextWindow::lines(0),
+            );
+            let text = String::from_utf8_lossy(&slice.bytes).into_owned();
+            let identity = format!("call:{}", receiver.method);
+            documents.push(plain_document(
+                relative,
+                DocumentSeed {
+                    node_id: stable_node_id(relative, span, &identity),
+                    qualified_name: receiver.method.clone(),
+                    text: text.clone(),
+                    search_text: text,
+                    span,
+                    provenance: "CALLS",
+                    semantic_tags: vec!["EXACT_CALL".to_owned(), "TS_RECEIVER_CALL".to_owned()],
+                },
+            ));
+        }
     }
-}
 
     ts_receiver_spans
 }
