@@ -810,13 +810,7 @@ pub(super) fn rebuild_arcs_with_cargo(
         }
     }
     append_reference_arcs(documents, path_hashes, &by_name, &mut arcs);
-    append_import_arcs(
-        documents,
-        path_hashes,
-        &syntax_by_path,
-        &by_name,
-        &mut arcs,
-    );
+    append_import_arcs(documents, path_hashes, &syntax_by_path, &by_name, &mut arcs);
     arcs.sort_by_key(|arc| (arc.source, arc.target, arc.kind, arc.evidence.clone()));
     arcs.dedup();
     arcs
