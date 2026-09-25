@@ -210,8 +210,8 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
             &symbol.name,
             DocumentContent {
                 qualified_name: symbol.name.clone(),
-                text: text,
-                search_text: search_text,
+                text,
+                search_text,
             },
             "SYNTAX",
             semantic_tags,
@@ -678,7 +678,7 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
                 &qualified_name,
                 DocumentContent {
                     qualified_name: qualified_name.clone(),
-                    text: text,
+                    text,
                     search_text: String::new(),
                 },
                 "CALLS",
@@ -708,7 +708,7 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
             &format!("route:{text}"),
             DocumentContent {
                 qualified_name: symbol.name.clone(),
-                text: text,
+                text,
                 search_text: String::new(),
             },
             "ROUTE_HANDLER",
@@ -724,7 +724,7 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
             &format!("implements:{text}"),
             DocumentContent {
                 qualified_name: text.clone(),
-                text: text,
+                text,
                 search_text: String::new(),
             },
             "IMPLEMENTS",
