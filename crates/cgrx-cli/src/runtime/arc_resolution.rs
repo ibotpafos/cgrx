@@ -62,7 +62,6 @@ fn append_reference_arcs(
             }
         }
     }
-
 }
 
 fn append_import_arcs(
@@ -192,7 +191,6 @@ fn append_import_arcs(
             }
         }
     }
-
 }
 
 pub(super) fn rebuild_arcs_with_cargo(
