@@ -7,23 +7,15 @@ ROOT = Path(__file__).resolve().parents[1]
 VERSION = (ROOT / "RELEASE_VERSION").read_text().strip()
 
 class ReleaseMetadataTests(unittest.TestCase):
-    def test_version_shape_and_workspace_package(self):
+    def test_version_shape_and_crate_line(self):
         self.assertRegex(VERSION, r"^v\d+\.\d+\.\d+-alpha\.\d+$")
-
-        workspace_manifest = (ROOT / "Cargo.toml").read_text()
-        workspace_package = workspace_manifest.split("[workspace.package]", 1)[1]
-        workspace_package = workspace_package.split("\n[", 1)[0]
-        workspace_version = re.search(
+        crate_version = re.search(
             r'^version = "([^"]+)"$',
-            workspace_package,
+            (ROOT / "crates/cgrx-cli/Cargo.toml").read_text(),
             re.M,
         )
-        self.assertIsNotNone(workspace_version)
-
-        cli_manifest = (ROOT / "crates/cgrx-cli/Cargo.toml").read_text()
-        self.assertRegex(cli_manifest, r"(?m)^version\.workspace = true$")
-        self.assertTrue(VERSION.startswith("v" + workspace_version.group(1) + "-"))
-
+        self.assertIsNotNone(crate_version)
+        self.assertTrue(VERSION.startswith("v" + crate_version.group(1) + "-"))
 
     def test_installer_defaults_to_release(self):
         installer = (ROOT / "install.sh").read_text()

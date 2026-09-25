@@ -1,5 +1,6 @@
 //! One MCP namespace with explicit, isolated local-worktree routing.
-use super::{RuntimeMcpBackend, managed_state_path, open_managed_runtime};
+use super::{managed_state_path, open_managed_runtime};
+use crate::mcp_backend::RuntimeMcpBackend;
 use cgrx_capsule::Tokenizer;
 use cgrx_core::{Hash32, RepoSnapshot};
 use cgrx_mcp::{
