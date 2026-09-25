@@ -41,17 +41,26 @@ pub(super) struct ExtractedSource {
     pub(super) extracted: ExtractedPath,
 }
 
+struct DocumentContent {
+    qualified_name: String,
+    text: String,
+    search_text: String,
+}
+
 fn extracted_document(
     relative: &str,
     span: Span,
     body_span: Span,
     identity: &str,
-    qualified_name: String,
-    text: String,
-    search_text: String,
+    content: DocumentContent,
     provenance: &str,
     semantic_tags: Vec<String>,
 ) -> StoredDocument {
+    let DocumentContent {
+        qualified_name,
+        text,
+        search_text,
+    } = content;
     StoredDocument {
         php_function_target: None,
         php_type_target: None,
@@ -199,9 +208,11 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
             symbol.span,
             symbol.search_span,
             &symbol.name,
-            symbol.name.clone(),
-            text,
-            search_text,
+            DocumentContent {
+                qualified_name: symbol.name.clone(),
+                text: text,
+                search_text: search_text,
+            },
             "SYNTAX",
             semantic_tags,
         );
@@ -222,9 +233,11 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
             edge.span,
             edge.span,
             &format!("import:{text}"),
-            edge.target.clone(),
-            text.clone(),
-            text,
+            DocumentContent {
+                qualified_name: edge.target.clone(),
+                text: text.clone(),
+                search_text: text,
+            },
             "IMPORTS",
             vec!["IMPORTS".to_owned()],
         ));
@@ -262,9 +275,11 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
             edge.span,
             edge.span,
             &format!("reference:{text}"),
-            edge.target.clone(),
-            text.clone(),
-            text,
+            DocumentContent {
+                qualified_name: edge.target.clone(),
+                text: text.clone(),
+                search_text: text,
+            },
             "REFERENCES",
             semantic_tags,
         );
@@ -497,9 +512,11 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
                 edge.context_span,
                 edge.context_span,
                 &format!("statement:{target}"),
-                target.clone(),
-                text.clone(),
-                text,
+                DocumentContent {
+                    qualified_name: target.clone(),
+                    text: text.clone(),
+                    search_text: text,
+                },
                 "CALLS",
                 vec!["STATEMENT_CALL".to_owned()],
             ));
@@ -554,9 +571,11 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
                 span,
                 span,
                 &format!("call:{}", import.local),
-                import.local.clone(),
-                text.clone(),
-                text,
+                DocumentContent {
+                    qualified_name: import.local.clone(),
+                    text: text.clone(),
+                    search_text: text,
+                },
                 "CALLS",
                 vec!["EXACT_CALL".to_owned(), tag.to_owned()],
             ));
@@ -607,9 +626,11 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
                 span,
                 span,
                 &format!("call:{}", receiver.method),
-                receiver.method.clone(),
-                text.clone(),
-                text,
+                DocumentContent {
+                    qualified_name: receiver.method.clone(),
+                    text: text.clone(),
+                    search_text: text,
+                },
                 "CALLS",
                 vec!["EXACT_CALL".to_owned(), "TS_RECEIVER_CALL".to_owned()],
             ));
@@ -655,9 +676,11 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
                 span,
                 span,
                 &qualified_name,
-                qualified_name.clone(),
-                text,
-                String::new(),
+                DocumentContent {
+                    qualified_name: qualified_name.clone(),
+                    text: text,
+                    search_text: String::new(),
+                },
                 "CALLS",
                 semantic_tags,
             ));
@@ -683,9 +706,11 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
             span,
             span,
             &format!("route:{text}"),
-            symbol.name.clone(),
-            text,
-            String::new(),
+            DocumentContent {
+                qualified_name: symbol.name.clone(),
+                text: text,
+                search_text: String::new(),
+            },
             "ROUTE_HANDLER",
             vec!["DECORATOR_HANDLER".to_owned()],
         ));
@@ -697,9 +722,11 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
             span,
             span,
             &format!("implements:{text}"),
-            text.clone(),
-            text,
-            String::new(),
+            DocumentContent {
+                qualified_name: text.clone(),
+                text: text,
+                search_text: String::new(),
+            },
             "IMPLEMENTS",
             vec!["IMPLEMENTS".to_owned()],
         ));
