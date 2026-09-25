@@ -26,7 +26,7 @@ statement, unresolved, route, and implements records.
 
 The maintenance branch centralizes the common document construction while
 keeping the proof-bearing call record explicit. `extract_path` is reduced to
-about 601 lines without changing the persisted schema.
+about 619 lines without changing the persisted schema.
 
 TypeScript enrichment previously used repeated
 `documents.iter_mut().find(...)` scans for import-call and receiver-call
