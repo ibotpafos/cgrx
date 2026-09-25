@@ -157,7 +157,11 @@ pub(super) fn compact_change_gates(value: &Value) -> Value {
     })
 }
 
-pub(super) fn evaluate_repository_gates(architecture: &Value, fail_on: &str, thresholds: [usize; 5]) -> Value {
+pub(super) fn evaluate_repository_gates(
+    architecture: &Value,
+    fail_on: &str,
+    thresholds: [usize; 5],
+) -> Value {
     let package_cycles = architecture
         .pointer("/totals/cycles")
         .and_then(Value::as_u64)
