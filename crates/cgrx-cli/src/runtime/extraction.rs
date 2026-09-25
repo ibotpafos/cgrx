@@ -581,11 +581,9 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
                 start: receiver.call[0],
                 end: receiver.call[1],
             };
-            if let Some(&index) = call_document_by_identity.get(&(
-                span.start,
-                span.end,
-                receiver.method.clone(),
-            )) {
+            if let Some(&index) =
+                call_document_by_identity.get(&(span.start, span.end, receiver.method.clone()))
+            {
                 let document = &mut documents[index];
                 document
                     .semantic_tags
