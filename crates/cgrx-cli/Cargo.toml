@@ -12,7 +12,7 @@ name = "cgrx"
 path = "src/main.rs"
 
 [dependencies]
-toml = { version = "=0.8.23", default-features = false, features = ["parse"] }
+toml = { version = "=1.1.6", default-features = false, features = ["parse"] }
 cgrx-capsule.workspace = true
 cgrx-core.workspace = true
 cgrx-cgcr.workspace = true
@@ -25,7 +25,7 @@ blake3.workspace = true
 levenshtein = "1.0.5"
 serde.workspace = true
 serde_json.workspace = true
-notify = "6.1.1"
+notify = "8.2.0"
 protobuf = "=3.7.2"
 scip = "=0.10.0"
 
