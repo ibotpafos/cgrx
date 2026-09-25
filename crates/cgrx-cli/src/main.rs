@@ -1617,12 +1617,8 @@ fn graph_scope_with_limit(value: &Value, limit: u32) -> Result<(Scope, usize), B
 }
 
 fn usize_argument(value: u32, name: &str) -> Result<usize, BackendError> {
-    usize::try_from(value).map_err(|_| {
-        BackendError::new(
-            "cgrx.invalid_arguments",
-            format!("{name} is out of range"),
-        )
-    })
+    usize::try_from(value)
+        .map_err(|_| BackendError::new("cgrx.invalid_arguments", format!("{name} is out of range")))
 }
 
 fn runtime_backend_error(error: cgrx_cli::RuntimeError) -> BackendError {
