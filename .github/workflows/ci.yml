@@ -24,6 +24,8 @@ jobs:
       - run: |
           npm ci
           npm run typecheck:web
+          npm run build:web
+          git diff --exit-code -- crates/cgrx-cli/web/app.js crates/cgrx-cli/web/layout-worker.bundle.js
           npm run build:web-vendor
           git diff --exit-code -- crates/cgrx-cli/web/vendor/
           npm run verify:web-csp
