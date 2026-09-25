@@ -185,7 +185,6 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
                 String::from_utf8_lossy(bytes).into_owned()
             });
         let semantic_fingerprint = body_fingerprint(&symbol.name, &search_text);
-        {
         let semantic_tags = if lexical_arrows.contains(&symbol.span) {
             vec!["TS_LEXICAL_ARROW".to_owned()]
         } else if php_type_targets.contains(&symbol.span) {
@@ -209,7 +208,6 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
         document.go_package = go_package.clone();
         document.semantic_fingerprint = semantic_fingerprint;
         documents.push(document);
-    }
     }
     for edge in edges
         .iter()
@@ -236,7 +234,6 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
         .filter(|edge| edge.relation == LanguageRelation::References)
     {
         let text = String::from_utf8_lossy(&source[edge.span.start..edge.span.end]).into_owned();
-        {
         let php_type_target = if let LanguageProvenance::PhpType {
             owner,
             target,
@@ -273,7 +270,6 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
         );
         document.php_type_target = php_type_target;
         documents.push(document);
-    }
     }
     for edge in edges {
         if edge.relation != LanguageRelation::Calls {
@@ -495,7 +491,6 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
                 ByteRange::new(edge.context_span.start, edge.context_span.end),
                 ContextWindow::lines(0),
             );
-            {
             let text = String::from_utf8_lossy(&context.bytes).into_owned();
             documents.push(extracted_document(
                 relative,
@@ -508,7 +503,6 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
                 "CALLS",
                 vec!["STATEMENT_CALL".to_owned()],
             ));
-        }
         }
     }
     let ts_receiver_spans: BTreeSet<_> = ts_file
@@ -553,7 +547,6 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
                 ByteRange::new(span.start, span.end),
                 ContextWindow::lines(0),
             );
-            {
             let text = String::from_utf8_lossy(&slice.bytes).into_owned();
             let index = documents.len();
             documents.push(extracted_document(
@@ -570,7 +563,6 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
             call_document_by_span
                 .entry((span.start, span.end))
                 .or_insert(index);
-        }
         }
         let mut call_document_by_identity = BTreeMap::new();
         for (index, document) in documents.iter().enumerate() {
@@ -610,7 +602,6 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
                 ByteRange::new(span.start, span.end),
                 ContextWindow::lines(0),
             );
-            {
             let text = String::from_utf8_lossy(&slice.bytes).into_owned();
             let index = documents.len();
             documents.push(extracted_document(
@@ -627,7 +618,6 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
             call_document_by_identity
                 .entry((span.start, span.end, receiver.method.clone()))
                 .or_insert(index);
-        }
         }
     }
     let mut unresolved_by_span = BTreeMap::<(usize, usize), Vec<UnresolvedKind>>::new();
@@ -661,7 +651,6 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
                     _ => None,
                 })
                 .collect();
-            {
             let qualified_name = format!("unresolved:{text}");
             documents.push(extracted_document(
                 relative,
@@ -674,7 +663,6 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
                 "CALLS",
                 semantic_tags,
             ));
-        }
         }
     }
     for candidate in unresolved
