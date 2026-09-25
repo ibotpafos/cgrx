@@ -152,7 +152,7 @@ pub(super) struct GetArchitectureArguments {
     pub(super) offset: u32,
 }
 
-const fn default_package_depth() -> u8 {
+pub(super) const fn default_package_depth() -> u8 {
     2
 }
 
