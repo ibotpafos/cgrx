@@ -227,6 +227,116 @@ fn apply_ts_call_facts(
     ts_receiver_spans
 }
 
+fn append_unresolved_documents(
+    relative: &str,
+    relative_path: &Path,
+    source: &[u8],
+    symbols: &[cgrx_languages::Symbol],
+    unresolved: &[cgrx_languages::Unresolved],
+    ts_receiver_spans: &BTreeSet<[usize; 2]>,
+    documents: &mut Vec<StoredDocument>,
+) {
+    let mut unresolved_by_span = BTreeMap::<(usize, usize), Vec<UnresolvedKind>>::new();
+    for candidate in unresolved {
+        if ts_receiver_spans.contains(&[candidate.span.start, candidate.span.end]) {
+            continue;
+        }
+        unresolved_by_span
+            .entry((candidate.span.start, candidate.span.end))
+            .or_default()
+            .push(candidate.kind);
+    }
+    for ((start, end), mut kinds) in unresolved_by_span {
+        kinds.sort();
+        kinds.dedup();
+        if kinds.iter().any(|kind| {
+            matches!(
+                kind,
+                UnresolvedKind::DynamicProperty | UnresolvedKind::Dispatch
+            )
+        }) {
+            let span = Span { start, end };
+            let text = source.get(start..end).map_or_else(String::new, |bytes| {
+                String::from_utf8_lossy(bytes).into_owned()
+            });
+            let semantic_tags = kinds
+                .iter()
+                .filter_map(|kind| match kind {
+                    UnresolvedKind::DynamicProperty => Some("DYNAMIC_PROPERTY".to_owned()),
+                    UnresolvedKind::Dispatch => Some("DYNAMIC_DISPATCH".to_owned()),
+                    _ => None,
+                })
+                .collect();
+            let qualified_name = format!("unresolved:{text}");
+            documents.push(plain_document(
+                relative,
+                DocumentSeed {
+                    node_id: stable_node_id(relative, span, &qualified_name),
+                    qualified_name,
+                    text,
+                    search_text: String::new(),
+                    span,
+                    provenance: "CALLS",
+                    semantic_tags,
+                },
+            ));
+        }
+    }
+    for candidate in unresolved
+        .iter()
+        .filter(|candidate| candidate.kind == UnresolvedKind::Decorator)
+    {
+        let Some(symbol) = symbols
+            .iter()
+            .filter(|symbol| symbol.span.start >= candidate.span.end)
+            .min_by_key(|symbol| symbol.span.start)
+        else {
+            continue;
+        };
+        let Some(span) = declaration_span(source, symbol.span, relative_path) else {
+            continue;
+        };
+        let text = String::from_utf8_lossy(&source[span.start..span.end]).into_owned();
+        let identity = format!("route:{text}");
+        documents.push(plain_document(
+            relative,
+            DocumentSeed {
+                node_id: stable_node_id(relative, span, &identity),
+                qualified_name: symbol.name.clone(),
+                text,
+                search_text: String::new(),
+                span,
+                provenance: "ROUTE_HANDLER",
+                semantic_tags: vec!["DECORATOR_HANDLER".to_owned()],
+            },
+        ));
+    }
+}
+
+fn append_implements_documents(
+    relative: &str,
+    relative_path: &Path,
+    source: &[u8],
+    documents: &mut Vec<StoredDocument>,
+) {
+    for span in implements_spans(source, relative_path) {
+        let text = String::from_utf8_lossy(&source[span.start..span.end]).into_owned();
+        let identity = format!("implements:{text}");
+        documents.push(plain_document(
+            relative,
+            DocumentSeed {
+                node_id: stable_node_id(relative, span, &identity),
+                qualified_name: text.clone(),
+                text,
+                search_text: String::new(),
+                span,
+                provenance: "IMPLEMENTS",
+                semantic_tags: vec!["IMPLEMENTS".to_owned()],
+            },
+        ));
+    }
+}
+
 pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPath, RuntimeError> {
     let relative_path = Path::new(relative);
     let ts_file = matches!(
@@ -620,97 +730,16 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
         }
     }
     let ts_receiver_spans = apply_ts_call_facts(relative, source, ts_file.as_ref(), &mut documents);
-    let mut unresolved_by_span = BTreeMap::<(usize, usize), Vec<UnresolvedKind>>::new();
-    for candidate in &unresolved {
-        if ts_receiver_spans.contains(&[candidate.span.start, candidate.span.end]) {
-            continue;
-        }
-        unresolved_by_span
-            .entry((candidate.span.start, candidate.span.end))
-            .or_default()
-            .push(candidate.kind);
-    }
-    for ((start, end), mut kinds) in unresolved_by_span {
-        kinds.sort();
-        kinds.dedup();
-        if kinds.iter().any(|kind| {
-            matches!(
-                kind,
-                UnresolvedKind::DynamicProperty | UnresolvedKind::Dispatch
-            )
-        }) {
-            let span = Span { start, end };
-            let text = source.get(start..end).map_or_else(String::new, |bytes| {
-                String::from_utf8_lossy(bytes).into_owned()
-            });
-            let semantic_tags = kinds
-                .iter()
-                .filter_map(|kind| match kind {
-                    UnresolvedKind::DynamicProperty => Some("DYNAMIC_PROPERTY".to_owned()),
-                    UnresolvedKind::Dispatch => Some("DYNAMIC_DISPATCH".to_owned()),
-                    _ => None,
-                })
-                .collect();
-            let qualified_name = format!("unresolved:{text}");
-            documents.push(plain_document(
-                relative,
-                DocumentSeed {
-                    node_id: stable_node_id(relative, span, &qualified_name),
-                    qualified_name,
-                    text,
-                    search_text: String::new(),
-                    span,
-                    provenance: "CALLS",
-                    semantic_tags,
-                },
-            ));
-        }
-    }
-    for candidate in unresolved
-        .iter()
-        .filter(|candidate| candidate.kind == UnresolvedKind::Decorator)
-    {
-        let Some(symbol) = symbols
-            .iter()
-            .filter(|symbol| symbol.span.start >= candidate.span.end)
-            .min_by_key(|symbol| symbol.span.start)
-        else {
-            continue;
-        };
-        let Some(span) = declaration_span(source, symbol.span, relative_path) else {
-            continue;
-        };
-        let text = String::from_utf8_lossy(&source[span.start..span.end]).into_owned();
-        let identity = format!("route:{text}");
-        documents.push(plain_document(
-            relative,
-            DocumentSeed {
-                node_id: stable_node_id(relative, span, &identity),
-                qualified_name: symbol.name.clone(),
-                text,
-                search_text: String::new(),
-                span,
-                provenance: "ROUTE_HANDLER",
-                semantic_tags: vec!["DECORATOR_HANDLER".to_owned()],
-            },
-        ));
-    }
-    for span in implements_spans(source, relative_path) {
-        let text = String::from_utf8_lossy(&source[span.start..span.end]).into_owned();
-        let identity = format!("implements:{text}");
-        documents.push(plain_document(
-            relative,
-            DocumentSeed {
-                node_id: stable_node_id(relative, span, &identity),
-                qualified_name: text.clone(),
-                text,
-                search_text: String::new(),
-                span,
-                provenance: "IMPLEMENTS",
-                semantic_tags: vec!["IMPLEMENTS".to_owned()],
-            },
-        ));
-    }
+    append_unresolved_documents(
+        relative,
+        relative_path,
+        source,
+        &symbols,
+        &unresolved,
+        &ts_receiver_spans,
+        &mut documents,
+    );
+    append_implements_documents(relative, relative_path, source, &mut documents);
     let dynamic_dispatch = outer_dynamic_spans(&unresolved)
         .into_iter()
         .map(|span| format!("{}:{}-{}", relative, span.start, span.end))
