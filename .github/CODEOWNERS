@@ -1,0 +1,5 @@
+* @ibotpafos
+/.github/ @ibotpafos
+/contracts/ @ibotpafos
+/Cargo.lock @ibotpafos
+/package-lock.json @ibotpafos

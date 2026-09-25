@@ -1,0 +1,8 @@
+* text=auto eol=lf
+
+*.sh text eol=lf
+*.cgrxtok binary
+
+crates/cgrx-cli/web/app.js linguist-generated=true
+crates/cgrx-cli/web/layout-worker.bundle.js linguist-generated=true
+crates/cgrx-cli/web/vendor/*.js linguist-generated=true

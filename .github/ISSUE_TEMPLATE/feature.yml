@@ -1,0 +1,32 @@
+name: Feature request
+description: Propose a bounded CGRX capability or workflow improvement.
+title: "[Feature] "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What concrete workflow or limitation should be improved?
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome
+      description: Describe the observable result rather than an implementation preference.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Proposed scope and non-goals
+      description: Keep the request bounded and call out what should explicitly remain unchanged.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence or examples
+      description: Add synthetic examples, benchmark data, protocol details, or links that clarify the request.

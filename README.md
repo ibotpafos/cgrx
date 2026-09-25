@@ -1,5 +1,9 @@
 # CGRX
 
+[![CI](https://github.com/ibotpafos/cgrx/actions/workflows/ci.yml/badge.svg)](https://github.com/ibotpafos/cgrx/actions/workflows/ci.yml)
+[![PHP validation](https://github.com/ibotpafos/cgrx/actions/workflows/php-validation.yml/badge.svg)](https://github.com/ibotpafos/cgrx/actions/workflows/php-validation.yml)
+
+
 **Local, evidence-oriented code intelligence for AI coding agents.**
 
 One Rust executable. One stdio MCP server. Multiple Git repositories selected

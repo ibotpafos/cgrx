@@ -24,6 +24,8 @@ jobs:
       - run: |
           npm ci
           npm run typecheck:web
+          npm run build:web
+          git diff --exit-code -- crates/cgrx-cli/web/app.js crates/cgrx-cli/web/layout-worker.bundle.js
           npm run build:web-vendor
           git diff --exit-code -- crates/cgrx-cli/web/vendor/
           npm run verify:web-csp
@@ -38,7 +40,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: rustup toolchain install 1.89.0 --profile minimal --component clippy --component rustfmt
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           shared-key: "ci-${{ matrix.os }}"
       - run: cargo fmt --all -- --check
@@ -56,7 +58,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: rustup toolchain install 1.89.0 --profile minimal --component clippy --component rustfmt
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           shared-key: "ci-${{ matrix.os }}"
       - run: cargo build --locked --release -p cgrx-cli
@@ -78,6 +80,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: git diff --check
       - run: python3 -m unittest discover -s scripts -p test_install.py
       - run: python3 -m unittest discover -s scripts -p 'test_validate_*.py'
 

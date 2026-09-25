@@ -1,0 +1,49 @@
+name: Bug report
+description: Report a reproducible CGRX defect or incorrect evidence result.
+title: "[Bug] "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Keep reproductions minimal and synthetic. Do not attach private repositories, credentials, or production logs.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What happened, and what did you expect instead?
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: CGRX version or commit
+      placeholder: v0.1.0-alpha.14 or commit SHA
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Platform
+      placeholder: macOS 26 arm64, Ubuntu 26.04 x86_64, etc.
+    validations:
+      required: true
+  - type: textarea
+    id: reproducer
+    attributes:
+      label: Minimal synthetic reproducer
+      description: Include only the smallest files and commands needed to reproduce the issue.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence and coverage status
+      description: Include relevant CGRX output, source spans, unresolved/partial status, and negative controls.
+  - type: textarea
+    id: verification
+    attributes:
+      label: Additional verification
+      description: Mention commands already tried and whether the issue reproduces from a clean index.

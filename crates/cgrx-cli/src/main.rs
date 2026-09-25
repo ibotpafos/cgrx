@@ -1287,21 +1287,18 @@ impl ToolBackend for RuntimeMcpBackend {
         include_body: bool,
     ) -> Result<Value, BackendError> {
         self.refresh()?;
-        let scope = graph_scope(&scope)?;
-        let limit = usize::try_from(limit)
-            .map_err(|_| BackendError::new("cgrx.invalid_arguments", "limit is out of range"))?;
+        let (scope, limit) = graph_scope_with_limit(&scope, limit)?;
         self.runtime
             .search_graph_filtered(query, &scope, limit, language, include_body)
-            .map_err(|error| BackendError::new(error.code(), error.to_string()))
+            .map_err(runtime_backend_error)
     }
 
     fn get_outline(&mut self, path: &str, limit: u32) -> Result<Value, BackendError> {
         self.refresh()?;
-        let limit = usize::try_from(limit)
-            .map_err(|_| BackendError::new("cgrx.invalid_arguments", "limit is out of range"))?;
+        let limit = usize_argument(limit, "limit")?;
         self.runtime
             .get_outline(path, limit)
-            .map_err(|error| BackendError::new(error.code(), error.to_string()))
+            .map_err(runtime_backend_error)
     }
 
     fn get_architecture(
@@ -1312,14 +1309,11 @@ impl ToolBackend for RuntimeMcpBackend {
         offset: u32,
     ) -> Result<Value, BackendError> {
         self.refresh()?;
-        let scope = graph_scope(&scope)?;
-        let limit = usize::try_from(limit)
-            .map_err(|_| BackendError::new("cgrx.invalid_arguments", "limit is out of range"))?;
-        let offset = usize::try_from(offset)
-            .map_err(|_| BackendError::new("cgrx.invalid_arguments", "offset is out of range"))?;
+        let (scope, limit) = graph_scope_with_limit(&scope, limit)?;
+        let offset = usize_argument(offset, "offset")?;
         self.runtime
             .get_architecture(&scope, usize::from(package_depth), limit, offset)
-            .map_err(|error| BackendError::new(error.code(), error.to_string()))
+            .map_err(runtime_backend_error)
     }
 
     fn trace_path(
@@ -1332,12 +1326,10 @@ impl ToolBackend for RuntimeMcpBackend {
         limit: u32,
     ) -> Result<Value, BackendError> {
         self.refresh()?;
-        let scope = graph_scope(&scope)?;
-        let limit = usize::try_from(limit)
-            .map_err(|_| BackendError::new("cgrx.invalid_arguments", "limit is out of range"))?;
+        let (scope, limit) = graph_scope_with_limit(&scope, limit)?;
         self.runtime
             .trace_path(symbol, path, direction, depth, &scope, limit)
-            .map_err(|error| BackendError::new(error.code(), error.to_string()))
+            .map_err(runtime_backend_error)
     }
 
     fn trace_path_with_evidence(
@@ -1351,12 +1343,10 @@ impl ToolBackend for RuntimeMcpBackend {
         evidence: EvidenceSelector,
     ) -> Result<Value, BackendError> {
         self.refresh()?;
-        let scope = graph_scope(&scope)?;
-        let limit = usize::try_from(limit)
-            .map_err(|_| BackendError::new("cgrx.invalid_arguments", "limit is out of range"))?;
+        let (scope, limit) = graph_scope_with_limit(&scope, limit)?;
         self.runtime
             .trace_path_with_evidence(symbol, path, direction, depth, &scope, limit, evidence)
-            .map_err(|error| BackendError::new(error.code(), error.to_string()))
+            .map_err(runtime_backend_error)
     }
 
     fn find_usages(
@@ -1368,12 +1358,10 @@ impl ToolBackend for RuntimeMcpBackend {
         limit: u32,
     ) -> Result<Value, BackendError> {
         self.refresh()?;
-        let scope = graph_scope(&scope)?;
-        let limit = usize::try_from(limit)
-            .map_err(|_| BackendError::new("cgrx.invalid_arguments", "limit is out of range"))?;
+        let (scope, limit) = graph_scope_with_limit(&scope, limit)?;
         self.runtime
             .find_usages(symbol, path, &scope, depth, limit)
-            .map_err(|error| BackendError::new(error.code(), error.to_string()))
+            .map_err(runtime_backend_error)
     }
 
     fn find_usages_with_evidence(
@@ -1386,12 +1374,10 @@ impl ToolBackend for RuntimeMcpBackend {
         evidence: EvidenceSelector,
     ) -> Result<Value, BackendError> {
         self.refresh()?;
-        let scope = graph_scope(&scope)?;
-        let limit = usize::try_from(limit)
-            .map_err(|_| BackendError::new("cgrx.invalid_arguments", "limit is out of range"))?;
+        let (scope, limit) = graph_scope_with_limit(&scope, limit)?;
         self.runtime
             .find_usages_with_evidence(symbol, path, &scope, depth, limit, evidence)
-            .map_err(|error| BackendError::new(error.code(), error.to_string()))
+            .map_err(runtime_backend_error)
     }
 
     fn suggest_refactors(
@@ -1404,12 +1390,10 @@ impl ToolBackend for RuntimeMcpBackend {
         max_pairs: usize,
     ) -> Result<Value, BackendError> {
         self.refresh()?;
-        let scope = graph_scope(&scope)?;
-        let limit = usize::try_from(limit)
-            .map_err(|_| BackendError::new("cgrx.invalid_arguments", "limit is out of range"))?;
+        let (scope, limit) = graph_scope_with_limit(&scope, limit)?;
         self.runtime
             .suggest_refactors(&scope, language, min_score, limit, max_documents, max_pairs)
-            .map_err(|error| BackendError::new(error.code(), error.to_string()))
+            .map_err(runtime_backend_error)
     }
 
     fn get_code_snippet(
@@ -1628,6 +1612,19 @@ fn graph_scope(value: &Value) -> Result<Scope, BackendError> {
     status_scope(value)
 }
 
+fn graph_scope_with_limit(value: &Value, limit: u32) -> Result<(Scope, usize), BackendError> {
+    Ok((graph_scope(value)?, usize_argument(limit, "limit")?))
+}
+
+fn usize_argument(value: u32, name: &str) -> Result<usize, BackendError> {
+    usize::try_from(value)
+        .map_err(|_| BackendError::new("cgrx.invalid_arguments", format!("{name} is out of range")))
+}
+
+fn runtime_backend_error(error: cgrx_cli::RuntimeError) -> BackendError {
+    BackendError::new(error.code(), error.to_string())
+}
+
 fn status_scope(paths_or_scope: &Value) -> Result<Scope, BackendError> {
     if paths_or_scope.is_object() {
         let partial: PartialScope =
@@ -1742,6 +1739,11 @@ fn check_gates(args: &[String]) -> Result<(), String> {
         "--scopes",
         "--max-framework-confidence",
         "--max-false-positive-matches",
+        "--max-secret-findings",
+        "--max-dependency-findings",
+        "--max-license-findings",
+        "--allowlist-paths",
+        "--allowlist-licenses",
         "--output",
     ];
     validate_value_flags(args, ALLOWED)?;
@@ -1808,26 +1810,8 @@ fn check_gates(args: &[String]) -> Result<(), String> {
             0,
             10_000,
         )?;
-        let allowlist_paths = optional_flag(args, "--allowlist-paths")
-            .map(|value| {
-                value
-                    .split(',')
-                    .map(str::trim)
-                    .filter(|segment| !segment.is_empty())
-                    .map(str::to_owned)
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
-        let allowlist_licenses = optional_flag(args, "--allowlist-licenses")
-            .map(|value| {
-                value
-                    .split(',')
-                    .map(str::trim)
-                    .filter(|segment| !segment.is_empty())
-                    .map(str::to_owned)
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
+        let allowlist_paths = comma_separated_flag(args, "--allowlist-paths");
+        let allowlist_licenses = comma_separated_flag(args, "--allowlist-licenses");
         let arguments = json!({
             "fail_on": fail_on,
             "max_secret_findings": max_secret_findings,
@@ -1838,26 +1822,8 @@ fn check_gates(args: &[String]) -> Result<(), String> {
         });
         ("check_security_gates", arguments)
     } else {
-        let paths = optional_flag(args, "--paths")
-            .map(|value| {
-                value
-                    .split(',')
-                    .map(str::trim)
-                    .filter(|segment| !segment.is_empty())
-                    .map(str::to_owned)
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
-        let scopes = optional_flag(args, "--scopes")
-            .map(|value| {
-                value
-                    .split(',')
-                    .map(str::trim)
-                    .filter(|segment| !segment.is_empty())
-                    .map(str::to_owned)
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
+        let paths = comma_separated_flag(args, "--paths");
+        let scopes = comma_separated_flag(args, "--scopes");
         let max_framework_confidence = parse_bounded_usize(
             flag_or(args, "--max-framework-confidence", "0"),
             "--max-framework-confidence",
@@ -1961,6 +1927,19 @@ fn parse_bounded_usize(value: &str, name: &str, min: usize, max: usize) -> Resul
         return Err(format!("{name} must be from {min} to {max}"));
     }
     Ok(parsed)
+}
+
+fn comma_separated_flag(args: &[String], name: &str) -> Vec<String> {
+    optional_flag(args, name)
+        .map(|value| {
+            value
+                .split(',')
+                .map(str::trim)
+                .filter(|segment| !segment.is_empty())
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn schema(args: &[String]) -> Result<(), String> {
