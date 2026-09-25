@@ -1087,3 +1087,30 @@ pub(super) fn compact_trace_root(value: &Value) -> Value {
         ],
     })
 }
+
+pub(super) fn compact_memory_record(value: &Value) -> Value {
+    json!({
+        "at": snapshot_tag(value.get("snapshot")),
+        "id": value.pointer("/record/id"),
+        "duplicate": value.get("duplicate"),
+        "llm_used": false,
+    })
+}
+
+pub(super) fn compact_memory_recall(value: &Value) -> Value {
+    let rows: Vec<_> = value
+        .get("results")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .take(50)
+        .map(|item| json!([item.get("id"), item.get("confidence"), item.get("fact")]))
+        .collect();
+    json!({
+        "at": snapshot_tag(value.get("snapshot")),
+        "cols": ["id", "confidence", "fact"],
+        "rows": rows,
+        "truncated": value.get("truncated"),
+        "llm_used": false,
+    })
+}
