@@ -39,12 +39,8 @@ fn runtime_backend_error(error: cgrx_cli::RuntimeError) -> BackendError {
 }
 
 fn usize_argument(value: u32, name: &str) -> Result<usize, BackendError> {
-    usize::try_from(value).map_err(|_| {
-        BackendError::new(
-            "cgrx.invalid_arguments",
-            format!("{name} is out of range"),
-        )
-    })
+    usize::try_from(value)
+        .map_err(|_| BackendError::new("cgrx.invalid_arguments", format!("{name} is out of range")))
 }
 
 impl RuntimeMcpBackend {
@@ -100,11 +96,8 @@ impl RuntimeMcpBackend {
                 };
                 indexed.map_err(runtime_backend_error)?;
                 self.risk_baseline = None;
-                self.runtime = Runtime::open(state)
-                    .map_err(runtime_backend_error)?;
-                self.runtime
-                    .refresh(root)
-                    .map_err(runtime_backend_error)?;
+                self.runtime = Runtime::open(state).map_err(runtime_backend_error)?;
+                self.runtime.refresh(root).map_err(runtime_backend_error)?;
                 true
             }
             Err(error) => return Err(BackendError::new(error.code(), error.to_string())),
@@ -793,4 +786,3 @@ struct PartialScope {
     relation_kinds: Option<Vec<RelationKind>>,
     max_depth: Option<u8>,
 }
-

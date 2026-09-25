@@ -13,9 +13,7 @@ use std::time::Instant;
 
 use cgrx_capsule::Tokenizer;
 use cgrx_cli::{Runtime, RuntimeEvidenceFormat};
-use cgrx_core::{
-    Hash32, QueryRequest, RelationKind, RepoSnapshot, Scope,
-};
+use cgrx_core::{Hash32, QueryRequest, RelationKind, RepoSnapshot, Scope};
 use cgrx_mcp::{
     Server, Toolset, gate_to_sarif, model_visible_schema_json, resolve_response_profile,
     resolve_toolset,
@@ -906,8 +904,10 @@ fn call_managed_tool(name: &str, arguments: Value, root: &Path) -> Result<Value,
     let root = root.canonicalize().map_err(|error| error.to_string())?;
     let state = managed_state_path(&root)?;
     let runtime = open_managed_runtime(&root, &state)?;
-    let mut server = Server::with_backend(mcp_backend::RuntimeMcpBackend::managed(runtime, root, state))
-        .with_toolset(Toolset::Full);
+    let mut server = Server::with_backend(mcp_backend::RuntimeMcpBackend::managed(
+        runtime, root, state,
+    ))
+    .with_toolset(Toolset::Full);
     let request = json!({
         "jsonrpc":"2.0",
         "id":1,
