@@ -16,6 +16,183 @@ use super::ts_config::{self, TsResolutionConfig};
 use super::{StoredArc, StoredDocument, StoredTsFileFacts};
 use super::{ts_config_modules, ts_config_supported_for, ts_paths_portable_for};
 
+fn append_reference_arcs(
+    documents: &[StoredDocument],
+    path_hashes: &BTreeMap<String, Hash32>,
+    by_name: &BTreeMap<&str, Vec<&StoredDocument>>,
+    arcs: &mut Vec<StoredArc>,
+) {
+    // Create References arcs from reference documents to their targets
+    for document in documents
+        .iter()
+        .filter(|d| d.provenance == "REFERENCES" && !php_resolution::is_php_path(&d.path))
+    {
+        // Try exact match first, then extract last segment for qualified names
+        let targets = by_name.get(document.qualified_name.as_str()).or_else(|| {
+            // For qualified names like "cgrx_core::IoAccounting", try "IoAccounting"
+            document
+                .qualified_name
+                .rsplit("::")
+                .next()
+                .and_then(|name| by_name.get(name))
+        });
+        let Some(targets) = targets else {
+            continue;
+        };
+        for target in targets {
+            if target.provenance == "SYNTAX" {
+                let source_hash = path_hashes
+                    .get(&document.path)
+                    .copied()
+                    .unwrap_or(Hash32([0; 32]));
+                arcs.push(StoredArc {
+                    source: document.node_id,
+                    target: target.node_id,
+                    kind: RelationKind::References,
+                    evidence: Some(EdgeEvidence {
+                        path: document.path.clone(),
+                        span: ByteRange::new(document.span_start, document.span_end),
+                        source_hash,
+                        resolver: ResolverClass::SyntaxExact,
+                        confidence: ConfidenceClass::Proven,
+                        assumptions: Vec::new(),
+                        counter_evidence: Vec::new(),
+                    }),
+                });
+            }
+        }
+    }
+}
+
+fn append_import_arcs(
+    documents: &[StoredDocument],
+    path_hashes: &BTreeMap<String, Hash32>,
+    syntax_by_path: &BTreeMap<&str, Vec<&StoredDocument>>,
+    by_name: &BTreeMap<&str, Vec<&StoredDocument>>,
+    arcs: &mut Vec<StoredArc>,
+) {
+    // Create IMPORTS arcs from import documents to their targets
+    // Match import targets to SYNTAX documents by path
+    for document in documents
+        .iter()
+        .filter(|d| d.provenance == "IMPORTS" && !php_resolution::is_php_path(&d.path))
+    {
+        // Try to find the imported module by matching the qualified_name to a file path
+        let import_target = &document.qualified_name;
+
+        // For relative imports (./foo, ../foo), try to resolve to a file path
+        // For absolute imports (fmt, std::io), skip as they're external
+        if import_target.starts_with("./") || import_target.starts_with("../") {
+            // Try to find a matching file in syntax_by_path
+            let importing_dir = Path::new(&document.path).parent().unwrap_or(Path::new("."));
+            let resolved = importing_dir.join(import_target);
+            let resolved_str = resolved.to_string_lossy().to_string();
+
+            // Try exact match and with common extensions
+            for candidate in [
+                resolved_str.clone(),
+                format!("{}.rs", resolved_str),
+                format!("{}.go", resolved_str),
+                format!("{}.ts", resolved_str),
+                format!("{}.js", resolved_str),
+                format!("{}.py", resolved_str),
+                format!("{}/mod.rs", resolved_str),
+                format!("{}/index.ts", resolved_str),
+                format!("{}/index.js", resolved_str),
+            ] {
+                if let Some(targets) = syntax_by_path.get(candidate.as_str())
+                    && let Some(target) = targets.first()
+                {
+                    let source_hash = path_hashes
+                        .get(&document.path)
+                        .copied()
+                        .unwrap_or(Hash32([0; 32]));
+                    arcs.push(StoredArc {
+                        source: document.node_id,
+                        target: target.node_id,
+                        kind: RelationKind::Imports,
+                        evidence: Some(EdgeEvidence {
+                            path: document.path.clone(),
+                            span: ByteRange::new(document.span_start, document.span_end),
+                            source_hash,
+                            resolver: ResolverClass::SyntaxExact,
+                            confidence: ConfidenceClass::Proven,
+                            assumptions: Vec::new(),
+                            counter_evidence: Vec::new(),
+                        }),
+                    });
+                    break;
+                }
+            }
+        }
+
+        // For crate:: and internal crate imports, extract symbol names and match to SYNTAX documents
+        let is_internal = import_target.starts_with("crate::")
+            || import_target.starts_with("use crate::")
+            || import_target.starts_with("use cgrx_")
+            || import_target.starts_with("use super::")
+            || import_target.starts_with("use self::");
+        if is_internal {
+            // Extract symbol names from various patterns:
+            // - use crate::Symbol -> ["Symbol"]
+            // - use crate::module::Symbol -> ["Symbol"]
+            // - use crate::{A, B, C} -> ["A", "B", "C"]
+            // - use crate::module::{A, B} -> ["A", "B"]
+            // Remove "use " prefix if present
+            let clean_target = import_target.strip_prefix("use ").unwrap_or(import_target);
+            // Remove trailing semicolon
+            let clean_target = clean_target.trim_end_matches(';');
+            let symbols: Vec<&str> = if clean_target.contains('{') {
+                // Handle brace-enclosed imports: crate::{A, B, C} or crate::module::{A, B}
+                if let Some(brace_start) = clean_target.find('{') {
+                    let inner = &clean_target[brace_start + 1..];
+                    if let Some(brace_end) = inner.find('}') {
+                        inner[..brace_end]
+                            .split(',')
+                            .map(|s| s.trim())
+                            .filter(|s| !s.is_empty())
+                            .collect()
+                    } else {
+                        Vec::new()
+                    }
+                } else {
+                    Vec::new()
+                }
+            } else {
+                // Handle simple imports: crate::Symbol or crate::module::Symbol
+                clean_target.rsplit("::").next().into_iter().collect()
+            };
+
+            for symbol_name in symbols {
+                if let Some(targets) = by_name.get(symbol_name) {
+                    for target in targets {
+                        if target.provenance == "SYNTAX" {
+                            let source_hash = path_hashes
+                                .get(&document.path)
+                                .copied()
+                                .unwrap_or(Hash32([0; 32]));
+                            arcs.push(StoredArc {
+                                source: document.node_id,
+                                target: target.node_id,
+                                kind: RelationKind::Imports,
+                                evidence: Some(EdgeEvidence {
+                                    path: document.path.clone(),
+                                    span: ByteRange::new(document.span_start, document.span_end),
+                                    source_hash,
+                                    resolver: ResolverClass::SyntaxExact,
+                                    confidence: ConfidenceClass::Proven,
+                                    assumptions: Vec::new(),
+                                    counter_evidence: Vec::new(),
+                                }),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 pub(super) fn rebuild_arcs_with_cargo(
     documents: &[StoredDocument],
     path_hashes: &BTreeMap<String, Hash32>,
@@ -632,168 +809,8 @@ pub(super) fn rebuild_arcs_with_cargo(
             });
         }
     }
-    // Create References arcs from reference documents to their targets
-    for document in documents
-        .iter()
-        .filter(|d| d.provenance == "REFERENCES" && !php_resolution::is_php_path(&d.path))
-    {
-        // Try exact match first, then extract last segment for qualified names
-        let targets = by_name.get(document.qualified_name.as_str()).or_else(|| {
-            // For qualified names like "cgrx_core::IoAccounting", try "IoAccounting"
-            document
-                .qualified_name
-                .rsplit("::")
-                .next()
-                .and_then(|name| by_name.get(name))
-        });
-        let Some(targets) = targets else {
-            continue;
-        };
-        for target in targets {
-            if target.provenance == "SYNTAX" {
-                let source_hash = path_hashes
-                    .get(&document.path)
-                    .copied()
-                    .unwrap_or(Hash32([0; 32]));
-                arcs.push(StoredArc {
-                    source: document.node_id,
-                    target: target.node_id,
-                    kind: RelationKind::References,
-                    evidence: Some(EdgeEvidence {
-                        path: document.path.clone(),
-                        span: ByteRange::new(document.span_start, document.span_end),
-                        source_hash,
-                        resolver: ResolverClass::SyntaxExact,
-                        confidence: ConfidenceClass::Proven,
-                        assumptions: Vec::new(),
-                        counter_evidence: Vec::new(),
-                    }),
-                });
-            }
-        }
-    }
-
-    // Create IMPORTS arcs from import documents to their targets
-    // Match import targets to SYNTAX documents by path
-    for document in documents
-        .iter()
-        .filter(|d| d.provenance == "IMPORTS" && !php_resolution::is_php_path(&d.path))
-    {
-        // Try to find the imported module by matching the qualified_name to a file path
-        let import_target = &document.qualified_name;
-
-        // For relative imports (./foo, ../foo), try to resolve to a file path
-        // For absolute imports (fmt, std::io), skip as they're external
-        if import_target.starts_with("./") || import_target.starts_with("../") {
-            // Try to find a matching file in syntax_by_path
-            let importing_dir = Path::new(&document.path).parent().unwrap_or(Path::new("."));
-            let resolved = importing_dir.join(import_target);
-            let resolved_str = resolved.to_string_lossy().to_string();
-
-            // Try exact match and with common extensions
-            for candidate in [
-                resolved_str.clone(),
-                format!("{}.rs", resolved_str),
-                format!("{}.go", resolved_str),
-                format!("{}.ts", resolved_str),
-                format!("{}.js", resolved_str),
-                format!("{}.py", resolved_str),
-                format!("{}/mod.rs", resolved_str),
-                format!("{}/index.ts", resolved_str),
-                format!("{}/index.js", resolved_str),
-            ] {
-                if let Some(targets) = syntax_by_path.get(candidate.as_str())
-                    && let Some(target) = targets.first()
-                {
-                    let source_hash = path_hashes
-                        .get(&document.path)
-                        .copied()
-                        .unwrap_or(Hash32([0; 32]));
-                    arcs.push(StoredArc {
-                        source: document.node_id,
-                        target: target.node_id,
-                        kind: RelationKind::Imports,
-                        evidence: Some(EdgeEvidence {
-                            path: document.path.clone(),
-                            span: ByteRange::new(document.span_start, document.span_end),
-                            source_hash,
-                            resolver: ResolverClass::SyntaxExact,
-                            confidence: ConfidenceClass::Proven,
-                            assumptions: Vec::new(),
-                            counter_evidence: Vec::new(),
-                        }),
-                    });
-                    break;
-                }
-            }
-        }
-
-        // For crate:: and internal crate imports, extract symbol names and match to SYNTAX documents
-        let is_internal = import_target.starts_with("crate::")
-            || import_target.starts_with("use crate::")
-            || import_target.starts_with("use cgrx_")
-            || import_target.starts_with("use super::")
-            || import_target.starts_with("use self::");
-        if is_internal {
-            // Extract symbol names from various patterns:
-            // - use crate::Symbol -> ["Symbol"]
-            // - use crate::module::Symbol -> ["Symbol"]
-            // - use crate::{A, B, C} -> ["A", "B", "C"]
-            // - use crate::module::{A, B} -> ["A", "B"]
-            // Remove "use " prefix if present
-            let clean_target = import_target.strip_prefix("use ").unwrap_or(import_target);
-            // Remove trailing semicolon
-            let clean_target = clean_target.trim_end_matches(';');
-            let symbols: Vec<&str> = if clean_target.contains('{') {
-                // Handle brace-enclosed imports: crate::{A, B, C} or crate::module::{A, B}
-                if let Some(brace_start) = clean_target.find('{') {
-                    let inner = &clean_target[brace_start + 1..];
-                    if let Some(brace_end) = inner.find('}') {
-                        inner[..brace_end]
-                            .split(',')
-                            .map(|s| s.trim())
-                            .filter(|s| !s.is_empty())
-                            .collect()
-                    } else {
-                        Vec::new()
-                    }
-                } else {
-                    Vec::new()
-                }
-            } else {
-                // Handle simple imports: crate::Symbol or crate::module::Symbol
-                clean_target.rsplit("::").next().into_iter().collect()
-            };
-
-            for symbol_name in symbols {
-                if let Some(targets) = by_name.get(symbol_name) {
-                    for target in targets {
-                        if target.provenance == "SYNTAX" {
-                            let source_hash = path_hashes
-                                .get(&document.path)
-                                .copied()
-                                .unwrap_or(Hash32([0; 32]));
-                            arcs.push(StoredArc {
-                                source: document.node_id,
-                                target: target.node_id,
-                                kind: RelationKind::Imports,
-                                evidence: Some(EdgeEvidence {
-                                    path: document.path.clone(),
-                                    span: ByteRange::new(document.span_start, document.span_end),
-                                    source_hash,
-                                    resolver: ResolverClass::SyntaxExact,
-                                    confidence: ConfidenceClass::Proven,
-                                    assumptions: Vec::new(),
-                                    counter_evidence: Vec::new(),
-                                }),
-                            });
-                        }
-                    }
-                }
-            }
-        }
-    }
-
+    append_reference_arcs(documents, path_hashes, &by_name, &mut arcs);
+    append_import_arcs(documents, path_hashes, &syntax_by_path, &by_name, &mut arcs);
     arcs.sort_by_key(|arc| (arc.source, arc.target, arc.kind, arc.evidence.clone()));
     arcs.dedup();
     arcs
