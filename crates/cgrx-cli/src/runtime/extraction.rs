@@ -84,6 +84,46 @@ pub(super) fn extract_sources_parallel(
     Ok(extracted)
 }
 
+struct DocumentSeed {
+    node_id: u64,
+    qualified_name: String,
+    text: String,
+    search_text: String,
+    span: Span,
+    provenance: &'static str,
+    semantic_tags: Vec<String>,
+}
+
+fn plain_document(relative: &str, seed: DocumentSeed) -> StoredDocument {
+    StoredDocument {
+        php_function_target: None,
+        php_type_target: None,
+        rust_module_target: None,
+        rust_self_target: None,
+        ts_lexical_target: None,
+        ts_constructor_target: None,
+        go_field_target: None,
+        go_local_constructor_target: None,
+        java_constructor_target: None,
+        semantic_fingerprint: None,
+        node_id: seed.node_id,
+        qualified_name: seed.qualified_name,
+        path: relative.to_owned(),
+        text: seed.text,
+        search_text: seed.search_text,
+        span_start: seed.span.start,
+        span_end: seed.span.end,
+        body_start: seed.span.start,
+        body_end: seed.span.end,
+        provenance: seed.provenance.to_owned(),
+        semantic_tags: seed.semantic_tags,
+        go_receiver_target: None,
+        go_import_path: None,
+        go_import_explicit_alias: false,
+        go_package: None,
+    }
+}
+
 pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPath, RuntimeError> {
     let relative_path = Path::new(relative);
     let ts_file = matches!(
@@ -145,40 +185,32 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
                 String::from_utf8_lossy(bytes).into_owned()
             });
         let semantic_fingerprint = body_fingerprint(&symbol.name, &search_text);
+        let semantic_tags = if lexical_arrows.contains(&symbol.span) {
+            vec!["TS_LEXICAL_ARROW".to_owned()]
+        } else if php_type_targets.contains(&symbol.span) {
+            vec!["PHP_TYPE_DECLARATION".to_owned()]
+        } else if php_targets.contains(&symbol.span) {
+            vec!["PHP_GLOBAL_FUNCTION".to_owned()]
+        } else {
+            Vec::new()
+        };
         documents.push(StoredDocument {
-            php_function_target: None,
-            php_type_target: None,
-            rust_module_target: None,
-            rust_self_target: None,
-            ts_lexical_target: None,
-            ts_constructor_target: None,
-            go_field_target: None,
-            go_local_constructor_target: None,
-            java_constructor_target: None,
-            go_import_path: None,
-            go_import_explicit_alias: false,
             go_package: go_package.clone(),
-            go_receiver_target: None,
             semantic_fingerprint,
-            node_id: stable_node_id(relative, symbol.span, &symbol.name),
-            qualified_name: symbol.name.clone(),
-            path: relative.to_owned(),
-            text,
-            search_text,
-            span_start: symbol.span.start,
-            span_end: symbol.span.end,
             body_start: symbol.search_span.start,
             body_end: symbol.search_span.end,
-            provenance: "SYNTAX".to_owned(),
-            semantic_tags: if lexical_arrows.contains(&symbol.span) {
-                vec!["TS_LEXICAL_ARROW".to_owned()]
-            } else if php_type_targets.contains(&symbol.span) {
-                vec!["PHP_TYPE_DECLARATION".to_owned()]
-            } else if php_targets.contains(&symbol.span) {
-                vec!["PHP_GLOBAL_FUNCTION".to_owned()]
-            } else {
-                Vec::new()
-            },
+            ..plain_document(
+                relative,
+                DocumentSeed {
+                    node_id: stable_node_id(relative, symbol.span, &symbol.name),
+                    qualified_name: symbol.name.clone(),
+                    text,
+                    search_text,
+                    span: symbol.span,
+                    provenance: "SYNTAX",
+                    semantic_tags,
+                },
+            )
         });
     }
     for edge in edges
@@ -189,86 +221,63 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
         // line-oriented context slice can contain adjacent imports and make an
         // external specifier look like a second repository-local dependency.
         let text = String::from_utf8_lossy(&source[edge.span.start..edge.span.end]).into_owned();
-        documents.push(StoredDocument {
-            php_function_target: None,
-            php_type_target: None,
-            rust_module_target: None,
-            rust_self_target: None,
-            ts_lexical_target: None,
-            ts_constructor_target: None,
-            go_field_target: None,
-            go_local_constructor_target: None,
-            java_constructor_target: None,
-            go_import_path: None,
-            go_import_explicit_alias: false,
-            go_package: None,
-            go_receiver_target: None,
-            semantic_fingerprint: None,
-            node_id: stable_node_id(relative, edge.span, &format!("import:{text}")),
-            qualified_name: edge.target.clone(),
-            path: relative.to_owned(),
-            text: text.clone(),
-            search_text: text,
-            span_start: edge.span.start,
-            span_end: edge.span.end,
-            body_start: edge.span.start,
-            body_end: edge.span.end,
-            provenance: "IMPORTS".to_owned(),
-            semantic_tags: vec!["IMPORTS".to_owned()],
-        });
+        let identity = format!("import:{text}");
+        documents.push(plain_document(
+            relative,
+            DocumentSeed {
+                node_id: stable_node_id(relative, edge.span, &identity),
+                qualified_name: edge.target.clone(),
+                text: text.clone(),
+                search_text: text,
+                span: edge.span,
+                provenance: "IMPORTS",
+                semantic_tags: vec!["IMPORTS".to_owned()],
+            },
+        ));
     }
     for edge in edges
         .iter()
         .filter(|edge| edge.relation == LanguageRelation::References)
     {
         let text = String::from_utf8_lossy(&source[edge.span.start..edge.span.end]).into_owned();
-        documents.push(StoredDocument {
-            php_function_target: None,
-            php_type_target: if let LanguageProvenance::PhpType {
+        let php_type_target = if let LanguageProvenance::PhpType {
+            owner,
+            target,
+            import,
+        } = edge.provenance
+        {
+            Some(Box::new(super::php_resolution::PhpTypeTarget::new(
+                php_source_hash.expect("PHP type identity was collected"),
                 owner,
                 target,
                 import,
-            } = edge.provenance
-            {
-                Some(Box::new(super::php_resolution::PhpTypeTarget::new(
-                    php_source_hash.expect("PHP type identity was collected"),
-                    owner,
-                    target,
-                    import,
-                    relative,
-                    edge,
-                    source,
-                )))
-            } else {
-                None
-            },
-            rust_module_target: None,
-            rust_self_target: None,
-            ts_lexical_target: None,
-            ts_constructor_target: None,
-            go_field_target: None,
-            go_local_constructor_target: None,
-            java_constructor_target: None,
-            go_import_path: None,
-            go_import_explicit_alias: false,
-            go_package: None,
-            go_receiver_target: None,
-            semantic_fingerprint: None,
-            node_id: stable_node_id(relative, edge.span, &format!("reference:{text}")),
-            qualified_name: edge.target.clone(),
-            path: relative.to_owned(),
-            text: text.clone(),
-            search_text: text,
-            span_start: edge.span.start,
-            span_end: edge.span.end,
-            body_start: edge.span.start,
-            body_end: edge.span.end,
-            provenance: "REFERENCES".to_owned(),
-            semantic_tags: if matches!(edge.provenance, LanguageProvenance::PhpType { .. }) {
-                vec!["REFERENCES".to_owned(), "PHP_TYPE_REFERENCE".to_owned()]
-            } else {
-                vec!["REFERENCES".to_owned()]
-            },
+                relative,
+                edge,
+                source,
+            )))
+        } else {
+            None
+        };
+        let semantic_tags = if php_type_target.is_some() {
+            vec!["REFERENCES".to_owned(), "PHP_TYPE_REFERENCE".to_owned()]
+        } else {
+            vec!["REFERENCES".to_owned()]
+        };
+        let identity = format!("reference:{text}");
+        documents.push(StoredDocument {
+            php_type_target,
+            ..plain_document(
+                relative,
+                DocumentSeed {
+                    node_id: stable_node_id(relative, edge.span, &identity),
+                    qualified_name: edge.target.clone(),
+                    text: text.clone(),
+                    search_text: text,
+                    span: edge.span,
+                    provenance: "REFERENCES",
+                    semantic_tags,
+                },
+            )
         });
     }
     for edge in edges {
@@ -491,37 +500,20 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
                 ByteRange::new(edge.context_span.start, edge.context_span.end),
                 ContextWindow::lines(0),
             );
-            documents.push(StoredDocument {
-                php_function_target: None,
-                php_type_target: None,
-                rust_module_target: None,
-                rust_self_target: None,
-                ts_lexical_target: None,
-                ts_constructor_target: None,
-                go_field_target: None,
-                go_local_constructor_target: None,
-                java_constructor_target: None,
-                go_import_path: None,
-                go_import_explicit_alias: false,
-                go_package: None,
-                go_receiver_target: None,
-                semantic_fingerprint: None,
-                node_id: stable_node_id(
-                    relative,
-                    edge.context_span,
-                    &format!("statement:{target}"),
-                ),
-                qualified_name: target,
-                path: relative.to_owned(),
-                text: String::from_utf8_lossy(&context.bytes).into_owned(),
-                search_text: String::from_utf8_lossy(&context.bytes).into_owned(),
-                span_start: edge.context_span.start,
-                span_end: edge.context_span.end,
-                body_start: edge.context_span.start,
-                body_end: edge.context_span.end,
-                provenance: "CALLS".to_owned(),
-                semantic_tags: vec!["STATEMENT_CALL".to_owned()],
-            });
+            let text = String::from_utf8_lossy(&context.bytes).into_owned();
+            let identity = format!("statement:{target}");
+            documents.push(plain_document(
+                relative,
+                DocumentSeed {
+                    node_id: stable_node_id(relative, edge.context_span, &identity),
+                    qualified_name: target,
+                    text: text.clone(),
+                    search_text: text,
+                    span: edge.context_span,
+                    provenance: "CALLS",
+                    semantic_tags: vec!["STATEMENT_CALL".to_owned()],
+                },
+            ));
         }
     }
     let ts_receiver_spans: BTreeSet<_> = ts_file
@@ -561,33 +553,20 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
                 ByteRange::new(span.start, span.end),
                 ContextWindow::lines(0),
             );
-            documents.push(StoredDocument {
-                php_function_target: None,
-                php_type_target: None,
-                rust_module_target: None,
-                rust_self_target: None,
-                ts_lexical_target: None,
-                ts_constructor_target: None,
-                go_field_target: None,
-                go_local_constructor_target: None,
-                java_constructor_target: None,
-                go_import_path: None,
-                go_import_explicit_alias: false,
-                go_package: None,
-                go_receiver_target: None,
-                semantic_fingerprint: None,
-                node_id: stable_node_id(relative, span, &format!("call:{}", import.local)),
-                qualified_name: import.local.clone(),
-                path: relative.to_owned(),
-                text: String::from_utf8_lossy(&slice.bytes).into_owned(),
-                search_text: String::from_utf8_lossy(&slice.bytes).into_owned(),
-                span_start: span.start,
-                span_end: span.end,
-                body_start: span.start,
-                body_end: span.end,
-                provenance: "CALLS".to_owned(),
-                semantic_tags: vec!["EXACT_CALL".to_owned(), tag.to_owned()],
-            });
+            let text = String::from_utf8_lossy(&slice.bytes).into_owned();
+            let identity = format!("call:{}", import.local);
+            documents.push(plain_document(
+                relative,
+                DocumentSeed {
+                    node_id: stable_node_id(relative, span, &identity),
+                    qualified_name: import.local.clone(),
+                    text: text.clone(),
+                    search_text: text,
+                    span,
+                    provenance: "CALLS",
+                    semantic_tags: vec!["EXACT_CALL".to_owned(), tag.to_owned()],
+                },
+            ));
         }
         for receiver in &facts.receiver_calls {
             let span = Span {
@@ -615,33 +594,20 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
                 ByteRange::new(span.start, span.end),
                 ContextWindow::lines(0),
             );
-            documents.push(StoredDocument {
-                php_function_target: None,
-                php_type_target: None,
-                rust_module_target: None,
-                rust_self_target: None,
-                ts_lexical_target: None,
-                ts_constructor_target: None,
-                go_field_target: None,
-                go_local_constructor_target: None,
-                java_constructor_target: None,
-                go_import_path: None,
-                go_import_explicit_alias: false,
-                go_package: None,
-                go_receiver_target: None,
-                semantic_fingerprint: None,
-                node_id: stable_node_id(relative, span, &format!("call:{}", receiver.method)),
-                qualified_name: receiver.method.clone(),
-                path: relative.to_owned(),
-                text: String::from_utf8_lossy(&slice.bytes).into_owned(),
-                search_text: String::from_utf8_lossy(&slice.bytes).into_owned(),
-                span_start: span.start,
-                span_end: span.end,
-                body_start: span.start,
-                body_end: span.end,
-                provenance: "CALLS".to_owned(),
-                semantic_tags: vec!["EXACT_CALL".to_owned(), "TS_RECEIVER_CALL".to_owned()],
-            });
+            let text = String::from_utf8_lossy(&slice.bytes).into_owned();
+            let identity = format!("call:{}", receiver.method);
+            documents.push(plain_document(
+                relative,
+                DocumentSeed {
+                    node_id: stable_node_id(relative, span, &identity),
+                    qualified_name: receiver.method.clone(),
+                    text: text.clone(),
+                    search_text: text,
+                    span,
+                    provenance: "CALLS",
+                    semantic_tags: vec!["EXACT_CALL".to_owned(), "TS_RECEIVER_CALL".to_owned()],
+                },
+            ));
         }
     }
     let mut unresolved_by_span = BTreeMap::<(usize, usize), Vec<UnresolvedKind>>::new();
@@ -675,33 +641,19 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
                     _ => None,
                 })
                 .collect();
-            documents.push(StoredDocument {
-                php_function_target: None,
-                php_type_target: None,
-                rust_module_target: None,
-                rust_self_target: None,
-                ts_lexical_target: None,
-                ts_constructor_target: None,
-                go_field_target: None,
-                go_local_constructor_target: None,
-                java_constructor_target: None,
-                go_import_path: None,
-                go_import_explicit_alias: false,
-                go_package: None,
-                go_receiver_target: None,
-                semantic_fingerprint: None,
-                node_id: stable_node_id(relative, span, &format!("unresolved:{text}")),
-                qualified_name: format!("unresolved:{text}"),
-                path: relative.to_owned(),
-                text,
-                search_text: String::new(),
-                span_start: start,
-                span_end: end,
-                body_start: start,
-                body_end: end,
-                provenance: "CALLS".to_owned(),
-                semantic_tags,
-            });
+            let qualified_name = format!("unresolved:{text}");
+            documents.push(plain_document(
+                relative,
+                DocumentSeed {
+                    node_id: stable_node_id(relative, span, &qualified_name),
+                    qualified_name,
+                    text,
+                    search_text: String::new(),
+                    span,
+                    provenance: "CALLS",
+                    semantic_tags,
+                },
+            ));
         }
     }
     for candidate in unresolved
@@ -719,63 +671,35 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
             continue;
         };
         let text = String::from_utf8_lossy(&source[span.start..span.end]).into_owned();
-        documents.push(StoredDocument {
-            php_function_target: None,
-            php_type_target: None,
-            rust_module_target: None,
-            rust_self_target: None,
-            ts_lexical_target: None,
-            ts_constructor_target: None,
-            go_field_target: None,
-            go_local_constructor_target: None,
-            java_constructor_target: None,
-            go_import_path: None,
-            go_import_explicit_alias: false,
-            go_package: None,
-            go_receiver_target: None,
-            semantic_fingerprint: None,
-            node_id: stable_node_id(relative, span, &format!("route:{text}")),
-            qualified_name: symbol.name.clone(),
-            path: relative.to_owned(),
-            text,
-            search_text: String::new(),
-            span_start: span.start,
-            span_end: span.end,
-            body_start: span.start,
-            body_end: span.end,
-            provenance: "ROUTE_HANDLER".to_owned(),
-            semantic_tags: vec!["DECORATOR_HANDLER".to_owned()],
-        });
+        let identity = format!("route:{text}");
+        documents.push(plain_document(
+            relative,
+            DocumentSeed {
+                node_id: stable_node_id(relative, span, &identity),
+                qualified_name: symbol.name.clone(),
+                text,
+                search_text: String::new(),
+                span,
+                provenance: "ROUTE_HANDLER",
+                semantic_tags: vec!["DECORATOR_HANDLER".to_owned()],
+            },
+        ));
     }
     for span in implements_spans(source, relative_path) {
         let text = String::from_utf8_lossy(&source[span.start..span.end]).into_owned();
-        documents.push(StoredDocument {
-            php_function_target: None,
-            php_type_target: None,
-            rust_module_target: None,
-            rust_self_target: None,
-            ts_lexical_target: None,
-            ts_constructor_target: None,
-            go_field_target: None,
-            go_local_constructor_target: None,
-            java_constructor_target: None,
-            go_import_path: None,
-            go_import_explicit_alias: false,
-            go_package: None,
-            go_receiver_target: None,
-            semantic_fingerprint: None,
-            node_id: stable_node_id(relative, span, &format!("implements:{text}")),
-            qualified_name: text.clone(),
-            path: relative.to_owned(),
-            text,
-            search_text: String::new(),
-            span_start: span.start,
-            span_end: span.end,
-            body_start: span.start,
-            body_end: span.end,
-            provenance: "IMPLEMENTS".to_owned(),
-            semantic_tags: vec!["IMPLEMENTS".to_owned()],
-        });
+        let identity = format!("implements:{text}");
+        documents.push(plain_document(
+            relative,
+            DocumentSeed {
+                node_id: stable_node_id(relative, span, &identity),
+                qualified_name: text.clone(),
+                text,
+                search_text: String::new(),
+                span,
+                provenance: "IMPLEMENTS",
+                semantic_tags: vec!["IMPLEMENTS".to_owned()],
+            },
+        ));
     }
     let dynamic_dispatch = outer_dynamic_spans(&unresolved)
         .into_iter()
@@ -819,4 +743,49 @@ pub(super) fn outer_dynamic_spans(unresolved: &[cgrx_languages::Unresolved]) -> 
                 .any(|outer| outer != span && outer.start <= span.start && outer.end >= span.end)
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn plain_document_preserves_identity_span_and_empty_proof_targets() {
+        let span = Span { start: 4, end: 12 };
+        let document = plain_document(
+            "src/example.ts",
+            DocumentSeed {
+                node_id: stable_node_id("src/example.ts", span, "call:demo"),
+                qualified_name: "demo".to_owned(),
+                text: "demo()".to_owned(),
+                search_text: "demo()".to_owned(),
+                span,
+                provenance: "CALLS",
+                semantic_tags: vec!["EXACT_CALL".to_owned()],
+            },
+        );
+
+        assert_eq!(
+            document.node_id,
+            stable_node_id("src/example.ts", span, "call:demo")
+        );
+        assert_eq!((document.span_start, document.span_end), (4, 12));
+        assert_eq!((document.body_start, document.body_end), (4, 12));
+        assert_eq!(document.provenance, "CALLS");
+        assert_eq!(document.semantic_tags, vec!["EXACT_CALL"]);
+        assert!(document.php_function_target.is_none());
+        assert!(document.php_type_target.is_none());
+        assert!(document.rust_module_target.is_none());
+        assert!(document.rust_self_target.is_none());
+        assert!(document.ts_lexical_target.is_none());
+        assert!(document.ts_constructor_target.is_none());
+        assert!(document.go_field_target.is_none());
+        assert!(document.go_local_constructor_target.is_none());
+        assert!(document.java_constructor_target.is_none());
+        assert!(document.go_receiver_target.is_none());
+        assert!(document.go_import_path.is_none());
+        assert!(!document.go_import_explicit_alias);
+        assert!(document.go_package.is_none());
+        assert!(document.semantic_fingerprint.is_none());
+    }
 }
