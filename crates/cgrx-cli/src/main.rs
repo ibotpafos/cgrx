@@ -1743,6 +1743,11 @@ fn check_gates(args: &[String]) -> Result<(), String> {
         "--scopes",
         "--max-framework-confidence",
         "--max-false-positive-matches",
+        "--max-secret-findings",
+        "--max-dependency-findings",
+        "--max-license-findings",
+        "--allowlist-paths",
+        "--allowlist-licenses",
         "--output",
     ];
     validate_value_flags(args, ALLOWED)?;
@@ -1809,26 +1814,8 @@ fn check_gates(args: &[String]) -> Result<(), String> {
             0,
             10_000,
         )?;
-        let allowlist_paths = optional_flag(args, "--allowlist-paths")
-            .map(|value| {
-                value
-                    .split(',')
-                    .map(str::trim)
-                    .filter(|segment| !segment.is_empty())
-                    .map(str::to_owned)
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
-        let allowlist_licenses = optional_flag(args, "--allowlist-licenses")
-            .map(|value| {
-                value
-                    .split(',')
-                    .map(str::trim)
-                    .filter(|segment| !segment.is_empty())
-                    .map(str::to_owned)
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
+        let allowlist_paths = comma_separated_flag(args, "--allowlist-paths");
+        let allowlist_licenses = comma_separated_flag(args, "--allowlist-licenses");
         let arguments = json!({
             "fail_on": fail_on,
             "max_secret_findings": max_secret_findings,
@@ -1839,26 +1826,8 @@ fn check_gates(args: &[String]) -> Result<(), String> {
         });
         ("check_security_gates", arguments)
     } else {
-        let paths = optional_flag(args, "--paths")
-            .map(|value| {
-                value
-                    .split(',')
-                    .map(str::trim)
-                    .filter(|segment| !segment.is_empty())
-                    .map(str::to_owned)
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
-        let scopes = optional_flag(args, "--scopes")
-            .map(|value| {
-                value
-                    .split(',')
-                    .map(str::trim)
-                    .filter(|segment| !segment.is_empty())
-                    .map(str::to_owned)
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
+        let paths = comma_separated_flag(args, "--paths");
+        let scopes = comma_separated_flag(args, "--scopes");
         let max_framework_confidence = parse_bounded_usize(
             flag_or(args, "--max-framework-confidence", "0"),
             "--max-framework-confidence",
@@ -1962,6 +1931,19 @@ fn parse_bounded_usize(value: &str, name: &str, min: usize, max: usize) -> Resul
         return Err(format!("{name} must be from {min} to {max}"));
     }
     Ok(parsed)
+}
+
+fn comma_separated_flag(args: &[String], name: &str) -> Vec<String> {
+    optional_flag(args, name)
+        .map(|value| {
+            value
+                .split(',')
+                .map(str::trim)
+                .filter(|segment| !segment.is_empty())
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn schema(args: &[String]) -> Result<(), String> {
