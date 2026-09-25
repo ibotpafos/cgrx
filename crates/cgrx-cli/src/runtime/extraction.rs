@@ -765,7 +765,10 @@ mod tests {
             },
         );
 
-        assert_eq!(document.node_id, stable_node_id("src/example.ts", span, "call:demo"));
+        assert_eq!(
+            document.node_id,
+            stable_node_id("src/example.ts", span, "call:demo")
+        );
         assert_eq!((document.span_start, document.span_end), (4, 12));
         assert_eq!((document.body_start, document.body_end), (4, 12));
         assert_eq!(document.provenance, "CALLS");
