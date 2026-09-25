@@ -1,16 +1,18 @@
 [package]
 name = "cgrx-store"
-version = "0.1.0"
+version.workspace = true
 edition.workspace = true
 license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
 
 [dependencies]
-blake3 = "1.8.2"
+blake3.workspace = true
 zstd = "0.14.0"
-cgrx-core = { path = "../cgrx-core" }
-cgrx-languages = { path = "../cgrx-languages" }
-serde = { version = "1.0.219", features = ["derive"] }
-serde_json = "1.0.143"
+cgrx-core.workspace = true
+cgrx-languages.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 
 [[test]]
 name = "crash_injection"

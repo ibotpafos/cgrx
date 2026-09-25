@@ -1,8 +1,10 @@
 [package]
 name = "cgrx-cli"
-version = "0.1.0"
+version.workspace = true
 edition.workspace = true
 license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
 autobins = false
 
 [[bin]]
@@ -11,18 +13,18 @@ path = "src/main.rs"
 
 [dependencies]
 toml = { version = "=0.8.23", default-features = false, features = ["parse"] }
-cgrx-capsule = { path = "../cgrx-capsule" }
-cgrx-core = { path = "../cgrx-core" }
-cgrx-cgcr = { path = "../cgrx-cgcr" }
-cgrx-languages = { path = "../cgrx-languages" }
-cgrx-mcp = { path = "../cgrx-mcp" }
-cgrx-retrieval = { path = "../cgrx-retrieval" }
-cgrx-store = { path = "../cgrx-store" }
-cgrx-metrics = { path = "../cgrx-metrics" }
-blake3 = "1.8.7"
+cgrx-capsule.workspace = true
+cgrx-core.workspace = true
+cgrx-cgcr.workspace = true
+cgrx-languages.workspace = true
+cgrx-mcp.workspace = true
+cgrx-retrieval.workspace = true
+cgrx-store.workspace = true
+cgrx-metrics.workspace = true
+blake3.workspace = true
 levenshtein = "1.0.5"
-serde = { version = "1.0.219", features = ["derive"] }
-serde_json = "1.0.143"
+serde.workspace = true
+serde_json.workspace = true
 notify = "6.1.1"
 protobuf = "=3.7.2"
 scip = "=0.10.0"

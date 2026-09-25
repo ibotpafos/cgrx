@@ -1,0 +1,56 @@
+name: Bug report
+description: Report a reproducible CGRX defect
+title: "[Bug] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use a minimal synthetic reproducer. Do not include private repositories,
+        credentials, production logs, or proprietary source.
+  - type: input
+    id: version
+    attributes:
+      label: CGRX version
+      placeholder: v0.1.0-alpha.14 or commit SHA
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Platform
+      placeholder: macOS arm64, Ubuntu, etc.
+    validations:
+      required: true
+  - type: textarea
+    id: reproducer
+    attributes:
+      label: Minimal reproducer
+      description: Include synthetic files and exact commands or MCP request.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: coverage
+    attributes:
+      label: Coverage / evidence status
+      description: Include unresolved edges or coverage gaps when relevant.
+    validations:
+      required: false
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Data safety
+      options:
+        - label: I confirmed this report contains no secrets or private repository data.
+          required: true
