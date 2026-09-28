@@ -69,6 +69,16 @@ rendering limits, **not** evidence totals. Partial coverage/truncation remain vi
 - Publication waits for **CI + PHP validation + alpha15/real-gpu** on the exact
   release SHA. Release metadata must change, and existing tags cannot be moved.
 
+The real-GPU gate uses a clean `build.json` for the exact candidate SHA, Chromium
+with the Apple M4 Pro Metal renderer at DPR 2, and the 20k/120k fixtures in both
+dimensions. Before setting `alpha15/real-gpu=success`, verify each dimension has
+first interactive time <= 2,000 ms, completed layout <= 12,000 ms, and frame
+p95 <= 20 ms; verify node selection response <= 50 ms, 20 alternating 2D/3D
+switches leave zero workers and zero tracked GPU resources after unmount, and
+WebGL loss produces the explicit 500-node/2,000-edge SVG fallback. Record the
+literal benchmark reports, browser/GPU identity and build hashes as local release
+evidence. These are bounded acceptance ceilings, not comparative speedup claims.
+
 Preliminary local M4 Pro / 24 GiB, Chromium 154, DPR 2 measurements (development
 working tree; **not a release attestation**): 20k/120k 2D first interactive 632.5ms,
 layout 6499ms, frame p95 10.1ms; 3D first interactive 317.6ms, layout 6441.9ms,
