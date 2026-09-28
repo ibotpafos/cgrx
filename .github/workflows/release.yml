@@ -83,6 +83,8 @@ jobs:
 
       - name: Read and validate release metadata
         id: meta
+        env:
+          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
@@ -92,14 +94,17 @@ jobs:
           python3 scripts/test_validate_release.py
           test "$(git rev-parse HEAD)" = "${{ github.event.workflow_run.head_sha }}"
           previous_version=$(git show HEAD^:RELEASE_VERSION 2>/dev/null | tr -d '\r\n' || true)
-          if [ "$version" = "$previous_version" ]; then
+          if [ "$version" != "$previous_version" ]; then
+            changed=true
+          elif gh release view "$version" >/dev/null 2>&1; then
             changed=false
           else
+            # A delayed follow-up commit must not strand an unpublished version.
             changed=true
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "changed=$changed" >> "$GITHUB_OUTPUT"
-          echo "release_version_changed=$changed ($previous_version -> $version)"
+          echo "release_candidate_pending=$changed ($previous_version -> $version)"
 
       - name: Require all gates on the release SHA
         if: steps.meta.outputs.changed == 'true'
