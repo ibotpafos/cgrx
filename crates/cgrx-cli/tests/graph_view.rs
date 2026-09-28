@@ -231,6 +231,62 @@ fn graph_view_covers_every_supported_source_extension() {
     }
 }
 
+#[cfg(feature = "experimental-swift")]
+#[test]
+fn swift_graph_survives_reopen_and_drops_stale_edges_on_refresh_and_delete() {
+    let repository = TestDirectory::new("swift-evidence-repository");
+    git(repository.path(), &["init", "-q"]);
+    git(
+        repository.path(),
+        &["config", "user.email", "test@example.invalid"],
+    );
+    git(repository.path(), &["config", "user.name", "CGRX Test"]);
+    let source = repository.path().join("main.swift");
+    fs::write(
+        &source,
+        "func targetSwift() {}\nfunc selectedSwift() { targetSwift() }\n",
+    )
+    .unwrap();
+    git(repository.path(), &["add", "."]);
+    git(repository.path(), &["commit", "-qm", "swift fixture"]);
+    let state = TestDirectory::new("swift-evidence-state");
+    Runtime::index(repository.path(), state.path()).unwrap();
+    let runtime = Runtime::open(state.path()).unwrap();
+    let scope = Scope {
+        include: vec!["main.swift".to_owned()],
+        exclude: Vec::new(),
+        relation_kinds: vec![RelationKind::Calls],
+        max_depth: 1,
+    };
+    let graph = runtime.repository_graph(&scope, 80, 160).unwrap();
+    assert_eq!(graph["edges"].as_array().unwrap().len(), 1);
+    assert_eq!(graph["edges"][0]["evidence"]["path"], "main.swift");
+    drop(runtime);
+    let mut runtime = Runtime::open(state.path()).unwrap();
+    assert_eq!(
+        runtime.repository_graph(&scope, 80, 160).unwrap()["edges"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+
+    fs::write(&source, "func targetSwift() {}\nfunc selectedSwift() {}\n").unwrap();
+    assert!(runtime.refresh(repository.path()).unwrap());
+    assert!(
+        runtime.repository_graph(&scope, 80, 160).unwrap()["edges"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    fs::remove_file(&source).unwrap();
+    assert!(runtime.refresh(repository.path()).unwrap());
+    assert_eq!(
+        runtime.repository_graph(&scope, 80, 160).unwrap()["total_nodes"],
+        0
+    );
+}
+
 #[test]
 fn graph_view_rejects_invalid_bounds_and_missing_symbols() {
     let (_repository, _state, runtime) = graph_runtime();

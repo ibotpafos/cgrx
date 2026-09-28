@@ -263,12 +263,19 @@ fn compact_risks_keeps_exact_agent_handoff_without_duplicate_proofs() {
             "totals":{"missions":1,"parallel_groups":1,"blocked":0},
             "execution_order":[["change-mission.abc"]],"agent_handoff":handoff
         },
-        "partial":false,"coverage_gap_count":0,"coverage_gaps_truncated":false
+        "partial":false,"coverage_gap_count":0,"coverage_gaps_truncated":false,
+        "unindexed_changed_path_count":2,
+        "unindexed_changed_paths":["dsp.cpp","view.swift"]
     });
     let compact = compact_risks(&structured);
     assert_eq!(compact["change_plan"]["agent_handoff"], handoff);
     assert_eq!(compact["change_plan"]["llm_used"], false);
     assert_eq!(compact["verification_plan"]["tests"][0][1], "test_target");
+    assert_eq!(compact["unindexed_changed_path_count"], 2);
+    assert_eq!(
+        compact["unindexed_changed_paths"],
+        json!(["dsp.cpp", "view.swift"])
+    );
     assert!(
         serde_json::to_vec(&compact).unwrap().len()
             < serde_json::to_vec(&structured).unwrap().len() / 2
