@@ -5,6 +5,7 @@ use serde_json::json;
 const MAX_REQUEST_BYTES: usize = 8 * 1024;
 const MAX_DRAIN_BYTES: usize = 64 * 1024;
 
+#[derive(Clone)]
 pub(super) struct HttpRequest {
     pub(super) method: String,
     pub(super) path: String,
@@ -13,6 +14,13 @@ pub(super) struct HttpRequest {
 }
 
 impl HttpRequest {
+    pub(super) fn cache_key(&self) -> String {
+        let mut query = self.query.clone();
+        query.retain(|(key, _)| key != "project");
+        // Preserve duplicate-parameter order: query() selects its first value.
+        serde_json::to_string(&(&self.path, query)).expect("request key")
+    }
+
     pub(super) fn read(stream: &mut impl Read) -> Result<Self, HttpResponse> {
         let mut bytes = Vec::new();
         let mut chunk = [0_u8; 1024];
@@ -147,15 +155,24 @@ const fn hex(byte: u8) -> Option<u8> {
     }
 }
 
+#[derive(Clone)]
 pub(super) struct HttpResponse {
     status: u16,
     content_type: &'static str,
-    body: Vec<u8>,
+    body: std::sync::Arc<[u8]>,
     headers: Vec<(&'static str, &'static str)>,
     head: bool,
 }
 
 impl HttpResponse {
+    pub(super) fn bytes(&self) -> usize {
+        self.body.len()
+    }
+    pub(super) fn status(mut self, status: u16) -> Self {
+        self.status = status;
+        self
+    }
+
     pub(super) fn html(body: &str) -> Self {
         Self::new(200, "text/html; charset=utf-8", body.as_bytes().to_vec())
     }
@@ -193,7 +210,7 @@ impl HttpResponse {
         Self {
             status,
             content_type,
-            body,
+            body: body.into(),
             headers: Vec::new(),
             head: false,
         }
@@ -212,6 +229,9 @@ impl HttpResponse {
     pub(super) fn write(self, stream: &mut impl Write) -> Result<(), String> {
         let reason = match self.status {
             200 => "OK",
+            202 => "Accepted",
+            409 => "Conflict",
+            503 => "Service Unavailable",
             400 => "Bad Request",
             401 => "Unauthorized",
             404 => "Not Found",

@@ -11,6 +11,57 @@ use std::{
 static SEQUENCE: AtomicU64 = AtomicU64::new(0);
 const BASE: &str = "fn target() -> u32 { 1 }\nfn caller() { target(); }\n";
 const CHANGED: &str = "// moved callsite\nfn target() -> u32 { 222 }\nfn caller() { target(); }\n";
+
+#[test]
+fn unsupported_worktree_changes_are_explicit_risk_gaps() {
+    let mut fixture = Fixture::with_files(&[
+        ("main.rs", BASE),
+        ("dsp.cpp", "int process() { return 1; }\n"),
+        ("view.swift", "func render() -> Int { 1 }\n"),
+    ]);
+    fs::write(
+        fixture.root.join("dsp.cpp"),
+        "int process() { return 2; }\n",
+    )
+    .unwrap();
+    fs::write(
+        fixture.root.join("view.swift"),
+        "func render() -> Int { 2 }\n",
+    )
+    .unwrap();
+    fixture.runtime.refresh(&fixture.root).unwrap();
+
+    let result = fixture.scan(10);
+    assert_eq!(result["changed_path_count"], 0);
+    assert_eq!(result["unindexed_changed_path_count"], 2);
+    assert_eq!(
+        result["unindexed_changed_paths"],
+        json!(["dsp.cpp", "view.swift"])
+    );
+    assert_eq!(result["partial"], true);
+    assert!(
+        result["coverage_gaps"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|gap| gap["path"] == "dsp.cpp" && gap["code"] == "UNINDEXED_CHANGED_PATH")
+    );
+
+    fs::write(
+        fixture.root.join("dsp.cpp"),
+        "int process() { return 1; }\n",
+    )
+    .unwrap();
+    fs::write(
+        fixture.root.join("view.swift"),
+        "func render() -> Int { 1 }\n",
+    )
+    .unwrap();
+    fixture.runtime.refresh(&fixture.root).unwrap();
+    let restored = fixture.scan(10);
+    assert_eq!(restored["unindexed_changed_path_count"], 0);
+    assert_eq!(restored["unindexed_changed_paths"], json!([]));
+}
 struct Fixture {
     root: PathBuf,
     runtime: Runtime,

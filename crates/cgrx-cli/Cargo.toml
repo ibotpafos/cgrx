@@ -1,6 +1,6 @@
 [package]
 name = "cgrx-cli"
-version = "0.1.0"
+version.workspace = true
 edition.workspace = true
 license.workspace = true
 rust-version.workspace = true
@@ -40,3 +40,4 @@ path = "../../tests/multi_repo.rs"
 [features]
 # Validation-only opt-in; never enabled by a default or release build.
 experimental-php = ["cgrx-languages/experimental-php"]
+experimental-swift = ["cgrx-languages/experimental-swift"]
