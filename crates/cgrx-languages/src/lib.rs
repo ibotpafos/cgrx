@@ -72,6 +72,70 @@ mod experimental_tests {
     }
 
     #[test]
+    fn cpp_project_fit_shadow_respects_parameters_and_block_boundaries() {
+        let source = br#"
+namespace daw {
+bool supportedRate(unsigned rate) { return rate == 48000; }
+void sibling() {
+    { auto supportedRate = [](unsigned) { return false; }; supportedRate(48000); }
+    supportedRate(48000);
+}
+void parameter(bool (*supportedRate)(unsigned)) { supportedRate(48000); }
+void later() {
+    supportedRate(48000);
+    auto supportedRate = [](unsigned) { return false; };
+}
+}
+"#;
+        let extraction = cpp::CPP_PACK
+            .extract(Path::new("project-fit-shadow-scopes.cpp"), source)
+            .unwrap();
+        let calls: Vec<&str> = extraction
+            .edges
+            .iter()
+            .filter(|edge| edge.relation == RelationKind::Calls)
+            .map(|edge| edge.target.as_str())
+            .collect();
+        assert_eq!(calls, ["supportedRate", "supportedRate"]);
+        assert_eq!(
+            extraction
+                .unresolved
+                .iter()
+                .filter(|site| site.kind == UnresolvedKind::Dispatch)
+                .count(),
+            2
+        );
+        assert!(extraction.parser_error_ranges.is_empty());
+    }
+
+    #[test]
+    fn cpp_project_fit_local_shadow_does_not_prove_free_function_call() {
+        let source = br#"
+namespace daw {
+bool supportedRate(unsigned rate) { return rate == 48000; }
+void direct() { supportedRate(48000); }
+void shadowed() {
+    auto supportedRate = [](unsigned) { return false; };
+    supportedRate(48000);
+}
+}
+"#;
+        let extraction = cpp::CPP_PACK
+            .extract(Path::new("project-fit-shadow.cpp"), source)
+            .unwrap();
+        let calls: Vec<&str> = extraction
+            .edges
+            .iter()
+            .filter(|edge| edge.relation == RelationKind::Calls)
+            .map(|edge| edge.target.as_str())
+            .collect();
+        assert_eq!(calls, ["supportedRate"]);
+        assert!(extraction.unresolved.iter().any(
+            |site| site.kind == UnresolvedKind::Dispatch && site.text == "supportedRate(48000)"
+        ));
+    }
+
+    #[test]
     fn cpp_project_fit_calls_do_not_promote_unknown_receivers() {
         // DAW uses direct helper calls; VocalClean uses receiver calls such as
         // wola_.prepare(). The latter must not become a proven CALLS edge.

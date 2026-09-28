@@ -59,3 +59,11 @@ keeps that site as a `Dispatch` gap while retaining the direct syntactic
 `supportedRate()` call. This is still test-only: unqualified calls have not
 been proven against overloads, shadowing or cross-file resolution, so C++
 production registration remains gated.
+
+The next canary found that a same-named local lambda was incorrectly reported
+as a free-function call. The prototype now abstains on preceding local
+declarations and matching parameters, including function-pointer parameters;
+the tests also keep calls before a declaration and after an expired sibling
+block. This is a bounded lexical correction, **not** full C++ name lookup.
+Overloads, aliases, macros, captures and cross-file relationships still need
+separate evidence before promotion.

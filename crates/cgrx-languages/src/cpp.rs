@@ -83,13 +83,18 @@ fn classify(node: Node, source: &[u8], extraction: &mut Extraction, context: &Cp
         "call_expression" => {
             if let Some(function) = node.child_by_field_name("function") {
                 if function.kind() == "identifier" {
-                    extraction.edges.push(Edge {
-                        relation: RelationKind::Calls,
-                        target: text(function, source),
-                        span: Span::from(node),
-                        context_span: Span::from(node),
-                        provenance: Provenance::Syntax,
-                    });
+                    let name = text(function, source);
+                    if locally_shadowed(node, &name, source) {
+                        unresolved(UnresolvedKind::Dispatch, node, source, extraction);
+                    } else {
+                        extraction.edges.push(Edge {
+                            relation: RelationKind::Calls,
+                            target: name,
+                            span: Span::from(node),
+                            context_span: Span::from(node),
+                            provenance: Provenance::Syntax,
+                        });
+                    }
                 } else {
                     unresolved(UnresolvedKind::Dispatch, node, source, extraction);
                 }
@@ -139,8 +144,65 @@ fn function_name(declarator: Node<'_>) -> Option<Node<'_>> {
         "qualified_identifier" => declarator
             .child_by_field_name("name")
             .and_then(function_name),
+        "parenthesized_declarator" => declarator.named_child(0).and_then(function_name),
         _ => declarator
             .child_by_field_name("declarator")
             .and_then(function_name),
     }
+}
+
+// Abstain when a direct-looking call may instead use a lexical value. Only
+// preceding declarations in ancestor blocks can shadow; sibling blocks cannot.
+fn locally_shadowed(call: Node<'_>, name: &str, source: &[u8]) -> bool {
+    let mut child = call;
+    while let Some(scope) = child.parent() {
+        match scope.kind() {
+            "compound_statement" => {
+                let mut cursor = scope.walk();
+                if scope.named_children(&mut cursor).any(|statement| {
+                    statement.end_byte() <= child.start_byte()
+                        && statement.kind() == "declaration"
+                        && declaration_binds(statement, name, source)
+                }) {
+                    return true;
+                }
+            }
+            "declaration" if declaration_binds(scope, name, source) => return true,
+            "lambda_expression" => return true,
+            "function_definition" => {
+                return scope
+                    .child_by_field_name("declarator")
+                    .is_some_and(|declarator| parameter_binds(declarator, name, source));
+            }
+            _ => {}
+        }
+        child = scope;
+    }
+    false
+}
+
+fn declaration_binds(declaration: Node<'_>, name: &str, source: &[u8]) -> bool {
+    let mut cursor = declaration.walk();
+    declaration
+        .children_by_field_name("declarator", &mut cursor)
+        .any(|declarator| {
+            let inner = declarator
+                .child_by_field_name("declarator")
+                .unwrap_or(declarator);
+            function_name(inner).is_some_and(|identifier| text(identifier, source) == name)
+        })
+}
+
+fn parameter_binds(node: Node<'_>, name: &str, source: &[u8]) -> bool {
+    if node.kind() == "parameter_declaration"
+        && node
+            .child_by_field_name("declarator")
+            .and_then(function_name)
+            .is_some_and(|identifier| text(identifier, source) == name)
+    {
+        return true;
+    }
+    let mut cursor = node.walk();
+    node.named_children(&mut cursor)
+        .any(|child| parameter_binds(child, name, source))
 }
