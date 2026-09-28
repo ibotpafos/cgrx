@@ -1,4 +1,6 @@
-use crate::pack::{Edge, Extraction, LanguagePack, Provenance, RelationKind, Span, symbol, text};
+use crate::pack::{
+    Edge, Extraction, LanguagePack, Provenance, RelationKind, Span, Symbol, symbol, text,
+};
 use std::collections::BTreeSet;
 use tree_sitter::{Language, Node};
 
@@ -59,7 +61,18 @@ impl CppContext {
 
 fn classify(node: Node, source: &[u8], extraction: &mut Extraction, context: &CppContext) {
     match node.kind() {
-        "function_definition" | "declaration" => {
+        "function_definition" => {
+            if let Some(declarator) = node.child_by_field_name("declarator")
+                && let Some(name) = function_name(declarator)
+            {
+                extraction.symbols.push(Symbol {
+                    name: text(name, source),
+                    span: Span::from(name),
+                    search_span: Span::from(node),
+                });
+            }
+        }
+        "declaration" => {
             if let Some(name) = node.child_by_field_name("declarator")
                 && let Some(inner) = name.child_by_field_name("declarator")
             {
@@ -116,5 +129,17 @@ fn classify(node: Node, source: &[u8], extraction: &mut Extraction, context: &Cp
             }
         }
         _ => {}
+    }
+}
+
+fn function_name(declarator: Node<'_>) -> Option<Node<'_>> {
+    match declarator.kind() {
+        "identifier" | "field_identifier" | "operator_name" | "destructor_name" => Some(declarator),
+        "qualified_identifier" => declarator
+            .child_by_field_name("name")
+            .and_then(function_name),
+        _ => declarator
+            .child_by_field_name("declarator")
+            .and_then(function_name),
     }
 }

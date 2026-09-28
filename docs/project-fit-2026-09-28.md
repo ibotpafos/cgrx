@@ -38,6 +38,17 @@ relationship assertions and no current My DAW or VocalClean Live snapshot.
    whole-task time, tokens, source reads and retries. Do not infer savings from
    graph size or tool latency alone.
 
-The verification record for the first `scan_risks` correction is under
-`local/evidence/project-fit-20260928/`; the baseline test fails, the patched
-test passes, a rollback copy fails identically, and the re-applied patch passes.
+The local verification record for the first `scan_risks` correction is under
+`/Volumes/D/Projects/cgrx-move-evidence/project-fit-20260928/`; the baseline
+test fails, the patched test passes, a rollback copy fails identically, and
+the re-applied patch passes.
+
+## C++ definition canary (test-only)
+
+Reduced definition shapes from DAW's `engine/audio/clip.cpp` and VocalClean's
+`VocalCleanLive/Source/DSP/LiveCleanEngine.cpp` exposed a concrete prototype
+gap: only `Clip` and `prepare` were extracted from five expected definitions.
+The test-only C++ pack now emits all five names, including free functions and
+qualified methods; its own registry policy test still confirms `.cpp` files
+are excluded from production. This does **not** validate call resolution,
+header relations or a project-wide coverage claim. Those remain promotion gates.

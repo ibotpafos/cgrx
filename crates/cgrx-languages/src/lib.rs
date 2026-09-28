@@ -70,4 +70,49 @@ mod experimental_tests {
             }
         }
     }
+
+    #[test]
+    fn cpp_project_fit_definitions_from_daw_and_vocal_patterns() {
+        // Reduced from the definition shapes in My DAW/engine/audio/clip.cpp and
+        // VocalCleanLive/Source/DSP/LiveCleanEngine.cpp. This is an extractor
+        // canary, not evidence that C++ call resolution is production-ready.
+        let source = br#"
+namespace daw {
+namespace {
+bool supportedRate(unsigned rate) { return rate == 48000; }
+}
+Clip::Clip(int count) : count_(count) {}
+const float* Clip::samples() const { return data_; }
+}
+namespace clarity::clean {
+float clampUnit(float value) noexcept { return value; }
+void LiveCleanEngine::prepare(double sampleRate) noexcept { reset(); }
+}
+"#;
+        let extraction = cpp::CPP_PACK
+            .extract(Path::new("project-fit.cpp"), source)
+            .unwrap();
+        let names: Vec<&str> = extraction
+            .symbols
+            .iter()
+            .map(|symbol| symbol.name.as_str())
+            .collect();
+        assert_eq!(
+            names,
+            ["Clip", "clampUnit", "prepare", "samples", "supportedRate"]
+        );
+        for symbol in &extraction.symbols {
+            assert_eq!(
+                &source[symbol.span.start..symbol.span.end],
+                symbol.name.as_bytes()
+            );
+            assert!(symbol.search_span.start <= symbol.span.start);
+            assert!(symbol.span.end <= symbol.search_span.end);
+        }
+        assert!(
+            extraction.parser_error_ranges.is_empty(),
+            "parser errors: {:?}",
+            extraction.parser_error_ranges
+        );
+    }
 }
