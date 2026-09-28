@@ -372,7 +372,10 @@ pub(super) fn compact_risks(value: &Value) -> Value {
         },
         "partial":value.get("partial"),
         "gaps":value.get("coverage_gap_count"),
-        "more_gaps":value.get("coverage_gaps_truncated")
+        "more_gaps":value.get("coverage_gaps_truncated"),
+        "unindexed_changed_path_count":value.get("unindexed_changed_path_count"),
+        "unindexed_changed_paths":value.get("unindexed_changed_paths")
+            .and_then(Value::as_array).into_iter().flatten().take(12).collect::<Vec<_>>()
     })
 }
 
