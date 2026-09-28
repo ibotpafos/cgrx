@@ -2026,6 +2026,56 @@ fn invalid_git_override_does_not_fall_back_to_path() {
 }
 
 #[test]
+fn security_gate_accepts_security_specific_threshold_flags() {
+    let repository = TestDirectory::new("security-gate-flags");
+    git(repository.path(), &["init", "-q"]);
+    git(
+        repository.path(),
+        &["config", "user.email", "test@example.invalid"],
+    );
+    git(repository.path(), &["config", "user.name", "CGRX Test"]);
+    fs::write(repository.path().join("main.rs"), "fn main() {}\n")
+        .expect("write security gate fixture");
+    git(repository.path(), &["add", "main.rs"]);
+    git(repository.path(), &["commit", "-qm", "fixture"]);
+
+    let output = cli()
+        .arg("check-gates")
+        .args([
+            "--gate",
+            "security",
+            "--format",
+            "json",
+            "--fail-on",
+            "none",
+            "--max-secret-findings",
+            "10",
+            "--max-dependency-findings",
+            "10",
+            "--max-license-findings",
+            "10",
+            "--allowlist-paths",
+            "fixtures, tests",
+            "--allowlist-licenses",
+            "MIT, Apache-2.0",
+            "--root",
+        ])
+        .arg(repository.path())
+        .output()
+        .expect("security gate executes");
+
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("security gate returns JSON");
+    assert_eq!(report["fail_on"], "none");
+    assert_eq!(report["would_block"], false);
+}
+
+#[test]
 fn fixture_clock_collision_preserves_independent_lifetimes() {
     let first = TestDirectory::with_nonce("same-clock-tick", 42);
     let second = TestDirectory::with_nonce("same-clock-tick", 42);
