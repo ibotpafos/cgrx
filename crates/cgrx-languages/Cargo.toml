@@ -32,3 +32,5 @@ path = "../../tests/determinism.rs"
 [features]
 # Validation-only opt-in; never enabled by a default or release build.
 experimental-php = []
+# Opt-in validation slice; default registry still requires the full language corpus.
+experimental-swift = []

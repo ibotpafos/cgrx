@@ -23,10 +23,11 @@ fn append_reference_arcs(
     arcs: &mut Vec<StoredArc>,
 ) {
     // Create References arcs from reference documents to their targets
-    for document in documents
-        .iter()
-        .filter(|d| d.provenance == "REFERENCES" && !php_resolution::is_php_path(&d.path))
-    {
+    for document in documents.iter().filter(|d| {
+        d.provenance == "REFERENCES"
+            && !php_resolution::is_php_path(&d.path)
+            && !d.path.ends_with(".swift")
+    }) {
         // Try exact match first, then extract last segment for qualified names
         let targets = by_name.get(document.qualified_name.as_str()).or_else(|| {
             // For qualified names like "cgrx_core::IoAccounting", try "IoAccounting"
@@ -234,6 +235,7 @@ pub(super) fn rebuild_arcs_with_cargo(
             .iter()
             .any(|tag| tag == "TS_LEXICAL_ARROW")
             && !php_resolution::is_php_path(&document.path)
+            && !document.path.ends_with(".swift")
         {
             by_name
                 .entry(document.qualified_name.as_str())
@@ -309,6 +311,12 @@ pub(super) fn rebuild_arcs_with_cargo(
             && !php_resolution::is_php_path(&document.path)
             && document.semantic_tags.iter().any(|tag| tag == "EXACT_CALL")
     }) {
+        if call.path.ends_with(".swift")
+            && (call.semantic_tags.as_slice() != ["EXACT_CALL", "SWIFT_DIRECT_CALL"]
+                || call.ts_lexical_target.is_none())
+        {
+            continue;
+        }
         let source_document = syntax_by_path
             .get(call.path.as_str())
             .into_iter()
@@ -513,6 +521,37 @@ pub(super) fn rebuild_arcs_with_cargo(
         } else if call
             .semantic_tags
             .iter()
+            .any(|tag| tag == "SWIFT_DIRECT_CALL")
+        {
+            call.ts_lexical_target.as_ref().and_then(|proof| {
+                if !call.path.ends_with(".swift") {
+                    return None;
+                }
+                let caller = source_document?;
+                if caller.path != call.path
+                    || caller.span_start != proof.caller.start
+                    || caller.span_end != proof.caller.end
+                    || !caller
+                        .semantic_tags
+                        .iter()
+                        .any(|tag| tag == "SWIFT_FREE_FUNCTION")
+                {
+                    return None;
+                }
+                let mut targets = syntax_by_path.get(call.path.as_str())?.iter().filter(|d| {
+                    d.qualified_name == call.qualified_name
+                        && d.span_start == proof.target.start
+                        && d.span_end == proof.target.end
+                        && d.semantic_tags
+                            .iter()
+                            .any(|tag| tag == "SWIFT_FREE_FUNCTION")
+                });
+                let target = targets.next()?;
+                targets.next().is_none().then_some(target.node_id)
+            })
+        } else if call
+            .semantic_tags
+            .iter()
             .any(|tag| tag == "GO_LOCAL_CONSTRUCTOR_CALL")
         {
             call.go_local_constructor_target.as_ref().and_then(|proof| {
@@ -711,6 +750,10 @@ pub(super) fn rebuild_arcs_with_cargo(
                 let target = matches.next()?;
                 matches.next().is_none().then_some(target.node_id)
             })
+        } else if call.path.ends_with(".swift") {
+            // Even stripped or stale Swift proof metadata must never fall back
+            // to name-only resolution in this or another language.
+            None
         } else if call.path.ends_with(".rs") && qualifier.is_some() {
             // Exact Cargo target/root + AST module membership, never a name guess.
             cargo

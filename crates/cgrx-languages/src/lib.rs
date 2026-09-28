@@ -23,7 +23,7 @@ mod php;
 mod ruby;
 #[cfg(test)]
 mod scala;
-#[cfg(test)]
+#[cfg(any(test, feature = "experimental-swift"))]
 mod swift;
 
 pub use pack::{
@@ -33,6 +33,7 @@ pub use pack::{
 
 /// Effective registry policy, including Cargo dependency feature unification.
 pub const EXPERIMENTAL_PHP_ENABLED: bool = cfg!(feature = "experimental-php");
+pub const EXPERIMENTAL_SWIFT_ENABLED: bool = cfg!(feature = "experimental-swift");
 
 pub use go::{GoCallableKind, GoCallableType, go_callable_type};
 pub use rust::RustFileFacts;
@@ -62,7 +63,8 @@ mod experimental_tests {
                 let path = format!("example.{extension}");
                 assert_eq!(
                     pack_for_path(Path::new(&path)).is_some(),
-                    pack.id() == "php" && EXPERIMENTAL_PHP_ENABLED,
+                    (pack.id() == "php" && EXPERIMENTAL_PHP_ENABLED)
+                        || (pack.id() == "swift" && EXPERIMENTAL_SWIFT_ENABLED),
                     "{path}"
                 );
                 // Parser initialization is not evidence of semantic support.

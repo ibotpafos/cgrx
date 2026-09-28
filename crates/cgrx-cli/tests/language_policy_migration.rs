@@ -1,5 +1,6 @@
-//! A modeled revision-28 index must not bypass the restricted language registry.
+//! A modeled revision-28 index must not bypass the default restricted language registry.
 //! This exercises real immutable storage; it does not pretend to run an old binary.
+#![cfg(not(feature = "experimental-swift"))]
 use cgrx_cli::Runtime;
 use cgrx_core::RepoSnapshot;
 use cgrx_store::{GenerationReader, GenerationWriter};

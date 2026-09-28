@@ -45,6 +45,11 @@ pub enum Provenance {
         caller: Span,
         target: Span,
     },
+    /// Unique, zero-argument top-level Swift free functions in a declaration-only file.
+    SwiftDirect {
+        caller: Span,
+        target: Span,
+    },
     /// Direct own method across plain same-module inherent impls; exact spans.
     RustSelf {
         owner: Span,
@@ -153,6 +158,7 @@ pub struct Extraction {
     pub package_span: Option<Span>,
     /// Const arrows are discoverable but never eligible for name-only resolution.
     pub lexical_arrows: Vec<Span>,
+    pub swift_free_functions: Vec<Span>,
     pub symbols: Vec<Symbol>,
     pub edges: Vec<Edge>,
     pub parser_error_ranges: Vec<Span>,
@@ -259,6 +265,10 @@ impl Extraction {
                 update(&mut hasher, b"rust_module_caller", "", caller);
                 update(&mut hasher, b"rust_module_target", "", target);
             }
+            if let Provenance::SwiftDirect { caller, target } = edge.provenance {
+                update(&mut hasher, b"swift_direct_caller", "", caller);
+                update(&mut hasher, b"swift_direct_target", "", target);
+            }
             if let Provenance::TsLexical { target, caller } = edge.provenance {
                 update(&mut hasher, b"ts_lexical_target", "", target);
                 update(&mut hasher, b"ts_lexical_caller", "", caller);
@@ -304,6 +314,9 @@ impl Extraction {
         }
         for span in &self.lexical_arrows {
             update(&mut hasher, b"lexical_arrow", "", *span);
+        }
+        for span in &self.swift_free_functions {
+            update(&mut hasher, b"swift_free_function", "", *span);
         }
         for span in &self.parser_error_ranges {
             update(&mut hasher, b"parser_error", "", *span);
@@ -386,6 +399,8 @@ pub trait LanguagePack: Send + Sync {
 pub(crate) fn normalize_extraction(extraction: &mut Extraction) {
     extraction.lexical_arrows.sort();
     extraction.lexical_arrows.dedup();
+    extraction.swift_free_functions.sort();
+    extraction.swift_free_functions.dedup();
     extraction.symbols.sort();
     extraction.symbols.dedup();
     extraction.edges.sort();
@@ -486,6 +501,10 @@ pub fn pack_for_path(path: &RepoPath) -> Option<&'static dyn LanguagePack> {
     #[cfg(feature = "experimental-php")]
     if pack.is_none() && crate::php::PHP_PACK.extensions().contains(&extension) {
         return Some(&crate::php::PHP_PACK);
+    }
+    #[cfg(feature = "experimental-swift")]
+    if pack.is_none() && crate::swift::SWIFT_PACK.extensions().contains(&extension) {
+        return Some(&crate::swift::SWIFT_PACK);
     }
     pack
 }
