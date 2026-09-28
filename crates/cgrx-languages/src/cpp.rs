@@ -1,5 +1,6 @@
 use crate::pack::{
-    Edge, Extraction, LanguagePack, Provenance, RelationKind, Span, Symbol, symbol, text,
+    Edge, Extraction, LanguagePack, Provenance, RelationKind, Span, Symbol, UnresolvedKind, symbol,
+    text, unresolved,
 };
 use std::collections::BTreeSet;
 use tree_sitter::{Language, Node};
@@ -81,16 +82,16 @@ fn classify(node: Node, source: &[u8], extraction: &mut Extraction, context: &Cp
         }
         "call_expression" => {
             if let Some(function) = node.child_by_field_name("function") {
-                let target_name = text(function, source);
-                if !target_name.is_empty() {
-                    let edge = Edge {
+                if function.kind() == "identifier" {
+                    extraction.edges.push(Edge {
                         relation: RelationKind::Calls,
-                        target: target_name,
+                        target: text(function, source),
                         span: Span::from(node),
                         context_span: Span::from(node),
                         provenance: Provenance::Syntax,
-                    };
-                    extraction.edges.push(edge);
+                    });
+                } else {
+                    unresolved(UnresolvedKind::Dispatch, node, source, extraction);
                 }
             }
         }

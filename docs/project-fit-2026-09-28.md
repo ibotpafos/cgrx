@@ -52,3 +52,10 @@ The test-only C++ pack now emits all five names, including free functions and
 qualified methods; its own registry policy test still confirms `.cpp` files
 are excluded from production. This does **not** validate call resolution,
 header relations or a project-wide coverage claim. Those remain promotion gates.
+
+An additional negative canary showed the prototype previously emitted a
+`CALLS` edge for an unknown receiver expression (`engine.prepare()`). It now
+keeps that site as a `Dispatch` gap while retaining the direct syntactic
+`supportedRate()` call. This is still test-only: unqualified calls have not
+been proven against overloads, shadowing or cross-file resolution, so C++
+production registration remains gated.

@@ -72,6 +72,35 @@ mod experimental_tests {
     }
 
     #[test]
+    fn cpp_project_fit_calls_do_not_promote_unknown_receivers() {
+        // DAW uses direct helper calls; VocalClean uses receiver calls such as
+        // wola_.prepare(). The latter must not become a proven CALLS edge.
+        let source = br#"
+namespace daw {
+bool supportedRate(unsigned rate) { return rate == 48000; }
+void process() { supportedRate(48000); engine.prepare(); }
+}
+"#;
+        let extraction = cpp::CPP_PACK
+            .extract(Path::new("project-fit-calls.cpp"), source)
+            .unwrap();
+        let calls: Vec<&str> = extraction
+            .edges
+            .iter()
+            .filter(|edge| edge.relation == RelationKind::Calls)
+            .map(|edge| edge.target.as_str())
+            .collect();
+        assert_eq!(calls, ["supportedRate"]);
+        let dispatch_gaps: Vec<&str> = extraction
+            .unresolved
+            .iter()
+            .filter(|site| site.kind == UnresolvedKind::Dispatch)
+            .map(|site| site.text.as_str())
+            .collect();
+        assert_eq!(dispatch_gaps, ["engine.prepare()"]);
+    }
+
+    #[test]
     fn cpp_project_fit_definitions_from_daw_and_vocal_patterns() {
         // Reduced from the definition shapes in My DAW/engine/audio/clip.cpp and
         // VocalCleanLive/Source/DSP/LiveCleanEngine.cpp. This is an extractor
