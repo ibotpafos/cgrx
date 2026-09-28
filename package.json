@@ -21,14 +21,14 @@
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "sigma": "3.0.3",
-    "three": "^0.186.0"
+    "three": "^0.186.1"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@types/three": "^0.186.0",
-    "esbuild": "0.25.10",
-    "typescript": "6.0.2"
+    "esbuild": "0.28.2",
+    "typescript": "7.0.2"
   }
 }
