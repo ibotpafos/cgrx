@@ -3,7 +3,7 @@ mod strategies;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 use std::thread;
 
 use cgrx_core::{Hash32, RelationKind, RepoSnapshot, Scope};
@@ -143,7 +143,13 @@ struct SimilarityBackgroundState {
     spawn_failed: bool,
 }
 
+#[derive(Default)]
+struct SimilarityQueue {
+    pending: Option<(u64, RepoSnapshot, SimilarityBuildInput)>,
+    running: bool,
+}
 struct SimilarityBackgroundShared {
+    queue: Mutex<SimilarityQueue>,
     epoch: AtomicU64,
     state: RwLock<SimilarityBackgroundState>,
 }
@@ -157,6 +163,7 @@ impl SimilarityBackground {
         Self {
             shared: Arc::new(SimilarityBackgroundShared {
                 epoch: AtomicU64::new(0),
+                queue: Mutex::new(SimilarityQueue::default()),
                 state: RwLock::new(SimilarityBackgroundState {
                     snapshot,
                     index: index.is_current().then(|| Arc::new(index)),
@@ -215,35 +222,68 @@ impl SimilarityBackground {
             state.building = true;
             state.spawn_failed = false;
         }
+        let mut queue = self
+            .shared
+            .queue
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        queue.pending = Some((epoch, snapshot, input));
+        if queue.running {
+            return;
+        }
+        queue.running = true;
         let shared = Arc::clone(&self.shared);
-        let worker_snapshot = snapshot.clone();
         let spawn = thread::Builder::new()
             .name("cgrx-similarity-index".to_owned())
             .spawn(move || {
-                let index = build_similarity_index_from_input(&input);
-                if shared.epoch.load(Ordering::Acquire) != epoch {
-                    return;
+                loop {
+                    let job = {
+                        let mut queue = shared
+                            .queue
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner);
+                        match queue.pending.take() {
+                            Some(job) => job,
+                            None => {
+                                queue.running = false;
+                                return;
+                            }
+                        }
+                    };
+                    let (epoch, snapshot, input) = job;
+                    let cancelled = || shared.epoch.load(Ordering::Acquire) != epoch;
+                    let Some(index) = build_similarity_index_cancellable(&input, &cancelled) else {
+                        continue;
+                    };
+                    let mut state = shared
+                        .state
+                        .write()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    if state.snapshot == snapshot && !cancelled() {
+                        state.index = Some(Arc::new(index));
+                        state.building = false;
+                        state.spawn_failed = false;
+                    }
                 }
-                let mut state = shared
-                    .state
-                    .write()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
-                if state.snapshot != worker_snapshot
-                    || shared.epoch.load(Ordering::Acquire) != epoch
-                {
-                    return;
-                }
-                state.index = Some(Arc::new(index));
-                state.building = false;
-                state.spawn_failed = false;
             });
         if spawn.is_err() {
+            queue.running = false;
+            queue.pending = None;
             let mut state = self.write_state();
-            if state.snapshot == snapshot && self.shared.epoch.load(Ordering::Acquire) == epoch {
-                state.building = false;
-                state.spawn_failed = true;
-            }
+            state.building = false;
+            state.spawn_failed = true;
         }
+    }
+}
+
+impl Drop for SimilarityBackground {
+    fn drop(&mut self) {
+        self.shared.epoch.fetch_add(1, Ordering::AcqRel);
+        self.shared
+            .queue
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .pending = None;
     }
 }
 
@@ -478,8 +518,21 @@ pub(super) fn rebuild_similarity_index(stored: &mut StoredIndex) {
 }
 
 fn build_similarity_index_from_input(input: &SimilarityBuildInput) -> SimilarityIndex {
+    build_similarity_index_cancellable(input, &|| false).expect("uncancelled similarity build")
+}
+
+fn build_similarity_index_cancellable(
+    input: &SimilarityBuildInput,
+    cancelled: &impl Fn() -> bool,
+) -> Option<SimilarityIndex> {
+    if cancelled() {
+        return None;
+    }
     let mut exact_groups = BTreeMap::<String, Vec<u64>>::new();
     for document in &input.documents {
+        if cancelled() {
+            return None;
+        }
         if let Some(fingerprint) = &document.semantic_fingerprint {
             exact_groups
                 .entry(fingerprint.clone())
@@ -522,11 +575,19 @@ fn build_similarity_index_from_input(input: &SimilarityBuildInput) -> Similarity
         .collect::<Vec<_>>();
     let fingerprints = selected
         .iter()
-        .map(|(document, language)| (*language, fingerprint_text(&document.search_text)))
-        .collect::<Vec<_>>();
+        .map(|(document, language)| {
+            (!cancelled()).then(|| (*language, fingerprint_text(&document.search_text)))
+        })
+        .collect::<Option<Vec<_>>>()?;
 
+    if cancelled() {
+        return None;
+    }
     let mut buckets = BTreeMap::<(&str, &str), Vec<usize>>::new();
     for (index, (language, fingerprint)) in fingerprints.iter().enumerate() {
+        if cancelled() {
+            return None;
+        }
         if !fingerprint.eligible {
             continue;
         }
@@ -549,7 +610,13 @@ fn build_similarity_index_from_input(input: &SimilarityBuildInput) -> Similarity
     let mut pairs_truncated = false;
     'buckets: for (_, members) in ordered_buckets {
         for (offset, left) in members.iter().enumerate() {
+            if cancelled() {
+                return None;
+            }
             for right in members.iter().skip(offset + 1) {
+                if cancelled() {
+                    return None;
+                }
                 let pair = (*left.min(right), *left.max(right));
                 if !raw_pairs.contains(&pair) && raw_pairs.len() >= BACKGROUND_PAIR_LIMIT {
                     pairs_truncated = true;
@@ -573,6 +640,9 @@ fn build_similarity_index_from_input(input: &SimilarityBuildInput) -> Similarity
         .collect::<BTreeSet<_>>();
     let mut functional_buckets = BTreeMap::<(&str, RelationKind, u64), Vec<usize>>::new();
     for arc in &input.arcs {
+        if cancelled() {
+            return None;
+        }
         if !matches!(arc.kind, RelationKind::Calls | RelationKind::Implements)
             || !live_nodes.contains(&arc.target)
         {
@@ -611,7 +681,13 @@ fn build_similarity_index_from_input(input: &SimilarityBuildInput) -> Similarity
         members.sort_unstable();
         members.dedup();
         for (offset, left) in members.iter().enumerate() {
+            if cancelled() {
+                return None;
+            }
             for right in members.iter().skip(offset + 1) {
+                if cancelled() {
+                    return None;
+                }
                 let pair = (*left.min(right), *left.max(right));
                 if raw_functional_pairs.contains(&pair) {
                     continue;
@@ -628,25 +704,29 @@ fn build_similarity_index_from_input(input: &SimilarityBuildInput) -> Similarity
     let compact = compact_fingerprints(&fingerprints);
     let mut functional_pairs = raw_functional_pairs
         .into_iter()
-        .map(|(left_index, right_index)| SimilarityPair {
-            left_node_id: documents[left_index].node_id,
-            right_node_id: documents[right_index].node_id,
-            basis: compact_similarity(&compact[left_index], &compact[right_index]),
+        .map(|(left_index, right_index)| {
+            (!cancelled()).then(|| SimilarityPair {
+                left_node_id: documents[left_index].node_id,
+                right_node_id: documents[right_index].node_id,
+                basis: compact_similarity(&compact[left_index], &compact[right_index]),
+            })
         })
-        .collect::<Vec<_>>();
+        .collect::<Option<Vec<_>>>()?;
     functional_pairs.sort_by_key(|pair| (pair.left_node_id, pair.right_node_id));
 
     let mut pairs = raw_pairs
         .into_iter()
-        .map(|(left_index, right_index)| SimilarityPair {
-            left_node_id: documents[left_index].node_id,
-            right_node_id: documents[right_index].node_id,
-            basis: compact_similarity(&compact[left_index], &compact[right_index]),
+        .map(|(left_index, right_index)| {
+            (!cancelled()).then(|| SimilarityPair {
+                left_node_id: documents[left_index].node_id,
+                right_node_id: documents[right_index].node_id,
+                basis: compact_similarity(&compact[left_index], &compact[right_index]),
+            })
         })
-        .collect::<Vec<_>>();
+        .collect::<Option<Vec<_>>>()?;
     pairs.sort_by_key(|pair| (pair.left_node_id, pair.right_node_id));
 
-    SimilarityIndex {
+    Some(SimilarityIndex {
         version: SIMILARITY_INDEX_VERSION,
         documents_total,
         inspected_pairs,
@@ -658,7 +738,7 @@ fn build_similarity_index_from_input(input: &SimilarityBuildInput) -> Similarity
         exact_groups,
         pairs,
         functional_pairs,
-    }
+    })
 }
 
 struct CompactFingerprint {
@@ -1679,6 +1759,39 @@ mod tests {
         Similarity, fingerprint_text, is_callable_candidate, jaccard, normalized_tokens,
         rank_similarity, reserve_evidence, similarity,
     };
+
+    #[test]
+    fn cancellation_interrupts_fingerprints_and_pair_batches_without_changing_scores() {
+        let input = super::SimilarityBuildInput {
+            documents: (0..100)
+                .map(|id| super::SimilaritySourceDocument {
+                    node_id: id,
+                    path: format!("f{id}.rs"),
+                    search_text: "fn example(x: i32) { let y = x + 1; save(y); return y; }".into(),
+                    semantic_fingerprint: None,
+                    span_start: 0,
+                    span_end: 60,
+                })
+                .collect(),
+            arcs: vec![],
+            path_hashes: std::collections::BTreeMap::new(),
+        };
+        let expected = super::build_similarity_index_from_input(&input);
+        assert_eq!(
+            Some(expected),
+            super::build_similarity_index_cancellable(&input, &|| false)
+        );
+        for limit in [0, 150, 350, 1000] {
+            let checks = std::cell::Cell::new(0);
+            let result = super::build_similarity_index_cancellable(&input, &|| {
+                let n = checks.get();
+                checks.set(n + 1);
+                n >= limit
+            });
+            assert!(result.is_none(), "cancelled at checkpoint {limit}");
+            assert_eq!(checks.get(), limit + 1);
+        }
+    }
 
     #[test]
     fn compact_scores_preserve_exact_string_set_scores() {

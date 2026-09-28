@@ -57,21 +57,41 @@ fn git(root: &Path, args: &[&str]) {
 }
 
 fn request(server: &Server, path: &str) -> serde_json::Value {
-    let mut stream = TcpStream::connect(&server.address).expect("connect visualizer");
-    stream
-        .set_read_timeout(Some(Duration::from_secs(3)))
-        .expect("read timeout");
-    write!(
-        stream,
-        "GET {path} HTTP/1.1\r\nHost: {}\r\nX-CGRX-Token: {}\r\nConnection: close\r\n\r\n",
-        server.address, server.token
-    )
-    .expect("write request");
-    let mut response = String::new();
-    stream.read_to_string(&mut response).expect("read response");
-    assert!(response.starts_with("HTTP/1.1 200"), "{response}");
-    serde_json::from_str(response.split_once("\r\n\r\n").expect("HTTP body").1)
-        .expect("JSON response")
+    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    loop {
+        let mut stream = TcpStream::connect(&server.address).expect("connect visualizer");
+        stream
+            .set_read_timeout(Some(Duration::from_secs(3)))
+            .expect("read timeout");
+        write!(
+            stream,
+            "GET {path} HTTP/1.1\r\nHost: {}\r\nX-CGRX-Token: {}\r\nConnection: close\r\n\r\n",
+            server.address, server.token
+        )
+        .expect("write request");
+        let mut response = String::new();
+        stream.read_to_string(&mut response).expect("read response");
+        if response.starts_with("HTTP/1.1 202") {
+            assert!(std::time::Instant::now() < deadline, "timed out: {path}");
+            std::thread::sleep(Duration::from_millis(25));
+            continue;
+        }
+        assert!(response.starts_with("HTTP/1.1 200"), "{response}");
+        return serde_json::from_str(response.split_once("\r\n\r\n").expect("HTTP body").1)
+            .expect("JSON response");
+    }
+}
+
+fn changed_status(server: &Server, previous: &serde_json::Value) -> serde_json::Value {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let status = request(server, "/api/status");
+        if status["snapshot"] != previous["snapshot"] {
+            return status;
+        }
+        assert!(Instant::now() < deadline, "background refresh deadline");
+        std::thread::sleep(Duration::from_millis(25));
+    }
 }
 
 #[test]
@@ -173,13 +193,13 @@ fn source_change_refreshes_snapshot_and_strategy_identity_without_restart() {
     let refreshed_digest = refreshed["snapshot"]["working_tree_digest"].clone();
     let extra = repository.0.join("extra.ts");
     fs::write(&extra, "export function extra() { return 1; }\n").expect("add source");
-    let added = request(&server, "/api/status");
+    let added = changed_status(&server, &refreshed);
     assert_ne!(
         added["snapshot"]["working_tree_digest"], refreshed_digest,
         "adding a supported source refreshes the graph"
     );
     fs::remove_file(&extra).expect("delete added source");
-    let deleted = request(&server, "/api/status");
+    let deleted = changed_status(&server, &added);
     assert_eq!(
         deleted["snapshot"]["working_tree_digest"], refreshed_digest,
         "deleting the added source restores the prior snapshot"
@@ -187,7 +207,7 @@ fn source_change_refreshes_snapshot_and_strategy_identity_without_restart() {
 
     let renamed_path = repository.0.join("renamed.ts");
     fs::rename(&path, &renamed_path).expect("rename source");
-    let renamed = request(&server, "/api/status");
+    let renamed = changed_status(&server, &deleted);
     assert_ne!(
         renamed["snapshot"]["working_tree_digest"], refreshed_digest,
         "renaming a supported source refreshes the graph"
@@ -199,5 +219,12 @@ fn source_change_refreshes_snapshot_and_strategy_identity_without_restart() {
     assert_eq!(
         renamed_refactors["candidates"][0]["left"]["path"],
         "renamed.ts"
+    );
+    git(&repository.0, &["add", "."]);
+    git(&repository.0, &["commit", "-qm", "new revision"]);
+    let revision = changed_status(&server, &renamed);
+    assert_ne!(
+        revision["snapshot"]["repo_revision"],
+        renamed["snapshot"]["repo_revision"]
     );
 }

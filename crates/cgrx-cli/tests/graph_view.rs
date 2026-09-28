@@ -295,8 +295,8 @@ fn repository_graph_keeps_internal_calls_isolates_and_precise_ids() {
     assert_eq!(bounded["truncated"], true);
     assert_eq!(bounded["total_nodes"], graph["total_nodes"]);
     assert!(runtime.repository_graph(&scope, 0, 1).is_err());
-    assert!(runtime.repository_graph(&scope, 10001, 1).is_err());
-    assert!(runtime.repository_graph(&scope, 1, 50001).is_err());
+    assert!(runtime.repository_graph(&scope, 20001, 1).is_err());
+    assert!(runtime.repository_graph(&scope, 1, 120001).is_err());
     let mut narrow = scope;
     narrow.include = vec!["isolated.ts".into()];
     let only_isolate = runtime.repository_graph(&narrow, 5000, 30000).unwrap();
@@ -319,4 +319,58 @@ fn repository_graph_keeps_internal_calls_isolates_and_precise_ids() {
             .any(|e| e["source"] == selected["node_id"] && e["target"] == target["node_id"])
     );
     assert_ne!(after["snapshot"], graph["snapshot"]);
+}
+
+#[test]
+fn compact_topology_preserves_every_proven_endpoint_and_omits_evidence() {
+    let (_repo, _state, runtime) = graph_runtime();
+    let scope = request(80, 160).scope;
+    let full = runtime.repository_graph(&scope, 20_000, 120_000).unwrap();
+    let compact = runtime
+        .repository_graph_format(&scope, 20_000, 120_000, true)
+        .unwrap();
+    assert_eq!(compact["format"], "cgrx.topology.v1");
+    assert_eq!(compact["snapshot"], full["snapshot"]);
+    assert_eq!(compact["total_edges"], full["total_edges"]);
+    for (full, row) in full["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .zip(compact["nodes"].as_array().unwrap())
+    {
+        assert_eq!(full["node_id"], row[0]);
+        assert_eq!(full["symbol"], row[1]);
+        assert_eq!(full["path"], row[2]);
+        assert_eq!(row.as_array().unwrap().len(), 3);
+    }
+    for (full, row) in full["edges"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .zip(compact["edges"].as_array().unwrap())
+    {
+        assert_eq!(
+            full["source"],
+            compact["nodes"][row[0].as_u64().unwrap() as usize][0]
+        );
+        assert_eq!(
+            full["target"],
+            compact["nodes"][row[1].as_u64().unwrap() as usize][0]
+        );
+        assert_eq!(full["relation"], row[2]);
+        let evidence = runtime
+            .repository_edge_evidence(
+                full["source"].as_str().unwrap(),
+                full["target"].as_str().unwrap(),
+                full["relation"].as_str().unwrap(),
+            )
+            .unwrap();
+        assert!(
+            evidence["evidence"]
+                .as_array()
+                .unwrap()
+                .contains(&full["evidence"])
+        );
+    }
+    assert!(compact.to_string().len() < full.to_string().len());
 }

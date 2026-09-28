@@ -6,7 +6,9 @@ export function useProjectLayout(graph: ProjectMap, width = 1400, height = 1000)
   const [result, setResult] = useState<{ graph: ProjectMap; width: number; height: number; layout: ProjectLayout | null; error: string } | null>(null);
   useEffect(() => {
     let active = true;
-    const job = requestLayout(graph, { width, height });
+    const job = requestLayout(graph, { width, height }, undefined, (layout: ProjectLayout) => {
+      if (active) setResult({ graph, width, height, layout, error: '' });
+    });
     void job.promise.then((layout: unknown) => {
       if (active) setResult({ graph, width, height, layout: layout as ProjectLayout, error: '' });
     }).catch((error: Error) => {

@@ -1,5 +1,6 @@
 mod assets;
 mod http;
+mod pool;
 mod projects;
 
 use std::fs::File;
@@ -29,28 +30,18 @@ pub(super) fn run(args: &[String]) -> Result<(), String> {
         .root
         .canonicalize()
         .map_err(|error| error.to_string())?;
-    let state = managed_state_path(&root)?;
-    let runtime = open_managed_runtime(&root, &state)?;
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, options.port))
         .map_err(|error| error.to_string())?;
     let address = listener.local_addr().map_err(|error| error.to_string())?;
     let token = capability_token()?;
     let url = format!("http://127.0.0.1:{}/#token={token}", address.port());
-
-    let risk_baseline = runtime.risk_baseline();
-    let initial = Visualizer {
-        root,
-        state,
-        runtime,
-        risk_baseline,
-        token,
-    };
     let directories = if options.projects_dirs.is_empty() {
-        vec![initial.root.parent().unwrap_or(&initial.root).to_path_buf()]
+        vec![root.parent().unwrap_or(&root).to_path_buf()]
     } else {
         options.projects_dirs
     };
-    let mut server = projects::ProjectServer::new(initial, directories);
+    let server = projects::ProjectServer::new(root, directories, token)?;
+    let connections = pool::Pool::new("cgrx-http", 8, 32)?;
     println!("visualizer_url={url}");
     io::stdout().flush().map_err(|error| error.to_string())?;
     if options.open_browser {
@@ -65,14 +56,19 @@ pub(super) fn run(args: &[String]) -> Result<(), String> {
         connection
             .set_write_timeout(Some(Duration::from_secs(3)))
             .map_err(|error| error.to_string())?;
-        let response = match HttpRequest::read(&mut connection) {
-            Ok(request) => server.handle(&request),
-            Err(response) => response,
-        };
-        // Switching projects or closing a tab can cancel an in-flight response.
-        // A disconnected client must not terminate the server for every project.
-        if let Err(error) = response.write(&mut connection) {
-            eprintln!("visualizer response disconnected: {error}");
+        let server = std::sync::Arc::clone(&server);
+        let rejected = connection.try_clone().map_err(|error| error.to_string())?;
+        if !connections.submit(move || {
+            let response = match HttpRequest::read(&mut connection) {
+                Ok(request) => server.handle(&request),
+                Err(response) => response,
+            };
+            // Disconnects affect only this connection, never other projects.
+            let _ = response.write(&mut connection);
+        }) {
+            let mut rejected = rejected;
+            let _ = rejected.set_write_timeout(Some(Duration::from_millis(20)));
+            let _ = projects::overloaded().write(&mut rejected);
         }
     }
     Ok(())
@@ -159,29 +155,39 @@ impl Visualizer {
             )
             .head(head);
         }
-        if request.path.starts_with("/api/")
-            && let Err(error) = self.refresh()
-        {
-            return HttpResponse::json_error(500, "cgrx.refresh_failed", &error).head(head);
+        if let Some(response) = static_response(&request.path) {
+            return response.head(head);
         }
         let response = match request.path.as_str() {
-            "/" | "/index.html" => HttpResponse::html(assets::INDEX),
-            "/assets/styles.css" => HttpResponse::css(assets::STYLES),
-            "/assets/layout-worker.js" => HttpResponse::javascript(assets::LAYOUT_WORKER),
-            "/assets/layout.js" => HttpResponse::javascript(assets::LAYOUT),
-            "/assets/state.js" => HttpResponse::javascript(assets::STATE),
-            "/assets/git-history.js" => HttpResponse::javascript(assets::GIT_HISTORY),
-            "/assets/runtime-evidence.js" => HttpResponse::javascript(assets::RUNTIME_EVIDENCE),
-            "/assets/vendor/web-git-graph.js" => HttpResponse::javascript(assets::WEB_GIT_GRAPH),
-            "/assets/app.js" => HttpResponse::javascript(assets::APP),
             "/api/status" => self.status(),
             "/api/runtime-status" => self.api_result(self.runtime_status()),
             "/api/search" => self.api_result(self.search(request)),
-            "/api/repository-graph" => self.api_result(self.runtime.repository_graph(
+            "/api/repository-graph" => self.api_result(self.runtime.repository_graph_format(
                 &scope(request, 1),
-                number(request, "node_limit", 5000).unwrap_or(0),
-                number(request, "edge_limit", 30000).unwrap_or(0),
+                number(request, "node_limit", 20000).unwrap_or(0),
+                number(request, "edge_limit", 120000).unwrap_or(0),
+                request.query("format") == Some("compact"),
             )),
+            "/api/edge-evidence" => {
+                let snapshot = request
+                    .query("snapshot")
+                    .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok());
+                if snapshot.as_ref()
+                    != Some(&serde_json::to_value(self.runtime.snapshot()).expect("snapshot"))
+                {
+                    HttpResponse::json_error(
+                        409,
+                        "cgrx.snapshot_mismatch",
+                        "Reload the graph before requesting evidence",
+                    )
+                } else {
+                    self.api_result(self.runtime.repository_edge_evidence(
+                        request.query("source").unwrap_or(""),
+                        request.query("target").unwrap_or(""),
+                        request.query("relation").unwrap_or(""),
+                    ))
+                }
+            }
             "/api/graph" => self.api_result(self.graph(request)),
             "/api/architecture" => self.api_result(self.architecture(request)),
             "/api/refactors" => self.api_result(self.refactors(request)),
@@ -875,4 +881,20 @@ fn open_browser(url: &str) -> Result<(), String> {
         .spawn()
         .map_err(|error| format!("failed to open browser with {executable}: {error}"))?;
     Ok(())
+}
+
+fn static_response(path: &str) -> Option<HttpResponse> {
+    Some(match path {
+        "/" | "/index.html" => HttpResponse::html(assets::INDEX),
+        "/assets/styles.css" => HttpResponse::css(assets::STYLES),
+        "/assets/topology-worker.js" => HttpResponse::javascript(assets::TOPOLOGY_WORKER),
+        "/assets/layout-worker.js" => HttpResponse::javascript(assets::LAYOUT_WORKER),
+        "/assets/layout.js" => HttpResponse::javascript(assets::LAYOUT),
+        "/assets/state.js" => HttpResponse::javascript(assets::STATE),
+        "/assets/git-history.js" => HttpResponse::javascript(assets::GIT_HISTORY),
+        "/assets/runtime-evidence.js" => HttpResponse::javascript(assets::RUNTIME_EVIDENCE),
+        "/assets/vendor/web-git-graph.js" => HttpResponse::javascript(assets::WEB_GIT_GRAPH),
+        "/assets/app.js" => HttpResponse::javascript(assets::APP),
+        _ => return None,
+    })
 }

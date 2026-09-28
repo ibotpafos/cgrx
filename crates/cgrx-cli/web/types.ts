@@ -50,6 +50,7 @@ export interface EvidenceSite {
 }
 
 export interface GraphEdge {
+  evidence_ref?: { source: string; target: string; relation: string };
   source: GraphId;
   target: GraphId;
   relation: string;
