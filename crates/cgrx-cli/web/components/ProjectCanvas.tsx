@@ -1,169 +1,117 @@
-import React, { forwardRef, useEffect, useId, useImperativeHandle, useMemo, useRef, useState } from "react";
-import { useProjectLayout } from "./useProjectLayout";
-import { buildZoneContour, placeLabels, zoomAt } from "../clew-geometry.js";
-import { edgeStyle } from "../layout.js";
-import type { CameraState, GraphEdge, GraphId, ProjectLayout, ProjectLayoutNode, ProjectMap } from "../types";
+import React, { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import Sigma from 'sigma';
+import { MultiDirectedGraph } from 'graphology';
+import EdgeCurveProgram from '@sigma/edge-curve';
+import { SelfLoopProgram, nextCurvature } from '../sigma-programs';
+import { buildZoneContour } from '../clew-geometry.js';
+import { ProjectCanvas as SvgCanvas } from './SvgProjectCanvas';
+import { useProjectLayout } from './useProjectLayout';
+import { GraphNeighbors } from './GraphNeighbors';
+import type { ProjectCanvasHandle, ProjectCanvasProps } from './SvgProjectCanvas';
+import type { ProjectLayoutNode } from '../types';
+export type { ProjectCanvasHandle, ProjectCanvasProps } from './SvgProjectCanvas';
 
-export interface ProjectCanvasHandle {
-  zoom(factor: number): void;
-  resetView(): void;
-  focusNode(nodeId: GraphId): void;
-}
-export interface ProjectCanvasProps {
-  graph: ProjectMap;
-  selectedId: GraphId | null;
-  onNodeSelect: (node: ProjectLayoutNode) => void;
-  onNodeOpen: (node: ProjectLayoutNode) => void;
-  onEdgeSelect: (edge: GraphEdge, source: ProjectLayoutNode, target: ProjectLayoutNode) => void;
-}
-
-const EMPTY_LAYOUT: ProjectLayout = { width: 1400, height: 1000, nodes: [], communities: [] };
-
-// React projection of Clew's graph canvas interaction and contour primitives.
-// Edges and communities come exclusively from the CGRX evidence projection.
+// React owns panels, not tens of thousands of individual graph elements.
 export const ProjectCanvas = forwardRef<ProjectCanvasHandle, ProjectCanvasProps>(function ProjectCanvas(props, ref) {
-  const svg = useRef<SVGSVGElement>(null);
-  const prefix = useId();
-  const [size, setSize] = useState({ width: 1280, height: 800 });
-  const [camera, setCamera] = useState<CameraState>({ x: 0, y: 0, scale: 1 });
-  const [hovered, setHovered] = useState<string | null>(null);
-  const [pins, setPins] = useState<Record<string, { x: number; y: number }>>({});
-  const drag = useRef<{ x: number; y: number; camera: CameraState; node?: ProjectLayoutNode; moved: boolean } | null>(null);
-  const suppressClick = useRef(false);
-  const { layout: computedLayout, pending, error } = useProjectLayout(props.graph);
-  const baseLayout = computedLayout || EMPTY_LAYOUT;
-  const layout = useMemo(() => ({ ...baseLayout, nodes: baseLayout.nodes.map(n => pins[String(n.node_id)] ? { ...n, ...pins[String(n.node_id)], pinned: true } : n) }), [baseLayout, pins]);
-  const byId = useMemo(() => new Map(layout.nodes.map(n => [String(n.node_id), n])), [layout]);
-  const focus = hovered || (props.selectedId == null ? null : String(props.selectedId));
-  const focusIds = useMemo(() => {
-    const ids = new Set<string>(focus ? [focus] : []);
-    if (focus) for (const edge of props.graph.edges) {
-      if (String(edge.source) === focus) ids.add(String(edge.target));
-      if (String(edge.target) === focus) ids.add(String(edge.source));
-    }
-    return ids;
-  }, [focus, props.graph.edges]);
-  const labels = useMemo(() => placeLabels(layout.nodes, camera, size.width, size.height, focusIds), [layout, camera, size, focusIds]);
-  const zones = useMemo(() => {
-    const members = new Map<string, ProjectLayoutNode[]>();
-    for (const node of layout.nodes) {
-      if (!members.has(node.community)) members.set(node.community, []);
-      members.get(node.community)!.push(node);
-    }
-    return layout.communities.map((community, index) => {
-      const nodes = members.get(community.id) || [];
-      const contour = buildZoneContour(nodes, 0.55);
-      return { ...community, index, color: nodes[0]?.color || "#7fa69e", path: contour.map((p: {x: number; y: number}, i: number) => `${i ? "L" : "M"}${p.x} ${p.y}`).join(" ") + "Z" };
-    });
-  }, [layout]);
-
-  const fit = (nodes = baseLayout.nodes): CameraState => {
-    if (!nodes.length) return { x: 0, y: 0, scale: 1 };
-    const xs = nodes.map(n => n.x), ys = nodes.map(n => n.y);
-    const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
-    const available = Math.max(240, size.width - (size.width > 800 ? 440 : 80));
-    const scale = Math.max(0.25, Math.min(2.5, available / (maxX - minX + 200), (size.height - 180) / (maxY - minY + 120)));
-    return { x: size.width * (size.width > 800 ? 0.6 : 0.5) - (minX + maxX) / 2 * scale, y: size.height * 0.51 - (minY + maxY) / 2 * scale, scale };
-  };
+  const container = useRef<HTMLDivElement>(null), contours = useRef<HTMLCanvasElement>(null);
+  const renderer = useRef<Sigma | null>(null), fallback = useRef<ProjectCanvasHandle>(null);
+  const callbacks = useRef(props); callbacks.current = props;
+  const nodes = useRef(new Map<string, ProjectLayoutNode>());
+  const [failed, setFailed] = useState(false), [populating, setPopulating] = useState(true);
+  const { layout, pending, error } = useProjectLayout(props.graph, 1400, 1000, !failed);
+  const zones = useRef<Array<{ color: string; points: Array<{ x: number; y: number }> }>>([]);
   useEffect(() => {
-    const element = svg.current;
-    if (!element) return;
-    const observer = new ResizeObserver(() => {
-      const rect = element.getBoundingClientRect();
-      setSize({ width: Math.max(1, rect.width), height: Math.max(1, rect.height) });
-    });
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, []);
-  const generation = `${props.graph.level || "packages"}:${props.graph.root.path}:${props.graph.root.symbol}:${props.graph.snapshot.repo_revision}:${props.graph.snapshot.graph_generation}:${props.graph.snapshot.working_tree_digest}`;
-  useEffect(() => { setPins({}); setHovered(null); }, [generation]);
-  useEffect(() => { setCamera(fit()); }, [size.width, size.height, generation, baseLayout]);
-  useEffect(() => {
-    const element = svg.current;
-    if (!element) return;
-    const wheel = (event: WheelEvent) => {
-      event.preventDefault();
-      const rect = element.getBoundingClientRect();
-      const point = { x: event.clientX - rect.left, y: event.clientY - rect.top };
-      setCamera(current => zoomAt(current, point, Math.exp(-Math.max(-120, Math.min(120, event.deltaY)) * 0.002)));
-    };
-    element.addEventListener("wheel", wheel, { passive: false });
-    return () => element.removeEventListener("wheel", wheel);
-  }, []);
-  useImperativeHandle(ref, () => ({
-    zoom: factor => setCamera(c => zoomAt(c, { x: size.width / 2, y: size.height / 2 }, factor)),
-    resetView: () => { setPins({}); setCamera(fit()); },
-    // Selecting a node retains spatial context; explicit zoom remains available.
-    focusNode: nodeId => {
-      const node = byId.get(String(nodeId));
-      if (!node) return;
-      setCamera(c => {
-        const x = node.x * c.scale + c.x, y = node.y * c.scale + c.y;
-        return x > 90 && x < size.width - 40 && y > 120 && y < size.height - 60 ? c
-          : { ...c, x: size.width * .55 - node.x * c.scale, y: size.height * .5 - node.y * c.scale };
+    if (!container.current || failed) return;
+    let sigma: Sigma;
+    try {
+      sigma = new Sigma(new MultiDirectedGraph(), container.current, {
+        edgeProgramClasses: { curved: EdgeCurveProgram, loop: SelfLoopProgram }, defaultEdgeType: 'curved',
+        enableEdgeEvents: true, labelColor: { color: '#bbc9c3' }, labelFont: 'system-ui',
+        labelSize: 11, labelRenderedSizeThreshold: 5, labelDensity: .08,
+        defaultNodeColor: '#91aaa1', defaultEdgeColor: '#30413b', minCameraRatio: .02, maxCameraRatio: 10,
       });
+    } catch { setFailed(true); return; }
+    renderer.current = sigma;
+    sigma.on('clickNode', ({ node }) => { const n = nodes.current.get(node); if (n) callbacks.current.onNodeSelect(n); });
+    sigma.on('doubleClickNode', ({ node, event }) => { event.preventSigmaDefault(); const n = nodes.current.get(node); if (n) callbacks.current.onNodeOpen(n); });
+    sigma.on('clickEdge', ({ edge }) => {
+      const e = sigma.getGraph().getEdgeAttribute(edge, 'evidence');
+      const source = nodes.current.get(String(e.source)), target = nodes.current.get(String(e.target));
+      if (source && target) callbacks.current.onEdgeSelect(e, source, target);
+    });
+    sigma.on('afterRender', () => {
+      const canvas = contours.current, ctx = canvas?.getContext('2d'); if (!canvas || !ctx) return;
+      const { width, height } = sigma.getDimensions();
+      const dpr = Math.min(devicePixelRatio, 2); canvas.width = width * dpr; canvas.height = height * dpr;
+      ctx.scale(dpr, dpr);
+      for (const zone of zones.current) {
+        ctx.beginPath(); zone.points.forEach((p, i) => { const v = sigma.graphToViewport({ x: p.x, y: -p.y }); if (i) ctx.lineTo(v.x, v.y); else ctx.moveTo(v.x, v.y); });
+        ctx.closePath(); ctx.fillStyle = zone.color; ctx.globalAlpha = .07; ctx.fill(); ctx.globalAlpha = .18; ctx.strokeStyle = zone.color; ctx.stroke();
+      }
+    });
+    const lost = (event: Event): void => { event.preventDefault(); setFailed(true); };
+    container.current.addEventListener('webglcontextlost', lost, true);
+    const element = container.current;
+    return () => { element.removeEventListener('webglcontextlost', lost, true); sigma.kill(); renderer.current = null; zones.current = []; nodes.current.clear(); };
+  }, [failed]);
+  useEffect(() => {
+    const sigma = renderer.current; if (!sigma || !layout || failed) return;
+    // Build away from Sigma's event listeners: otherwise every chunk reprocesses
+    // all preceding edges, turning incremental loading into quadratic work.
+    const ordinals = new Map<string, number>();
+    const graph = new MultiDirectedGraph(); let cancelled = false, frame = 0, ni = 0, ei = 0;
+    setPopulating(true);
+    nodes.current = new Map(layout.nodes.map(n => [String(n.node_id), n]));
+    const groups = new Map<string, ProjectLayoutNode[]>();
+    for (const n of layout.nodes) { if (!groups.has(n.community)) groups.set(n.community, []); groups.get(n.community)!.push(n); }
+    zones.current = [...groups.values()].map(members => ({ color: members[0].color, points: buildZoneContour(members, .55) }));
+    const xs = layout.nodes.map(n => n.x), ys = layout.nodes.map(n => -n.y);
+    if (xs.length) sigma.setCustomBBox({ x: [Math.min(...xs) - 50, Math.max(...xs) + 50], y: [Math.min(...ys) - 50, Math.max(...ys) + 50] });
+    const populate = (): void => {
+      if (cancelled) return;
+      const until = performance.now() + 8;
+      while (ni < layout.nodes.length && performance.now() < until) {
+        const n = layout.nodes[ni++], id = String(n.node_id);
+        graph.addNode(id, { x: n.x, y: -n.y, label: n.symbol, color: n.color, size: Math.max(1.5, n.radius * .5), highlighted: id === String(callbacks.current.selectedId) });
+      }
+      while (ni === layout.nodes.length && ei < props.graph.edges.length && performance.now() < until) {
+        const i = ei++, e = props.graph.edges[i], source = String(e.source), target = String(e.target);
+        if (graph.hasNode(source) && graph.hasNode(target)) graph.addDirectedEdgeWithKey(String(i), source, target, { type: source === target ? 'loop' : 'curved', curvature: nextCurvature(ordinals, source, target), size: .5, color: e.confidence === 'PROVEN' ? '#364c44' : '#786440', evidence: e });
+      }
+      if (ni < layout.nodes.length || ei < props.graph.edges.length) frame = requestAnimationFrame(populate);
+      else {
+        sigma.setGraph(graph); sigma.refresh(); setPopulating(false);
+        if (container.current) { container.current.dataset.renderedNodes = String(graph.order); container.current.dataset.renderedEdges = String(graph.size); }
+      }
+    };
+    frame = requestAnimationFrame(populate);
+    return () => { cancelled = true; cancelAnimationFrame(frame); };
+  }, [layout, props.graph, failed]);
+  const prior = useRef<string | null>(null);
+  useEffect(() => {
+    const graph = renderer.current?.getGraph(); if (!graph) return;
+    if (prior.current && graph.hasNode(prior.current)) graph.setNodeAttribute(prior.current, 'highlighted', false);
+    const id = props.selectedId == null ? null : String(props.selectedId);
+    if (id && graph.hasNode(id)) graph.setNodeAttribute(id, 'highlighted', true);
+    prior.current = id;
+  }, [props.selectedId]);
+  useImperativeHandle(ref, () => ({
+    zoom: factor => { if (failed) fallback.current?.zoom(factor); else { const c = renderer.current?.getCamera(); if (c) void c.animate({ ratio: c.ratio / factor }); } },
+    resetView: () => { if (failed) fallback.current?.resetView(); else void renderer.current?.getCamera().animatedReset(); },
+    focusNode: id => {
+      if (failed) { fallback.current?.focusNode(id); return; }
+      const sigma = renderer.current; const p = sigma?.getNodeDisplayData(String(id));
+      if (p) void sigma?.getCamera().animate({ x: p.x, y: p.y });
     },
-  }));
+  }), [failed]);
+  const bounded = useMemo(() => {
+    const ns = props.graph.nodes.slice(0, 500), ids = new Set(ns.map(n => String(n.node_id)));
+    return { ...props.graph, nodes: ns, edges: props.graph.edges.filter(e => ids.has(String(e.source)) && ids.has(String(e.target))).slice(0, 2000), truncated: true, partial: true };
+  }, [props.graph]);
+  if (failed) return <><SvgCanvas {...props} graph={bounded} ref={fallback}/><p className="layout-status" role="status">WebGL unavailable: SVG fallback limited to 500 nodes / 2,000 edges. Evidence totals are unchanged.</p></>;
+  return <><div ref={container} className="project-sigma" aria-label="Repository dependency graph" role="group"/><canvas ref={contours} className="project-contours" aria-hidden="true"/>
+    {(pending || populating || error) && <p className="layout-status" role="status">{error || 'Building interactive graph…'}</p>}
+    <GraphNeighbors {...props} layout={layout}/>
 
-  const begin = (event: React.PointerEvent<SVGElement>, node?: ProjectLayoutNode): void => {
-    if (event.button !== 0) return;
-    event.stopPropagation();
-    drag.current = { x: event.clientX, y: event.clientY, camera, node, moved: false };
-    suppressClick.current = false;
-    event.currentTarget.setPointerCapture(event.pointerId);
-  };
-  const move = (event: React.PointerEvent<SVGSVGElement>): void => {
-    const start = drag.current;
-    if (!start) return;
-    const dx = event.clientX - start.x, dy = event.clientY - start.y;
-    if (Math.hypot(dx, dy) > 4) { start.moved = true; suppressClick.current = true; }
-    if (!start.moved) return;
-    if (start.node) {
-      const node = start.node;
-      setPins(p => ({ ...p, [String(node.node_id)]: { x: node.x + dx / start.camera.scale, y: node.y + dy / start.camera.scale } }));
-    } else setCamera({ ...start.camera, x: start.camera.x + dx, y: start.camera.y + dy });
-  };
-  const end = (event: React.PointerEvent<SVGSVGElement>): void => {
-    // Resolve clicks after the drag threshold so arranging a node never selects it.
-    const start = drag.current;
-    drag.current = null;
-    const target = event.target as SVGElement;
-    if (target.hasPointerCapture(event.pointerId)) target.releasePointerCapture(event.pointerId);
-    if (event.type === "pointerup" && start?.node && !start.moved) props.onNodeSelect(start.node);
-  };
-
-  return <svg ref={svg} className="project-canvas" viewBox={`0 0 ${size.width} ${size.height}`} aria-label="Repository dependency graph" aria-busy={pending} role="group" onPointerDown={e => begin(e)} onPointerMove={move} onPointerUp={end} onPointerCancel={end} onLostPointerCapture={() => { drag.current = null; }}>
-    {(pending || error) && <text x={size.width / 2} y={size.height / 2} textAnchor="middle" fill="#a9b8b0" role="status">{error || "Arranging repository graph…"}</text>}
-    <defs>{zones.map(zone => <radialGradient key={zone.id} id={`${prefix}-zone-${zone.index}`}><stop offset="0" stopColor={zone.color} stopOpacity=".2"/><stop offset=".6" stopColor={zone.color} stopOpacity=".08"/><stop offset="1" stopColor={zone.color} stopOpacity="0"/></radialGradient>)}</defs>
-    <g transform={`translate(${camera.x} ${camera.y}) scale(${camera.scale})`}>
-      <g className="map-zones" aria-hidden="true">{zones.map(zone => <path key={zone.id} d={zone.path} fill={`url(#${prefix}-zone-${zone.index})`} />)}</g>
-      {props.graph.edges.map((edge, i) => {
-        const source = byId.get(String(edge.source)), target = byId.get(String(edge.target));
-        if (!source || !target) return null;
-        const connected = focus === String(edge.source) || focus === String(edge.target);
-        const dx = target.x - source.x, dy = target.y - source.y;
-        const d = source === target ? `M${source.x} ${source.y} c-30 -40 30 -40 0 0` : `M${source.x} ${source.y} Q${(source.x + target.x) / 2 - dy * 0.1} ${(source.y + target.y) / 2 + dx * 0.1} ${target.x} ${target.y}`;
-        const style = edgeStyle(edge);
-        const activate = (): void => props.onEdgeSelect(edge, source, target);
-        return <g key={`${edge.source}:${edge.target}:${i}`} role="button" tabIndex={0} aria-label={`${source.symbol} ${edge.relation} ${target.symbol}, ${edge.confidence || "unknown confidence"}`} className={`map-edge ${connected ? "is-lit" : ""}`} opacity={focus && !connected ? 0.06 : connected ? 0.95 : 0.28} onPointerDown={e => { e.stopPropagation(); suppressClick.current = false; }} onClick={() => { if (!suppressClick.current) activate(); }} onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); activate(); } }}>
-          <path d={d} className="map-edge-hit"/><path d={d} className={style.className} strokeDasharray={style.dash}/>
-        </g>;
-      })}
-      {layout.nodes.map(node => {
-        const id = String(node.node_id), selected = String(props.selectedId) === id;
-        const active = !focus || focusIds.has(id);
-        const radius = props.graph.level ? Math.max(1.6, node.radius * .32) : Math.max(3.5, node.radius * .45);
-        return <g key={id} className={`map-node${selected ? " is-selected" : ""}`} role="button" tabIndex={0} aria-label={`${node.symbol}, ${node.symbols} symbols${node.cycle ? ", cycle candidate" : ""}`} transform={`translate(${node.x} ${node.y})`} opacity={active ? 1 : .14}
-          onPointerDown={e => begin(e, node)} onDoubleClick={() => props.onNodeOpen(node)} onPointerEnter={() => { if (!drag.current) setHovered(id); }} onPointerLeave={() => setHovered(null)} onFocus={() => setHovered(id)} onBlur={() => setHovered(null)}
-          onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); props.onNodeSelect(node); } }}>
-          <title>{node.symbol} · {node.symbols} symbols · {node.files} files</title>
-          <circle r={props.graph.level ? radius + 3 : Math.max(12, radius + 6)} fill="transparent"/>
-          <circle className="map-node-halo" r={radius + 6} fill="none" stroke={node.color} opacity={selected ? .8 : .12}/>
-          <circle className="map-node-dot" r={radius} fill={selected || focusIds.has(id) ? "#f4f6f5" : "#9ca8a5"}/>
-          {node.cycle && <circle r={radius + 3} fill="none" stroke="#eac16b" strokeDasharray="3 3"/>}
-        </g>;
-      })}
-    </g>
-    <g className="map-labels" aria-hidden="true">{labels.map(label => <text key={label.id} x={label.x} y={label.y} className={label.id === String(props.selectedId) ? "is-selected" : ""}>{label.text}</text>)}</g>
-  </svg>;
+  </>;
 });

@@ -72,6 +72,8 @@ jobs:
     if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success'
     permissions:
       contents: write
+      actions: read
+      statuses: read
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -98,6 +100,14 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "changed=$changed" >> "$GITHUB_OUTPUT"
           echo "release_version_changed=$changed ($previous_version -> $version)"
+
+      - name: Require all gates on the release SHA
+        if: steps.meta.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
+          RELEASE_REPO: ${{ github.repository }}
+        run: python3 scripts/await_release_gates.py --repo "$RELEASE_REPO" --sha "$RELEASE_SHA"
 
       - name: Check release identity
         if: steps.meta.outputs.changed == 'true'
