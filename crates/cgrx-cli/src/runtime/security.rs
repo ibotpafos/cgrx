@@ -611,7 +611,7 @@ fn collect_dependencies(config: &SecurityAuditConfig) -> Result<FindingBatch<Val
     let content = fs::read_to_string(&lock_path)
         .map_err(|e| RuntimeError::new("cgrx.lock_read", e.to_string()))?;
 
-    let parsed = content.parse::<toml::Value>().map_err(|error| {
+    let parsed = toml::from_str::<toml::Value>(&content).map_err(|error| {
         RuntimeError::new("cgrx.lock_parse", format!("invalid Cargo.lock: {error}"))
     })?;
     let packages: &[toml::Value] = match parsed.get("package") {
