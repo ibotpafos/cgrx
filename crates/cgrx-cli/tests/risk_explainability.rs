@@ -32,12 +32,19 @@ fn unsupported_worktree_changes_are_explicit_risk_gaps() {
     fixture.runtime.refresh(&fixture.root).unwrap();
 
     let result = fixture.scan(10);
-    assert_eq!(result["changed_path_count"], 0);
-    assert_eq!(result["unindexed_changed_path_count"], 2);
-    assert_eq!(
-        result["unindexed_changed_paths"],
-        json!(["dsp.cpp", "view.swift"])
-    );
+    // Swift is indexed only in the opt-in slice; C++ stays an explicit gap.
+    if cfg!(feature = "experimental-swift") {
+        assert_eq!(result["changed_path_count"], 1);
+        assert_eq!(result["unindexed_changed_path_count"], 1);
+        assert_eq!(result["unindexed_changed_paths"], json!(["dsp.cpp"]));
+    } else {
+        assert_eq!(result["changed_path_count"], 0);
+        assert_eq!(result["unindexed_changed_path_count"], 2);
+        assert_eq!(
+            result["unindexed_changed_paths"],
+            json!(["dsp.cpp", "view.swift"])
+        );
+    }
     assert_eq!(result["partial"], true);
     assert!(
         result["coverage_gaps"]
