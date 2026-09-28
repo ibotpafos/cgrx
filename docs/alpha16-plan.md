@@ -5,10 +5,14 @@ This is a plan and a first opt-in Swift slice, not an alpha.16 release claim.
 
 ## Priority and boundary
 
-1. **JS/TS:** preserve exact import/receiver proofs, compact graph counts and
-   fallback behavior from alpha.15. Add held-out regressions for path aliases,
-   re-exports, stale import inventories and receiver shadowing. A rejected or
-   stale proof must not fall through to a global name match.
+1. **JS/TS:** JS is not registered in the alpha.15 default pack: `.js` files
+   are excluded, so JS support is a new gated scope, not an existing proof to
+   preserve. A pinned Express.js held-out candidate now covers CALLS, IMPORTS,
+   REFERENCE and UNRESOLVED; its source anchors validate, but no JS engine
+   result is claimed. For TS, preserve exact import/receiver proofs, compact
+   graph counts and fallback behavior. Add held-out regressions for path
+   aliases, re-exports, stale import inventories and receiver shadowing. A
+   rejected or stale proof must not fall through to a global name match.
 2. **Rust:** focus on the remaining self/recursive and module-qualified misses
    identified by the curated task matrix. Require exact caller, target and
    source-hash provenance; retain ambiguity abstention.
@@ -22,6 +26,10 @@ This is a plan and a first opt-in Swift slice, not an alpha.16 release claim.
    Default registration waits for a manually curated, pinned Swift CALLS /
    IMPORTS / REFERENCE / UNRESOLVED corpus and its coverage contract. Do not
    relax the default seven-language contract to enable the prototype.
+   A pinned Swift System held-out candidate validates four source-truth cells;
+   the current opt-in extractor abstains on its argument-bearing CALLS case,
+   correctly abstains on closure dispatch, and has not established IMPORTS or
+   REFERENCE proofs. This is an open promotion gate, not a passing matrix.
    The opt-in index uses distinct extraction revisions (33 without PHP, 35
    with it); default 29 and PHP-only 31 remain unchanged.
 
