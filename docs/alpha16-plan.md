@@ -1,7 +1,7 @@
 # alpha.16: evidence quality before language breadth
 
 Base: released `v0.1.0-alpha.15` (`d74293b900f8ad79f2cce6efa8d0f6057e2c096e`).
-This is a plan and a first opt-in Swift slice, not an alpha.16 release claim.
+This records the first opt-in Swift slice and the remaining language-coverage roadmap. The alpha.16 prerelease may include the opt-in slice, but does not promote Swift to the default language contract.
 
 ## Priority and boundary
 
@@ -62,8 +62,10 @@ pass. Investigate any moved node ID, changed source span or altered coverage
 gap before accepting it. For the explorer, re-run the alpha.15 exact-SHA GPU
 ceilings (2 s interactive, 12 s layout, 20 ms frame p95, 50 ms selection,
 zero leaked workers/GPU resources after 20 switches) rather than extrapolating
-from software CI. No tag or default Swift registration until those gates and
-the full release CI are observed on the final candidate SHA.
+from software CI. Default Swift registration remains blocked until its held-out
+coverage contract is complete. The alpha.16 prerelease requires the frozen
+regression controls, exact-SHA real-GPU thresholds and full release CI; the
+source-truth-only JavaScript and Swift candidates are not engine acceptance.
 
 ## Iteration order
 
@@ -71,4 +73,4 @@ Freeze the four-language fixtures first; fix one resolver family at a time;
 run the matrix and compare to alpha.15; curate external Swift held-out tasks;
 promote Swift only after the coverage contract is complete; then perform the
 real-GPU and release checks. Keep alpha.15's executable as a reversible local
-fallback while alpha.16 remains under development.
+fallback after the alpha.16 prerelease.
