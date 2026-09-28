@@ -29,6 +29,8 @@ export const ProjectCanvas = forwardRef<ProjectCanvasHandle, ProjectCanvasProps>
         enableEdgeEvents: true, labelColor: { color: '#bbc9c3' }, labelFont: 'system-ui',
         labelSize: 11, labelRenderedSizeThreshold: 5, labelDensity: .08,
         defaultNodeColor: '#91aaa1', defaultEdgeColor: '#30413b', minCameraRatio: .02, maxCameraRatio: 10,
+        // Project switches may mount the canvas before its container has a width.
+        allowInvalidContainer: true,
       });
     } catch { setFailed(true); return; }
     renderer.current = sigma;
