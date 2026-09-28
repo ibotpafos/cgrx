@@ -40,6 +40,8 @@ test('20k/120k string IDs and parallel edges reach renderer without truncation',
   await page.getByRole('button', { name: '3D', exact: true }).click();
   await expect(page.locator('.project-three-canvas')).toHaveAttribute('data-rendered-edges', '120000', { timeout: 90000 });
   expect(Number(await page.locator('.project-three-canvas').getAttribute('data-textures'))).toBeLessThanOrEqual(32);
+  const extent = JSON.parse((await page.locator('.project-three-canvas').getAttribute('data-volume-extent'))!);
+  expect(extent[2]).toBeGreaterThan(100); // Regression: 3D cannot be parallel flat community sheets.
 });
 test('context loss falls back to explicitly bounded SVG', async ({ page }) => {
   await page.route('**/api/repository-graph?**', route => route.fulfill({ json: graphFixture(1000) }));

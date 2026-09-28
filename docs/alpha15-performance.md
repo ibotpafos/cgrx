@@ -56,8 +56,11 @@ rendering limits, **not** evidence totals. Partial coverage/truncation remain vi
 - `python3 scripts/bench_visualize.py --binary /absolute/path/to/cgrx --output report.json`
   generates two independent 10k-symbol cold repos and measures assets/catalogue/
   status while opening both and holding an incomplete HTTP request.
-- `scripts/bench_graph.tsx` is a local real-GPU harness. Bundle it with esbuild and
-  serve with the web assets (`/assets/layout-worker.js` maps to the bundled worker).
+- `node scripts/build_graph_bench.mjs /tmp/cgrx-alpha15-browser` builds the real-GPU
+  harness and records commit, dirty flag and bundle hashes in `build.json`.
+  `python3 scripts/serve_graph_bench.py --directory /tmp/cgrx-alpha15-browser`
+  serves it on loopback port 4320. Run fixture buttons sequentially. Reports are
+  appended locally to `reports.jsonl`; only a clean, exact-SHA build is releasable.
   Fixtures in `web/graph-fixtures.js` reproduce 1k/6k, 5k/30k and 20k/120k graphs,
   including parallel relationship kinds and IDs above JavaScript's exact range.
 - CI Playwright tests check embedded assets under CSP, topology counts, 3D,
@@ -76,3 +79,20 @@ setting the real-GPU release status or publishing alpha.15.
 Sources: [Sigma renderers](https://www.sigmajs.org/docs/advanced/renderers/),
 [Three.js instancing](https://threejs.org/docs/pages/InstancedMesh.html),
 [Playwright CI](https://playwright.dev/docs/ci-intro).
+
+### 3D volume regression
+
+The first instanced renderer placed every node in a community at one Z value.
+Side-on orbiting therefore collapsed those communities into vertical strips.
+`buildProjectVolume` now preserves the force-layout XY neighborhoods while adding
+ID-stable depth inside each community. Depth is presentation only, not confidence,
+call direction, or dependency rank. Exact string IDs and graph evidence remain
+unchanged. Three shared-buffer great-circle contours replace the flat community
+panels. Reset fits the actual bounding sphere to both viewport axes and starts
+from an oblique view; snapshot refreshes retain the user's camera.
+
+Regression tests cover side-on projection, deterministic full-u64 IDs, non-mutation,
+volume enclosure, and portrait/landscape camera fit. This is a bounded O(N)
+embedding, not a new 3D force simulation or an extra dependency. It uses the
+existing [Three.js](https://threejs.org/docs/pages/Box3.html) geometry and
+[OrbitControls](https://threejs.org/docs/pages/OrbitControls.html).

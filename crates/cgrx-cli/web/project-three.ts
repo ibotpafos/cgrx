@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { buildZoneContour } from './clew-geometry.js';
+import { buildProjectVolume, fitVolumeDistance } from './project-volume.js';
 import type { GraphEdge, GraphId, ProjectLayout, ProjectLayoutNode, ProjectMap } from './types';
 export interface ProjectGraphCallbacks {
   onNodeSelect?: (node: ProjectLayoutNode) => void;
@@ -31,7 +31,7 @@ export function createProjectGraphRenderer(canvas: HTMLCanvasElement, callbacks:
   const group = new THREE.Group(); scene.add(group);
   const labels = new Map<string, THREE.Sprite>();
   const eventController = new AbortController();
-  const projection = new THREE.Vector3();
+  const projection = new THREE.Vector3(), bounds = new THREE.Sphere(new THREE.Vector3(), 500);
   function releaseLabel(id: string): void {
     const sprite = labels.get(id); if (!sprite) return;
     scene.remove(sprite); sprite.material.map?.dispose(); sprite.material.dispose(); labels.delete(id);
@@ -116,31 +116,46 @@ export function createProjectGraphRenderer(canvas: HTMLCanvasElement, callbacks:
     render(graph, nextLayout, options = {}) {
       clear(); layout = nextLayout;
       if (!layout.nodes.length) { invalidate(); return; }
-      const communities = new Map(layout.communities.map((c, i) => [c.id, i]));
+      const volume = buildProjectVolume(layout);
       mesh = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 0), new THREE.MeshBasicMaterial(), layout.nodes.length);
       const transform = new THREE.Object3D();
-      const members = new Map<string, ProjectLayoutNode[]>();
       layout.nodes.forEach((node, i) => {
         index.set(String(node.node_id), i);
-        const z = Math.sin((communities.get(node.community) || 0) * 2.4) * 60;
-        const p = new THREE.Vector3(node.x - layout!.width / 2, layout!.height / 2 - node.y, z); positions.push(p);
+        const p = new THREE.Vector3().fromArray(volume.positions, i * 3); positions.push(p);
         transform.position.copy(p); transform.scale.setScalar(Math.max(1.6, node.radius * .55)); transform.updateMatrix();
         mesh!.setMatrixAt(i, transform.matrix); mesh!.setColorAt(i, new THREE.Color(node.color));
-        if (!members.has(node.community)) members.set(node.community, []); members.get(node.community)!.push(node);
       });
       mesh.computeBoundingSphere(); group.add(mesh);
-      for (const [id, nodes] of members) {
-        const contour = buildZoneContour(nodes, .55); if (contour.length < 3) continue;
-        const shape = new THREE.Shape(contour.map((p: { x: number; y: number }) => new THREE.Vector2(p.x - layout!.width / 2, layout!.height / 2 - p.y)));
-        const zone = new THREE.Mesh(new THREE.ShapeGeometry(shape), new THREE.MeshBasicMaterial({ color: nodes[0].color, transparent: true, opacity: .07, depthWrite: false, side: THREE.DoubleSide }));
-        zone.position.z = Math.sin((communities.get(id) || 0) * 2.4) * 60 - 8; group.add(zone);
+      new THREE.Box3().setFromPoints(positions).expandByScalar(20).getBoundingSphere(bounds);
+      const extent = new THREE.Box3().setFromPoints(positions).getSize(new THREE.Vector3());
+      canvas.dataset.volumeExtent = JSON.stringify(extent.toArray());
+      // Three great-circle contours enclose each community in space, rather
+      // than parallel filled planes which disappear when viewed edge-on.
+      const ringSegments = 48, rings = new Float32Array(volume.zones.length * 3 * ringSegments * 6);
+      const ringColors = new Float32Array(rings.length), zoneColor = new THREE.Color();
+      let offset = 0;
+      for (const zone of volume.zones) {
+        zoneColor.set(zone.color);
+        for (let plane = 0; plane < 3; plane++) for (let k = 0; k < ringSegments; k++) {
+          for (const angle of [k / ringSegments * Math.PI * 2, (k + 1) / ringSegments * Math.PI * 2]) {
+            const point = [...zone.center], u = plane, v = (plane + 1) % 3;
+            point[u] += Math.cos(angle) * zone.radii[u]; point[v] += Math.sin(angle) * zone.radii[v];
+            rings.set(point, offset); zoneColor.toArray(ringColors, offset); offset += 3;
+          }
+        }
       }
+      const ringGeometry = new THREE.BufferGeometry();
+      ringGeometry.setAttribute('position', new THREE.BufferAttribute(rings, 3));
+      ringGeometry.setAttribute('color', new THREE.BufferAttribute(ringColors, 3));
+      group.add(new THREE.LineSegments(ringGeometry, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: .13, depthWrite: false })));
       edgeRecords = graph.edges.filter(e => index.has(String(e.source)) && index.has(String(e.target)));
       const vertices = new Float32Array(edgeRecords.length * SEGMENTS * 6), colors = new Float32Array(vertices.length);
       const a = new THREE.Vector3(), b = new THREE.Vector3(), control = new THREE.Vector3(), color = new THREE.Color();
+      const ordinals = new Map<string, number>();
       edgeRecords.forEach((edge, i) => {
         const source = positions[index.get(String(edge.source))!], target = positions[index.get(String(edge.target))!];
-        const dx = target.x - source.x, dy = target.y - source.y, bend = .12 + (i % 3) * .07;
+        const key = JSON.stringify([edge.source, edge.target]), ordinal = ordinals.get(key) || 0; ordinals.set(key, ordinal + 1);
+        const dx = target.x - source.x, dy = target.y - source.y, bend = .12 + ordinal * .07;
         control.copy(source).add(target).multiplyScalar(.5).add(new THREE.Vector3(-dy * bend, dx * bend, 8));
         const curve = new THREE.QuadraticBezierCurve3(source, control, target);
         color.set(edge.confidence === 'PROVEN' ? '#687f76' : '#c89e58');
@@ -159,7 +174,16 @@ export function createProjectGraphRenderer(canvas: HTMLCanvasElement, callbacks:
     },
     setSelected,
     focusNode(id) { const i = index.get(String(id)); if (i == null) return; const delta = positions[i].clone().sub(controls.target); controls.target.add(delta); camera.position.add(delta); invalidate(); },
-    resetView() { controls.target.set(0, 0, 0); camera.position.set(0, 0, Math.max(layout?.width || 1000, layout?.height || 800) * 1.3); invalidate(); },
+    resetView() {
+      // Flush any pending orbit inertia before applying the fitted oblique view.
+      controls.enableDamping = false; controls.update();
+      const distance = fitVolumeDistance(bounds.radius, camera.fov, camera.aspect);
+      controls.target.copy(bounds.center);
+      camera.position.copy(new THREE.Vector3(.65, .35, 1).normalize().multiplyScalar(distance).add(bounds.center));
+      camera.near = Math.max(.1, distance / 1000); camera.far = Math.max(10000, distance * 20); camera.updateProjectionMatrix();
+      controls.maxDistance = Math.max(5000, distance * 4); controls.update(); controls.enableDamping = true;
+      invalidate();
+    },
     zoom(factor) { camera.position.sub(controls.target).multiplyScalar(1 / factor).add(controls.target); invalidate(); },
     dispose() { if (disposed) return; disposed = true; cancelAnimationFrame(frame); observer.disconnect(); eventController.abort(); controls.dispose(); clear(); renderer.dispose(); renderer.forceContextLoss(); },
   };

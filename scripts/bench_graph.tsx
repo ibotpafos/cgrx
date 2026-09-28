@@ -56,7 +56,8 @@ function Bench() {
     for (let i = 0; i < 180; i++) {
       await new Promise<void>(resolve => requestAnimationFrame(() => { const now = performance.now(); frameMs.push(now - last); last = now; (dim === '2d' ? ref.current : handle3d.current)?.zoom(i % 60 < 30 ? 1.005 : 1 / 1.005); resolve(); }));
     }
-    const output = { status: 'complete', count, edges: count * 6, dimension: dim, gpu, browser: navigator.userAgent, devicePixelRatio,
+    const build = await (await fetch('/build.json', { cache: 'no-store' })).json();
+    const output = { build, status: 'complete', count, edges: count * 6, dimension: dim, gpu, browser: navigator.userAgent, devicePixelRatio,
       interactiveMs, layoutMs: layoutMetrics.lastDurationMs, frameP95Ms: p95(frameMs), activeWorkers: layoutMetrics.activeWorkers, gpuResources: { ...gpuResources }, totalMs: performance.now() - started };
     setReport(output); running.current = false; await fetch('/report', { method: 'POST', body: JSON.stringify(output) });
   }
@@ -71,7 +72,8 @@ function Bench() {
       samples.push({ workers: layoutMetrics.activeWorkers, resources: { ...gpuResources }, canvases: document.querySelectorAll('canvas').length });
     }
     setGraph(null); await wait(100);
-    const result = { type: 'switches', samples, after: { workers: layoutMetrics.activeWorkers, resources: { ...gpuResources }, canvases: document.querySelectorAll('canvas').length } };
+    const build = await (await fetch('/build.json', { cache: 'no-store' })).json();
+    const result = { build, type: 'switches', samples, after: { workers: layoutMetrics.activeWorkers, resources: { ...gpuResources }, canvases: document.querySelectorAll('canvas').length } };
     setReport(result); running.current = false; await fetch('/report', { method: 'POST', body: JSON.stringify(result) });
   }
   return <><header style={{ height: 70 }}>{[1000,5000,20000].flatMap(n => ['2d','3d'].map(d => <button key={`${n}${d}`} onClick={() => void run(n,d).catch(error => { running.current = false; setReport({ error: error.message }); })}>{n} {d}</button>))}<button onClick={() => (dimension === '2d' ? ref.current : handle3d.current)?.focusNode(graph!.nodes[0].node_id)}>Focus node</button><button onClick={() => void switches()}>20 switches</button><button onClick={() => { for (const c of document.querySelectorAll<HTMLCanvasElement>('.project-sigma canvas')) { const gl = c.getContext('webgl2') || c.getContext('webgl'); if (gl) { gl.getExtension('WEBGL_lose_context')?.loseContext(); break; } } }}>Lose context</button></header>

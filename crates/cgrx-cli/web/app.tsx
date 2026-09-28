@@ -1,3 +1,4 @@
+import { GraphNeighbors } from "./components/GraphNeighbors";
 import { fetchJson } from "./fetch-json.js";
 import { loadTopology } from "./topology-client";
 import React, {
@@ -518,7 +519,7 @@ function App(): React.JSX.Element {
         ["Confidence", edge.confidence],
         ...(Number(edge.weight) > 1 ? [["Aggregated relationships", edge.weight] as [string, unknown]] : []),
         ["Resolver", "resolver" in evidence ? evidence.resolver : "indexed"],
-        ["Evidence site", "path" in evidence ? `${evidence.path}:${evidence.span?.start ?? "?"}` : "hypothetical"],
+        [Number(edge.weight) > 1 ? "Representative evidence site" : "Evidence site", "path" in evidence ? `${evidence.path}:${evidence.span?.start ?? "?"}` : "hypothetical"],
         ["Source hash", "source_hash" in evidence ? evidence.source_hash : "not applicable"],
         ...(edge.count ? [
           ["Observed calls", edge.count],
@@ -898,7 +899,7 @@ const ProjectMapCanvas = forwardRef<ProjectMapCanvasHandle, ProjectMapCanvasProp
     };
   }, [webglFailed]);
 
-  const { layout, pending, error } = useProjectLayout(props.graph, size.width, size.height);
+  const { layout, pending, error } = useProjectLayout(props.graph, size.width, size.height, !webglFailed);
   useEffect(() => { rendererRef.current?.render(props.graph, layout || { width: size.width, height: size.height, nodes: [], communities: [] }, { selectedId: props.selectedId }); }, [layout, props.graph, size.width, size.height]);
   useEffect(() => { rendererRef.current?.setSelected(props.selectedId); }, [props.selectedId]);
   useImperativeHandle(forwardedRef, () => ({
@@ -908,7 +909,7 @@ const ProjectMapCanvas = forwardRef<ProjectMapCanvasHandle, ProjectMapCanvasProp
   }), [webglFailed]);
 
   if (webglFailed) return <ProjectCanvas {...props} ref={fallbackRef}/>;
-  return <><canvas ref={canvasRef} className="project-three-canvas" aria-label="Three-dimensional repository dependency map" aria-busy={pending} />{(pending || error) && <p className="layout-status" role="status">{error || "Arranging repository graph…"}</p>}</>;
+  return <><canvas ref={canvasRef} className="project-three-canvas" aria-label="Three-dimensional repository dependency map" aria-busy={pending} />{(pending || error) && <p className="layout-status" role="status">{error || "Arranging repository graph…"}</p>}<GraphNeighbors {...props} layout={layout}/></>;
 });
 
 function SvgGraph({ graph, camera, selectedNodeId, pins, onSelectNode, onInspectEdge, onNodeDrag }: {

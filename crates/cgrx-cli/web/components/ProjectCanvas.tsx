@@ -2,9 +2,11 @@ import React, { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, use
 import Sigma from 'sigma';
 import { MultiDirectedGraph } from 'graphology';
 import EdgeCurveProgram from '@sigma/edge-curve';
+import { SelfLoopProgram, nextCurvature } from '../sigma-programs';
 import { buildZoneContour } from '../clew-geometry.js';
 import { ProjectCanvas as SvgCanvas } from './SvgProjectCanvas';
 import { useProjectLayout } from './useProjectLayout';
+import { GraphNeighbors } from './GraphNeighbors';
 import type { ProjectCanvasHandle, ProjectCanvasProps } from './SvgProjectCanvas';
 import type { ProjectLayoutNode } from '../types';
 export type { ProjectCanvasHandle, ProjectCanvasProps } from './SvgProjectCanvas';
@@ -16,17 +18,14 @@ export const ProjectCanvas = forwardRef<ProjectCanvasHandle, ProjectCanvasProps>
   const callbacks = useRef(props); callbacks.current = props;
   const nodes = useRef(new Map<string, ProjectLayoutNode>());
   const [failed, setFailed] = useState(false), [populating, setPopulating] = useState(true);
-  const { layout, pending, error } = useProjectLayout(props.graph);
-  const [neighborPage, setNeighborPage] = useState(0);
-  const neighbors = useMemo(() => props.graph.edges.filter(e => String(e.source) === String(props.selectedId) || String(e.target) === String(props.selectedId)), [props.graph, props.selectedId]);
-  useEffect(() => { setNeighborPage(0); }, [props.selectedId]);
+  const { layout, pending, error } = useProjectLayout(props.graph, 1400, 1000, !failed);
   const zones = useRef<Array<{ color: string; points: Array<{ x: number; y: number }> }>>([]);
   useEffect(() => {
     if (!container.current || failed) return;
     let sigma: Sigma;
     try {
       sigma = new Sigma(new MultiDirectedGraph(), container.current, {
-        edgeProgramClasses: { curved: EdgeCurveProgram }, defaultEdgeType: 'curved',
+        edgeProgramClasses: { curved: EdgeCurveProgram, loop: SelfLoopProgram }, defaultEdgeType: 'curved',
         enableEdgeEvents: true, labelColor: { color: '#bbc9c3' }, labelFont: 'system-ui',
         labelSize: 11, labelRenderedSizeThreshold: 5, labelDensity: .08,
         defaultNodeColor: '#91aaa1', defaultEdgeColor: '#30413b', minCameraRatio: .02, maxCameraRatio: 10,
@@ -59,6 +58,7 @@ export const ProjectCanvas = forwardRef<ProjectCanvasHandle, ProjectCanvasProps>
     const sigma = renderer.current; if (!sigma || !layout || failed) return;
     // Build away from Sigma's event listeners: otherwise every chunk reprocesses
     // all preceding edges, turning incremental loading into quadratic work.
+    const ordinals = new Map<string, number>();
     const graph = new MultiDirectedGraph(); let cancelled = false, frame = 0, ni = 0, ei = 0;
     setPopulating(true);
     nodes.current = new Map(layout.nodes.map(n => [String(n.node_id), n]));
@@ -76,7 +76,7 @@ export const ProjectCanvas = forwardRef<ProjectCanvasHandle, ProjectCanvasProps>
       }
       while (ni === layout.nodes.length && ei < props.graph.edges.length && performance.now() < until) {
         const i = ei++, e = props.graph.edges[i], source = String(e.source), target = String(e.target);
-        if (graph.hasNode(source) && graph.hasNode(target)) graph.addDirectedEdgeWithKey(String(i), source, target, { type: 'curved', curvature: source === target ? 1 : .006 + (i % 3) * .006, size: .5, color: e.confidence === 'PROVEN' ? '#364c44' : '#786440', evidence: e });
+        if (graph.hasNode(source) && graph.hasNode(target)) graph.addDirectedEdgeWithKey(String(i), source, target, { type: source === target ? 'loop' : 'curved', curvature: nextCurvature(ordinals, source, target), size: .5, color: e.confidence === 'PROVEN' ? '#364c44' : '#786440', evidence: e });
       }
       if (ni < layout.nodes.length || ei < props.graph.edges.length) frame = requestAnimationFrame(populate);
       else {
@@ -111,9 +111,7 @@ export const ProjectCanvas = forwardRef<ProjectCanvasHandle, ProjectCanvasProps>
   if (failed) return <><SvgCanvas {...props} graph={bounded} ref={fallback}/><p className="layout-status" role="status">WebGL unavailable: SVG fallback limited to 500 nodes / 2,000 edges. Evidence totals are unchanged.</p></>;
   return <><div ref={container} className="project-sigma" aria-label="Repository dependency graph" role="group"/><canvas ref={contours} className="project-contours" aria-hidden="true"/>
     {(pending || populating || error) && <p className="layout-status" role="status">{error || 'Building interactive graph…'}</p>}
-    {props.selectedId != null && <details className="graph-neighbors"><summary>Connections ({neighbors.length}) — keyboard navigation</summary>
-      {neighbors.slice(neighborPage * 30, neighborPage * 30 + 30).map((e, i) => <button key={i} onClick={() => { const s = nodes.current.get(String(e.source)), t = nodes.current.get(String(e.target)); if (s && t) props.onEdgeSelect(e, s, t); }}>{e.relation}: {nodes.current.get(String(e.source === props.selectedId ? e.target : e.source))?.symbol}</button>)}
-      <button disabled={!neighborPage} onClick={() => setNeighborPage(p => p - 1)}>Previous</button><button disabled={(neighborPage + 1) * 30 >= neighbors.length} onClick={() => setNeighborPage(p => p + 1)}>Next</button>
-    </details>}
+    <GraphNeighbors {...props} layout={layout}/>
+
   </>;
 });

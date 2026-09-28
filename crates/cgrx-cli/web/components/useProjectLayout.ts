@@ -2,9 +2,10 @@ import { useEffect, useState } from 'react';
 import { cachedLayout, requestLayout } from '../layout-client.js';
 import type { ProjectLayout, ProjectMap } from '../types';
 
-export function useProjectLayout(graph: ProjectMap, width = 1400, height = 1000) {
+export function useProjectLayout(graph: ProjectMap, width = 1400, height = 1000, enabled = true) {
   const [result, setResult] = useState<{ graph: ProjectMap; width: number; height: number; layout: ProjectLayout | null; error: string } | null>(null);
   useEffect(() => {
+    if (!enabled) return;
     let active = true;
     const job = requestLayout(graph, { width, height }, undefined, (layout: ProjectLayout) => {
       if (active) setResult({ graph, width, height, layout, error: '' });
@@ -15,7 +16,7 @@ export function useProjectLayout(graph: ProjectMap, width = 1400, height = 1000)
       if (active) setResult({ graph, width, height, layout: null, error: error.message });
     });
     return () => { active = false; job.cancel(); };
-  }, [graph, width, height]);
+  }, [graph, width, height, enabled]);
   const current = result?.graph === graph && result.width === width && result.height === height ? result : null;
   const layout = current?.layout || cachedLayout(graph, { width, height }) as ProjectLayout | null;
   return { layout, pending: !layout && !current?.error, error: current?.error || '' };
