@@ -88,11 +88,18 @@ use serde_json::{Value, json};
 
 // Read the effective dependency policy, not just this crate's feature flag:
 // Cargo may enable cgrx-languages/experimental-php through another workspace member.
-const EXTRACTION_REVISION: u32 = if cgrx_languages::EXPERIMENTAL_PHP_ENABLED {
-    31
-} else {
-    29
-};
+// Reserve 30 for the historical PHP revision; Swift-only starts at 33 so no
+// old cache can acquire a new feature policy merely by matching the number.
+const EXTRACTION_REVISION: u32 =
+    29 + if cgrx_languages::EXPERIMENTAL_PHP_ENABLED {
+        2
+    } else {
+        0
+    } + if cgrx_languages::EXPERIMENTAL_SWIFT_ENABLED {
+        4
+    } else {
+        0
+    };
 
 const NODES_SEGMENT: &str = "nodes.seg";
 const EDGES_SEGMENT: &str = "edges.seg";

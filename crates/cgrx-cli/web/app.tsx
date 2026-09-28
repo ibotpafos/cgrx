@@ -1,3 +1,6 @@
+import { GraphNeighbors } from "./components/GraphNeighbors";
+import { fetchJson } from "./fetch-json.js";
+import { loadTopology } from "./topology-client";
 import React, {
   forwardRef,
   useCallback,
@@ -160,23 +163,32 @@ defineWebGitGraph();
 async function api<T>(path: string, signal?: AbortSignal): Promise<T> {
   const url = new URL(path, location.origin);
   if (selectedProjectId && url.pathname !== "/api/projects") url.searchParams.set("project", selectedProjectId);
-  const response = await fetch(url, {
-    headers: { "X-CGRX-Token": capability },
-    cache: "no-store",
-    signal
-  });
-  const value = await response.json() as { error?: { detail?: string } } & T;
-  if (!response.ok) throw new Error(value?.error?.detail || `Request failed: ${response.status}`);
-  return value;
+  return fetchJson(url, capability, signal) as Promise<T>;
 }
 
 function App(): React.JSX.Element {
   const [projectCatalogue, setProjectCatalogue] = useState<ProjectCatalogue | null>(null);
   const [projectListError, setProjectListError] = useState("");
+  const [projectPhase, setProjectPhase] = useState("queued");
+  useEffect(() => {
+    const controller = new AbortController(); let busy = false;
+    const poll = async (): Promise<void> => {
+      if (busy) return; busy = true;
+      try { const value = await api<{ state: string }>("/api/project-status", controller.signal); setProjectPhase(value.state); } catch { /* Main status owns actionable errors. */ } finally { busy = false; }
+    };
+    void poll(); const timer = setInterval(() => void poll(), 1000);
+    return () => { clearInterval(timer); controller.abort(); };
+  }, []);
   const selectedProject = projectCatalogue?.projects.find(project => project.id === (selectedProjectId || projectCatalogue.default_project));
   const loadProjects = useCallback(async (): Promise<void> => {
     try {
-      setProjectCatalogue(await api<ProjectCatalogue>("/api/projects"));
+      let catalogue = await api<ProjectCatalogue>("/api/projects");
+      setProjectCatalogue(catalogue);
+      while (catalogue.discovering) {
+        await new Promise(resolve => setTimeout(resolve, 250));
+        catalogue = await api<ProjectCatalogue>("/api/projects");
+        setProjectCatalogue(catalogue);
+      }
       setProjectListError("");
     } catch (error) { setProjectListError(errorMessage(error)); }
   }, []);
@@ -207,6 +219,8 @@ function App(): React.JSX.Element {
   const [scopeDraft, setScopeDraft] = useState("**");
   const [repositoryError, setRepositoryError] = useState("");
   const repositoryRequest = useRef(0);
+  const repositoryAbort = useRef<AbortController | null>(null);
+  useEffect(() => () => repositoryAbort.current?.abort(), []);
   const currentProjectMap = useMemo(() => graphDetail === "packages" ? packageMap
     : repositoryGraph ? projectCodeMap(repositoryGraph, graphDetail) as ProjectMap : null,
     [graphDetail, packageMap, repositoryGraph]);
@@ -280,10 +294,16 @@ function App(): React.JSX.Element {
   const loadRepository = useCallback(async (): Promise<void> => {
     const request = ++repositoryRequest.current;
     setRepositoryError("");
-    setRepositoryGraph(null);
+    repositoryAbort.current?.abort();
+    const controller = new AbortController(); repositoryAbort.current = controller;
     try {
-      const value = await api<GraphResponse>(`/api/repository-graph?scope=${encodeURIComponent(graphScope)}&node_limit=5000&edge_limit=30000`);
-      if (request === repositoryRequest.current) setRepositoryGraph(value);
+      const url = new URL(`/api/repository-graph?scope=${encodeURIComponent(graphScope)}&node_limit=20000&edge_limit=120000&format=compact`, location.origin);
+      if (selectedProjectId) url.searchParams.set("project", selectedProjectId);
+      const value = await loadTopology(url.href, capability, controller.signal);
+      if (request === repositoryRequest.current) {
+        setRepositoryGraph(value);
+        setSelectedNodeId(selected => value.nodes.some(n => String(n.node_id) === String(selected)) ? selected : null);
+      }
     } catch (error) {
       if (request === repositoryRequest.current) setRepositoryError(errorMessage(error));
     }
@@ -334,8 +354,10 @@ function App(): React.JSX.Element {
   }, []);
 
   const refreshSecondaryData = useCallback(async (): Promise<void> => {
-    await Promise.all([loadRepository(), loadArchitecture(), loadMissions(), loadRuntime(), loadRefactors()]);
-  }, [loadRepository, loadArchitecture, loadMissions, loadRefactors, loadRuntime]);
+    await loadRepository();
+  }, [loadRepository]);
+  useEffect(() => { if (mode === "architecture" || graphDetail === "packages") void loadArchitecture(); }, [mode, graphDetail, snapshot, loadArchitecture]);
+  useEffect(() => { if (mode === "changes") void loadMissions(); }, [mode, snapshot, loadMissions]);
 
   const statusInFlight = useRef(false);
   const loadStatus = useCallback(async (refreshOnChange = true): Promise<void> => {
@@ -471,7 +493,23 @@ function App(): React.JSX.Element {
     }
   };
 
+  const evidenceRequest = useRef(0);
+  useEffect(() => { evidenceRequest.current++; }, [repositoryGraph, selectedNodeId]);
   const inspectEdge = (edge: GraphEdge, source: GraphNode, target: GraphNode): void => {
+    if (edge.evidence_ref) {
+      const selection = ++evidenceRequest.current;
+      const ref = edge.evidence_ref;
+      const params = new URLSearchParams({ ...ref, snapshot: JSON.stringify(repositoryGraph?.snapshot) });
+      setInspector({ kind: "edge", facts: [["Relationship", `${source.symbol} → ${target.symbol}`], ["Evidence", "Loading snapshot-bound evidence…"]] });
+      void api<{ evidence: GraphEdge["evidence"][] }>(`/api/edge-evidence?${params}`).then(value => {
+        if (selection === evidenceRequest.current) inspectEdge({ ...edge, evidence_ref: undefined, evidence: value.evidence[0] }, source, target);
+      }).catch((error: Error & { status?: number }) => {
+        if (selection !== evidenceRequest.current) return;
+        setInspector({ kind: "edge", facts: [], error: error.message });
+        if (error.status === 409) void loadRepository();
+      });
+      return;
+    }
     const evidence = typeof edge.evidence === "object" && edge.evidence ? edge.evidence : {};
     setInspector({
       kind: "edge",
@@ -481,7 +519,7 @@ function App(): React.JSX.Element {
         ["Confidence", edge.confidence],
         ...(Number(edge.weight) > 1 ? [["Aggregated relationships", edge.weight] as [string, unknown]] : []),
         ["Resolver", "resolver" in evidence ? evidence.resolver : "indexed"],
-        ["Evidence site", "path" in evidence ? `${evidence.path}:${evidence.span?.start ?? "?"}` : "hypothetical"],
+        [Number(edge.weight) > 1 ? "Representative evidence site" : "Evidence site", "path" in evidence ? `${evidence.path}:${evidence.span?.start ?? "?"}` : "hypothetical"],
         ["Source hash", "source_hash" in evidence ? evidence.source_hash : "not applicable"],
         ...(edge.count ? [
           ["Observed calls", edge.count],
@@ -676,7 +714,7 @@ function App(): React.JSX.Element {
       <WorkspaceDock mode={mode} modes={MODES} onMode={setMode} discoveryOpen={discoveryOpen} onDiscovery={() => setDiscoveryOpen(v => !v)} />
       <aside id="discovery-panel" className="rail floating-panel" aria-label="Graph discovery" hidden={!discoveryOpen}>
         <PanelHeading title="Explore repository" detail={selectedProject?.name || "Choose a project and follow its connections"} onClose={() => setDiscoveryOpen(false)} />
-        <ProjectPicker catalogue={projectCatalogue} selectedId={selectedProjectId} error={projectListError} onRefresh={() => void loadProjects()} />
+        <ProjectPicker catalogue={projectCatalogue} selectedId={selectedProjectId} error={projectListError} onRefresh={() => { void api("/api/projects?refresh=1").then(loadProjects); }} />
         <form className="search" role="search" onSubmit={(event) => { void doSearch(event); }}>
           <label htmlFor="search-input">Find a symbol</label>
           <div className="search__row">
@@ -697,12 +735,12 @@ function App(): React.JSX.Element {
             ? searchResults.map((match) => <ItemButton key={`${match.path}:${match.span.start}:${match.symbol}`} title={match.symbol} subtitle={`${match.path}:${match.span.start}`} onClick={() => { void openFocusedGraph(match.symbol, match.path); }} />)
             : <p className="quiet">Search by intent or symbol.</p>}
         </RailSection>
-        <RailSection title="Runtime intelligence" count={runtimeRows.length ? `${runtimeRows.length}/${runtimeStatus?.insights?.total ?? runtimeRows.length}` : "0"}>
+        <RailSection revision={snapshotKey(snapshot)} onOpen={loadRuntime} title="Runtime intelligence" count={runtimeRows.length ? `${runtimeRows.length}/${runtimeStatus?.insights?.total ?? runtimeRows.length}` : "0"}>
           {runtimeError ? <p className="error">{runtimeError}</p> : runtimeRows.length
             ? runtimeRows.map((row) => <ItemButton key={`${row.path}:${row.symbol}`} title={row.symbol} subtitle={`priority ${row.refactor_priority} · ${row.observed_count} calls · ${row.next_action.replaceAll("_", " ")}`} onClick={() => { void openFocusedGraph(row.symbol, row.path); }} />)
             : <p className="quiet">Import a trace to rank hot paths, divergence and blast radius.</p>}
         </RailSection>
-        <RailSection title="Architecture futures" count={`${visibleIssues.length}${architectureIssues.length > visibleIssues.length ? `/${architectureIssues.length}` : ""}${architecturePartial ? " · partial" : ""}`} maxClass="architecture-future-list">
+        <RailSection revision={snapshotKey(snapshot)} onOpen={loadArchitecture} title="Architecture futures" count={`${visibleIssues.length}${architectureIssues.length > visibleIssues.length ? `/${architectureIssues.length}` : ""}${architecturePartial ? " · partial" : ""}`} maxClass="architecture-future-list">
           {visibleIssues.length ? visibleIssues.map((issue) => {
             const winner = issue.strategies.find((strategy) => strategy.recommended) || issue.strategies[0];
             const title = issue.kind === "PACKAGE_DEPENDENCY_CYCLE"
@@ -714,12 +752,12 @@ function App(): React.JSX.Element {
             return <ItemButton key={issue.issue_id} title={title} subtitle={`${winner?.policy?.replaceAll("_", " ") || "inspect"} · ${evidence}`} onClick={() => selectArchitectureIssue(issue)} />;
           }) : <p className="quiet">No cycle or high fan-in future is available in this scope.</p>}
         </RailSection>
-        <RailSection title="Change missions" count={changeMissions ? `${changeMissions.totals.missions}${changeMissions.partial ? " · partial" : ""}` : "0"} maxClass="mission-list">
+        <RailSection revision={snapshotKey(snapshot)} onOpen={loadMissions} title="Change missions" count={changeMissions ? `${changeMissions.totals.missions}${changeMissions.partial ? " · partial" : ""}` : "0"} maxClass="mission-list">
           {missionError ? <p className="error">{missionError}</p> : changeMissions?.missions.length
             ? changeMissions.missions.slice(0, 12).map((mission) => <ItemButton key={mission.mission_id} title={mission.title} subtitle={`group ${mission.parallel_group + 1} · ${mission.kind.replaceAll("_", " ")}${mission.blocked_by_gaps ? " · blocked" : ""}`} onClick={() => selectMission(mission)} />)
             : <p className="quiet">No source changes. The plan will appear as files change.</p>}
         </RailSection>
-        <RailSection title="Refactor paths" count={refactorSummary.count} grow>
+        <RailSection revision={snapshotKey(snapshot)} onOpen={loadRefactors} title="Refactor paths" count={refactorSummary.count} grow>
           {refactorError ? <p className="error">{refactorError}</p> : refactors?.candidates.length
             ? <>{refactors.candidates.map((candidate) => <ItemButton key={`${candidate.left.node_id}:${candidate.right.node_id}`} title={`${candidate.left.symbol} ↔ ${candidate.right.symbol}`} subtitle={`${candidate.language} · score ${candidate.similarity.total}`} onClick={() => selectCandidate(candidate)} />)}{refactorSummary.note && <p className="quiet bounded-note">{refactorSummary.note}</p>}</>
             : <p className="quiet">No candidate crossed the current threshold.</p>}
@@ -784,7 +822,7 @@ function App(): React.JSX.Element {
             >
               {mode === "project" && currentProjectMap
                 ? <ProjectCanvasSwitch dimension={graphDimension} ref={projectMapHandle} graph={currentProjectMap} selectedId={selectedNodeId} onNodeSelect={selectProjectNode} onNodeOpen={(node) => { const representative = node.representatives?.[0]; if (representative) void openFocusedGraph(representative.symbol, representative.path); }} onEdgeSelect={inspectEdge} />
-                : mode === "project" ? <div className="graph-message"><strong>{repositoryError || "Loading repository relationships…"}</strong>{repositoryError && <button onClick={() => void loadRepository()}>Retry</button>}</div>
+                : mode === "project" ? <div className="graph-message"><strong>{repositoryError || `Project ${projectPhase}: loading repository relationships…`}</strong>{repositoryError && <button onClick={() => void loadRepository()}>Retry</button>}</div>
                 : mode === "compare" && currentGraph && selectedStrategy
                   ? <CompareGraph current={currentGraph} future={projectGraph(currentGraph, selectedStrategy) as GraphResponse} camera={camera} selectedNodeId={selectedNodeId} pins={pinnedPositions} onSelectNode={(node) => { void selectNode(node); }} onInspectEdge={inspectEdge} onNodeDrag={(event, node) => { dragRef.current = { key: String(node.node_id ?? node.id), x: event.clientX, y: event.clientY, origin: { x: node.x, y: node.y } }; }} />
                   : graphForStage
@@ -812,8 +850,10 @@ function App(): React.JSX.Element {
   </>;
 }
 
-function RailSection({ title, count, children, maxClass, defaultOpen = false }: { title: string; count: string; children: React.ReactNode; grow?: boolean; maxClass?: string; defaultOpen?: boolean }): React.JSX.Element {
-  return <details className="rail__section" open={defaultOpen || undefined}>
+function RailSection({ title, count, children, maxClass, defaultOpen = false, onOpen, revision }: { title: string; count: string; children: React.ReactNode; grow?: boolean; maxClass?: string; defaultOpen?: boolean; onOpen?: () => Promise<void>; revision?: string }): React.JSX.Element {
+  const [open, setOpen] = useState(defaultOpen);
+  useEffect(() => { if (open) void onOpen?.(); }, [open, revision, onOpen]);
+  return <details className="rail__section" open={open} onToggle={e => setOpen(e.currentTarget.open)}>
     <summary className="section-title"><h2>{title}</h2><span>{count}</span></summary>
     <div className="item-list" id={maxClass}>{children}</div>
   </details>;
@@ -828,20 +868,24 @@ const ProjectCanvasSwitch = forwardRef<ProjectMapCanvasHandle, ProjectMapCanvasP
 });
 
 const ProjectMapCanvas = forwardRef<ProjectMapCanvasHandle, ProjectMapCanvasProps>(function ProjectMapCanvas(props, forwardedRef) {
+  const fallbackRef = useRef<ProjectMapCanvasHandle>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rendererRef = useRef<ProjectGraphRendererHandle | null>(null);
   const callbacksRef = useRef(props);
   const [size, setSize] = useState({ width: 980, height: 620 });
+  const [webglFailed, setWebglFailed] = useState(false);
   callbacksRef.current = props;
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
-    rendererRef.current = createProjectGraphRenderer(canvas, {
+    if (!canvas || webglFailed) return;
+    const lost = (event: Event): void => { event.preventDefault(); setWebglFailed(true); };
+    canvas.addEventListener("webglcontextlost", lost);
+    try { rendererRef.current = createProjectGraphRenderer(canvas, {
       onNodeSelect: (node) => callbacksRef.current.onNodeSelect(node),
       onNodeOpen: (node) => callbacksRef.current.onNodeOpen(node),
       onEdgeSelect: (edge, source, target) => callbacksRef.current.onEdgeSelect(edge, source, target)
-    });
+    }); } catch { canvas.removeEventListener("webglcontextlost", lost); setWebglFailed(true); return; }
     const observer = new ResizeObserver(() => {
       const parent = canvas.parentElement;
       if (parent) setSize({ width: Math.max(1, parent.clientWidth), height: Math.max(1, parent.clientHeight) });
@@ -849,21 +893,23 @@ const ProjectMapCanvas = forwardRef<ProjectMapCanvasHandle, ProjectMapCanvasProp
     if (canvas.parentElement) observer.observe(canvas.parentElement);
     return () => {
       observer.disconnect();
+      canvas.removeEventListener("webglcontextlost", lost);
       rendererRef.current?.dispose();
       rendererRef.current = null;
     };
-  }, []);
+  }, [webglFailed]);
 
-  const { layout, pending, error } = useProjectLayout(props.graph, size.width, size.height);
+  const { layout, pending, error } = useProjectLayout(props.graph, size.width, size.height, !webglFailed);
   useEffect(() => { rendererRef.current?.render(props.graph, layout || { width: size.width, height: size.height, nodes: [], communities: [] }, { selectedId: props.selectedId }); }, [layout, props.graph, size.width, size.height]);
   useEffect(() => { rendererRef.current?.setSelected(props.selectedId); }, [props.selectedId]);
   useImperativeHandle(forwardedRef, () => ({
-    zoom: (factor) => rendererRef.current?.zoom(factor),
-    resetView: () => rendererRef.current?.resetView(),
-    focusNode: (nodeId) => rendererRef.current?.focusNode(nodeId)
-  }), []);
+    zoom: (factor) => (webglFailed ? fallbackRef.current : rendererRef.current)?.zoom(factor),
+    resetView: () => (webglFailed ? fallbackRef.current : rendererRef.current)?.resetView(),
+    focusNode: (nodeId) => (webglFailed ? fallbackRef.current : rendererRef.current)?.focusNode(nodeId)
+  }), [webglFailed]);
 
-  return <><canvas ref={canvasRef} className="project-three-canvas" aria-label="Three-dimensional repository dependency map" aria-busy={pending} />{(pending || error) && <p className="layout-status" role="status">{error || "Arranging repository graph…"}</p>}</>;
+  if (webglFailed) return <ProjectCanvas {...props} ref={fallbackRef}/>;
+  return <><canvas ref={canvasRef} className="project-three-canvas" aria-label="Three-dimensional repository dependency map" aria-busy={pending} />{(pending || error) && <p className="layout-status" role="status">{error || "Arranging repository graph…"}</p>}<GraphNeighbors {...props} layout={layout}/></>;
 });
 
 function SvgGraph({ graph, camera, selectedNodeId, pins, onSelectNode, onInspectEdge, onNodeDrag }: {

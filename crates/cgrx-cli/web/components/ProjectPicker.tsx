@@ -7,6 +7,7 @@ export interface WorkspaceProject {
   indexed: boolean;
 }
 export interface ProjectCatalogue {
+  discovering?: boolean;
   default_project: string;
   projects: WorkspaceProject[];
   directories: string[];

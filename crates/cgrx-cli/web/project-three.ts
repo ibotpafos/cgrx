@@ -1,714 +1,190 @@
-import * as THREE from "three";
-import { intersectsAny } from "./clew-geometry.js";
-import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import type {
-  GraphEdge,
-  GraphId,
-  ProjectLayout,
-  ProjectLayoutCommunity,
-  ProjectLayoutNode,
-  ProjectMap
-} from "./types";
-
-const NODE_SEGMENTS = 18;
-const COMMUNITY_SEGMENTS = 72;
-const COMMUNITY_COLORS = [
-  "#49d9c5",
-  "#6f9cff",
-  "#a67cff",
-  "#ed9361",
-  "#db6f9d",
-  "#69c982",
-  "#5bbbea",
-  "#d8b95f"
-];
-
+import * as THREE from 'three';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { buildProjectVolume, fitVolumeDistance } from './project-volume.js';
+import type { GraphEdge, GraphId, ProjectLayout, ProjectLayoutNode, ProjectMap } from './types';
 export interface ProjectGraphCallbacks {
   onNodeSelect?: (node: ProjectLayoutNode) => void;
   onNodeOpen?: (node: ProjectLayoutNode) => void;
   onEdgeSelect?: (edge: GraphEdge, source: ProjectLayoutNode, target: ProjectLayoutNode) => void;
 }
-
-interface PointerOrigin {
-  x: number;
-  y: number;
-}
-
-interface FocusAnimation {
-  startedAt: number;
-  duration: number;
-  fromTarget: THREE.Vector3;
-  toTarget: THREE.Vector3;
-  fromCamera: THREE.Vector3;
-  toCamera: THREE.Vector3;
-}
-
-interface TextSpriteOptions {
-  color?: string;
-  opacity?: number;
-  fontSize?: number;
-}
-
-interface ProjectRenderOptions {
-  selectedId?: GraphId | null;
-}
-
-type NodeMesh = THREE.Mesh<THREE.SphereGeometry, THREE.MeshBasicMaterial>;
-type EdgeLine = THREE.Line<THREE.BufferGeometry, THREE.LineBasicMaterial>;
-type LabelSprite = THREE.Sprite;
-type CommunitySprite = THREE.Sprite;
-
 export interface ProjectGraphRendererHandle {
-  render(graph: ProjectMap, layout: ProjectLayout, options?: ProjectRenderOptions): void;
+  render(graph: ProjectMap, layout: ProjectLayout, options?: { selectedId?: GraphId | null }): void;
   setSelected(nodeId: GraphId | null): void;
   focusNode(nodeId: GraphId): void;
   resetView(animate?: boolean): void;
   zoom(factor: number): void;
   dispose(): void;
 }
-
-export function createProjectGraphRenderer(
-  canvas: HTMLCanvasElement,
-  callbacks: ProjectGraphCallbacks = {}
-): ProjectGraphRendererHandle {
-  return new ProjectGraphRenderer(canvas, callbacks);
-}
-
-class ProjectGraphRenderer implements ProjectGraphRendererHandle {
-  private readonly canvas: HTMLCanvasElement;
-  private readonly callbacks: ProjectGraphCallbacks;
-  private graph: ProjectMap | null = null;
-  private layout: ProjectLayout | null = null;
-  private selectedId: string | null = null;
-  private hoveredId: string | null = null;
-  private nodeObjects: NodeMesh[] = [];
-  private edgeObjects: EdgeLine[] = [];
-  private communityObjects: CommunitySprite[] = [];
-  private readonly nodeById = new Map<string, NodeMesh>();
-  private readonly positionById = new Map<string, THREE.Vector3>();
-  private labelObjects: LabelSprite[] = [];
-  private activeLabelIds: Set<string> | null = null;
-  private disposables: Array<{ dispose?: () => void }> = [];
-  private pointerDown: PointerOrigin | null = null;
-  private focusAnimation: FocusAnimation | null = null;
-  private lastSignature: string | null = null;
-  private frameId = 0;
-  private disposed = false;
-  private readonly eventController = new AbortController();
-
-  private readonly scene = new THREE.Scene();
-  private readonly camera = new THREE.PerspectiveCamera(48, 1, 1, 5000);
-  private readonly renderer: THREE.WebGLRenderer;
-  private readonly controls: OrbitControls;
-  private readonly graphGroup = new THREE.Group();
-  private readonly nodeGeometry = new THREE.SphereGeometry(1, NODE_SEGMENTS, Math.max(10, NODE_SEGMENTS - 6));
-  private readonly glowTexture = makeGlowTexture();
-  private readonly raycaster = new THREE.Raycaster();
-  private readonly pointer = new THREE.Vector2();
-  private readonly resizeObserver: ResizeObserver;
-  private readonly starfield = makeStarfield();
-
-  constructor(canvas: HTMLCanvasElement, callbacks: ProjectGraphCallbacks) {
-    this.canvas = canvas;
-    this.callbacks = callbacks;
-
-    this.scene.background = null;
-    this.scene.fog = new THREE.FogExp2(0x080b10, 0.00048);
-    this.camera.position.set(0, 0, 900);
-
-    this.renderer = new THREE.WebGLRenderer({
-      canvas,
-      antialias: true,
-      alpha: true,
-      powerPreference: "high-performance"
-    });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    this.renderer.setClearColor(0x080b10, 0);
-    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-
-    this.controls = new OrbitControls(this.camera, canvas);
-    this.controls.enableDamping = true;
-    this.controls.dampingFactor = 0.075;
-    this.controls.zoomToCursor = true;
-    this.controls.minDistance = 100;
-    this.controls.maxDistance = 2800;
-    this.controls.rotateSpeed = 0.46;
-    this.controls.panSpeed = 0.82;
-    this.controls.zoomSpeed = 0.85;
-    this.controls.target.set(0, 0, 0);
-
-    this.graphGroup.name = "cgrx-project-graph";
-    this.scene.add(this.graphGroup);
-    this.scene.add(this.starfield);
-
-    this.raycaster.params.Line.threshold = 5;
-    this.resizeObserver = new ResizeObserver(() => this.resize());
-    this.resizeObserver.observe(canvas.parentElement || canvas);
-    this.bindEvents();
-    this.resize();
-    this.animate();
+const SEGMENTS = 6, LABEL_LIMIT = 32;
+export function createProjectGraphRenderer(canvas: HTMLCanvasElement, callbacks: ProjectGraphCallbacks = {}): ProjectGraphRendererHandle {
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: 'high-performance' });
+  renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+  const scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(48, 1, 1, 10000);
+  const controls = new OrbitControls(camera, canvas);
+  controls.enableDamping = true; controls.dampingFactor = .1; controls.minDistance = 30; controls.maxDistance = 5000;
+  camera.position.set(0, 0, 1500);
+  let frame = 0, disposed = false, fitted = false, selected: string | null = null;
+  let mesh: THREE.InstancedMesh | null = null, lines: THREE.LineSegments | null = null;
+  let layout: ProjectLayout | null = null;
+  let edgeRecords: GraphEdge[] = [], labelCandidates: ProjectLayoutNode[] = [];
+  const index = new Map<string, number>(), positions: THREE.Vector3[] = [];
+  const group = new THREE.Group(); scene.add(group);
+  const labels = new Map<string, THREE.Sprite>();
+  const eventController = new AbortController();
+  const projection = new THREE.Vector3(), bounds = new THREE.Sphere(new THREE.Vector3(), 500);
+  function releaseLabel(id: string): void {
+    const sprite = labels.get(id); if (!sprite) return;
+    scene.remove(sprite); sprite.material.map?.dispose(); sprite.material.dispose(); labels.delete(id);
   }
-
-  private bindEvents(): void {
-    const options = { signal: this.eventController.signal };
-    this.canvas.addEventListener("pointerdown", (event) => {
-      this.pointerDown = { x: event.clientX, y: event.clientY };
-    }, options);
-    this.canvas.addEventListener("pointermove", (event) => this.handlePointerMove(event), options);
-    this.canvas.addEventListener("pointerleave", () => {
-      this.hoveredId = null;
-      this.canvas.style.cursor = "grab";
-      this.applyFocus(this.selectedId);
-    }, options);
-    this.canvas.addEventListener("click", (event) => this.handleClick(event), options);
-    this.canvas.addEventListener("dblclick", (event) => this.handleDoubleClick(event), options);
-  }
-
-  private resize(): void {
-    const parent = this.canvas.parentElement;
-    const width = Math.max(1, parent?.clientWidth || this.canvas.clientWidth || 1);
-    const height = Math.max(1, parent?.clientHeight || this.canvas.clientHeight || 1);
-    this.renderer.setSize(width, height, false);
-    this.camera.aspect = width / height;
-    this.camera.updateProjectionMatrix();
-  }
-
-  render(graph: ProjectMap, layout: ProjectLayout, { selectedId = null }: ProjectRenderOptions = {}): void {
-    this.graph = graph;
-    this.layout = layout;
-    this.selectedId = selectedId == null ? null : String(selectedId);
-    const signature = `${graph.snapshot?.repo_revision || ""}:${graph.snapshot?.graph_generation || ""}:${graph.snapshot?.working_tree_digest || ""}:${graph.level || "packages"}:${graph.root.path}:${layout.nodes.length}:${graph.edges?.length || 0}`;
-    const shouldFit = this.lastSignature !== signature;
-    this.lastSignature = signature;
-    this.clearGraph();
-
-    const communityIndex = new Map((layout.communities || []).map((community, index) => [community.id, index]));
-    const communityCount = Math.max(1, communityIndex.size);
-    const scale = Math.max(0.9, Math.min(1.45, 1180 / Math.max(980, layout.width)));
-
-    for (const community of layout.communities || []) {
-      this.addCommunity(community, communityIndex.get(community.id) || 0, communityCount, layout, scale);
-    }
-
-    for (const node of layout.nodes || []) {
-      const position = projectPosition(node, layout, communityIndex, communityCount, scale);
-      this.positionById.set(String(node.node_id), position);
-      this.addNode(node, position);
-    }
-
-    for (const edge of graph.edges || []) this.addEdge(edge);
-    this.applyFocus(this.selectedId);
-    if (shouldFit) this.resetView(false);
-    this.updateLabelVisibility();
-  }
-
-  private clearGraph(): void {
-    this.graphGroup.clear();
-    for (const disposable of this.disposables) disposable.dispose?.();
-    this.disposables = [];
-    this.nodeObjects = [];
-    this.edgeObjects = [];
-    this.communityObjects = [];
-    this.nodeById.clear();
-    this.positionById.clear();
-    this.labelObjects = [];
-    this.activeLabelIds = null;
-  }
-
-  private addCommunity(
-    community: ProjectLayoutCommunity,
-    index: number,
-    communityCount: number,
-    layout: ProjectLayout,
-    scale: number
-  ): void {
-    const center = projectPoint(community.x, community.y, layout, scale);
-    center.z = communityDepth(index, communityCount) * 0.72;
-    const radius = Math.max(44, community.radius * scale);
-    const communityColor = new THREE.Color(COMMUNITY_COLORS[index % COMMUNITY_COLORS.length]);
-
-    const cloudMaterial = new THREE.SpriteMaterial({
-      map: this.glowTexture,
-      color: communityColor,
-      transparent: true,
-      opacity: 0.065,
-      depthWrite: false,
-      depthTest: false,
-      blending: THREE.NormalBlending
-    });
-    const cloud = new THREE.Sprite(cloudMaterial);
-    cloud.position.copy(center).add(new THREE.Vector3(0, 0, -18));
-    cloud.scale.set(radius * 2.75, radius * 2.2, 1);
-    cloud.renderOrder = -3;
-    cloud.userData = { kind: "community", communityId: community.id, baseOpacity: cloudMaterial.opacity };
-    this.graphGroup.add(cloud);
-    this.communityObjects.push(cloud);
-    this.disposables.push(cloudMaterial);
-
-    const points: THREE.Vector3[] = [];
-    for (let step = 0; step < COMMUNITY_SEGMENTS; step += 1) {
-      const angle = step / COMMUNITY_SEGMENTS * Math.PI * 2;
-      points.push(new THREE.Vector3(
-        center.x + Math.cos(angle) * radius,
-        center.y + Math.sin(angle) * radius,
-        center.z
-      ));
-    }
-    const geometry = new THREE.BufferGeometry().setFromPoints(points);
-    const material = new THREE.LineBasicMaterial({
-      color: communityColor,
-      transparent: true,
-      opacity: 0.1,
-      depthWrite: false
-    });
-    const ring = new THREE.LineLoop(geometry, material);
-    ring.renderOrder = -1;
-    this.graphGroup.add(ring);
-    this.disposables.push(geometry, material);
-
-    const label = makeTextSprite(shorten(community.label || `cluster ${index + 1}`, 28), {
-      color: COMMUNITY_COLORS[index % COMMUNITY_COLORS.length],
-      opacity: 0.62,
-      fontSize: 12
-    });
-    label.position.set(center.x - radius * 0.72, center.y + radius * 0.72, center.z + 4);
-    label.scale.multiplyScalar(0.9);
-    this.graphGroup.add(label);
-    this.disposables.push(label.material);
-    if (label.material.map) this.disposables.push(label.material.map);
-  }
-
-  private addNode(node: ProjectLayoutNode, position: THREE.Vector3): void {
-    const baseColor = new THREE.Color(node.color || "#69d8ff");
-    const material = new THREE.MeshBasicMaterial({
-      color: baseColor,
-      transparent: true,
-      opacity: 0.9,
-      depthWrite: true
-    });
-    const mesh: NodeMesh = new THREE.Mesh(this.nodeGeometry, material);
-    mesh.position.copy(position);
-    mesh.scale.setScalar(Math.max(3.2, node.radius * 0.64));
-    mesh.userData = { kind: "node", node, baseColor: baseColor.clone() };
-    this.graphGroup.add(mesh);
-    this.nodeObjects.push(mesh);
-    this.nodeById.set(String(node.node_id), mesh);
-    this.disposables.push(material);
-
-    const haloMaterial = new THREE.SpriteMaterial({
-      map: this.glowTexture,
-      color: baseColor,
-      transparent: true,
-      opacity: 0.11,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending
-    });
-    const halo = new THREE.Sprite(haloMaterial);
-    const haloSize = Math.max(13, node.radius * 3.4);
-    halo.scale.set(haloSize / mesh.scale.x, haloSize / mesh.scale.y, 1);
-    halo.userData = { kind: "halo", nodeId: String(node.node_id), baseOpacity: 0.11 };
-    mesh.add(halo);
-    this.disposables.push(haloMaterial);
-
-    if (node.cycle) {
-      const cycleMaterial = new THREE.MeshBasicMaterial({
-        color: 0xf2c66d,
-        wireframe: true,
-        transparent: true,
-        opacity: 0.72,
-        depthWrite: false
-      });
-      const shell = new THREE.Mesh(this.nodeGeometry, cycleMaterial);
-      shell.scale.setScalar(1.17);
-      mesh.add(shell);
-      this.disposables.push(cycleMaterial);
-    }
-
-    const label = makeTextSprite(shorten(node.symbol, 28), {
-      color: "#dcebf6",
-      opacity: node.showLabel ? 0.88 : 0,
-      fontSize: 13
-    });
-    label.position.copy(position).add(new THREE.Vector3(Math.max(12, node.radius + 8), 0, 4));
-    label.userData = {
-      kind: "label",
-      nodeId: String(node.node_id),
-      major: Boolean(node.showLabel)
-    };
-    this.graphGroup.add(label);
-    this.labelObjects.push(label);
-    this.disposables.push(label.material);
-    if (label.material.map) this.disposables.push(label.material.map);
-  }
-
-  private addEdge(edge: GraphEdge): void {
-    const source = this.positionById.get(String(edge.source));
-    const target = this.positionById.get(String(edge.target));
-    if (!source || !target) return;
-    const geometry = new THREE.BufferGeometry().setFromPoints(curvedEdgePoints(source, target, `${edge.source}:${edge.target}`));
-    const weight = Math.max(1, Number(edge.weight || 1));
-    const opacity = this.graph?.level ? Math.min(0.4, 0.2 + Math.log2(weight + 1) * 0.025)
-      : Math.max(0.045, Math.min(0.28, 0.05 + Math.log2(weight + 1) * 0.038));
-    const material = new THREE.LineBasicMaterial({
-      color: 0x718092,
-      transparent: true,
-      opacity,
-      depthWrite: false
-    });
-    const line: EdgeLine = new THREE.Line(geometry, material);
-    line.userData = { kind: "edge", edge, baseOpacity: opacity };
-    this.graphGroup.add(line);
-    this.edgeObjects.push(line);
-    this.disposables.push(geometry, material);
-  }
-
-  setSelected(nodeId: GraphId | null): void {
-    this.selectedId = nodeId == null ? null : String(nodeId);
-    this.applyFocus(this.hoveredId || this.selectedId);
-  }
-
-  focusNode(nodeId: GraphId): void {
-    const object = this.nodeById.get(String(nodeId));
-    if (!object) return;
-    const target = object.position.clone();
-    const offset = this.camera.position.clone().sub(this.controls.target);
-    const distance = THREE.MathUtils.clamp(offset.length(), 260, 560);
-    if (offset.lengthSq() < 1) offset.set(0, 0, 1);
-    offset.normalize().multiplyScalar(distance);
-    const destination = target.clone().add(offset);
-    this.focusAnimation = {
-      startedAt: performance.now(),
-      duration: 420,
-      fromTarget: this.controls.target.clone(),
-      toTarget: target,
-      fromCamera: this.camera.position.clone(),
-      toCamera: destination
-    };
-  }
-
-  resetView(animate = true): void {
-    if (!this.nodeObjects.length) return;
-    const box = new THREE.Box3();
-    for (const node of this.nodeObjects) box.expandByPoint(node.position);
-    const sphere = box.getBoundingSphere(new THREE.Sphere());
-    const radius = Math.max(90, sphere.radius + 70);
-    const fov = THREE.MathUtils.degToRad(this.camera.fov);
-    const distance = THREE.MathUtils.clamp(radius / Math.tan(fov / 2) * 1.06, 320, 2200);
-    const target = sphere.center;
-    const destination = new THREE.Vector3(target.x, target.y + radius * 0.08, target.z + distance);
-    if (!animate) {
-      this.controls.target.copy(target);
-      this.camera.position.copy(destination);
-      this.controls.update();
-      return;
-    }
-    this.focusAnimation = {
-      startedAt: performance.now(),
-      duration: 460,
-      fromTarget: this.controls.target.clone(),
-      toTarget: target.clone(),
-      fromCamera: this.camera.position.clone(),
-      toCamera: destination
-    };
-  }
-
-  zoom(factor: number): void {
-    const offset = this.camera.position.clone().sub(this.controls.target);
-    const distance = THREE.MathUtils.clamp(
-      offset.length() / factor,
-      this.controls.minDistance,
-      this.controls.maxDistance
-    );
-    if (offset.lengthSq() < 1) offset.set(0, 0, 1);
-    this.camera.position.copy(this.controls.target).add(offset.normalize().multiplyScalar(distance));
-    this.controls.update();
-  }
-
-  private handlePointerMove(event: PointerEvent): void {
-    if (!this.layout) return;
-    const hit = this.pick(event, true);
-    const nextId = hit?.object?.userData?.kind === "node" ? String(hit.object.userData.node.node_id) : null;
-    if (nextId === this.hoveredId) return;
-    this.hoveredId = nextId;
-    this.canvas.style.cursor = nextId ? "pointer" : "grab";
-    this.applyFocus(this.hoveredId || this.selectedId);
-  }
-
-  private handleClick(event: MouseEvent): void {
-    if (!this.layout || movedTooFar(this.pointerDown, event)) return;
-    const hit = this.pick(event, false);
-    if (!hit) return;
-    if (hit.object.userData.kind === "node") {
-      this.callbacks.onNodeSelect?.(hit.object.userData.node as ProjectLayoutNode);
-      return;
-    }
-    if (hit.object.userData.kind === "edge") {
-      const edge = hit.object.userData.edge as GraphEdge;
-      const source = this.layout.nodes.find((node) => String(node.node_id) === String(edge.source));
-      const target = this.layout.nodes.find((node) => String(node.node_id) === String(edge.target));
-      if (source && target) this.callbacks.onEdgeSelect?.(edge, source, target);
-    }
-  }
-
-  private handleDoubleClick(event: MouseEvent): void {
-    const hit = this.pick(event, true);
-    if (hit?.object?.userData?.kind === "node") {
-      this.callbacks.onNodeOpen?.(hit.object.userData.node as ProjectLayoutNode);
-    }
-  }
-
-  private pick(event: MouseEvent | PointerEvent, nodesOnly: boolean): THREE.Intersection | null {
-    const rect = this.canvas.getBoundingClientRect();
-    if (!rect.width || !rect.height) return null;
-    this.pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-    this.pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-    this.raycaster.setFromCamera(this.pointer, this.camera);
-    const nodes = this.raycaster.intersectObjects(this.nodeObjects, false);
-    if (nodes.length || nodesOnly) return nodes[0] || null;
-    const edges = this.raycaster.intersectObjects(this.edgeObjects, false);
-    return edges[0] || null;
-  }
-
-  private applyFocus(nodeId: string | null): void {
-    const focus = nodeId == null ? null : String(nodeId);
-    const neighborhood = new Set<string>(focus ? [focus] : []);
-    if (focus) {
-      for (const edge of this.graph?.edges || []) {
-        const source = String(edge.source);
-        const target = String(edge.target);
-        if (source === focus) neighborhood.add(target);
-        if (target === focus) neighborhood.add(source);
+  function updateLabels(): void {
+    if (!layout) return;
+    const wanted = new Set<string>();
+    const chosen = selected && index.has(selected) ? [layout.nodes[index.get(selected)!], ...labelCandidates] : labelCandidates;
+    for (const node of chosen) {
+      const id = String(node.node_id), i = index.get(id); if (i == null || wanted.has(id) || wanted.size >= LABEL_LIMIT) continue;
+      projection.copy(positions[i]).project(camera);
+      if (Math.abs(projection.x) > .95 || Math.abs(projection.y) > .95 || projection.z < -1 || projection.z > 1) continue;
+      wanted.add(id);
+      if (!labels.has(id)) {
+        const text = document.createElement('canvas'); text.width = 384; text.height = 48;
+        const ctx = text.getContext('2d')!; ctx.font = '24px system-ui'; ctx.fillStyle = '#d2e4d9'; ctx.fillText(node.symbol.slice(0, 28), 2, 32);
+        const texture = new THREE.CanvasTexture(text); texture.colorSpace = THREE.SRGBColorSpace;
+        const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthWrite: false }));
+        sprite.scale.set(96, 12, 1); sprite.center.set(0, .5); scene.add(sprite); labels.set(id, sprite);
       }
+      labels.get(id)!.position.copy(positions[i]).add(new THREE.Vector3(8, 0, 2));
     }
-    this.activeLabelIds = focus ? neighborhood : null;
-    const focusedCommunity = focus
-      ? this.layout?.nodes.find((node) => String(node.node_id) === focus)?.community
-      : null;
-
-    for (const mesh of this.nodeObjects) {
-      const id = String(mesh.userData.node.node_id);
-      const active = !focus || neighborhood.has(id);
-      const direct = id === focus;
-      mesh.material.opacity = active ? 0.94 : 0.075;
-      mesh.material.color.copy(mesh.userData.baseColor as THREE.Color);
-      if (direct) mesh.material.color.lerp(new THREE.Color(0xffffff), 0.34);
-      const halo = mesh.children.find((child) => child.userData.kind === "halo") as LabelSprite | undefined;
-      if (halo) halo.material.opacity = direct ? 0.48 : active ? 0.14 : 0.012;
-    }
-
-    for (const line of this.edgeObjects) {
-      const edge = line.userData.edge as GraphEdge;
-      const connected = Boolean(focus && (String(edge.source) === focus || String(edge.target) === focus));
-      line.material.opacity = !focus ? Number(line.userData.baseOpacity) : connected ? 0.92 : 0.014;
-      line.material.color.setHex(connected ? 0xf1fbff : 0x718092);
-    }
-    for (const cloud of this.communityObjects) {
-      const active = !focus || cloud.userData.communityId === focusedCommunity;
-      cloud.material.opacity = Number(cloud.userData.baseOpacity) * (active ? 1 : 0.24);
-    }
-    this.updateLabelVisibility();
+    for (const id of labels.keys()) if (!wanted.has(id)) releaseLabel(id);
   }
-
-  private updateLabelVisibility(): void {
-    const distance = this.camera.position.distanceTo(this.controls.target);
-    const showMinor = distance < 650;
-    const focus = this.hoveredId || this.selectedId;
-    this.camera.updateMatrixWorld();
-    const width = this.canvas.clientWidth, height = this.canvas.clientHeight;
-    const occupied: Array<{ left: number; top: number; right: number; bottom: number }> = [];
-    const labels = focus ? [...this.labelObjects.filter(l => l.userData.nodeId === focus), ...this.labelObjects.filter(l => l.userData.nodeId !== focus)] : this.labelObjects;
-    for (const label of labels) {
-      const nodeId = String(label.userData.nodeId);
-      const focused = Boolean(focus && nodeId === String(focus));
-      const inFocus = !this.activeLabelIds || this.activeLabelIds.has(nodeId);
-      label.visible = false;
-      if (!inFocus || (!label.userData.major && !showMinor && !this.activeLabelIds) || occupied.length >= 80) continue;
-      const view = label.position.clone().applyMatrix4(this.camera.matrixWorldInverse);
-      if (view.z >= -this.camera.near) continue;
-      const screen = view.clone().applyMatrix4(this.camera.projectionMatrix);
-      const x = (screen.x + 1) * width / 2, y = (1 - screen.y) * height / 2;
-      const w = label.scale.x * this.camera.projectionMatrix.elements[0]! / -view.z * width / 2;
-      const h = Math.max(12, label.scale.y * this.camera.projectionMatrix.elements[5]! / -view.z * height / 2);
-      const box = { left: x - 3, right: x + w + 3, top: y - h / 2 - 3, bottom: y + h / 2 + 3 };
-      if (box.right < 0 || box.left > width || box.bottom < 0 || box.top > height || intersectsAny(box, occupied)) continue;
-      occupied.push(box);
-      label.visible = true;
-      label.material.opacity = focused ? 1 : label.userData.major ? 0.84 : 0.66;
-    }
+  function invalidate(): void {
+    if (disposed || frame) return;
+    frame = requestAnimationFrame(() => {
+      frame = 0; if (disposed) return;
+      const moving = controls.update(); updateLabels(); renderer.render(scene, camera);
+      canvas.dataset.renderedNodes = String(layout?.nodes.length || 0); canvas.dataset.renderedEdges = String(edgeRecords.length);
+      canvas.dataset.geometries = String(renderer.info.memory.geometries); canvas.dataset.textures = String(renderer.info.memory.textures);
+      canvas.dataset.drawCalls = String(renderer.info.render.calls);
+      if (moving) invalidate();
+    });
   }
-
-  private animate(): void {
-    if (this.disposed) return;
-    this.frameId = requestAnimationFrame(() => this.animate());
-    if (this.canvas.hidden) return;
-    if (this.focusAnimation) this.stepFocusAnimation();
-    this.controls.update();
-    this.updateLabelVisibility();
-    this.renderer.render(this.scene, this.camera);
-  }
-
-  private stepFocusAnimation(): void {
-    const animation = this.focusAnimation;
-    if (!animation) return;
-    const progress = THREE.MathUtils.clamp(
-      (performance.now() - animation.startedAt) / animation.duration,
-      0,
-      1
-    );
-    const eased = 1 - Math.pow(1 - progress, 3);
-    this.controls.target.lerpVectors(animation.fromTarget, animation.toTarget, eased);
-    this.camera.position.lerpVectors(animation.fromCamera, animation.toCamera, eased);
-    if (progress >= 1) this.focusAnimation = null;
-  }
-
-  dispose(): void {
-    if (this.disposed) return;
-    this.disposed = true;
-    cancelAnimationFrame(this.frameId);
-    this.eventController.abort();
-    this.resizeObserver.disconnect();
-    this.controls.dispose();
-    this.clearGraph();
-    this.nodeGeometry.dispose();
-    this.glowTexture.dispose();
-    this.starfield.geometry.dispose();
-    this.starfield.material.dispose();
-    this.renderer.dispose();
-  }
-}
-
-function projectPosition(
-  node: ProjectLayoutNode,
-  layout: ProjectLayout,
-  communityIndex: Map<string, number>,
-  communityCount: number,
-  scale: number
-): THREE.Vector3 {
-  const point = projectPoint(node.x, node.y, layout, scale);
-  const index = communityIndex.get(node.community) || 0;
-  point.z = communityDepth(index, communityCount) + seededSigned(String(node.node_id)) * 58;
-  return point;
-}
-
-function curvedEdgePoints(source: THREE.Vector3, target: THREE.Vector3, seed: string): THREE.Vector3[] {
-  if (source.distanceToSquared(target) < .0001) {
-    return new THREE.CubicBezierCurve3(source, source.clone().add(new THREE.Vector3(-24, 35, 8)),
-      target.clone().add(new THREE.Vector3(24, 35, 8)), target).getPoints(24);
-  }
-  const midpoint = source.clone().lerp(target, 0.5);
-  const direction = target.clone().sub(source);
-  const distance = Math.max(1, direction.length());
-  const normal = new THREE.Vector3(-direction.y, direction.x, 0).normalize();
-  const bend = Math.min(42, Math.max(8, distance * 0.085)) * seededSigned(seed);
-  midpoint.addScaledVector(normal, bend);
-  midpoint.z += Math.min(24, distance * 0.035);
-  return new THREE.QuadraticBezierCurve3(source, midpoint, target).getPoints(18);
-}
-
-function projectPoint(x: number, y: number, layout: ProjectLayout, scale: number): THREE.Vector3 {
-  return new THREE.Vector3(
-    (Number(x) - layout.width / 2) * scale,
-    -(Number(y) - layout.height / 2) * scale,
-    0
-  );
-}
-
-function communityDepth(index: number, count: number): number {
-  if (count <= 1) return 0;
-  const centered = index - (count - 1) / 2;
-  return THREE.MathUtils.clamp(centered * 26, -150, 150);
-}
-
-function seededSigned(value: string): number {
-  let hash = 2166136261;
-  for (const character of String(value)) {
-    hash ^= character.charCodeAt(0);
-    hash = Math.imul(hash, 16777619);
-  }
-  return ((hash >>> 0) / 4294967295) * 2 - 1;
-}
-
-function makeGlowTexture(): THREE.CanvasTexture {
-  const canvas = document.createElement("canvas");
-  canvas.width = 96;
-  canvas.height = 96;
-  const context = canvas.getContext("2d");
-  if (!context) throw new Error("2D canvas context is unavailable");
-  const gradient = context.createRadialGradient(48, 48, 0, 48, 48, 48);
-  gradient.addColorStop(0, "rgba(255,255,255,1)");
-  gradient.addColorStop(0.34, "rgba(255,255,255,.62)");
-  gradient.addColorStop(1, "rgba(255,255,255,0)");
-  context.fillStyle = gradient;
-  context.fillRect(0, 0, 96, 96);
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  return texture;
-}
-
-function makeTextSprite(text: string, options: TextSpriteOptions = {}): LabelSprite {
-  const fontSize = options.fontSize || 13;
-  const canvas = document.createElement("canvas");
-  const context = canvas.getContext("2d");
-  if (!context) throw new Error("2D canvas context is unavailable");
-  context.font = `600 ${fontSize * 2}px ui-monospace, SFMono-Regular, Menlo, monospace`;
-  const width = Math.ceil(context.measureText(text).width + 28);
-  canvas.width = Math.max(64, width);
-  canvas.height = Math.ceil(fontSize * 3.2);
-  context.font = `600 ${fontSize * 2}px ui-monospace, SFMono-Regular, Menlo, monospace`;
-  context.textBaseline = "middle";
-  context.fillStyle = options.color || "#dcebf6";
-  context.shadowColor = "rgba(0,0,0,.94)";
-  context.shadowBlur = 7;
-  context.fillText(text, 12, canvas.height / 2);
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  const material = new THREE.SpriteMaterial({
-    map: texture,
-    transparent: true,
-    opacity: options.opacity ?? 0.86,
-    depthWrite: false,
-    depthTest: false
-  });
-  const sprite: LabelSprite = new THREE.Sprite(material);
-  const worldHeight = 18;
-  sprite.scale.set(worldHeight * canvas.width / canvas.height, worldHeight, 1);
-  sprite.center.set(0, 0.5);
-  sprite.renderOrder = 10;
-  return sprite;
-}
-
-function makeStarfield(): THREE.Points<THREE.BufferGeometry, THREE.PointsMaterial> {
-  const geometry = new THREE.BufferGeometry();
-  const count = 850;
-  const positions = new Float32Array(count * 3);
-  let seed = 0x8f31d92b;
-  const random = (): number => {
-    seed = Math.imul(seed ^ (seed >>> 15), 1 | seed);
-    seed ^= seed + Math.imul(seed ^ (seed >>> 7), 61 | seed);
-    return ((seed ^ (seed >>> 14)) >>> 0) / 4294967296;
+  controls.addEventListener('change', invalidate);
+  const resize = (): void => {
+    const parent = canvas.parentElement, w = Math.max(1, parent?.clientWidth || 1), h = Math.max(1, parent?.clientHeight || 1);
+    renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix(); invalidate();
   };
-  for (let index = 0; index < count; index += 1) {
-    positions[index * 3] = (random() - 0.5) * 2600;
-    positions[index * 3 + 1] = (random() - 0.5) * 1800;
-    positions[index * 3 + 2] = -250 - random() * 1200;
+  const observer = new ResizeObserver(resize); observer.observe(canvas.parentElement || canvas); resize();
+  function clear(): void {
+    for (const id of labels.keys()) releaseLabel(id);
+    group.traverse(object => {
+      const resource = object as THREE.Mesh;
+      resource.geometry?.dispose();
+      if (Array.isArray(resource.material)) resource.material.forEach(m => m.dispose()); else resource.material?.dispose();
+      if (object instanceof THREE.InstancedMesh) object.dispose();
+    });
+    group.clear(); mesh = null; lines = null; index.clear(); positions.length = 0; edgeRecords = []; labelCandidates = [];
   }
-  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-  const material = new THREE.PointsMaterial({
-    color: 0x678095,
-    size: 1.7,
-    transparent: true,
-    opacity: 0.28,
-    depthWrite: false
-  });
-  return new THREE.Points(geometry, material);
-}
-
-function movedTooFar(start: PointerOrigin | null, event: MouseEvent): boolean {
-  if (!start) return false;
-  return Math.hypot(event.clientX - start.x, event.clientY - start.y) > 5;
-}
-
-function shorten(value: unknown, limit: number): string {
-  const text = String(value || "");
-  return text.length <= limit ? text : `${text.slice(0, limit - 1)}…`;
+  function setSelected(nodeId: GraphId | null): void {
+    if (mesh && layout) {
+      const previous = selected == null ? undefined : index.get(selected);
+      if (previous != null) mesh.setColorAt(previous, new THREE.Color(layout.nodes[previous].color));
+      selected = nodeId == null ? null : String(nodeId);
+      const current = selected == null ? undefined : index.get(selected);
+      if (current != null) mesh.setColorAt(current, new THREE.Color('#ffffff'));
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    } else selected = nodeId == null ? null : String(nodeId);
+    invalidate();
+  }
+  let down = { x: 0, y: 0 };
+  canvas.addEventListener('pointerdown', e => { down = { x: e.clientX, y: e.clientY }; }, { signal: eventController.signal });
+  function pick(event: MouseEvent, open: boolean): void {
+    if (!mesh || !layout || Math.hypot(event.clientX - down.x, event.clientY - down.y) > 5) return;
+    const rect = canvas.getBoundingClientRect();
+    const ray = new THREE.Raycaster(); ray.params.Line.threshold = 2;
+    ray.setFromCamera(new THREE.Vector2((event.clientX - rect.left) / rect.width * 2 - 1, -(event.clientY - rect.top) / rect.height * 2 + 1), camera);
+    const nodeHit = ray.intersectObject(mesh, false)[0];
+    if (nodeHit?.instanceId != null) { (open ? callbacks.onNodeOpen : callbacks.onNodeSelect)?.(layout.nodes[nodeHit.instanceId]); return; }
+    if (open || !lines) return;
+    const hit = ray.intersectObject(lines, false)[0];
+    if (hit?.index != null) {
+      const edge = edgeRecords[Math.floor(hit.index / (SEGMENTS * 2))];
+      if (edge) callbacks.onEdgeSelect?.(edge, layout.nodes[index.get(String(edge.source))!], layout.nodes[index.get(String(edge.target))!]);
+    }
+  }
+  canvas.addEventListener('click', e => pick(e, false), { signal: eventController.signal });
+  canvas.addEventListener('dblclick', e => pick(e, true), { signal: eventController.signal });
+  return {
+    render(graph, nextLayout, options = {}) {
+      clear(); layout = nextLayout;
+      if (!layout.nodes.length) { invalidate(); return; }
+      const volume = buildProjectVolume(layout);
+      mesh = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 0), new THREE.MeshBasicMaterial(), layout.nodes.length);
+      const transform = new THREE.Object3D();
+      layout.nodes.forEach((node, i) => {
+        index.set(String(node.node_id), i);
+        const p = new THREE.Vector3().fromArray(volume.positions, i * 3); positions.push(p);
+        transform.position.copy(p); transform.scale.setScalar(Math.max(1.6, node.radius * .55)); transform.updateMatrix();
+        mesh!.setMatrixAt(i, transform.matrix); mesh!.setColorAt(i, new THREE.Color(node.color));
+      });
+      mesh.computeBoundingSphere(); group.add(mesh);
+      new THREE.Box3().setFromPoints(positions).expandByScalar(20).getBoundingSphere(bounds);
+      const extent = new THREE.Box3().setFromPoints(positions).getSize(new THREE.Vector3());
+      canvas.dataset.volumeExtent = JSON.stringify(extent.toArray());
+      // Three great-circle contours enclose each community in space, rather
+      // than parallel filled planes which disappear when viewed edge-on.
+      const ringSegments = 48, rings = new Float32Array(volume.zones.length * 3 * ringSegments * 6);
+      const ringColors = new Float32Array(rings.length), zoneColor = new THREE.Color();
+      let offset = 0;
+      for (const zone of volume.zones) {
+        zoneColor.set(zone.color);
+        for (let plane = 0; plane < 3; plane++) for (let k = 0; k < ringSegments; k++) {
+          for (const angle of [k / ringSegments * Math.PI * 2, (k + 1) / ringSegments * Math.PI * 2]) {
+            const point = [...zone.center], u = plane, v = (plane + 1) % 3;
+            point[u] += Math.cos(angle) * zone.radii[u]; point[v] += Math.sin(angle) * zone.radii[v];
+            rings.set(point, offset); zoneColor.toArray(ringColors, offset); offset += 3;
+          }
+        }
+      }
+      const ringGeometry = new THREE.BufferGeometry();
+      ringGeometry.setAttribute('position', new THREE.BufferAttribute(rings, 3));
+      ringGeometry.setAttribute('color', new THREE.BufferAttribute(ringColors, 3));
+      group.add(new THREE.LineSegments(ringGeometry, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: .13, depthWrite: false })));
+      edgeRecords = graph.edges.filter(e => index.has(String(e.source)) && index.has(String(e.target)));
+      const vertices = new Float32Array(edgeRecords.length * SEGMENTS * 6), colors = new Float32Array(vertices.length);
+      const a = new THREE.Vector3(), b = new THREE.Vector3(), control = new THREE.Vector3(), color = new THREE.Color();
+      const ordinals = new Map<string, number>();
+      edgeRecords.forEach((edge, i) => {
+        const source = positions[index.get(String(edge.source))!], target = positions[index.get(String(edge.target))!];
+        const key = JSON.stringify([edge.source, edge.target]), ordinal = ordinals.get(key) || 0; ordinals.set(key, ordinal + 1);
+        const dx = target.x - source.x, dy = target.y - source.y, bend = .12 + ordinal * .07;
+        control.copy(source).add(target).multiplyScalar(.5).add(new THREE.Vector3(-dy * bend, dx * bend, 8));
+        const curve = new THREE.QuadraticBezierCurve3(source, control, target);
+        color.set(edge.confidence === 'PROVEN' ? '#687f76' : '#c89e58');
+        for (let k = 0; k < SEGMENTS; k++) {
+          curve.getPoint(k / SEGMENTS, a); curve.getPoint((k + 1) / SEGMENTS, b);
+          if (source === target) { const t = k / SEGMENTS * Math.PI * 2, u = (k + 1) / SEGMENTS * Math.PI * 2; a.copy(source).add(new THREE.Vector3(Math.sin(t) * 12, (1 - Math.cos(t)) * 12, 2)); b.copy(source).add(new THREE.Vector3(Math.sin(u) * 12, (1 - Math.cos(u)) * 12, 2)); }
+          const offset = (i * SEGMENTS + k) * 6; a.toArray(vertices, offset); b.toArray(vertices, offset + 3); color.toArray(colors, offset); color.toArray(colors, offset + 3);
+        }
+      });
+      const geometry = new THREE.BufferGeometry(); geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3)); geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3)); geometry.computeBoundingSphere();
+      lines = new THREE.LineSegments(geometry, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: .25, depthWrite: false })); group.add(lines);
+      labelCandidates = [...layout.nodes].sort((a, b) => b.degree - a.degree).slice(0, 128);
+      setSelected(options.selectedId ?? null);
+      if (!fitted) { fitted = true; this.resetView(); }
+      invalidate();
+    },
+    setSelected,
+    focusNode(id) { const i = index.get(String(id)); if (i == null) return; const delta = positions[i].clone().sub(controls.target); controls.target.add(delta); camera.position.add(delta); invalidate(); },
+    resetView() {
+      // Flush any pending orbit inertia before applying the fitted oblique view.
+      controls.enableDamping = false; controls.update();
+      const distance = fitVolumeDistance(bounds.radius, camera.fov, camera.aspect);
+      controls.target.copy(bounds.center);
+      camera.position.copy(new THREE.Vector3(.65, .35, 1).normalize().multiplyScalar(distance).add(bounds.center));
+      camera.near = Math.max(.1, distance / 1000); camera.far = Math.max(10000, distance * 20); camera.updateProjectionMatrix();
+      controls.maxDistance = Math.max(5000, distance * 4); controls.update(); controls.enableDamping = true;
+      invalidate();
+    },
+    zoom(factor) { camera.position.sub(controls.target).multiplyScalar(1 / factor).add(controls.target); invalidate(); },
+    dispose() { if (disposed) return; disposed = true; cancelAnimationFrame(frame); observer.disconnect(); eventController.abort(); controls.dispose(); clear(); renderer.dispose(); renderer.forceContextLoss(); },
+  };
 }

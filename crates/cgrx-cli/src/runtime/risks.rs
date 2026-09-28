@@ -143,6 +143,45 @@ impl Runtime {
         let config = RuntimeConfig::default();
         let mut partial_reason: Option<String> = baseline.partial_reason.clone();
         let mut gaps = BTreeSet::<(String, String)>::new();
+        // The graph only hashes registered language packs. Git may report edits
+        // to other first-party sources (for example C++ or Swift) that would
+        // otherwise disappear from a change-risk report without a warning.
+        let status = git_bytes(
+            root,
+            &[
+                "-c",
+                "core.untrackedCache=true",
+                "status",
+                "--porcelain=v2",
+                "--branch",
+                "--no-ahead-behind",
+                "-z",
+                "--untracked-files=normal",
+                "--no-renames",
+                "--",
+            ],
+        )?;
+        let (revision, worktree_paths) = refresh_status(&status)?;
+        if revision != self.base_snapshot.repo_revision {
+            return Err(RuntimeError::new(
+                "revision_changed",
+                "watched HEAD changed; retry after refresh",
+            ));
+        }
+        let unindexed_changed_paths: Vec<_> = worktree_paths
+            .difference(&self.changed_paths)
+            .filter(|path| {
+                !self.stored.path_hashes.contains_key(*path)
+                    && !self.base_path_hashes.contains_key(*path)
+            })
+            .cloned()
+            .collect();
+        for path in &unindexed_changed_paths {
+            gaps.insert((path.clone(), "UNINDEXED_CHANGED_PATH".to_owned()));
+        }
+        if !unindexed_changed_paths.is_empty() && partial_reason.is_none() {
+            partial_reason = Some("UNINDEXED_CHANGED_PATH".to_owned());
+        }
         let budget_exceeded = self.stored.documents.len() > config.max_documents
             || self.stored.arcs.len() > config.max_edges;
         let mut partial = baseline.partial || budget_exceeded;
@@ -392,6 +431,8 @@ impl Runtime {
         verification_plan["partial"] = json!(partial);
         verification_plan["review_findings"] = json!((0..findings.len()).collect::<Vec<_>>());
         verification_plan["review_changed_paths"] = json!(!self.changed_paths.is_empty());
+        verification_plan["review_unindexed_changed_paths"] =
+            json!(!unindexed_changed_paths.is_empty());
         let gap_count = gaps.len();
         let gap_rows = gaps
             .iter()
@@ -409,7 +450,7 @@ impl Runtime {
             partial,
         });
         Ok(
-            json!({"snapshot":self.snapshot(),"base_revision":baseline.snapshot.repo_revision,"mode":"changes","findings":findings,"impacts":impacts,"verification_plan":verification_plan,"change_plan":change_plan,"partial":partial,"partial_reason":partial_reason,"coverage_gaps":gap_rows,"coverage_gap_count":gap_count,"coverage_gaps_truncated":gap_count>20,"inspected_base_edges":inspected,"changed_paths":self.changed_paths.iter().take(20).collect::<Vec<_>>(),"changed_path_count":self.changed_paths.len(),"evidence_bytes":EVIDENCE_BYTES-evidence.bytes_left,"limitations":["Candidates, not confirmed bugs; no whole-program absence proof.","Compares working tree with HEAD; no historical commit-range scan.","Cycles, architecture rules and data-flow bugs are not covered by this first slice."]}),
+            json!({"snapshot":self.snapshot(),"base_revision":baseline.snapshot.repo_revision,"mode":"changes","findings":findings,"impacts":impacts,"verification_plan":verification_plan,"change_plan":change_plan,"partial":partial,"partial_reason":partial_reason,"coverage_gaps":gap_rows,"coverage_gap_count":gap_count,"coverage_gaps_truncated":gap_count>20,"inspected_base_edges":inspected,"changed_paths":self.changed_paths.iter().take(20).collect::<Vec<_>>(),"changed_path_count":self.changed_paths.len(),"unindexed_changed_paths":unindexed_changed_paths.iter().take(20).collect::<Vec<_>>(),"unindexed_changed_path_count":unindexed_changed_paths.len(),"evidence_bytes":EVIDENCE_BYTES-evidence.bytes_left,"limitations":["Candidates, not confirmed bugs; no whole-program absence proof.","Unindexed worktree paths are live Git observations, not snapshot-bound graph evidence; inspect them directly.","Compares working tree with HEAD; no historical commit-range scan.","Cycles, architecture rules and data-flow bugs are not covered by this first slice."]}),
         )
     }
 }

@@ -1,102 +1,66 @@
 # Contributing
 
-CGRX treats code-intelligence output as evidence. Changes must preserve that
-property: unresolved or ambiguous relationships stay explicit instead of being
-silently converted into guessed edges.
+Thanks for improving CGRX. Keep changes small enough to review and preserve the
+project's evidence-first behavior.
 
-## Before opening a change
+## Before opening a pull request
 
 Open an issue for behavior changes with a minimal synthetic reproducer,
-expected/actual result, CGRX version or commit, platform, and coverage status.
-Do not upload private repositories, credentials, production logs, or sensitive
-local paths.
+expected/actual result, CGRX version, platform, and coverage status. Do not
+upload private repositories, credentials, production logs, or proprietary
+source.
 
-Keep pull requests bounded. Separate mechanical cleanup from semantic resolver
-changes when practical, and call out compatibility, persistence, protocol, or
-generated-artifact impact in the PR description.
+Resolver changes need positive and ambiguity/false-positive tests. Retain
+source-span evidence and coverage gaps; never replace unknown targets with
+coincidentally matching names.
 
-## Toolchains
+Every observed engine mistake (a wrong edge or a missed edge) becomes a
+permanent case in `contracts/mistake_ledger_v1.json`. Scaffold it with:
 
-The repository pins Rust in `rust-toolchain.toml`. The web workspace requires
-the Node.js major declared in `package.json`.
+```sh
+python3 scripts/report_mistake.py --help
+```
 
-~~~sh
-rustc --version
-node --version
-npm ci
-~~~
+Paste the generated skeleton into the pull request, include the reproducer and
+coverage status, then validate it with:
 
-Do not weaken or bypass pinned versions to make a local environment pass.
+```sh
+python3 scripts/validate_ledger.py
+python3 scripts/eval_mistake_ledger.py target/release/cgrx --warn-only
+```
 
-## Required checks
+## Local validation
 
-Run the checks relevant to the files you changed. Before requesting review,
-the default expectation is:
+Use the pinned toolchains from `rust-toolchain.toml` and `package.json`.
 
-~~~sh
-git diff --check
+```sh
 cargo fmt --all -- --check
 cargo clippy --locked --workspace --all-targets -- -D warnings
 cargo test --locked --workspace --no-fail-fast
+cargo build --locked --release -p cgrx-cli
 
 npm ci
 npm run typecheck:web
-npm run build:web
-git diff --exit-code -- crates/cgrx-cli/web/app.js crates/cgrx-cli/web/layout-worker.bundle.js
 npm run build:web-vendor
 git diff --exit-code -- crates/cgrx-cli/web/vendor/
 npm run verify:web-csp
 npm test
 
 python3 -m unittest discover -s scripts -p 'test_validate_*.py'
-~~~
+```
 
-The full GitHub Actions matrix remains authoritative for platform-specific and
-integration coverage.
+Run the integration/evaluator commands from `.github/workflows/ci.yml` when a
+change affects indexing, MCP behavior, graph resolution, refactor suggestions,
+or quality gates.
 
-## Resolver and graph changes
+## Pull request hygiene
 
-Resolver changes need positive and ambiguity/false-positive tests. Retain exact
-source-span evidence and coverage gaps; never replace unknown targets with
-coincidentally matching names.
-
-Every observed engine mistake (a wrong edge or a missed edge) becomes a
-permanent case in `contracts/mistake_ledger_v1.json`: scaffold it with
-`python3 scripts/report_mistake.py --help`, paste the skeleton into a PR, and
-include the reproducer plus coverage status. Validate with
-`python3 scripts/validate_ledger.py`; warn-only scoring runs via
-`python3 scripts/eval_mistake_ledger.py target/release/cgrx --warn-only`.
-
-When a language or relationship claim changes, update the corresponding
-contract only with reviewed evidence. Do not relax a threshold merely to make a
-new result pass.
-
-## Generated web assets
-
-The built explorer assets are committed because the Rust binary embeds them.
-When web sources change, rebuild both first-party and vendor bundles and commit
-the resulting deterministic files. CI rejects source/bundle drift.
-
-Do not hand-edit:
-
-- `crates/cgrx-cli/web/app.js`
-- `crates/cgrx-cli/web/layout-worker.bundle.js`
-- `crates/cgrx-cli/web/vendor/*.js`
-
-## Commits and pull requests
-
-Use focused, imperative commit subjects. The repository convention is compatible
-with Conventional Commits, for example `fix(cli): ...`, `refactor(runtime): ...`,
-`test(web): ...`, and `docs: ...`.
-
-A PR should state:
-
-- the problem and intended outcome;
-- the main implementation choices;
-- risk and compatibility considerations;
-- exact verification commands and results;
-- evidence/coverage implications for resolver or graph behavior;
-- known follow-ups that are intentionally outside the change.
+- Keep generated web bundles in sync with their TypeScript sources.
+- Do not mix unrelated refactors and behavior changes in the same commit.
+- Explain user-visible behavior changes and compatibility risks.
+- Add or update tests before removing legacy behavior.
+- Keep dependency updates pinned through the repository lockfiles.
+- Prefer squash merging for a clean main-branch history.
 
 Contributions are submitted under MIT unless explicitly stated otherwise and
 agreed before merging.

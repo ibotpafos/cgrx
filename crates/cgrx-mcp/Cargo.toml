@@ -1,15 +1,17 @@
 [package]
 name = "cgrx-mcp"
-version = "0.1.0"
+version.workspace = true
 edition.workspace = true
 license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
 
 [dependencies]
-cgrx-capsule = { path = "../cgrx-capsule" }
-cgrx-core = { path = "../cgrx-core" }
-cgrx-store = { path = "../cgrx-store" }
-serde = { version = "1.0.219", features = ["derive"] }
-serde_json = "1.0.143"
+cgrx-capsule.workspace = true
+cgrx-core.workspace = true
+cgrx-store.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 
 [[test]]
 name = "mcp_stdio"

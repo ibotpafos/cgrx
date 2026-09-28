@@ -1,28 +1,22 @@
 ## Summary
 
-Describe the user-visible or engineering outcome and why this change is needed.
+Describe what changed and why.
 
-## Changes
+## Validation
 
-- 
+List the checks you ran and their results.
 
-## Risk and compatibility
+## Evidence / coverage impact
 
-Describe compatibility impact, migrations, security-sensitive behavior, generated artifacts, and known limitations.
-
-## Verification
-
-List the exact commands, tests, benchmarks, or manual checks run.
-
-## Evidence and coverage
-
-For resolver or graph changes, include positive evidence, ambiguity/false-positive controls, source spans, and any remaining coverage gaps.
+Describe any graph-resolution, evidence, coverage-gap, indexing, or schema
+changes. Write `none` when not applicable.
 
 ## Checklist
 
-- [ ] The change is scoped and does not silently broaden evidence claims.
-- [ ] Tests cover the changed behavior and important negative cases.
-- [ ] `cargo fmt --all -- --check` and relevant lint/test commands pass.
-- [ ] Generated web assets were rebuilt when their sources changed.
-- [ ] Documentation, contracts, release notes, and third-party notices were updated when required.
-- [ ] No credentials, private repositories, production logs, or sensitive local paths were committed.
+- [ ] The change is focused and does not mix unrelated cleanup.
+- [ ] Tests cover behavior changes and regressions.
+- [ ] `cargo fmt --all -- --check` passes when Rust changed.
+- [ ] `cargo clippy --locked --workspace --all-targets -- -D warnings` passes when Rust changed.
+- [ ] Relevant Rust, Python, and web tests pass.
+- [ ] Generated web bundles are updated when their sources changed.
+- [ ] No secrets, private repository data, or production logs are included.

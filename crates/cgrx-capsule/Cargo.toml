@@ -1,17 +1,19 @@
 [package]
 name = "cgrx-capsule"
-version = "0.1.0"
+version.workspace = true
 edition.workspace = true
 license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
 
 [dependencies]
-cgrx-core = { path = "../cgrx-core" }
-cgrx-retrieval = { path = "../cgrx-retrieval" }
-blake3 = "1.8.7"
-serde = { version = "1.0.219", features = ["derive"] }
-serde_json = "1.0.143"
+cgrx-core.workspace = true
+cgrx-retrieval.workspace = true
+blake3.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 tiktoken-rs = "0.12.0"
 rustc-hash = "2.1.1"
 
 [dev-dependencies]
-cgrx-languages = { path = "../cgrx-languages" }
+cgrx-languages.workspace = true

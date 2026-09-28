@@ -16,6 +16,7 @@ fn extraction(name: &str, target: &str) -> Extraction {
         rust_file: None,
         package_span: None,
         lexical_arrows: Vec::new(),
+        swift_free_functions: Vec::new(),
         symbols: vec![Symbol {
             name: name.to_owned(),
             span: Span { start: 0, end: 4 },

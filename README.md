@@ -3,7 +3,6 @@
 [![CI](https://github.com/ibotpafos/cgrx/actions/workflows/ci.yml/badge.svg)](https://github.com/ibotpafos/cgrx/actions/workflows/ci.yml)
 [![PHP validation](https://github.com/ibotpafos/cgrx/actions/workflows/php-validation.yml/badge.svg)](https://github.com/ibotpafos/cgrx/actions/workflows/php-validation.yml)
 
-
 **Local, evidence-oriented code intelligence for AI coding agents.**
 
 One Rust executable. One stdio MCP server. Multiple Git repositories selected
@@ -53,7 +52,7 @@ roadmap. The four phases toward competitive parity are:
 ## Install with one command
 
 ~~~sh
-curl -fsSL https://raw.githubusercontent.com/ibotpafos/cgrx/v0.1.0-alpha.14/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/ibotpafos/cgrx/v0.1.0-alpha.15/install.sh | sh
 ~~~
 
 Installs to `$HOME/.local/bin/cgrx`, without sudo. Apple Silicon macOS downloads
@@ -86,7 +85,7 @@ Native Windows is not supported.
 ~~~sh
 git clone https://github.com/ibotpafos/cgrx.git
 cd cgrx
-git checkout v0.1.0-alpha.14
+git checkout v0.1.0-alpha.15
 cargo install --locked --path crates/cgrx-cli
 ~~~
 

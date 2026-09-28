@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build:web": "esbuild crates/cgrx-cli/web/app.tsx --bundle --format=esm --target=es2024 --minify --legal-comments=none --outfile=crates/cgrx-cli/web/app.js && esbuild crates/cgrx-cli/web/layout-worker.js --bundle --format=esm --target=es2024 --minify --legal-comments=none --outfile=crates/cgrx-cli/web/layout-worker.bundle.js && node scripts/normalize_web_bundle.mjs",
+    "build:web": "esbuild crates/cgrx-cli/web/app.tsx --bundle --format=esm --target=es2024 --minify --legal-comments=none --outfile=crates/cgrx-cli/web/app.js && esbuild crates/cgrx-cli/web/layout-worker.js --bundle --format=esm --target=es2024 --minify --legal-comments=none --outfile=crates/cgrx-cli/web/layout-worker.bundle.js && esbuild crates/cgrx-cli/web/topology-worker.js --bundle --format=esm --target=es2024 --minify --legal-comments=none --outfile=crates/cgrx-cli/web/topology-worker.bundle.js && node scripts/normalize_web_bundle.mjs",
     "build:web-vendor": "esbuild crates/cgrx-cli/web/vendor-entry.ts --bundle --format=esm --minify --legal-comments=none --outfile=crates/cgrx-cli/web/vendor/web-git-graph.js && esbuild crates/cgrx-cli/web/git-history.ts --bundle --format=esm --minify --legal-comments=none --outfile=crates/cgrx-cli/web/vendor/git-history.js && esbuild crates/cgrx-cli/web/runtime-evidence.ts --bundle --format=esm --minify --legal-comments=none --outfile=crates/cgrx-cli/web/vendor/runtime-evidence.js",
     "typecheck:web": "tsc --noEmit",
     "verify:web-csp": "node scripts/verify_web_git_graph_csp.mjs",
@@ -13,14 +13,18 @@
     "node": ">=26 <27"
   },
   "dependencies": {
+    "@sigma/edge-curve": "3.1.0",
     "@web-git-graph/protocol": "1.0.7",
     "@web-git-graph/web": "1.0.7",
     "d3-force": "3.0.0",
+    "graphology": "0.26.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
+    "sigma": "3.0.3",
     "three": "^0.186.0"
   },
   "devDependencies": {
+    "@playwright/test": "1.63.0",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@types/three": "^0.186.0",
