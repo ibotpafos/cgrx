@@ -355,6 +355,7 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
         .and_then(|bytes| std::str::from_utf8(bytes).ok())
         .map(str::to_owned);
     let lexical_arrows: BTreeSet<_> = extraction.lexical_arrows.into_iter().collect();
+    let swift_free_functions: BTreeSet<_> = extraction.swift_free_functions.into_iter().collect();
     let symbols = extraction.symbols;
     let edges = extraction.edges;
     let php_targets: BTreeSet<_> = edges
@@ -400,6 +401,8 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
         let semantic_fingerprint = body_fingerprint(&symbol.name, &search_text);
         let semantic_tags = if lexical_arrows.contains(&symbol.span) {
             vec!["TS_LEXICAL_ARROW".to_owned()]
+        } else if swift_free_functions.contains(&symbol.span) {
+            vec!["SWIFT_FREE_FUNCTION".to_owned()]
         } else if php_type_targets.contains(&symbol.span) {
             vec!["PHP_TYPE_DECLARATION".to_owned()]
         } else if php_targets.contains(&symbol.span) {
@@ -527,6 +530,7 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
             | LanguageProvenance::JavaConstructor { .. }
             | LanguageProvenance::RustSelf { .. }
             | LanguageProvenance::RustModule { .. }
+            | LanguageProvenance::SwiftDirect { .. }
             | LanguageProvenance::RustConstructor { .. } => None,
         };
         let is_go_receiver = go_receiver_target.is_some();
@@ -622,6 +626,14 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
                 }),
                 _ => None,
             },
+            ts_lexical_target: match edge.provenance {
+                LanguageProvenance::SwiftDirect { caller, target }
+                | LanguageProvenance::TsLexical { target, caller } => Some(TsLexicalTarget {
+                    target: ByteRange::new(target.start, target.end),
+                    caller: ByteRange::new(caller.start, caller.end),
+                }),
+                _ => None,
+            },
             rust_self_target: match edge.provenance {
                 LanguageProvenance::RustSelf {
                     owner,
@@ -639,13 +651,6 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
                         target: range(target),
                     }))
                 }
-                _ => None,
-            },
-            ts_lexical_target: match edge.provenance {
-                LanguageProvenance::TsLexical { target, caller } => Some(TsLexicalTarget {
-                    target: ByteRange::new(target.start, target.end),
-                    caller: ByteRange::new(caller.start, caller.end),
-                }),
                 _ => None,
             },
             ts_constructor_target: match edge.provenance {
@@ -679,6 +684,8 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
                 vec!["EXACT_CALL".to_owned(), "PHP_FUNCTION_CALL".to_owned()]
             } else if matches!(edge.provenance, LanguageProvenance::RustModule { .. }) {
                 vec!["EXACT_CALL".to_owned(), "RUST_MODULE_CALL".to_owned()]
+            } else if matches!(edge.provenance, LanguageProvenance::SwiftDirect { .. }) {
+                vec!["EXACT_CALL".to_owned(), "SWIFT_DIRECT_CALL".to_owned()]
             } else if matches!(edge.provenance, LanguageProvenance::RustSelf { .. }) {
                 vec!["EXACT_CALL".to_owned(), "RUST_SELF_CALL".to_owned()]
             } else if matches!(edge.provenance, LanguageProvenance::GoFieldReceiver { .. }) {

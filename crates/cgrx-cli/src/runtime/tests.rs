@@ -38,6 +38,56 @@ use super::git_helpers::{git_bytes, git_text, store_writer_error};
 #[cfg(test)]
 mod proof_edge_tests {
     use super::*;
+    #[cfg(feature = "experimental-swift")]
+    #[test]
+    fn swift_direct_proof_is_exact_and_never_falls_back_to_name_matching() {
+        let source = b"func target() {}\nfunc caller() { target() }\n";
+        let extracted = extract_path("src/main.swift", source).unwrap();
+        let hashes = BTreeMap::from([(
+            "src/main.swift".to_owned(),
+            Hash32(*blake3::hash(source).as_bytes()),
+        )]);
+        let arcs = rebuild_arcs(&extracted.documents, &hashes, &BTreeMap::new());
+        assert_eq!(arcs.len(), 1);
+        assert_eq!(arcs[0].kind, RelationKind::Calls);
+
+        for case in ["missing", "caller", "target", "tag", "duplicate"] {
+            let mut docs = extracted.documents.clone();
+            let call = docs
+                .iter_mut()
+                .find(|document| document.provenance == "CALLS")
+                .unwrap();
+            match case {
+                "missing" => call.ts_lexical_target = None,
+                "caller" => call.ts_lexical_target.as_mut().unwrap().caller.start += 1,
+                "target" => call.ts_lexical_target.as_mut().unwrap().target.start += 1,
+                "tag" => call.semantic_tags.retain(|tag| tag != "SWIFT_DIRECT_CALL"),
+                "duplicate" => {
+                    let target = docs
+                        .iter()
+                        .find(|document| {
+                            document.provenance == "SYNTAX" && document.qualified_name == "target"
+                        })
+                        .unwrap()
+                        .clone();
+                    docs.push(target);
+                }
+                _ => unreachable!(),
+            }
+            assert!(
+                rebuild_arcs(&docs, &hashes, &BTreeMap::new()).is_empty(),
+                "{case}"
+            );
+        }
+
+        let shadowed = b"func target() {}\nfunc caller() { let target = { }; target() }\n";
+        let extracted = extract_path("src/main.swift", shadowed).unwrap();
+        let hashes = BTreeMap::from([(
+            "src/main.swift".to_owned(),
+            Hash32(*blake3::hash(shadowed).as_bytes()),
+        )]);
+        assert!(rebuild_arcs(&extracted.documents, &hashes, &BTreeMap::new()).is_empty());
+    }
     #[test]
     fn unreadable_config_presence_is_an_explicit_resolution_blocker() {
         let mut hashes = BTreeMap::new();
@@ -1164,10 +1214,14 @@ mod compact_storage_tests {
         );
         assert_eq!(
             EXTRACTION_REVISION,
-            if cgrx_languages::EXPERIMENTAL_PHP_ENABLED {
-                31
+            29 + if cgrx_languages::EXPERIMENTAL_PHP_ENABLED {
+                2
             } else {
-                29
+                0
+            } + if cgrx_languages::EXPERIMENTAL_SWIFT_ENABLED {
+                4
+            } else {
+                0
             }
         );
     }
