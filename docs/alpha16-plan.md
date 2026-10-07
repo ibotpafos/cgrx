@@ -15,8 +15,13 @@ their exact snapshots in ten repositories. Explicit Python relative-import
 proofs improve the selected 24 import assertions from 0/24 to 24/24 and are
 visible in compact `get_outline` responses. [Python import evidence](benchmarks/python-import-evidence-2026-10-08.md)
 records the source pins, CBM comparison and remaining limits. Current source
-cache revisions are base 45, plus PHP 2, Swift 4 and JavaScript 8; the revision
+cache revisions after the Rust lifetime iteration are base 61, plus PHP 2,
+Swift 4 and JavaScript 8; the revision
 numbers below describe the historical alpha.16 preparation.
+
+The [Rust receiver follow-up](benchmarks/rust-lifetime-evidence-2026-10-08.md)
+closes three of five previously diagnosed Rust misses, including recursion.
+Local constructed receivers and typed parameters still need separate type proofs.
 
 ## Priority and boundary
 

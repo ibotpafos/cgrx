@@ -14,7 +14,8 @@ Refresh rechecks relative-module inventories and ancestor `package.json` type.
 The measured `c5c5bb1` JS build has extraction revision 37; PHP adds 2 and Swift
 adds 4, so all eight feature combinations have distinct cache identities.
 The subsequent Python import change moves the source-build base to 45 and the
-JS policy to 53. Existing indexes require a source reindex.
+JS policy to 53. The following Rust lifetime iteration raises the source base
+to 61 and the JS policy to 69. Existing indexes require a source reindex.
 
 ## Source-curated Express slice
 

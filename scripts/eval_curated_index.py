@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Check source-curated relationship sites against a persisted CGRX index.
 
-This scores supplied JavaScript assertions, or explicit Python import
-assertions with --python-imports, not whole-repository precision or completeness.
+This scores supplied JavaScript assertions, explicit Python imports with
+--python-imports, or Rust self calls with --rust-self, not whole-repository precision.
 Source truth is validated before scoring.
 Compressed segments require Python 3.14's standard compression.zstd module.
 """
@@ -37,12 +37,17 @@ def load_index(state):
     return index
 
 
-def score(corpus, index, python_imports=False):
+def score(corpus, index, python_imports=False, rust_self=False):
     tasks = corpus['tasks']
+    require(not (python_imports and rust_self), 'choose one evidence mode')
     if python_imports:
         require(all(Path(t['evidence']['source']['path']).suffix == '.py'
                     and t['expected']['relation'] == 'IMPORTS' for t in tasks),
                 'Python mode requires explicit import assertions')
+    elif rust_self:
+        require(all(Path(t['evidence']['source']['path']).suffix == '.rs'
+                    and t['expected']['relation'] in ('CALLS', 'UNRESOLVED') for t in tasks),
+                'Rust mode requires self-call or abstention assertions')
     else:
         require(all(Path(t['evidence']['source']['path']).suffix in ('.js', '.mjs', '.cjs')
                     for t in tasks), 'this evaluator requires JavaScript evidence')
@@ -65,6 +70,36 @@ def score(corpus, index, python_imports=False):
         return (document['path'] == anchor['path']
                 and document['qualified_name'] == anchor['symbol']
                 and start <= document['span_start'] < document['span_end'] <= end)
+
+    def rust_identity(proof, source, target):
+        path = proof['path']
+        span = proof['span']
+        calls = [d for d in documents.values() if d['path'] == path
+                 and d['provenance'] == 'CALLS'
+                 and [d['span_start'], d['span_end']] == [span['start'], span['end']]]
+        if len(calls) != 1 or path not in index.get('rust_files', {}):
+            return False
+        call = calls[0]
+        receipt = call.get('rust_self_target') or {}
+        owner = receipt.get('owner') or {}
+        owners = [d for d in documents.values() if d['path'] == path
+                  and d['provenance'] == 'SYNTAX'
+                  and d['span_start'] == owner.get('start') and d['span_end'] == owner.get('end')]
+        if (len(owners) != 1 or call['qualified_name'] != target['qualified_name']
+                or not {'EXACT_CALL', 'RUST_SELF_CALL'}.issubset(call.get('semantic_tags', []))):
+            return False
+        for name, impl_name, document in (('caller', 'implementation', source),
+                                         ('target', 'target_implementation', target)):
+            identity = receipt.get(name) or {}
+            implementation = receipt.get(impl_name) or {}
+            if (identity != {'start': document['span_start'], 'end': document['span_end']}
+                    or implementation.get('start', -1) < 0
+                    or not implementation.get('start', 0) < implementation.get('end', 0)
+                    or document.get('body_start', -1) < implementation['start']
+                    or document.get('body_end', -1) > implementation['end']
+                    or document.get('body_start', -1) >= document.get('body_end', -1)):
+                return False
+        return True
 
     outcomes = []
     for task in tasks:
@@ -103,6 +138,8 @@ def score(corpus, index, python_imports=False):
                              and src_start <= source['span_start'] < source['span_end'] <= src_end)
             ledger = index.get('python_files' if python_imports else 'ts_files', {})
             ledger_ok = proof.get('source_hash') == ledger.get(proof['path'], {}).get('source_hash')
+            if rust_self:
+                ledger_ok = rust_identity(proof, source, target)
             if python_imports:
                 source_facts = ledger.get(proof['path'], {}).get('facts', {})
                 target_entry = ledger.get(target['path'], {})
@@ -156,7 +193,8 @@ def score(corpus, index, python_imports=False):
         'abstention_assertions': len(negatives), 'respected_abstentions': sum(o['passed'] for o in negatives),
         'false_proven_at_abstention_sites': sum(o['proven_arcs_at_site'] for o in negatives),
         'passed': all(o['passed'] for o in outcomes), 'outcomes': outcomes,
-        'language_scope': 'python explicit imports' if python_imports else 'javascript',
+        'language_scope': ('python explicit imports' if python_imports else
+                          'rust self calls' if rust_self else 'javascript'),
         'scope': 'supplied source-curated sites only; not whole-repository precision or completeness',
     }
 
@@ -166,13 +204,16 @@ def main():
     parser.add_argument('corpus', type=Path)
     parser.add_argument('state', type=Path)
     parser.add_argument('--output', type=Path)
-    parser.add_argument('--python-imports', action='store_true')
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument('--python-imports', action='store_true')
+    modes.add_argument('--rust-self', action='store_true')
     args = parser.parse_args()
     try:
         data = args.corpus.read_bytes()
         corpus = json.loads(data)
         validate(corpus)
-        report = score(corpus, load_index(args.state), python_imports=args.python_imports)
+        report = score(corpus, load_index(args.state), python_imports=args.python_imports,
+                       rust_self=args.rust_self)
         report['corpus_sha256'] = hashlib.sha256(data).hexdigest()
         encoded = json.dumps(report, indent=2) + '\n'
         if args.output:

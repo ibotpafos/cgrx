@@ -160,6 +160,85 @@ class EvidenceIntegrityTests(unittest.TestCase):
                     load_index(self.root)
 
 
+class RustSelfIntegrityTests(unittest.TestCase):
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.root = Path(self.directory.name)
+        data = b"struct A<'a>(&'a u8);\nimpl A<'_> {\n fn caller(&self) { self.target(); }\n fn target(&self) {}\n}\n"
+        self.root.joinpath('main.rs').write_bytes(data)
+        anchor = lambda name, line: {'path': 'main.rs', 'symbol': name,
+                                    'start_line': line, 'end_line': line}
+        self.task = {'id': 'rust-self', 'repo': str(self.root), 'revision': 'a' * 40,
+                     'expected': {'relation': 'CALLS'}, 'evidence': {
+                         'source': anchor('caller', 3), 'site': anchor('target', 3),
+                         'target': anchor('target', 4)}}
+        docs = []
+        for node_id, name in ((1, 'caller'), (2, 'target'), (4, 'A')):
+            body_start = data.index(b'struct') if name == 'A' else data.index(f'fn {name}'.encode())
+            start = data.index(name.encode(), body_start)
+            docs.append({'node_id': node_id, 'path': 'main.rs', 'qualified_name': name,
+                         'provenance': 'SYNTAX', 'span_start': start, 'span_end': start + len(name),
+                         'body_start': body_start, 'body_end': data.index(b'\n', body_start)})
+        span = lambda d: {'start': d['span_start'], 'end': d['span_end']}
+        implementation = {'start': data.index(b'impl'), 'end': len(data) - 1}
+        call_start = data.index(b'self.target()')
+        call_end = call_start + len(b'self.target()')
+        docs.append({'node_id': 3, 'path': 'main.rs', 'qualified_name': 'target',
+                     'provenance': 'CALLS', 'span_start': call_start, 'span_end': call_end,
+                     'semantic_tags': ['EXACT_CALL', 'RUST_SELF_CALL'], 'rust_self_target': {
+                         'caller': span(docs[0]), 'target': span(docs[1]), 'owner': span(docs[2]),
+                         'implementation': implementation, 'target_implementation': implementation}})
+        self.index = {'snapshot': {'repo_revision': 'a' * 40, 'graph_generation': 123},
+                      'extraction_revision': 61, 'indexed_files': 1, 'documents': docs,
+                      'rust_files': {'main.rs': {}}, 'path_hashes': {'main.rs': 'ab' * 32},
+                      'coverage': {'dynamic_dispatch': []}, 'arcs': [{
+                          'source': 1, 'target': 2, 'kind': 'CALLS', 'evidence': {
+                              'path': 'main.rs', 'span': {'start': call_start, 'end': call_end},
+                              'source_hash': 'ab' * 32, 'confidence': 'PROVEN',
+                              'resolver': 'SYNTAX_EXACT', 'assumptions': [], 'counter_evidence': []}}]}
+
+    def report(self, index=None, task=None):
+        return score({'tasks': [task or self.task]}, index or self.index, rust_self=True)
+
+    def test_exact_owner_caller_target_and_impl_receipts_pass(self):
+        self.assertTrue(self.report()['passed'])
+
+    def test_damaged_receipt_cannot_turn_membership_into_proof(self):
+        for case in ('caller', 'target', 'owner', 'implementation', 'target_implementation',
+                     'tag', 'missing-call', 'missing-ledger', 'duplicate-owner', 'hash'):
+            with self.subTest(case=case):
+                index = copy.deepcopy(self.index)
+                call = index['documents'][-1]
+                if case in ('caller', 'target', 'owner', 'implementation', 'target_implementation'):
+                    call['rust_self_target'][case]['start'] = 9999
+                elif case == 'tag':
+                    call['semantic_tags'] = ['EXACT_CALL']
+                elif case == 'missing-call':
+                    index['documents'].pop()
+                elif case == 'missing-ledger':
+                    del index['rust_files']
+                elif case == 'duplicate-owner':
+                    owner = copy.deepcopy(index['documents'][2])
+                    owner['node_id'] = 99
+                    index['documents'].append(owner)
+                else:
+                    index['arcs'][0]['evidence']['source_hash'] = 'cd' * 32
+                self.assertFalse(self.report(index)['passed'])
+
+    def test_rust_abstention_requires_a_real_call_gap(self):
+        task, index = copy.deepcopy(self.task), copy.deepcopy(self.index)
+        task['expected']['relation'] = 'UNRESOLVED'
+        del task['evidence']['target']
+        index['arcs'] = []
+        call = index['documents'][-1]
+        call['semantic_tags'] = ['DYNAMIC_DISPATCH']
+        index['coverage']['dynamic_dispatch'] = [f"main.rs:{call['span_start']}-{call['span_end']}"]
+        self.assertTrue(self.report(index, task)['passed'])
+        index['coverage']['dynamic_dispatch'] = []
+        self.assertFalse(self.report(index, task)['passed'])
+
+
 class PythonImportIntegrityTests(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()

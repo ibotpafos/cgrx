@@ -527,7 +527,8 @@ impl super::Runtime {
                     (&evidence.path, evidence.span.start, arc.kind, arc.source)
                 });
                 for arc in incoming {
-                    if visited.contains(&arc.source) {
+                    let self_call = arc.kind == RelationKind::Calls && arc.source == *target_id;
+                    if visited.contains(&arc.source) && !self_call {
                         continue;
                     }
                     let Some(source) = by_id.get(&arc.source).copied() else {
@@ -537,7 +538,11 @@ impl super::Runtime {
                         continue;
                     };
                     usages.push((arc, source, target, evidence, hop));
-                    next.insert(arc.source);
+                    // Record recursion as a real usage without scheduling the
+                    // visited symbol again or repeating its sites at later hops.
+                    if !visited.contains(&arc.source) {
+                        next.insert(arc.source);
+                    }
                 }
             }
             if next.is_empty() {

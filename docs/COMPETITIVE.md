@@ -27,6 +27,12 @@ source evidence. A fresh CBM 0.10.8 full index also finds all 24 designated
 targets. The measurements have different evidence scopes and do not establish
 overall superiority or resource efficiency.
 
+The [Rust receiver follow-up](benchmarks/rust-lifetime-evidence-2026-10-08.md)
+resolves three lifetime-based self calls that CBM's selected CALLS queries miss.
+CBM finds the two remaining local/parameter receiver targets that CGRX still misses.
+The five diagnosed cases are implementation-informed observations from one
+source file; they do not establish a broad Rust or resource-efficiency win.
+
 ## (a) Feature comparison
 
 Capabilities are scored against how CGRX actually behaves today. Cells marked

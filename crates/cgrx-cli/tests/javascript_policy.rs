@@ -71,8 +71,8 @@ fn javascript_registry_policy_has_separate_cache_identity_and_reindexes_the_same
     );
     let other_languages = 4 * u32::from(cgrx_languages::EXPERIMENTAL_SWIFT_ENABLED)
         + 2 * u32::from(cgrx_languages::EXPERIMENTAL_PHP_ENABLED);
-    let active_policy = (if enabled { 53 } else { 45 }) + other_languages;
-    let foreign_policy = (if enabled { 45 } else { 53 }) + other_languages;
+    let active_policy = (if enabled { 69 } else { 61 }) + other_languages;
+    let foreign_policy = (if enabled { 61 } else { 69 }) + other_languages;
     let report = Runtime::index(&root, &fresh).unwrap();
     assert_eq!(report.indexed_files, if enabled { 2 } else { 1 });
     assert_eq!(

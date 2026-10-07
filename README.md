@@ -438,6 +438,14 @@ Module-self imports `use crate::worker::{self as api}` and
 Aliases with nested suffixes (`api::inner::target()`), function aliases
 and reexport chains are not covered by this Rust alias proof.
 
+Development builds also preserve exact Rust owner and method identity for
+`self` / `Self` calls on local structs and enums with only lifetime parameters,
+including methods in separate inherent impl blocks. Type/const parameters,
+bounded lifetimes, trait dispatch and ambiguous impls remain gaps.
+Static `find_usages` includes recursive call sites once without repeating the
+traversal. [Rust receiver evidence](docs/benchmarks/rust-lifetime-evidence-2026-10-08.md)
+records the measured improvement and remaining local/parameter receiver misses.
+
 Development builds resolve named imports and bounded named reexports to direct
 module-level `const` arrow functions as well as free-function declarations.
 Mutable bindings, duplicate declarations and binding writes remain unresolved;

@@ -463,6 +463,87 @@ fn rebuild_arcs() {}
 }
 
 #[test]
+fn rust_lifetime_only_self_calls_retain_exact_owner_and_target_identity() {
+    for source in [
+        "struct A<'a>(&'a u8); impl A<'_> { fn caller(&self) { self.run(); } fn run(&self) {} }",
+        "struct A<'a>(&'a u8); impl<'a> A<'a> { fn caller(&self) { Self::run(self); } fn run(&self) {} }",
+        "enum A<'a, 'b> { Item(&'a u8, &'b u8) } impl<'x, 'y> A<'x, 'y> { fn caller(&self) { self.run(); } fn run(&self) {} }",
+        "struct A<'a>(&'a u8); impl A<'_> { fn caller(&self) { self.run(); } } impl<'b> A<'b> { fn run(&self) {} }",
+        "struct A<'a>(&'a u8); impl<'a /* comment */> A<'a /* comment */> { fn caller(&self) { self.run(); } fn run(&self) {} }",
+    ] {
+        let source = format!("{source} struct B; impl B {{ fn run(&self) {{}} }} fn run() {{}}");
+        let extraction = pack_for_path(Path::new("main.rs"))
+            .unwrap()
+            .extract(Path::new("main.rs"), source.as_bytes())
+            .unwrap();
+        let calls: Vec<_> = extraction
+            .edges
+            .iter()
+            .filter(|edge| edge.relation == RelationKind::Calls)
+            .collect();
+        assert_eq!(calls.len(), 1, "{source}");
+        let Provenance::RustSelf {
+            owner,
+            caller,
+            target,
+            implementation,
+            target_implementation,
+        } = &calls[0].provenance
+        else {
+            panic!("missing owner identity: {source}")
+        };
+        assert_eq!(owner.start, source.find("A<").unwrap());
+        assert_eq!(caller.start, source.find("fn caller").unwrap() + 3);
+        assert_eq!(target.start, source.find("fn run").unwrap() + 3);
+        assert!(implementation.start < caller.start && caller.end < implementation.end);
+        assert!(
+            target_implementation.start < target.start && target.end < target_implementation.end
+        );
+    }
+}
+
+#[test]
+fn rust_lifetime_self_calls_abstain_on_unsupported_or_competing_owners() {
+    for source in [
+        "struct A<'a> { broken: , value: &'a u8 } impl A<'_> { fn caller(&self) { self.run(); } fn run(&self) {} }",
+        "struct A<'a, T>(&'a T); impl<'a, T> A<'a, T> { fn caller(&self) { self.run(); } fn run(&self) {} }",
+        "struct A<'a, const N: usize>(&'a [u8; N]); impl<'a, const N: usize> A<'a, N> { fn caller(&self) { self.run(); } fn run(&self) {} }",
+        "struct A<'a, 'b>(&'a u8, &'b u8); impl A<'_> { fn caller(&self) { self.run(); } fn run(&self) {} }",
+        "struct A<'a>(&'a u8); impl<'a> A<'a> where 'a: 'static { fn caller(&self) { self.run(); } fn run(&self) {} }",
+        "struct A<'a: 'static>(&'a u8); impl A<'_> { fn caller(&self) { self.run(); } fn run(&self) {} }",
+        "struct A<'a>(&'a u8); impl A<'_> { fn caller(&self) { self.run(); } } impl A<'_> { fn run(&self) {} } impl A<'static> { fn run(&self) {} }",
+        "struct A<'a>(&'a u8); impl A<'_> { fn caller(&self) { self.run(); } } impl<'a> self::A<'a> { fn run(&self) {} }",
+        "struct A<'a>(&'a u8); impl A<'_> { fn caller(&self) { self.run(); } fn run(&self) {} } trait T { fn run(&self); } impl T for A<'_> { fn run(&self) {} }",
+        "struct A<'a>(&'a u8); #[cfg(feature=\"x\")] impl A<'_> { fn run(&self) {} } impl A<'_> { fn caller(&self) { self.run(); } }",
+        "#[cfg(feature=\"x\")] struct A<'a>(&'a u8); impl A<'_> { fn caller(&self) { self.run(); } fn run(&self) {} }",
+        "struct A<'a>(&'a u8); impl A<'_> { fn caller(&self) { self.run(); } #[cfg(feature=\"x\")] fn run(&self) {} }",
+        "struct A<'a>(&'a u8); impl A<'_> { fn caller(&self) { self.run(); } fn run() {} }",
+        "struct A<'a>(&'a u8); impl A<'_> { fn caller(&self) { self.run(); } } struct B; impl B { fn run(&self) {} }",
+    ] {
+        let source = format!("{source} fn run() {{}}");
+        let extraction = pack_for_path(Path::new("main.rs"))
+            .unwrap()
+            .extract(Path::new("main.rs"), source.as_bytes())
+            .unwrap();
+        assert!(
+            !extraction
+                .edges
+                .iter()
+                .any(|e| e.relation == RelationKind::Calls),
+            "{source}"
+        );
+        assert!(
+            extraction
+                .unresolved
+                .iter()
+                .any(|u| u.kind == UnresolvedKind::Dispatch
+                    && &source[u.span.start..u.span.end] == "self.run()"),
+            "{source}"
+        );
+    }
+}
+
+#[test]
 fn rust_self_calls_remain_but_unproven_receivers_stay_dispatch() {
     let source = br#"trait Worker { fn run(&self); }
 struct Runtime;

@@ -49,9 +49,11 @@ binary SHA-256
 The after binary SHA-256 is
 `6027fe4167c12bcacc5140a92695533955e765e3192eb3058b0f2a72b872eeda`.
 Both are optimized macOS builds with the same JavaScript opt-in policy.
-The default seven-language registry is preserved. The new cache base is 45;
+The default seven-language registry is preserved. This Python iteration's cache base is 45;
 PHP adds 2, Swift 4 and JavaScript 8, so this measured build uses revision 53.
 Old caches require a source reindex.
+The subsequent [Rust iteration](rust-lifetime-evidence-2026-10-08.md) raises
+the source cache base to 61 without changing these measured Python artifacts.
 
 For CGRX, each assertion requires the right named import member, exact source
 and target identities/spans, matching evidence and ledger hashes, and

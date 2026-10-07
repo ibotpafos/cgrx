@@ -161,14 +161,14 @@ fn self_method_proof(
     if implementation.kind() != "impl_item"
         || implementation.has_error()
         || implementation.child_by_field_name("trait").is_some()
-        || implementation
-            .child_by_field_name("type_parameters")
-            .is_some()
         || attributed(implementation)
     {
         return None;
     }
-    let owner_type = implementation.child_by_field_name("type")?;
+    let mut owner_type = implementation.child_by_field_name("type")?;
+    if owner_type.kind() == "generic_type" {
+        owner_type = owner_type.child_by_field_name("type")?;
+    }
     if owner_type.kind() != "type_identifier" {
         return None;
     }
@@ -181,18 +181,21 @@ fn self_method_proof(
                 .is_some_and(|name| text(name, source) == owner_name)
     });
     let owner = owners.next()?;
-    if owners.next().is_some() || attributed(owner) {
+    if owners.next().is_some() || owner.has_error() || attributed(owner) {
         return None;
     }
-    // Resolve only plain inherent impls in the same lexical module. The owner
-    // identity is its declaration span, never a matching method name elsewhere.
+    let arity = lifetime_parameter_count(owner)?;
+    // Lifetimes do not change the nominal owner identity. Keep type/const
+    // substitutions unsupported, and include qualified competing impls as
+    // blockers instead of treating them as evidence of a unique target.
     let mut cursor = module.walk();
     let implementations: Vec<_> = module
         .named_children(&mut cursor)
         .filter(|n| {
             n.kind() == "impl_item"
                 && n.child_by_field_name("type")
-                    .is_some_and(|ty| text(ty, source) == owner_name)
+                    .and_then(nominal_type_name)
+                    .is_some_and(|name| text(name, source) == owner_name)
         })
         .collect();
     let name = text(field, source);
@@ -201,7 +204,7 @@ fn self_method_proof(
         if candidate.has_error()
             || attributed(candidate)
             || candidate.child_by_field_name("trait").is_some()
-            || candidate.child_by_field_name("type_parameters").is_some()
+            || !lifetime_only_impl(candidate, arity)
         {
             return None;
         }
@@ -237,6 +240,79 @@ fn self_method_proof(
         caller: Span::from(caller.child_by_field_name("name")?),
         target: Span::from(target.child_by_field_name("name")?),
     })
+}
+
+fn nominal_type_name(ty: Node<'_>) -> Option<Node<'_>> {
+    match ty.kind() {
+        "type_identifier" => Some(ty),
+        "generic_type" => nominal_type_name(ty.child_by_field_name("type")?),
+        "scoped_type_identifier" => ty.child_by_field_name("name"),
+        _ => None,
+    }
+}
+
+fn lifetime_parameter_count(item: Node<'_>) -> Option<usize> {
+    let mut cursor = item.walk();
+    if item
+        .named_children(&mut cursor)
+        .any(|n| n.kind() == "where_clause")
+    {
+        return None;
+    }
+    let Some(parameters) = item.child_by_field_name("type_parameters") else {
+        return Some(0);
+    };
+    let mut count = 0;
+    let mut cursor = parameters.walk();
+    for parameter in parameters.named_children(&mut cursor) {
+        if matches!(parameter.kind(), "line_comment" | "block_comment") {
+            continue;
+        }
+        if parameter.kind() != "lifetime_parameter"
+            || parameter.child_by_field_name("bounds").is_some()
+        {
+            return None;
+        }
+        count += 1;
+    }
+    Some(count)
+}
+
+fn lifetime_only_impl(implementation: Node<'_>, owner_arity: usize) -> bool {
+    let Some(parameter_count) = lifetime_parameter_count(implementation) else {
+        return false;
+    };
+    if parameter_count > owner_arity {
+        return false;
+    }
+    let Some(ty) = implementation.child_by_field_name("type") else {
+        return false;
+    };
+    if ty.kind() == "type_identifier" {
+        return owner_arity == 0;
+    }
+    if ty.kind() != "generic_type"
+        || ty
+            .child_by_field_name("type")
+            .is_none_or(|n| n.kind() != "type_identifier")
+    {
+        return false;
+    }
+    let Some(arguments) = ty.child_by_field_name("type_arguments") else {
+        return false;
+    };
+    let mut count = 0;
+    let mut cursor = arguments.walk();
+    for argument in arguments.named_children(&mut cursor) {
+        if matches!(argument.kind(), "line_comment" | "block_comment") {
+            continue;
+        }
+        if argument.kind() != "lifetime" {
+            return false;
+        }
+        count += 1;
+    }
+    count > 0 && count == owner_arity
 }
 
 // Deliberately tiny whitelist: these built-ins cannot add/remove/rename methods.

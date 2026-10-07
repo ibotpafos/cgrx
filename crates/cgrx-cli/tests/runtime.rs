@@ -1937,6 +1937,60 @@ fn find_usages_returns_proven_sites_for_every_supported_extension() {
 }
 
 #[test]
+fn find_usages_reports_recursive_sites_once_at_bounded_depth() {
+    let source = b"fn target() { target(); target(); }\nfn middle() { target(); middle(); }\nfn top() { middle(); }\n";
+    let repository = repository_with_file("recursive-usages", "usage.rs", source);
+    let state = TestDirectory::new("recursive-usages-state");
+    Runtime::index(repository.path(), state.path()).unwrap();
+    let runtime = Runtime::open(state.path()).unwrap();
+    let scope = Scope {
+        include: vec![],
+        exclude: vec![],
+        relation_kinds: vec![RelationKind::Calls],
+        max_depth: 4,
+    };
+    let direct = runtime
+        .find_usages("target", Some("usage.rs"), &scope, 1, 20)
+        .unwrap();
+    assert_eq!(direct["total"], 3, "{direct}");
+    assert_eq!(
+        direct["usages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|u| u["source"]["symbol"] == "target")
+            .count(),
+        2
+    );
+    let transitive = runtime
+        .find_usages("target", Some("usage.rs"), &scope, 4, 20)
+        .unwrap();
+    assert_eq!(transitive["total"], 5, "{transitive}");
+    assert_eq!(
+        transitive["usages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|u| u["source"]["symbol"] == "middle" && u["via"]["symbol"] == "middle")
+            .count(),
+        1
+    );
+    for usage in transitive["usages"].as_array().unwrap() {
+        assert_eq!(usage["confidence"], "PROVEN");
+        let start = usage["site"]["span"]["start"].as_u64().unwrap() as usize;
+        let end = usage["site"]["span"]["end"].as_u64().unwrap() as usize;
+        assert!(matches!(&source[start..end], b"target()" | b"middle()"));
+        assert!(usage["hop"].as_u64().unwrap() <= 2);
+    }
+    let limited = runtime
+        .find_usages("target", Some("usage.rs"), &scope, 1, 1)
+        .unwrap();
+    assert_eq!(limited["total"], 3);
+    assert_eq!(limited["usages"].as_array().unwrap().len(), 1);
+    assert_eq!(limited["truncated"], true);
+}
+
+#[test]
 fn find_usages_walks_proven_reverse_edges_to_the_requested_depth() {
     let repository = TestDirectory::new("transitive-find-usages");
     git(repository.path(), &["init", "-q"]);
@@ -2752,6 +2806,81 @@ fn rust_receiver_calls_never_guess_same_named_free_function() {
             );
             assert!(!checked.coverage().dynamic_dispatch.is_empty());
         }
+    }
+}
+
+#[test]
+fn rust_lifetime_self_proofs_survive_reopen_and_refresh_without_retargeting() {
+    let source = "struct A<'a>(&'a u8); struct B; impl A<'_> { fn caller(&self) { self.run(); Self::build(); } } impl<'x> A<'x> { fn run(&self) {} fn build() {} } impl B { fn run(&self) {} fn build() {} } fn run() {}";
+    let repository = repository_with_file("rust-lifetime-owner", "main.rs", source.as_bytes());
+    let state = TestDirectory::new("rust-lifetime-owner-state");
+    Runtime::index(repository.path(), state.path()).unwrap();
+    let mut runtime = Runtime::open(state.path()).unwrap();
+    let scope = Scope {
+        include: vec!["**".to_owned()],
+        exclude: vec![],
+        relation_kinds: vec![RelationKind::Calls],
+        max_depth: 1,
+    };
+    let check = |runtime: &Runtime| {
+        let result = runtime
+            .trace_path("caller", Some("main.rs"), "callees", 1, &scope, 50)
+            .unwrap();
+        let nodes = result["nodes"].as_array().unwrap();
+        assert_eq!(nodes.len(), 2, "{result}");
+        for name in ["run", "build"] {
+            assert!(
+                nodes
+                    .iter()
+                    .any(|n| n["span"]["start"] == source.find(&format!("fn {name}")).unwrap() + 3),
+                "{result}"
+            );
+        }
+    };
+    check(&runtime);
+    check(&Runtime::open(state.path()).unwrap());
+    let changed = source.replacen("impl<'x> A<'x> { fn run(&self) {} fn build() {} }", "", 1);
+    fs::write(repository.path().join("main.rs"), changed).unwrap();
+    assert!(runtime.refresh(repository.path()).unwrap());
+    let result = runtime
+        .trace_path("caller", Some("main.rs"), "callees", 1, &scope, 50)
+        .unwrap();
+    assert_eq!(result["nodes"], serde_json::json!([]));
+    assert!(!runtime.coverage().dynamic_dispatch.is_empty());
+    fs::write(repository.path().join("main.rs"), source).unwrap();
+    assert!(runtime.refresh(repository.path()).unwrap());
+    check(&runtime);
+}
+
+#[test]
+fn rust_lifetime_competing_or_unsupported_impls_never_prove_a_target() {
+    let prefix = "struct A<'a>(&'a u8); impl A<'_> { fn caller(&self) { self.run(); } } ";
+    for candidate in [
+        "impl A<'_> { fn run(&self) {} } impl A<'static> { fn run(&self) {} }",
+        "impl<'a> self::A<'a> { fn run(&self) {} }",
+        "#[cfg(feature=\"x\")] impl A<'_> { fn run(&self) {} }",
+        "impl<'a> A<'a> where 'a: 'static { fn run(&self) {} }",
+        "impl A<'_> { fn run(&self) {} } trait T { fn run(&self); } impl T for A<'_> { fn run(&self) {} }",
+        "impl A<'_> { fn run() {} }",
+        "struct B; impl B { fn run(&self) {} }",
+    ] {
+        let source = format!("{prefix}{candidate} fn run() {{}}");
+        let repository =
+            repository_with_file("rust-lifetime-blocker", "main.rs", source.as_bytes());
+        let state = TestDirectory::new("rust-lifetime-blocker-state");
+        Runtime::index(repository.path(), state.path()).unwrap();
+        let runtime = Runtime::open(state.path()).unwrap();
+        let scope = Scope {
+            include: vec!["**".to_owned()],
+            exclude: vec![],
+            relation_kinds: vec![RelationKind::Calls],
+            max_depth: 1,
+        };
+        let result = runtime
+            .trace_path("caller", Some("main.rs"), "callees", 1, &scope, 50)
+            .unwrap();
+        assert_eq!(result["nodes"], serde_json::json!([]), "{source}: {result}");
+        assert!(!runtime.coverage().dynamic_dispatch.is_empty(), "{source}");
     }
 }
 
