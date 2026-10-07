@@ -351,6 +351,7 @@ mod tests {
                 hash(2),
                 Extraction {
                     rust_file: None,
+                    python_file: None,
                     package_span: None,
                     lexical_arrows: Vec::new(),
                     swift_free_functions: Vec::new(),
@@ -407,6 +408,7 @@ mod tests {
                     hash(new),
                     Extraction {
                         rust_file: None,
+                        python_file: None,
                         package_span: None,
                         lexical_arrows: Vec::new(),
                         swift_free_functions: Vec::new(),

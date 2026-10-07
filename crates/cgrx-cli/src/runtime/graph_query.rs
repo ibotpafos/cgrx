@@ -51,7 +51,7 @@ impl super::Runtime {
                 })
             })
             .collect();
-        Ok(json!({
+        let mut result = json!({
             "snapshot":self.stored.snapshot,
             "path":path,
             "language":language,
@@ -59,7 +59,50 @@ impl super::Runtime {
             "total":total,
             "truncated":total > limit,
             "coverage_gap_count":coverage_gap_count(&scoped.coverage(&self.stored.coverage))
-        }))
+        });
+        if language == "python" {
+            let sources: BTreeMap<_, _> = self
+                .stored
+                .documents
+                .iter()
+                .filter(|d| d.path == path && d.provenance == "IMPORTS")
+                .map(|d| (d.node_id, d))
+                .collect();
+            let mut imports = Vec::new();
+            for arc in self
+                .stored
+                .arcs
+                .iter()
+                .filter(|a| a.kind == RelationKind::Imports)
+            {
+                let Some(source) = sources.get(&arc.source) else {
+                    continue;
+                };
+                let Some(target) = super::scan_helpers::syntax_document(&self.stored, arc.target)
+                else {
+                    continue;
+                };
+                let Some(proof) = arc.evidence.as_ref().filter(|e| {
+                    e.is_definitive()
+                        && self.stored.path_hashes.get(&e.path) == Some(&e.source_hash)
+                }) else {
+                    continue;
+                };
+                imports.push(json!({
+                    "local":source.qualified_name,
+                    "target":{"symbol":target.qualified_name,"path":target.path,
+                        "span":{"start":target.span_start,"end":target.span_end}},
+                    "evidence":proof
+                }));
+            }
+            imports.sort_by_key(|i| i["evidence"]["span"]["start"].as_u64());
+            let total_imports = imports.len();
+            imports.truncate(limit);
+            result["imports"] = json!(imports);
+            result["total_imports"] = json!(total_imports);
+            result["imports_truncated"] = json!(total_imports > limit);
+        }
+        Ok(result)
     }
 
     pub(super) fn search_graph_with_matcher(

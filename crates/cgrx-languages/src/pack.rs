@@ -153,6 +153,7 @@ pub struct Unresolved {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Extraction {
     pub rust_file: Option<crate::rust::RustFileFacts>,
+    pub python_file: Option<crate::python::PythonFileFacts>,
     /// Ancillary source identity; consumers bind this span to the full source
     /// hash. The existing structural digest/goldens remain symbol/edge based.
     pub package_span: Option<Span>,

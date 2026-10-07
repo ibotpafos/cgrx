@@ -377,7 +377,7 @@ fn go_field_proof_metadata_binds_caller_field_types_and_target_and_is_optional()
     let stored = fixture.stored();
     assert_eq!(
         stored["extraction_revision"],
-        29 + if cgrx_languages::EXPERIMENTAL_PHP_ENABLED {
+        45 + if cgrx_languages::EXPERIMENTAL_PHP_ENABLED {
             2
         } else {
             0

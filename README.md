@@ -330,6 +330,11 @@ both `.ts` and `.tsx`. Every match reports `matched_by` as `symbol` or `body`.
 Use `get_outline` with a repository-relative source path to inspect its symbols
 in source order without paying for function bodies; `limit` defaults to 200 and
 is capped at 500.
+Python outlines also list proven explicit relative imports, including each local
+name, target declaration, file and source evidence. `limit` bounds the symbols
+and imports separately; check `imports_truncated` (compact: `imports_more`) as
+well as symbol truncation. This covers unique plain function/class declarations
+inside regular source packages. [Validation and limits](docs/benchmarks/python-import-evidence-2026-10-08.md).
 `get_architecture` groups source files and symbols by the first `package_depth`
 path components. It aggregates proven `CALLS` and `IMPLEMENTS` relationships
 plus unambiguous repository-local `IMPORTS` and conservative static `REFERENCES`

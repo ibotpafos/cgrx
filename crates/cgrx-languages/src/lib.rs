@@ -38,6 +38,7 @@ pub const EXPERIMENTAL_SWIFT_ENABLED: bool = cfg!(feature = "experimental-swift"
 pub const EXPERIMENTAL_JAVASCRIPT_ENABLED: bool = cfg!(feature = "experimental-javascript");
 
 pub use go::{GoCallableKind, GoCallableType, go_callable_type};
+pub use python::{PythonFileFacts, PythonImportBinding};
 pub use rust::RustFileFacts;
 
 // Exact import facts and conservative site classification for runtime integration.

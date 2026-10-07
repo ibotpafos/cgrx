@@ -388,6 +388,7 @@ pub(super) fn normalize_stored(stored: &mut StoredIndex) {
 // discharged only by the expected relation with a current source hash. The v1
 // coverage schema stores these binding gaps in its legacy dynamic_dispatch list.
 pub(super) fn refresh_proof_gaps(stored: &mut StoredIndex) {
+    super::python_import_resolution::normalize(stored);
     if cgrx_languages::EXPERIMENTAL_JAVASCRIPT_ENABLED {
         super::javascript_resolution::normalize(stored);
     }

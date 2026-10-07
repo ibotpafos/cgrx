@@ -13,6 +13,7 @@ mod javascript_resolution;
 mod observations;
 mod orient_helpers;
 mod php_resolution;
+mod python_import_resolution;
 mod refactors;
 mod risks;
 mod scan_helpers;
@@ -89,10 +90,10 @@ use serde_json::{Value, json};
 
 // Read the effective dependency policy, not just this crate's feature flag:
 // Cargo may enable an experimental language through another workspace member.
-// Reserve 30 for the historical PHP revision. Distinct PHP/Swift/JavaScript bits
+// Revisions through 43 include historical and experimental caches. Distinct bits
 // ensure no old cache acquires a different language policy by matching a number.
 const EXTRACTION_REVISION: u32 =
-    29 + if cgrx_languages::EXPERIMENTAL_PHP_ENABLED {
+    45 + if cgrx_languages::EXPERIMENTAL_PHP_ENABLED {
         2
     } else {
         0
@@ -269,6 +270,8 @@ struct StoredIndex {
     cargo_manifests: BTreeMap<String, String>,
     #[serde(default)]
     rust_files: BTreeMap<String, cgrx_languages::RustFileFacts>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    python_files: BTreeMap<String, StoredPythonFileFacts>,
     #[serde(default)]
     ts_files: BTreeMap<String, StoredTsFileFacts>,
     #[serde(default)]
@@ -298,6 +301,12 @@ struct StoredTsFileFacts {
     facts: TsFileFacts,
     #[serde(default)]
     inventory_only: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+struct StoredPythonFileFacts {
+    source_hash: Hash32,
+    facts: cgrx_languages::PythonFileFacts,
 }
 
 pub struct Runtime {
@@ -713,6 +722,12 @@ impl Runtime {
                 .insert(relative.clone(), source_hash);
             if let Some(facts) = extracted.rust_file {
                 self.stored.rust_files.insert(relative.clone(), facts);
+            }
+            if let Some(facts) = extracted.python_file {
+                self.stored.python_files.insert(
+                    relative.clone(),
+                    StoredPythonFileFacts { source_hash, facts },
+                );
             }
             if let Some(facts) = extracted.ts_file {
                 self.stored.ts_files.insert(

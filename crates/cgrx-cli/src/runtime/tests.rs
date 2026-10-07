@@ -745,6 +745,7 @@ mod proof_edge_tests {
             extraction_revision: EXTRACTION_REVISION,
             cargo_manifests: BTreeMap::new(),
             rust_files: BTreeMap::new(),
+            python_files: BTreeMap::new(),
             ts_files: BTreeMap::new(),
             ts_resolution_configs: BTreeMap::new(),
             go_modules: BTreeMap::new(),
@@ -797,6 +798,7 @@ mod proof_edge_tests {
             extraction_revision: EXTRACTION_REVISION,
             cargo_manifests: BTreeMap::new(),
             rust_files: BTreeMap::new(),
+            python_files: BTreeMap::new(),
             ts_files: BTreeMap::new(),
             ts_resolution_configs: BTreeMap::new(),
             go_modules: BTreeMap::new(),
@@ -905,6 +907,7 @@ mod proof_edge_tests {
                 extraction_revision: EXTRACTION_REVISION,
                 cargo_manifests: BTreeMap::new(),
                 rust_files: BTreeMap::new(),
+                python_files: BTreeMap::new(),
                 ts_files: BTreeMap::new(),
                 ts_resolution_configs: BTreeMap::new(),
                 go_modules: BTreeMap::new(),
@@ -953,6 +956,7 @@ mod proof_edge_tests {
             extraction_revision: EXTRACTION_REVISION,
             cargo_manifests: BTreeMap::new(),
             rust_files: BTreeMap::new(),
+            python_files: BTreeMap::new(),
             ts_files: BTreeMap::new(),
             ts_resolution_configs: BTreeMap::new(),
             go_modules: BTreeMap::new(),
@@ -1214,7 +1218,7 @@ mod compact_storage_tests {
         );
         assert_eq!(
             EXTRACTION_REVISION,
-            29 + if cgrx_languages::EXPERIMENTAL_PHP_ENABLED {
+            45 + if cgrx_languages::EXPERIMENTAL_PHP_ENABLED {
                 2
             } else {
                 0

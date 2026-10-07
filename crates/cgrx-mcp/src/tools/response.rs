@@ -501,6 +501,45 @@ pub(super) fn compact_outline(value: &Value) -> Value {
         "gaps":value.get("coverage_gap_count"),
     });
     insert_more_when_true(&mut compact, value.get("truncated"));
+    if let Some(imports) = value.get("imports").and_then(Value::as_array) {
+        compact["import_cols"] = json!([
+            "local",
+            "symbol",
+            "path",
+            "start",
+            "end",
+            "site_start",
+            "site_end",
+            "resolver",
+            "confidence"
+        ]);
+        compact["imports"] = json!(
+            imports
+                .iter()
+                .map(|i| json!([
+                    i.get("local"),
+                    i.pointer("/target/symbol"),
+                    i.pointer("/target/path"),
+                    i.pointer("/target/span/start"),
+                    i.pointer("/target/span/end"),
+                    i.pointer("/evidence/span/start"),
+                    i.pointer("/evidence/span/end"),
+                    i.pointer("/evidence/resolver"),
+                    i.pointer("/evidence/confidence")
+                ]))
+                .collect::<Vec<_>>()
+        );
+        compact["imports_n"] = value.get("total_imports").cloned().unwrap_or(Value::Null);
+        if value.get("imports_truncated") == Some(&Value::Bool(true)) {
+            compact["imports_more"] = json!(true);
+        }
+        if let Some(hash) = imports
+            .first()
+            .and_then(|i| i.pointer("/evidence/source_hash"))
+        {
+            compact["import_source_hash"] = hash.clone();
+        }
+    }
     compact
 }
 
@@ -1116,4 +1155,42 @@ pub(super) fn compact_memory_recall(value: &Value) -> Value {
         "truncated": value.get("truncated"),
         "llm_used": false,
     })
+}
+
+#[cfg(test)]
+mod outline_import_tests {
+    use super::*;
+
+    #[test]
+    fn model_visible_outline_preserves_python_import_identity_and_truncation() {
+        let value = json!({"path":"pkg/main.py", "language":"python", "symbols":[],
+            "total":0, "truncated":false, "coverage_gap_count":1,
+            "total_imports":2, "imports_truncated":true,
+            "imports":[{"local":"alias", "target":{"symbol":"helper","path":"pkg/helper.py",
+                "span":{"start":4,"end":10}}, "evidence":{"span":{"start":20,"end":35},
+                "source_hash":"source-hash", "resolver":"SYNTAX_EXACT", "confidence":"PROVEN"}}]});
+        let result = model_visible_result("get_outline", &value);
+        assert_eq!(
+            result["imports"],
+            json!([[
+                "alias",
+                "helper",
+                "pkg/helper.py",
+                4,
+                10,
+                20,
+                35,
+                "SYNTAX_EXACT",
+                "PROVEN"
+            ]])
+        );
+        assert_eq!(result["import_cols"].as_array().unwrap().len(), 9);
+        assert_eq!(result["imports_n"], 2);
+        assert_eq!(result["imports_more"], true);
+        assert_eq!(result["import_source_hash"], "source-hash");
+        assert_eq!(result["gaps"], 1);
+        let mut ordinary = value;
+        ordinary.as_object_mut().unwrap().remove("imports");
+        assert!(compact_outline(&ordinary).get("import_cols").is_none());
+    }
 }

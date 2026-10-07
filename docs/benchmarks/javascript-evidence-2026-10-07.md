@@ -11,8 +11,10 @@ binding and current file hashes. Accepted relationships are `SYNTAX_EXACT` /
 `PROVEN`; a missing, stale, shadowed or ambiguous proof cannot fall back to a
 global name match. Reopen reconstructs JavaScript arcs from the current ledger.
 Refresh rechecks relative-module inventories and ancestor `package.json` type.
-The JS policy has extraction revision 37; PHP adds 2 and Swift adds 4, so all
-eight feature combinations have distinct cache identities.
+The measured `c5c5bb1` JS build has extraction revision 37; PHP adds 2 and Swift
+adds 4, so all eight feature combinations have distinct cache identities.
+The subsequent Python import change moves the source-build base to 45 and the
+JS policy to 53. Existing indexes require a source reindex.
 
 ## Source-curated Express slice
 
@@ -55,7 +57,8 @@ metadata freshness matched. Its selected observations were:
 | Outbound `mounted_app` | Candidate `handle`, `heuristic`, confidence 0.5 | Abstention for the dynamic receiver |
 
 CBM explicitly labels those candidates as heuristic; this comparison does not
-count them as proven false edges. The exact CBM binary version was not captured.
+count them as proven false edges. The original Express comparison did not capture
+the server version; the subsequent installed-binary check reported CBM 0.10.8.
 Document/node counts use different schemas and are not a size-efficiency score.
 The two traces do not establish overall superiority, and import/reference,
 latency, memory and agent-token costs were not compared between engines.
@@ -89,12 +92,13 @@ binding resolves. Missing package `type` permits the statically recognized
 source mode; this is not a claim about every Node version's runtime behavior.
 
 The standard contract still contains seven languages and 40 required relation
-cells. Its structural check and validator tests pass. Full live validation of
-the older 210-task corpus is unavailable in this workspace: its own-repository
-HEAD differs from the pin and three referenced fixture directories are absent.
-Their source anchors were not rewritten to make validation pass. Promotion
-requires restoring the exact fixtures and broader reviewed `.js`/`.mjs`/`.cjs`
-coverage. The current iteration remains opt-in.
+cells. The subsequent iteration restored four exact snapshots into separate
+copies and validated all 226 assertions in ten repositories, preserving the
+source hashes and line anchors. The old descriptive count of 210 omitted the
+16 appended C/Kotlin assertions. Source validation does not mean every engine
+relationship assertion passes. [Python import evidence](python-import-evidence-2026-10-08.md)
+records this recovery and the next measured improvement. JS promotion still
+requires broader reviewed `.js`/`.mjs`/`.cjs` coverage and remains opt-in.
 
 ## Reproduce
 

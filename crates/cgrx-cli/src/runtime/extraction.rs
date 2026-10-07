@@ -27,6 +27,7 @@ use cgrx_cgcr::SourceRange;
 
 pub(super) struct ExtractedPath {
     pub(super) rust_file: Option<cgrx_languages::RustFileFacts>,
+    pub(super) python_file: Option<cgrx_languages::PythonFileFacts>,
     pub(super) ts_file: Option<TsFileFacts>,
     pub(super) documents: Vec<StoredDocument>,
     #[allow(dead_code)]
@@ -746,6 +747,31 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
             ));
         }
     }
+    if let Some(facts) = &extraction.python_file {
+        for import in &facts.imports {
+            let span = Span {
+                start: import.span[0],
+                end: import.span[1],
+            };
+            let text = String::from_utf8_lossy(&source[span.start..span.end]).into_owned();
+            documents.push(plain_document(
+                relative,
+                DocumentSeed {
+                    node_id: stable_node_id(
+                        relative,
+                        span,
+                        &format!("python-import:{}", import.local),
+                    ),
+                    qualified_name: import.local.clone(),
+                    text: text.clone(),
+                    search_text: text,
+                    span,
+                    provenance: "IMPORTS",
+                    semantic_tags: vec!["PY_IMPORT_BINDING".to_owned()],
+                },
+            ));
+        }
+    }
     let ts_receiver_spans = apply_ts_call_facts(relative, source, ts_file.as_ref(), &mut documents);
     append_unresolved_documents(
         relative,
@@ -763,6 +789,7 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
         .collect();
     Ok(ExtractedPath {
         rust_file: extraction.rust_file,
+        python_file: extraction.python_file,
         ts_file,
         documents,
         reference_arcs: Vec::new(),

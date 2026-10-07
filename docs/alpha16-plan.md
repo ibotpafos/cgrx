@@ -10,6 +10,14 @@ against the engine, including ambiguity abstention. See
 scope and remaining promotion gates. This does not add JS to the default pack
 or change the historical source-truth-only status of the original candidate.
 
+Development update, 2026-10-08: all 226 source assertions now validate against
+their exact snapshots in ten repositories. Explicit Python relative-import
+proofs improve the selected 24 import assertions from 0/24 to 24/24 and are
+visible in compact `get_outline` responses. [Python import evidence](benchmarks/python-import-evidence-2026-10-08.md)
+records the source pins, CBM comparison and remaining limits. Current source
+cache revisions are base 45, plus PHP 2, Swift 4 and JavaScript 8; the revision
+numbers below describe the historical alpha.16 preparation.
+
 ## Priority and boundary
 
 1. **JS/TS:** JS is not registered in the alpha.15 default pack: `.js` files

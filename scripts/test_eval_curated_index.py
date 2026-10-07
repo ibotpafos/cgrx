@@ -136,6 +136,112 @@ class EvidenceIntegrityTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'generation'):
             load_index(self.root)
 
+    def test_zero_padded_generation_pointer_matches_numeric_payload(self):
+        store = self.root / '.cgrx'
+        generation = store / 'generations' / '0000000000000123'
+        generation.mkdir(parents=True)
+        store.joinpath('CURRENT').write_text(generation.name + '\n')
+        generation.joinpath('nodes.seg').write_text(json.dumps(self.index))
+        self.assertEqual(load_index(self.root), self.index)
+        for invalid in ('123', True, 123.0):
+            with self.subTest(generation=invalid):
+                self.index['snapshot']['graph_generation'] = invalid
+                generation.joinpath('nodes.seg').write_text(json.dumps(self.index))
+                with self.assertRaisesRegex(ValueError, 'generation'):
+                    load_index(self.root)
+
+    def test_generation_pointer_rejects_paths_and_non_ascii_digits(self):
+        store = self.root / '.cgrx'
+        store.mkdir()
+        for invalid in ('../123', '/123', '', '１２３'):
+            with self.subTest(pointer=invalid):
+                store.joinpath('CURRENT').write_text(invalid)
+                with self.assertRaisesRegex(ValueError, 'pointer'):
+                    load_index(self.root)
+
+
+class PythonImportIntegrityTests(unittest.TestCase):
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.root = Path(self.directory.name)
+        source = b'from .helper import target, other\n'
+        target = b'def target(): pass\ndef other(): pass\n'
+        (self.root / 'main.py').write_bytes(source)
+        (self.root / 'helper.py').write_bytes(target)
+        anchor = lambda path, name, line: {
+            'path': path, 'symbol': name, 'start_line': line, 'end_line': line}
+        self.task = {'id': 'py-member', 'repo': str(self.root), 'revision': 'a' * 40,
+                     'expected': {'relation': 'IMPORTS'}, 'evidence': {
+                         'source': anchor('main.py', 'target', 1),
+                         'site': anchor('main.py', 'target', 1),
+                         'target': anchor('helper.py', 'target', 1)}}
+        documents = []
+        imports, exports, arcs = [], {}, []
+        for number, name in enumerate(('target', 'other'), 1):
+            start = source.index(name.encode())
+            span = [start, start + len(name)]
+            target_start = target.index(name.encode())
+            target_span = [target_start, target_start + len(name)]
+            imports.append({'module': '.helper', 'imported': name, 'local': name, 'span': span})
+            exports[name] = target_span
+            documents.extend([
+                {'node_id': number, 'path': 'main.py', 'qualified_name': name,
+                 'span_start': span[0], 'span_end': span[1], 'provenance': 'IMPORTS',
+                 'semantic_tags': ['PY_IMPORT_BINDING']},
+                {'node_id': number + 2, 'path': 'helper.py', 'qualified_name': name,
+                 'span_start': target_span[0], 'span_end': target_span[1], 'provenance': 'SYNTAX'}])
+            arcs.append({'source': number, 'target': number + 2, 'kind': 'IMPORTS',
+                         'evidence': {'path': 'main.py', 'span': {'start': span[0], 'end': span[1]},
+                                      'source_hash': 'ab' * 32, 'confidence': 'PROVEN',
+                                      'resolver': 'SYNTAX_EXACT', 'assumptions': [], 'counter_evidence': []}})
+        self.index = {'snapshot': {'repo_revision': 'a' * 40, 'graph_generation': 123},
+                      'extraction_revision': 45, 'indexed_files': 2, 'documents': documents,
+                      'arcs': arcs, 'path_hashes': {'main.py': 'ab' * 32, 'helper.py': 'cd' * 32},
+                      'python_files': {
+                          'main.py': {'source_hash': 'ab' * 32,
+                                      'facts': {'valid': True, 'imports': imports, 'exports': {}}},
+                          'helper.py': {'source_hash': 'cd' * 32,
+                                        'facts': {'valid': True, 'imports': [], 'exports': exports}}},
+                      'coverage': {'dynamic_dispatch': []}}
+
+    def report(self, index=None):
+        return score({'tasks': [self.task]}, index or self.index, python_imports=True)
+
+    def test_other_member_on_same_line_is_not_a_false_edge(self):
+        result = self.report()
+        self.assertTrue(result['passed'])
+        self.assertEqual(result['outcomes'][0]['proven_arcs_at_site'], 1)
+
+    def test_wrong_target_at_same_member_is_a_false_edge(self):
+        arc = copy.deepcopy(self.index['arcs'][0])
+        arc['target'] = 4
+        self.index['arcs'].append(arc)
+        result = self.report()
+        self.assertFalse(result['passed'])
+        self.assertEqual(result['unmatched_proven_at_positive_sites'], 1)
+
+    def test_missing_or_inconsistent_source_and_target_ledgers_fail(self):
+        for case in ('source', 'target', 'invalid-source', 'invalid-target', 'target-hash',
+                     'export-span', 'import-span', 'imported-name', 'source-tag'):
+            with self.subTest(case=case):
+                index = copy.deepcopy(self.index)
+                files = index['python_files']
+                if case in ('source', 'target'):
+                    del files['main.py' if case == 'source' else 'helper.py']
+                elif case.startswith('invalid'):
+                    files['main.py' if case == 'invalid-source' else 'helper.py']['facts']['valid'] = False
+                elif case == 'target-hash':
+                    files['helper.py']['source_hash'] = 'ef' * 32
+                elif case == 'export-span':
+                    files['helper.py']['facts']['exports']['target'] = [0, 1]
+                elif case == 'source-tag':
+                    index['documents'][0]['semantic_tags'] = []
+                else:
+                    files['main.py']['facts']['imports'][0][
+                        'span' if case == 'import-span' else 'imported'] = [0, 1] if case == 'import-span' else 'other'
+                self.assertFalse(self.report(index)['passed'])
+
 
 if __name__ == '__main__':
     unittest.main()

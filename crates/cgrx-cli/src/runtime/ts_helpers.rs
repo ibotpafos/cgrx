@@ -459,6 +459,7 @@ pub(super) fn ts_path_is_plain(root: &Path, relative: &Path, cache: &mut TsDirec
 pub(super) fn remove_path(stored: &mut StoredIndex, path: &str) {
     stored.path_hashes.remove(path);
     stored.rust_files.remove(path);
+    stored.python_files.remove(path);
     stored.ts_files.remove(path);
     stored.ts_resolution_configs.remove(path);
     stored.coverage.stale_paths.retain(|stale| stale != path);

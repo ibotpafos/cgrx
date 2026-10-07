@@ -20,6 +20,13 @@ The comparison is grounded in real CGRX behavior documented in `README.md` and
 out explicitly rather than glossed over. No overall superiority over other
 tools is asserted.
 
+The [2026-10-08 Python import experiment](benchmarks/python-import-evidence-2026-10-08.md)
+closes a measured navigation gap: CGRX improves from 0/24 to 24/24 selected
+source-curated import assertions, and compact outlines expose target spans and
+source evidence. A fresh CBM 0.10.8 full index also finds all 24 designated
+targets. The measurements have different evidence scopes and do not establish
+overall superiority or resource efficiency.
+
 ## (a) Feature comparison
 
 Capabilities are scored against how CGRX actually behaves today. Cells marked

@@ -94,6 +94,7 @@ pub(super) fn index_source(
     let mut go_modules = BTreeMap::new();
     let mut cargo_manifests = BTreeMap::new();
     let mut rust_files = BTreeMap::new();
+    let mut python_files = BTreeMap::new();
     let mut ts_files = BTreeMap::new();
     let mut ts_resolution_configs = BTreeMap::new();
     for relative in paths {
@@ -174,6 +175,15 @@ pub(super) fn index_source(
         let extracted = source.extracted;
         if let Some(facts) = extracted.rust_file {
             rust_files.insert(source.relative.clone(), facts);
+        }
+        if let Some(facts) = extracted.python_file {
+            python_files.insert(
+                source.relative.clone(),
+                super::StoredPythonFileFacts {
+                    source_hash: source.hash,
+                    facts,
+                },
+            );
         }
         if let Some(facts) = extracted.ts_file {
             ts_files.insert(
@@ -277,6 +287,7 @@ pub(super) fn index_source(
         extraction_revision: EXTRACTION_REVISION,
         cargo_manifests,
         rust_files,
+        python_files,
         ts_files,
         ts_resolution_configs,
         go_modules,

@@ -85,6 +85,7 @@ fn append_import_arcs(
     for document in documents.iter().filter(|d| {
         d.provenance == "IMPORTS"
             && !php_resolution::is_php_path(&d.path)
+            && !d.path.ends_with(".py")
             && !javascript_path(&d.path)
     }) {
         // Try to find the imported module by matching the qualified_name to a file path
