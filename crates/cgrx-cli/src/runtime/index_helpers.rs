@@ -21,8 +21,8 @@ use super::scan_helpers::refresh_proof_gaps;
 use super::ts_helpers::{is_ts_inventory_path, is_ts_resolution_config, scan_ts_inventory};
 use super::{
     EDGES_SEGMENT, EXTRACTION_REVISION, GenerationWriter, IndexReport, NODES_SEGMENT, RepoSnapshot,
-    RuntimeError, StoredIndex, StoredTsFileFacts, TERMS_MARKER, TERMS_SEGMENT, TsFileFacts,
-    TsResolutionConfig, open_current_report,
+    RuntimeError, StoredIndex, StoredTsFileFacts, TERMS_MARKER, TERMS_SEGMENT, TsResolutionConfig,
+    open_current_report,
 };
 
 pub(super) fn index_source(
@@ -150,7 +150,7 @@ pub(super) fn index_source(
                 relative.clone(),
                 StoredTsFileFacts {
                     source_hash: hash,
-                    facts: TsFileFacts::default(),
+                    facts: super::ts_helpers::inventory_facts(&relative, &source),
                     inventory_only: true,
                 },
             );

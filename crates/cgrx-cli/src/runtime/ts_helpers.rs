@@ -41,8 +41,30 @@ pub(super) fn is_ts_inventory_path(path: &Path) -> bool {
         || path.file_name().and_then(|name| name.to_str()) == Some("package.json")
         || matches!(
             path.extension().and_then(|extension| extension.to_str()),
-            Some("js" | "jsx" | "json")
+            Some("js" | "jsx" | "json" | "mjs" | "cjs")
         )
+}
+
+pub(super) fn inventory_facts(relative: &str, source: &[u8]) -> TsFileFacts {
+    let mut facts = TsFileFacts::default();
+    if cgrx_languages::EXPERIMENTAL_JAVASCRIPT_ENABLED
+        && Path::new(relative)
+            .file_name()
+            .and_then(|name| name.to_str())
+            == Some("package.json")
+    {
+        use cgrx_languages::javascript::PackageKind;
+        facts.javascript_package = Some(match serde_json::from_slice::<Value>(source) {
+            Ok(Value::Object(package)) => match package.get("type") {
+                None => PackageKind::Automatic,
+                Some(Value::String(kind)) if kind == "module" => PackageKind::Esm,
+                Some(Value::String(kind)) if kind == "commonjs" => PackageKind::CommonJs,
+                _ => PackageKind::Unsupported,
+            },
+            _ => PackageKind::Unsupported,
+        });
+    }
+    facts
 }
 
 pub(super) fn ts_resolution_config_supported(source: &[u8]) -> bool {
@@ -117,7 +139,13 @@ pub(super) fn ts_inventory_candidates(
     INVENTORY_BUILDS.with(|count| count.set(count.get() + 1));
     let mut paths = BTreeSet::new();
     for (caller, stored) in ts_files.iter().filter(|(path, _)| {
-        path.ends_with(".ts") && !path.ends_with(".d.ts") || path.ends_with(".tsx")
+        path.ends_with(".ts") && !path.ends_with(".d.ts")
+            || path.ends_with(".tsx")
+            || (cgrx_languages::EXPERIMENTAL_JAVASCRIPT_ENABLED
+                && matches!(
+                    Path::new(path).extension().and_then(|s| s.to_str()),
+                    Some("js" | "mjs" | "cjs")
+                ))
     }) {
         paths.insert(caller.clone());
         let mut directory: Vec<_> = caller.split('/').collect();
@@ -125,7 +153,10 @@ pub(super) fn ts_inventory_candidates(
         let mut ancestor = directory.clone();
         loop {
             let prefix = ancestor.join("/");
-            for name in ["tsconfig.json", "jsconfig.json"] {
+            for name in ["tsconfig.json", "jsconfig.json"]
+                .into_iter()
+                .chain(stored.facts.javascript.is_some().then_some("package.json"))
+            {
                 paths.insert(if prefix.is_empty() {
                     name.to_owned()
                 } else {
@@ -142,6 +173,15 @@ pub(super) fn ts_inventory_candidates(
             paths.extend(cgrx_languages::ts_imports::module_candidates(
                 caller, module,
             ));
+        }
+        if let Some(facts) = &stored.facts.javascript {
+            for import in &facts.imports {
+                paths.extend(cgrx_languages::javascript::module_candidates(
+                    caller,
+                    &import.module,
+                    import.kind,
+                ));
+            }
         }
     }
     paths
@@ -325,7 +365,7 @@ pub(super) fn scan_ts_inventory_cached(
         };
         // Files discovered only through the filesystem (including ignored and
         // post-status races) are presence blockers, never traversable proof.
-        let facts = TsFileFacts::default();
+        let facts = inventory_facts(&relative, &source);
         let hash = Hash32(*blake3::hash(&source).as_bytes());
         let current = ts_files.get(&relative);
         if current.map(|stored| stored.source_hash) != Some(hash) {

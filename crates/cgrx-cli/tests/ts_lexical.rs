@@ -388,6 +388,10 @@ fn ts_lexical_metadata_is_compact_and_proofs_are_present_only_on_exact_calls() {
             4
         } else {
             0
+        } + if cgrx_languages::EXPERIMENTAL_JAVASCRIPT_ENABLED {
+            8
+        } else {
+            0
         }
     );
     let docs = stored["documents"].as_array().unwrap();

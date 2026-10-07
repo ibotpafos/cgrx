@@ -27,10 +27,14 @@ explicitly on each request. No embedding service, hosted index or API key.
 - Snapshot-bound architecture projection with packages, proven boundaries,
   hotspots, package cycles and deterministic weighted communities.
 - Incremental working-tree refresh, isolated repo identities and writer locks.
-- Seven reviewed production packs: Rust, Go, Java, TypeScript/JavaScript/TSX, Python, C and Kotlin.
+- Seven reviewed production packs: Rust, Go, Java, TypeScript/TSX, Python, C and Kotlin.
   Resolution depth varies by language; this does not replace a compiler or language server.
 - PHP validation is available behind the explicit `experimental-php` build feature and stays
   outside the production language contract until its reviewed evidence is promoted.
+- JavaScript (`.js`, `.mjs`, `.cjs`) is available in source builds with
+  `--features experimental-javascript`. It proves bounded lexical calls and relative
+  ESM/CommonJS callable bindings; dynamic receivers and unsupported imports retain
+  coverage gaps. [Validation and limits](docs/benchmarks/javascript-evidence-2026-10-07.md).
 
 ## Roadmap
 

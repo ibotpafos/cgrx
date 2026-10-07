@@ -471,6 +471,7 @@ fn php_type_revision_30_cache_requires_a_distinct_revision_31_generation() {
     assert_eq!(
         old["extraction_revision"],
         31 + 4 * u32::from(cgrx_languages::EXPERIMENTAL_SWIFT_ENABLED)
+            + 8 * u32::from(cgrx_languages::EXPERIMENTAL_JAVASCRIPT_ENABLED)
     );
     old["extraction_revision"] = json!(30);
     let mut hash = blake3::Hasher::new();

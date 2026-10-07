@@ -24,6 +24,7 @@ tree-sitter-kotlin-ng = "1.1.0"
 tree-sitter-python = "0.25.0"
 tree-sitter-rust = "0.24.2"
 tree-sitter-typescript = "0.23.2"
+tree-sitter-javascript = { version = "=0.25.0", optional = true }
 
 [[test]]
 name = "determinism"
@@ -34,3 +35,5 @@ path = "../../tests/determinism.rs"
 experimental-php = []
 # Opt-in validation slice; default registry still requires the full language corpus.
 experimental-swift = []
+# Separate evidence policy until the JavaScript held-out contract is reviewed.
+experimental-javascript = ["dep:tree-sitter-javascript"]

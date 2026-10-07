@@ -9,6 +9,7 @@ mod graph_query;
 mod graph_view;
 mod helpers;
 mod index_helpers;
+mod javascript_resolution;
 mod observations;
 mod orient_helpers;
 mod php_resolution;
@@ -87,9 +88,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 // Read the effective dependency policy, not just this crate's feature flag:
-// Cargo may enable cgrx-languages/experimental-php through another workspace member.
-// Reserve 30 for the historical PHP revision; Swift-only starts at 33 so no
-// old cache can acquire a new feature policy merely by matching the number.
+// Cargo may enable an experimental language through another workspace member.
+// Reserve 30 for the historical PHP revision. Distinct PHP/Swift/JavaScript bits
+// ensure no old cache acquires a different language policy by matching a number.
 const EXTRACTION_REVISION: u32 =
     29 + if cgrx_languages::EXPERIMENTAL_PHP_ENABLED {
         2
@@ -97,6 +98,10 @@ const EXTRACTION_REVISION: u32 =
         0
     } + if cgrx_languages::EXPERIMENTAL_SWIFT_ENABLED {
         4
+    } else {
+        0
+    } + if cgrx_languages::EXPERIMENTAL_JAVASCRIPT_ENABLED {
+        8
     } else {
         0
     };
@@ -406,6 +411,7 @@ impl Runtime {
             !matches!(
                 language,
                 "typescript"
+                    | "javascript"
                     | "go"
                     | "java"
                     | "python"
@@ -423,7 +429,7 @@ impl Runtime {
         }) {
             return Err(RuntimeError::new(
                 "cgrx.invalid_arguments",
-                "language must be one of typescript, go, java, python, rust, c, cpp, csharp, ruby, php, swift, scala, elixir, or kotlin",
+                "language must be one of typescript, javascript, go, java, python, rust, c, cpp, csharp, ruby, php, swift, scala, elixir, or kotlin",
             ));
         }
         self.search_graph_with_matcher(query, scope, limit, language, include_body, path_in_scope)
@@ -636,7 +642,7 @@ impl Runtime {
                             relative.clone(),
                             StoredTsFileFacts {
                                 source_hash: hash,
-                                facts: TsFileFacts::default(),
+                                facts: ts_helpers::inventory_facts(&relative, &source),
                                 inventory_only: true,
                             },
                         );
@@ -675,7 +681,7 @@ impl Runtime {
                 relative_path
                     .extension()
                     .and_then(|extension| extension.to_str()),
-                Some("ts" | "tsx")
+                Some("ts" | "tsx" | "js" | "mjs" | "cjs")
             ) && self
                 .stored
                 .ts_files

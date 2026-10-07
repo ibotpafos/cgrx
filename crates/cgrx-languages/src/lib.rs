@@ -3,6 +3,7 @@
 mod c;
 mod go;
 mod java;
+pub mod javascript;
 mod kotlin;
 mod pack;
 mod python;
@@ -34,6 +35,7 @@ pub use pack::{
 /// Effective registry policy, including Cargo dependency feature unification.
 pub const EXPERIMENTAL_PHP_ENABLED: bool = cfg!(feature = "experimental-php");
 pub const EXPERIMENTAL_SWIFT_ENABLED: bool = cfg!(feature = "experimental-swift");
+pub const EXPERIMENTAL_JAVASCRIPT_ENABLED: bool = cfg!(feature = "experimental-javascript");
 
 pub use go::{GoCallableKind, GoCallableType, go_callable_type};
 pub use rust::RustFileFacts;
@@ -45,6 +47,17 @@ pub use typescript::ts_imports;
 mod experimental_tests {
     use super::*;
     use std::path::Path;
+
+    #[test]
+    fn javascript_registry_requires_explicit_policy() {
+        for extension in ["js", "mjs", "cjs"] {
+            assert_eq!(
+                pack_for_path(Path::new(&format!("main.{extension}"))).is_some(),
+                EXPERIMENTAL_JAVASCRIPT_ENABLED
+            );
+        }
+        assert!(pack_for_path(Path::new("main.jsx")).is_none());
+    }
 
     #[test]
     fn experimental_grammars_follow_the_explicit_build_policy() {

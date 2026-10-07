@@ -16,6 +16,13 @@ use super::ts_config::{self, TsResolutionConfig};
 use super::{StoredArc, StoredDocument, StoredTsFileFacts};
 use super::{ts_config_modules, ts_config_supported_for, ts_paths_portable_for};
 
+fn javascript_path(path: &str) -> bool {
+    matches!(
+        Path::new(path).extension().and_then(|s| s.to_str()),
+        Some("js" | "mjs" | "cjs")
+    )
+}
+
 fn append_reference_arcs(
     documents: &[StoredDocument],
     path_hashes: &BTreeMap<String, Hash32>,
@@ -27,6 +34,7 @@ fn append_reference_arcs(
         d.provenance == "REFERENCES"
             && !php_resolution::is_php_path(&d.path)
             && !d.path.ends_with(".swift")
+            && !javascript_path(&d.path)
     }) {
         // Try exact match first, then extract last segment for qualified names
         let targets = by_name.get(document.qualified_name.as_str()).or_else(|| {
@@ -74,10 +82,11 @@ fn append_import_arcs(
 ) {
     // Create IMPORTS arcs from import documents to their targets
     // Match import targets to SYNTAX documents by path
-    for document in documents
-        .iter()
-        .filter(|d| d.provenance == "IMPORTS" && !php_resolution::is_php_path(&d.path))
-    {
+    for document in documents.iter().filter(|d| {
+        d.provenance == "IMPORTS"
+            && !php_resolution::is_php_path(&d.path)
+            && !javascript_path(&d.path)
+    }) {
         // Try to find the imported module by matching the qualified_name to a file path
         let import_target = &document.qualified_name;
 
@@ -236,6 +245,7 @@ pub(super) fn rebuild_arcs_with_cargo(
             .any(|tag| tag == "TS_LEXICAL_ARROW")
             && !php_resolution::is_php_path(&document.path)
             && !document.path.ends_with(".swift")
+            && !javascript_path(&document.path)
         {
             by_name
                 .entry(document.qualified_name.as_str())
@@ -306,9 +316,17 @@ pub(super) fn rebuild_arcs_with_cargo(
         })
         .collect();
     let mut arcs = php_resolution::rebuild(documents, path_hashes);
+    if cgrx_languages::EXPERIMENTAL_JAVASCRIPT_ENABLED {
+        arcs.extend(super::javascript_resolution::rebuild(
+            documents,
+            path_hashes,
+            ts_files,
+        ));
+    }
     for call in documents.iter().filter(|document| {
         document.provenance == "CALLS"
             && !php_resolution::is_php_path(&document.path)
+            && !javascript_path(&document.path)
             && document.semantic_tags.iter().any(|tag| tag == "EXACT_CALL")
     }) {
         if call.path.ends_with(".swift")

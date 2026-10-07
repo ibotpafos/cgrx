@@ -34,6 +34,7 @@ fn openai_tool_contract() {
         search["inputSchema"]["properties"]["language"]["enum"],
         json!([
             "typescript",
+            "javascript",
             "go",
             "java",
             "python",

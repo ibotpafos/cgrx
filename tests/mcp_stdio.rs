@@ -308,6 +308,7 @@ fn tools_list_advertises_bounded_graph_search_and_trace() {
         refactors["inputSchema"]["properties"]["language"]["enum"],
         json!([
             "typescript",
+            "javascript",
             "go",
             "java",
             "python",

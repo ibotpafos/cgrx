@@ -385,6 +385,10 @@ fn go_field_proof_metadata_binds_caller_field_types_and_target_and_is_optional()
             4
         } else {
             0
+        } + if cgrx_languages::EXPERIMENTAL_JAVASCRIPT_ENABLED {
+            8
+        } else {
+            0
         }
     );
     let proofs: Vec<_> = stored["documents"]

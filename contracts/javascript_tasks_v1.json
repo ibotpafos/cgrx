@@ -1,0 +1,182 @@
+{
+  "schema_version": 2,
+  "provenance": "Read-only alpha.16 heldout Express.js candidate at exact Git SHA; four manually source-read relation assertions with full-file and inclusive raw-line SHA-256 anchors. JS is presently excluded from default CGRX registry, so validation proves source integrity only, not engine support.",
+  "tasks": [
+    {
+      "id": "express-utils-normalize-calls-acceptparams",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/alpha15/alpha16-corpus-candidate/express",
+      "revision": "98bd4cd96b250d25e1672c36f49cfc743bc801e7",
+      "split": "heldout",
+      "category": "call",
+      "question": "Which local function normalizes accept parameters?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-28",
+        "repository_url": "https://github.com/expressjs/express.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "lib/utils.js",
+          "start_line": 61,
+          "end_line": 65,
+          "symbol": "normalizeType",
+          "sha256": "4bd3bf9c911e086d1911954708de7a6c384ed924360e3fd1d4a43c98bd68b112",
+          "span_sha256": "60f410d51cd25b01b011773be48b0f5bebf352bff94a5fcae0c57e8821e60bdc"
+        },
+        "site": {
+          "path": "lib/utils.js",
+          "start_line": 63,
+          "end_line": 63,
+          "symbol": "acceptParams",
+          "sha256": "4bd3bf9c911e086d1911954708de7a6c384ed924360e3fd1d4a43c98bd68b112",
+          "span_sha256": "730e6650601cc0df45fbd1327107901c889461319ccfa650024a1f2184752b54"
+        },
+        "target": {
+          "path": "lib/utils.js",
+          "start_line": 89,
+          "end_line": 120,
+          "symbol": "acceptParams",
+          "sha256": "4bd3bf9c911e086d1911954708de7a6c384ed924360e3fd1d4a43c98bd68b112",
+          "span_sha256": "996cf5bae5ac660cc0fc40b0a3ca0940e710170d41407713cb2b89b62c33df02"
+        }
+      },
+      "expected": {
+        "relation": "CALLS",
+        "source": "source",
+        "site": "site",
+        "target": "target"
+      },
+      "rationale": "normalizeType directly invokes same-file acceptParams(type) in the slash branch."
+    },
+    {
+      "id": "express-app-import-view",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/alpha15/alpha16-corpus-candidate/express",
+      "revision": "98bd4cd96b250d25e1672c36f49cfc743bc801e7",
+      "split": "heldout",
+      "category": "import",
+      "question": "Which local constructor is bound by require(./view)?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-28",
+        "repository_url": "https://github.com/expressjs/express.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "lib/application.js",
+          "start_line": 18,
+          "end_line": 18,
+          "symbol": "View",
+          "sha256": "6d7e08355025786982d17042fc0355b6a5e9339545dc27e2782b3aaa28a7bc04",
+          "span_sha256": "fb41acc3dc7860d2a58bc53d9816bd88a6f40daf606a65cbb1bdea3650abd31e"
+        },
+        "site": {
+          "path": "lib/application.js",
+          "start_line": 18,
+          "end_line": 18,
+          "symbol": "View",
+          "sha256": "6d7e08355025786982d17042fc0355b6a5e9339545dc27e2782b3aaa28a7bc04",
+          "span_sha256": "fb41acc3dc7860d2a58bc53d9816bd88a6f40daf606a65cbb1bdea3650abd31e"
+        },
+        "target": {
+          "path": "lib/view.js",
+          "start_line": 52,
+          "end_line": 95,
+          "symbol": "View",
+          "sha256": "74f4171b66263e22481820bc5975708f7dd8a61484f570aac7c5b4ab77ecbd79",
+          "span_sha256": "544c6052fd525d863641936b26b333af4ea79130fc7e7f55c5e22bb8cd2c3841"
+        }
+      },
+      "expected": {
+        "relation": "IMPORTS",
+        "source": "source",
+        "site": "site",
+        "target": "target"
+      },
+      "rationale": "The CommonJS require assigns View, and lib/view.js exports the View constructor."
+    },
+    {
+      "id": "express-app-default-view-reference",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/alpha15/alpha16-corpus-candidate/express",
+      "revision": "98bd4cd96b250d25e1672c36f49cfc743bc801e7",
+      "split": "heldout",
+      "category": "reference",
+      "question": "Which local constructor is referenced in the default view setting?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-28",
+        "repository_url": "https://github.com/expressjs/express.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "lib/application.js",
+          "start_line": 90,
+          "end_line": 141,
+          "symbol": "defaultConfiguration",
+          "sha256": "6d7e08355025786982d17042fc0355b6a5e9339545dc27e2782b3aaa28a7bc04",
+          "span_sha256": "826bbd17de87db6939981f3e015291afe46f2b6ea90198e772d03539fb53711d"
+        },
+        "site": {
+          "path": "lib/application.js",
+          "start_line": 134,
+          "end_line": 134,
+          "symbol": "View",
+          "sha256": "6d7e08355025786982d17042fc0355b6a5e9339545dc27e2782b3aaa28a7bc04",
+          "span_sha256": "01c428c79af5a6b88a73d34c127be2936a7a72cc31424b70d32b6123d8c245ad"
+        },
+        "target": {
+          "path": "lib/view.js",
+          "start_line": 52,
+          "end_line": 95,
+          "symbol": "View",
+          "sha256": "74f4171b66263e22481820bc5975708f7dd8a61484f570aac7c5b4ab77ecbd79",
+          "span_sha256": "544c6052fd525d863641936b26b333af4ea79130fc7e7f55c5e22bb8cd2c3841"
+        }
+      },
+      "expected": {
+        "relation": "REFERENCE",
+        "source": "source",
+        "site": "site",
+        "target": "target"
+      },
+      "rationale": "The imported View constructor is passed to app.set in defaultConfiguration."
+    },
+    {
+      "id": "express-mounted-app-dynamic-handle",
+      "repo": "/Volumes/D/Projects/cgrx-opensource/local/evidence/alpha15/alpha16-corpus-candidate/express",
+      "revision": "98bd4cd96b250d25e1672c36f49cfc743bc801e7",
+      "split": "heldout",
+      "category": "ambiguous",
+      "question": "Can the fn.handle call target be proven for arbitrary mounted applications?",
+      "provenance": {
+        "method": "manual-source-read",
+        "verified_on": "2026-09-28",
+        "repository_url": "https://github.com/expressjs/express.git"
+      },
+      "evidence": {
+        "source": {
+          "path": "lib/application.js",
+          "start_line": 230,
+          "end_line": 237,
+          "symbol": "mounted_app",
+          "sha256": "6d7e08355025786982d17042fc0355b6a5e9339545dc27e2782b3aaa28a7bc04",
+          "span_sha256": "98cd4f54c1b240a5192470d2a2195882f45bbfe61faca27ad5a9ff1594428b6f"
+        },
+        "site": {
+          "path": "lib/application.js",
+          "start_line": 232,
+          "end_line": 232,
+          "symbol": "handle",
+          "sha256": "6d7e08355025786982d17042fc0355b6a5e9339545dc27e2782b3aaa28a7bc04",
+          "span_sha256": "3e78f4f6bf30418cee084045015744f5a8ca9c7dc764e1d2a377e90e060fe0dd"
+        }
+      },
+      "expected": {
+        "relation": "UNRESOLVED",
+        "source": "source",
+        "site": "site",
+        "target": null
+      },
+      "rationale": "fn is supplied at runtime to app.use and may be a non-Express app; this call site has no single static target."
+    }
+  ]
+}

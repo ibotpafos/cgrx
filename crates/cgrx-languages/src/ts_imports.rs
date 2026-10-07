@@ -7,6 +7,10 @@ use tree_sitter::{Node, Parser};
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TsFileFacts {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub javascript: Option<crate::javascript::FileFacts>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub javascript_package: Option<crate::javascript::PackageKind>,
     pub imports: Vec<Import>,
     pub calls: Vec<ImportCall>,
     /// All observed direct identifier call sites, including rejected ones.

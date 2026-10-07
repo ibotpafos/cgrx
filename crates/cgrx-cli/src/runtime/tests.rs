@@ -1222,6 +1222,10 @@ mod compact_storage_tests {
                 4
             } else {
                 0
+            } + if cgrx_languages::EXPERIMENTAL_JAVASCRIPT_ENABLED {
+                8
+            } else {
+                0
             }
         );
     }

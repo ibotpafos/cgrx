@@ -339,11 +339,21 @@ fn append_implements_documents(
 
 pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPath, RuntimeError> {
     let relative_path = Path::new(relative);
-    let ts_file = matches!(
+    let mut ts_file = matches!(
         relative_path.extension().and_then(|value| value.to_str()),
         Some("ts" | "tsx")
     )
     .then(|| TsFileFacts::parse(relative, source));
+    if cgrx_languages::EXPERIMENTAL_JAVASCRIPT_ENABLED
+        && cgrx_languages::javascript::is_javascript_path(relative)
+    {
+        ts_file = Some(TsFileFacts {
+            javascript: Some(cgrx_languages::javascript::FileFacts::parse(
+                relative, source,
+            )),
+            ..TsFileFacts::default()
+        });
+    }
     let pack = pack_for_path(relative_path)
         .ok_or_else(|| RuntimeError::new("unsupported_path", relative.to_owned()))?;
     let extraction = pack

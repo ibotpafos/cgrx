@@ -506,5 +506,13 @@ pub fn pack_for_path(path: &RepoPath) -> Option<&'static dyn LanguagePack> {
     if pack.is_none() && crate::swift::SWIFT_PACK.extensions().contains(&extension) {
         return Some(&crate::swift::SWIFT_PACK);
     }
+    #[cfg(feature = "experimental-javascript")]
+    if pack.is_none()
+        && crate::javascript::JAVASCRIPT
+            .extensions()
+            .contains(&extension)
+    {
+        return Some(&crate::javascript::JAVASCRIPT);
+    }
     pack
 }

@@ -317,6 +317,8 @@ struct Binding {
     target: Option<Span>,
     initialized: usize,
     syntax_function: bool,
+    #[cfg(feature = "experimental-javascript")]
+    identity: Option<Span>,
 }
 #[derive(Default)]
 struct LexicalScope {
@@ -329,13 +331,16 @@ struct CallScope {
     scope: usize,
     unsupported: bool,
 }
-struct LexicalContext {
+pub(crate) struct LexicalContext {
     import_proof: bool,
+    javascript: bool,
     scopes: Vec<LexicalScope>,
     calls: BTreeMap<usize, CallScope>,
     writes: Vec<(usize, String)>,
     import_aliases: BTreeSet<(usize, String)>,
     has_error: bool,
+    #[cfg(feature = "experimental-javascript")]
+    identifiers: BTreeMap<usize, CallScope>,
 }
 enum CallBinding {
     Syntax,
@@ -404,13 +409,23 @@ impl LexicalContext {
         Self::with_import_proof(root, source, false)
     }
     fn with_import_proof(root: Node<'_>, source: &[u8], import_proof: bool) -> Self {
+        Self::with_policy(root, source, import_proof, false)
+    }
+    #[cfg(feature = "experimental-javascript")]
+    pub(crate) fn for_javascript(root: Node<'_>, source: &[u8]) -> Self {
+        Self::with_policy(root, source, false, true)
+    }
+    fn with_policy(root: Node<'_>, source: &[u8], import_proof: bool, javascript: bool) -> Self {
         let mut context = Self {
             import_proof,
+            javascript,
             scopes: vec![LexicalScope::default()],
             calls: BTreeMap::new(),
             writes: Vec::new(),
             import_aliases: BTreeSet::new(),
             has_error: root.has_error(),
+            #[cfg(feature = "experimental-javascript")]
+            identifiers: BTreeMap::new(),
         };
         context.collect(root, source, 0, false);
         for (scope, name) in context.writes.clone() {
@@ -419,6 +434,10 @@ impl LexicalContext {
             {
                 binding.target = None;
                 binding.syntax_function = false;
+                #[cfg(feature = "experimental-javascript")]
+                {
+                    binding.identity = None;
+                }
             }
         }
         context
@@ -431,6 +450,10 @@ impl LexicalContext {
                 // Duplicate declarations/parameters cannot establish unique identity.
                 old.target = None;
                 old.syntax_function = false;
+                #[cfg(feature = "experimental-javascript")]
+                {
+                    old.identity = None;
+                }
             })
             .or_insert(binding);
     }
@@ -443,8 +466,14 @@ impl LexicalContext {
                 name,
                 Binding {
                     target: None,
-                    initialized: usize::MAX,
+                    initialized: if self.javascript && has_ancestor(pattern, "import_statement") {
+                        0
+                    } else {
+                        usize::MAX
+                    },
                     syntax_function: false,
+                    #[cfg(feature = "experimental-javascript")]
+                    identity: Some(Span::from(pattern)),
                 },
             );
         }
@@ -460,11 +489,13 @@ impl LexicalContext {
                     .find(|child| child.kind() == "import_require_clause")
                     .and_then(|clause| clause.child_by_field_name("source"))
             });
-            if module.is_some_and(|module| {
-                let specifier = text(module, source);
-                let specifier = specifier.trim_matches(['\'', '"']);
-                specifier.starts_with("./") || specifier.starts_with("../")
-            }) {
+            if !self.javascript
+                && module.is_some_and(|module| {
+                    let specifier = text(module, source);
+                    let specifier = specifier.trim_matches(['\'', '"']);
+                    specifier.starts_with("./") || specifier.starts_with("../")
+                })
+            {
                 // Preserve legacy relative-import recall. This is not module/
                 // export identity proof; exact relative resolution is separate.
                 // Skip binding collection only; classify still emits the import.
@@ -505,9 +536,12 @@ impl LexicalContext {
                 scope,
                 text(name, source),
                 Binding {
-                    target: None,
+                    target: (self.javascript && node.kind() == "function_declaration")
+                        .then(|| Span::from(name)),
                     initialized: 0,
-                    syntax_function: node.kind() == "function_declaration",
+                    syntax_function: !self.javascript && node.kind() == "function_declaration",
+                    #[cfg(feature = "experimental-javascript")]
+                    identity: Some(Span::from(name)),
                 },
             );
         }
@@ -537,8 +571,16 @@ impl LexicalContext {
             } else {
                 self.scopes[scope].function
             };
+            #[cfg(feature = "experimental-javascript")]
+            let javascript_owner = (self.javascript && function_boundary(node))
+                .then(|| crate::javascript::callable_name(node, source).map(Span::from))
+                .flatten();
+            #[cfg(not(feature = "experimental-javascript"))]
+            let javascript_owner: Option<Span> = None;
             let owner = if class_boundary {
                 None
+            } else if javascript_owner.is_some() {
+                javascript_owner
             } else if function_boundary(node) {
                 match node.kind() {
                     "function_declaration" | "method_definition" => {
@@ -622,7 +664,12 @@ impl LexicalContext {
             } else {
                 scope
             };
-            if const_arrow(node, source).is_some() {
+            let javascript_callable = self.javascript
+                && name.kind() == "identifier"
+                && node.child_by_field_name("value").is_some_and(|value| {
+                    matches!(value.kind(), "function_expression" | "arrow_function")
+                });
+            if const_arrow(node, source).is_some() || javascript_callable {
                 self.bind(
                     scope,
                     text(name, source),
@@ -630,10 +677,18 @@ impl LexicalContext {
                         target: Some(Span::from(name)),
                         initialized: node.end_byte(),
                         syntax_function: false,
+                        #[cfg(feature = "experimental-javascript")]
+                        identity: Some(Span::from(name)),
                     },
                 );
             } else {
                 self.block_pattern(scope, name, source);
+                if self.javascript
+                    && name.kind() == "identifier"
+                    && let Some(binding) = self.scopes[scope].bindings.get_mut(&text(name, source))
+                {
+                    binding.initialized = node.end_byte();
+                }
             }
         }
         if matches!(
@@ -660,6 +715,11 @@ impl LexicalContext {
             self.calls
                 .insert(node.id(), CallScope { scope, unsupported });
         }
+        #[cfg(feature = "experimental-javascript")]
+        if self.javascript && node.kind() == "identifier" {
+            self.identifiers
+                .insert(node.id(), CallScope { scope, unsupported });
+        }
         let params = if function_boundary(node) {
             node.child_by_field_name("parameters")
                 .or_else(|| node.child_by_field_name("parameter"))
@@ -684,6 +744,54 @@ impl LexicalContext {
             }
             scope = self.scopes[scope].parent?;
         }
+    }
+    /// JavaScript uses exact lexical identity even for ordinary functions;
+    /// this deliberately bypasses TypeScript's legacy name-based syntax path.
+    #[cfg(feature = "experimental-javascript")]
+    pub(crate) fn javascript_binding(
+        &self,
+        node: Node<'_>,
+        source: &[u8],
+    ) -> Option<(Span, Option<Span>, Option<Span>)> {
+        self.javascript_identity(node, source, true)
+    }
+    #[cfg(feature = "experimental-javascript")]
+    pub(crate) fn javascript_declaration(&self, node: Node<'_>, source: &[u8]) -> Option<Span> {
+        self.javascript_identity(node, source, false)
+            .and_then(|(_, _, target)| target)
+    }
+    #[cfg(feature = "experimental-javascript")]
+    fn javascript_identity(
+        &self,
+        node: Node<'_>,
+        source: &[u8],
+        initialized: bool,
+    ) -> Option<(Span, Option<Span>, Option<Span>)> {
+        let site = self.identifiers.get(&node.id())?;
+        let scope = &self.scopes[site.scope];
+        if self.has_error || site.unsupported || (scope.function != 0 && scope.owner.is_none()) {
+            return None;
+        }
+        let owner = self.binding_scope(site.scope, &text(node, source))?;
+        let binding = &self.scopes[owner].bindings[&text(node, source)];
+        if initialized && node.start_byte() < binding.initialized {
+            return None;
+        }
+        Some((binding.identity?, scope.owner, binding.target))
+    }
+    #[cfg(feature = "experimental-javascript")]
+    pub(crate) fn javascript_unbound(&self, node: Node<'_>, source: &[u8]) -> bool {
+        self.identifiers.get(&node.id()).is_some_and(|site| {
+            !self.has_error
+                && !site.unsupported
+                && self
+                    .binding_scope(site.scope, &text(node, source))
+                    .is_none()
+                && !self
+                    .writes
+                    .iter()
+                    .any(|(_, name)| name == &text(node, source))
+        })
     }
     fn resolve_call(&self, call: Node<'_>, function: Node<'_>, source: &[u8]) -> CallBinding {
         let Some(site) = self.calls.get(&call.id()) else {

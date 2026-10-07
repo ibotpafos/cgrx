@@ -41,3 +41,4 @@ path = "../../tests/multi_repo.rs"
 # Validation-only opt-in; never enabled by a default or release build.
 experimental-php = ["cgrx-languages/experimental-php"]
 experimental-swift = ["cgrx-languages/experimental-swift"]
+experimental-javascript = ["cgrx-languages/experimental-javascript"]

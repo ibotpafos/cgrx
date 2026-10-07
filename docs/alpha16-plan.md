@@ -3,6 +3,13 @@
 Base: released `v0.1.0-alpha.15` (`d74293b900f8ad79f2cce6efa8d0f6057e2c096e`).
 This records the first opt-in Swift slice and the remaining language-coverage roadmap. The alpha.16 prerelease may include the opt-in slice, but does not promote Swift to the default language contract.
 
+Development update, 2026-10-07: alpha.16 has shipped. The subsequent opt-in
+JavaScript iteration now validates the four existing Express source assertions
+against the engine, including ambiguity abstention. See
+[JavaScript evidence](benchmarks/javascript-evidence-2026-10-07.md) for measured
+scope and remaining promotion gates. This does not add JS to the default pack
+or change the historical source-truth-only status of the original candidate.
+
 ## Priority and boundary
 
 1. **JS/TS:** JS is not registered in the alpha.15 default pack: `.js` files
