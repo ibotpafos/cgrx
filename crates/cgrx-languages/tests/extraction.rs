@@ -1767,6 +1767,137 @@ fn typescript_class_initializers_keep_explicit_dispatch_gaps() {
 }
 
 #[test]
+fn go_indexed_field_bindings_prove_exact_array_and_slice_element_methods() {
+    for collection in ["[2]Shard", "[]Shard"] {
+        for owner in ["Limiter", "*Limiter"] {
+            for target in ["Shard", "*Shard", "unnamed"] {
+                let target_receiver = if target == "unnamed" {
+                    "*Shard".to_owned()
+                } else {
+                    format!("s {target}")
+                };
+                let source = format!(
+                    "package rate\ntype Shard struct {{ count int }}\ntype Limiter struct {{ shards {collection} }}\nfunc ({target_receiver}) Run() {{}}\nfunc (l {owner}) Allow(i int) {{ shard := &l.shards[i]; shard.count++; l.shards[i].count = 1; if i > 0 {{ shard.Run() }}; shard.Run() }}"
+                );
+                let path = Path::new("rate.go");
+                let extraction = pack_for_path(path)
+                    .unwrap()
+                    .extract(path, source.as_bytes())
+                    .unwrap();
+                let edges: Vec<_> = extraction
+                    .edges
+                    .iter()
+                    .filter(|e| e.target == "shard.Run")
+                    .collect();
+                assert_eq!(edges.len(), 2, "{source}");
+                for edge in edges {
+                    let Provenance::GoIndexedFieldReceiver {
+                        package,
+                        caller,
+                        receiver_type,
+                        field,
+                        field_type,
+                        target,
+                        collection: collection_span,
+                        statement,
+                        binding,
+                        initializer,
+                        receiver,
+                    } = edge.provenance
+                    else {
+                        panic!("{source}")
+                    };
+                    for (span, expected) in [
+                        (package, "rate"),
+                        (caller, "Allow"),
+                        (receiver_type, "Limiter"),
+                        (field, "shards"),
+                        (field_type, "Shard"),
+                        (target, "Run"),
+                        (collection_span, collection),
+                        (statement, "shard := &l.shards[i]"),
+                        (binding, "shard"),
+                        (initializer, "&l.shards[i]"),
+                        (receiver, "shard"),
+                    ] {
+                        assert_eq!(&source[span.start..span.end], expected, "{source}");
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn go_indexed_field_binding_unsupported_shapes_and_changes_remain_gaps() {
+    let base = "package rate\ntype Shard struct { count int }\ntype Limiter struct { shards [2]Shard }\nfunc (s *Shard) Run() {}\nfunc (l *Limiter) Allow(i int) { shard := &l.shards[i]; shard.Run() }";
+    let mut cases = Vec::new();
+    for body in [
+        "shard := &l.shards[i]; shard = other; shard.Run()",
+        "shard := &l.shards[i]; { shard := other; _ = shard }; shard.Run()",
+        "shard := &l.shards[i]; { var shard *Shard; _ = shard }; shard.Run()",
+        "shard := &l.shards[i]; _ = func() { shard = other }; shard.Run()",
+        "shard := &l.shards[i]; l = other; shard.Run()",
+        "shard := &other.shards[i]; shard.Run()",
+        "shard := &l.inner.shards[i]; shard.Run()",
+        "shard := l.shards[i]; shard.Run()",
+        "shard, ok := &l.shards[i], true; _ = ok; shard.Run()",
+        "if i > 0 { shard := &l.shards[i]; shard.Run() }",
+        "shard := &l.shards[i]; _ = func() { shard.Run() }",
+        "shard.Run(); shard := &l.shards[i]",
+        "shard := (&l.shards[i]); shard.Run()",
+    ] {
+        cases.push(base.replace("shard := &l.shards[i]; shard.Run()", body));
+    }
+    for collection in [
+        "map[int]Shard",
+        "[]*Shard",
+        "[]other.Shard",
+        "[]interface { Run() }",
+        "Shards",
+        "[2]Shard[int]",
+    ] {
+        cases.push(base.replace("[2]Shard", collection));
+    }
+    for replacement in [
+        "type Shard = Other",
+        "type Shard interface { Run() }",
+        "type Shard struct { Embedded }",
+        "type Shard struct { Run func() }",
+    ] {
+        cases.push(base.replace("type Shard struct { count int }", replacement));
+    }
+    cases.extend([
+        base.replace("Allow(i int)", "Allow(i int, shard *Shard)"),
+        base.replace("Allow(i int)", "Allow(i int) (shard *Shard)"),
+        format!("{base}\ntype Shard struct {{}}"),
+        format!("{base}\nfunc (s Shard) Run() {{}}"),
+        format!("{base}\nfunc (l Limiter) Allow(i int) {{}}"),
+        base.replace("shards [2]Shard", "shards [2]Shard; shards [2]Shard"),
+        base.replace("type Limiter struct", "type Limiter[T any] struct"),
+        base.replace("shard.Run()", "shard.Run(); @"),
+    ]);
+    for source in cases {
+        let path = Path::new("rate.go");
+        let extraction = pack_for_path(path)
+            .unwrap()
+            .extract(path, source.as_bytes())
+            .unwrap();
+        assert!(
+            !extraction.edges.iter().any(|e| e.target == "shard.Run"),
+            "{source}"
+        );
+        assert!(
+            extraction
+                .unresolved
+                .iter()
+                .any(|g| g.kind == UnresolvedKind::Dispatch && g.text == "shard.Run()"),
+            "{source}"
+        );
+    }
+}
+
+#[test]
 fn go_concrete_field_named_slice_requires_distinct_provenance() {
     let source=b"package queue\ntype TaskQueue struct { items PriorityQueue }\ntype PriorityQueue []*QueueItem\nfunc (p PriorityQueue) Len() int { return 0 }\nfunc (q *TaskQueue) Peek() int { return q.items.Len() }";
     let path = Path::new("queue/queue.go");

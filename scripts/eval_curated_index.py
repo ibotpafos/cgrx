@@ -2,7 +2,7 @@
 """Check source-curated relationship sites against a persisted CGRX index.
 
 This scores supplied JavaScript assertions, explicit Python imports with
---python-imports, or Rust self calls with --rust-self, not whole-repository precision.
+--python-imports, Rust receivers, or indexed Go field bindings, not repository precision.
 Source truth is validated before scoring.
 Compressed segments require Python 3.14's standard compression.zstd module.
 """
@@ -37,13 +37,19 @@ def load_index(state):
     return index
 
 
-def score(corpus, index, python_imports=False, rust_self=False, rust_receivers=False):
+def score(corpus, index, python_imports=False, rust_self=False, rust_receivers=False,
+          go_indexed_fields=False):
     tasks = corpus['tasks']
-    require(sum((python_imports, rust_self, rust_receivers)) <= 1, 'choose one evidence mode')
+    require(sum((python_imports, rust_self, rust_receivers, go_indexed_fields)) <= 1,
+            'choose one evidence mode')
     if python_imports:
         require(all(Path(t['evidence']['source']['path']).suffix == '.py'
                     and t['expected']['relation'] == 'IMPORTS' for t in tasks),
                 'Python mode requires explicit import assertions')
+    elif go_indexed_fields:
+        require(all(Path(t['evidence']['source']['path']).suffix == '.go'
+                    and t['expected']['relation'] in ('CALLS', 'UNRESOLVED') for t in tasks),
+                'Go mode requires call or abstention assertions')
     elif rust_self or rust_receivers:
         require(all(Path(t['evidence']['source']['path']).suffix == '.rs'
                     and t['expected']['relation'] in ('CALLS', 'UNRESOLVED') for t in tasks),
@@ -122,6 +128,57 @@ def score(corpus, index, python_imports=False, rust_self=False, rust_receivers=F
             return False
         return True
 
+    def go_indexed_identity(proof, source, target):
+        path, span = proof['path'], proof['span']
+        calls = [d for d in documents.values() if d['path'] == path
+                 and d['provenance'] == 'CALLS'
+                 and [d['span_start'], d['span_end']] == [span['start'], span['end']]]
+        if len(calls) != 1:
+            return False
+        call = calls[0]
+        receipt = call.get('go_field_target') or {}
+        binding = receipt.get('indexed_binding') or {}
+        if (not {'EXACT_CALL', 'GO_FIELD_CALL', 'GO_INDEXED_FIELD_CALL'}
+                    .issubset(call.get('semantic_tags', []))
+                or call['qualified_name'].rsplit('.', 1)[-1] != target['qualified_name']
+                or not receipt.get('package')
+                or binding.get('source_hash') != hashes.get(path)):
+            return False
+
+        def exact(identity):
+            matches = [d for d in documents.values() if d['path'] == path
+                       and d['provenance'] == 'SYNTAX'
+                       and [d['span_start'], d['span_end']]
+                           == [identity.get('start'), identity.get('end')]]
+            return matches[0] if len(matches) == 1 else None
+
+        def encloses(outer, inner):
+            return (0 <= outer.get('start', -1) <= inner.get('start', -1)
+                    < inner.get('end', -1) <= outer.get('end', -1))
+
+        body = lambda d: {'start': d.get('body_start', -1), 'end': d.get('body_end', -1)}
+        owner = exact(receipt.get('receiver_type') or {})
+        element = exact(receipt.get('field_type') or {})
+        if not owner or not element:
+            return False
+        for name, document in [('caller', source), ('target', target),
+                               ('receiver_type', owner), ('field_type', element)]:
+            if (receipt.get(name) != {'start': document['span_start'], 'end': document['span_end']}
+                    or exact(receipt.get(name) or {}) != document
+                    or document.get('go_package') != receipt['package']):
+                return False
+        field = receipt.get('field') or {}
+        collection, statement = binding.get('collection') or {}, binding.get('statement') or {}
+        local, initializer = binding.get('binding') or {}, binding.get('initializer') or {}
+        receiver = binding.get('receiver') or {}
+        return (encloses(body(owner), field) and encloses(body(owner), collection)
+                and field['end'] <= collection['start']
+                and encloses(body(source), statement)
+                and encloses(statement, local) and encloses(statement, initializer)
+                and local['end'] < initializer['start'] and statement['end'] < span['start']
+                and encloses(span, receiver) and receiver['start'] == span['start']
+                and local['end'] - local['start'] == receiver['end'] - receiver['start'])
+
     outcomes = []
     for task in tasks:
         anchors = task['evidence']
@@ -161,6 +218,8 @@ def score(corpus, index, python_imports=False, rust_self=False, rust_receivers=F
             ledger_ok = proof.get('source_hash') == ledger.get(proof['path'], {}).get('source_hash')
             if rust_self or rust_receivers:
                 ledger_ok = rust_identity(proof, source, target)
+            if go_indexed_fields:
+                ledger_ok = go_indexed_identity(proof, source, target)
             if python_imports:
                 source_facts = ledger.get(proof['path'], {}).get('facts', {})
                 target_entry = ledger.get(target['path'], {})
@@ -215,6 +274,7 @@ def score(corpus, index, python_imports=False, rust_self=False, rust_receivers=F
         'false_proven_at_abstention_sites': sum(o['proven_arcs_at_site'] for o in negatives),
         'passed': all(o['passed'] for o in outcomes), 'outcomes': outcomes,
         'language_scope': ('python explicit imports' if python_imports else
+                          'go indexed field calls' if go_indexed_fields else
                           'rust receiver calls' if rust_receivers else
                           'rust self calls' if rust_self else 'javascript'),
         'scope': 'supplied source-curated sites only; not whole-repository precision or completeness',
@@ -230,13 +290,15 @@ def main():
     modes.add_argument('--python-imports', action='store_true')
     modes.add_argument('--rust-self', action='store_true')
     modes.add_argument('--rust-receivers', action='store_true')
+    modes.add_argument('--go-indexed-fields', action='store_true')
     args = parser.parse_args()
     try:
         data = args.corpus.read_bytes()
         corpus = json.loads(data)
         validate(corpus)
         report = score(corpus, load_index(args.state), python_imports=args.python_imports,
-                       rust_self=args.rust_self, rust_receivers=args.rust_receivers)
+                       rust_self=args.rust_self, rust_receivers=args.rust_receivers,
+                       go_indexed_fields=args.go_indexed_fields)
         report['corpus_sha256'] = hashlib.sha256(data).hexdigest()
         encoded = json.dumps(report, indent=2) + '\n'
         if args.output:

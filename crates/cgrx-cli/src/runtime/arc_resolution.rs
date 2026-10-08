@@ -271,13 +271,15 @@ pub(super) fn rebuild_arcs_with_cargo(
             .or_default()
             .push(document);
     }
-    let has_go_local_constructor_calls = documents.iter().any(|document| {
-        document
-            .semantic_tags
-            .iter()
-            .any(|tag| tag == "GO_LOCAL_CONSTRUCTOR_CALL")
+    let has_go_typed_calls = documents.iter().any(|document| {
+        document.semantic_tags.iter().any(|tag| {
+            matches!(
+                tag.as_str(),
+                "GO_LOCAL_CONSTRUCTOR_CALL" | "GO_INDEXED_FIELD_CALL"
+            )
+        })
     });
-    let go_callable_types: BTreeMap<_, _> = if has_go_local_constructor_calls {
+    let go_callable_types: BTreeMap<_, _> = if has_go_typed_calls {
         documents
             .iter()
             .filter(|document| document.provenance == "SYNTAX" && document.path.ends_with(".go"))
@@ -723,6 +725,50 @@ pub(super) fn rebuild_arcs_with_cargo(
                     return None;
                 }
                 let target = exact(&proof.target)?;
+                let indexed_call = call
+                    .semantic_tags
+                    .iter()
+                    .any(|tag| tag == "GO_INDEXED_FIELD_CALL");
+                if indexed_call != proof.indexed_binding.is_some() {
+                    return None;
+                }
+                if let Some(binding) = proof.indexed_binding.as_ref() {
+                    let encloses = |outer: &ByteRange, inner: &ByteRange| {
+                        outer.start <= inner.start
+                            && inner.start < inner.end
+                            && inner.end <= outer.end
+                    };
+                    let caller_body = ByteRange::new(caller.body_start, caller.body_end);
+                    let owner_body = ByteRange::new(owner.body_start, owner.body_end);
+                    let call_span = ByteRange::new(call.span_start, call.span_end);
+                    if path_hashes.get(&call.path) != Some(&binding.source_hash)
+                        || !encloses(&owner_body, &binding.collection)
+                        || proof.field.end > binding.collection.start
+                        || !encloses(&caller_body, &binding.statement)
+                        || !encloses(&binding.statement, &binding.binding)
+                        || !encloses(&binding.statement, &binding.initializer)
+                        || binding.binding.end >= binding.initializer.start
+                        || binding.statement.end >= call.span_start
+                        || !encloses(&call_span, &binding.receiver)
+                        || binding.receiver.start != call.span_start
+                        || binding.binding.end - binding.binding.start
+                            != binding.receiver.end - binding.receiver.start
+                    {
+                        return None;
+                    }
+                    for (document, expected_type) in [(caller, owner), (target, field_type)] {
+                        let signature = go_callable_types.get(&(
+                            document.path.as_str(),
+                            document.span_start,
+                            document.span_end,
+                        ))?;
+                        if signature.kind != cgrx_languages::GoCallableKind::Method
+                            || signature.named_type != expected_type.qualified_name
+                        {
+                            return None;
+                        }
+                    }
+                }
                 (target.qualified_name == target_name).then_some(target.node_id)
             })
         } else if call

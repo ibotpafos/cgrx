@@ -149,6 +149,95 @@ mod proof_edge_tests {
     }
 
     #[test]
+    fn go_indexed_field_proof_requires_binding_identity_and_current_source_hash() {
+        let source = b"package rate\ntype Shard struct{}\ntype Other struct{}\ntype Limiter struct{ shards [2]Shard }\nfunc (s *Shard) Run() {}\nfunc (s *Other) Run() {}\nfunc (l *Limiter) Allow() { shard := &l.shards[0]; shard.Run() }";
+        let extracted = extract_path("rate.go", source).unwrap();
+        let hashes = BTreeMap::from([(
+            "rate.go".to_owned(),
+            Hash32(*blake3::hash(source).as_bytes()),
+        )]);
+        assert_eq!(
+            rebuild_arcs(&extracted.documents, &hashes, &BTreeMap::new()).len(),
+            1
+        );
+        for case in [
+            "missing",
+            "binding_missing",
+            "tag",
+            "caller",
+            "owner",
+            "target",
+            "other_target",
+            "collection",
+            "statement",
+            "binding",
+            "initializer",
+            "receiver",
+            "hash",
+            "duplicate",
+        ] {
+            let mut docs = extracted.documents.clone();
+            let other_target = docs
+                .iter()
+                .find(|d| {
+                    d.provenance == "SYNTAX"
+                        && d.qualified_name == "Run"
+                        && d.search_text.contains("*Other")
+                })
+                .map(|d| ByteRange::new(d.span_start, d.span_end))
+                .unwrap();
+            let call = docs
+                .iter_mut()
+                .find(|d| d.go_field_target.is_some())
+                .unwrap();
+            if case == "missing" {
+                call.go_field_target = None;
+            } else if case == "tag" {
+                call.semantic_tags.retain(|t| t != "GO_INDEXED_FIELD_CALL");
+            } else if case == "duplicate" {
+                let span = call.go_field_target.as_ref().unwrap().target;
+                let target = docs
+                    .iter()
+                    .find(|d| {
+                        d.provenance == "SYNTAX"
+                            && d.span_start == span.start
+                            && d.span_end == span.end
+                    })
+                    .unwrap()
+                    .clone();
+                docs.push(target);
+            } else {
+                let proof = call.go_field_target.as_mut().unwrap();
+                match case {
+                    "binding_missing" => proof.indexed_binding = None,
+                    "caller" => proof.caller.start += 1,
+                    "owner" => proof.receiver_type.start += 1,
+                    "target" => proof.target.start += 1,
+                    "other_target" => proof.target = other_target,
+                    _ => {
+                        let binding = proof.indexed_binding.as_mut().unwrap();
+                        match case {
+                            "collection" => binding.collection.start = 0,
+                            "statement" => binding.statement.end = call.span_start,
+                            "binding" => binding.binding.start += 1,
+                            "initializer" => binding.initializer.start = binding.statement.start,
+                            "receiver" => binding.receiver.start += 1,
+                            "hash" => binding.source_hash = Hash32([9; 32]),
+                            _ => unreachable!(),
+                        }
+                    }
+                }
+            }
+            assert!(
+                rebuild_arcs(&docs, &hashes, &BTreeMap::new()).is_empty(),
+                "{case}"
+            );
+        }
+        let stale = BTreeMap::from([("rate.go".to_owned(), Hash32([7; 32]))]);
+        assert!(rebuild_arcs(&extracted.documents, &stale, &BTreeMap::new()).is_empty());
+    }
+
+    #[test]
     fn rust_parameter_proof_requires_exact_identity_and_current_source_hash() {
         let source = b"#[derive(Default)] struct A; impl A { fn run(&self) {} } fn caller(value: &A) { value.run(); }";
         let extracted = extract_path("main.rs", source).unwrap();
@@ -1300,7 +1389,7 @@ mod compact_storage_tests {
         );
         assert_eq!(
             EXTRACTION_REVISION,
-            77 + if cgrx_languages::EXPERIMENTAL_PHP_ENABLED {
+            93 + if cgrx_languages::EXPERIMENTAL_PHP_ENABLED {
                 2
             } else {
                 0

@@ -301,6 +301,101 @@ class RustParameterIntegrityTests(RustSelfIntegrityTests):
         self.assertFalse(score({'tasks': [self.task]}, self.index, rust_self=True)['passed'])
 
 
+class GoIndexedFieldIntegrityTests(unittest.TestCase):
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.root = Path(self.directory.name)
+        data = (b'package rate\ntype Shard struct{}\ntype Limiter struct{ shards [2]Shard }\n'
+                b'func (s *Shard) Run() {}\n'
+                b'func (l *Limiter) Allow() { shard := &l.shards[0]; shard.Run() }\n')
+        self.root.joinpath('rate.go').write_bytes(data)
+        span = lambda text: {'start': data.index(text), 'end': data.index(text) + len(text)}
+        site = span(b'shard.Run()')
+        anchor = lambda name, line: {'path': 'rate.go', 'symbol': name,
+                                     'start_line': line, 'end_line': line}
+        self.task = {'id': 'indexed-field', 'repo': str(self.root), 'revision': 'a' * 40,
+                     'evidence': {'source': anchor('Allow', 5), 'target': anchor('Run', 4),
+                                  'site': anchor('Run', 5)},
+                     'expected': {'relation': 'CALLS'}}
+        docs = []
+        for node_id, name, line in [(1, 'Allow', 5), (2, 'Run', 4),
+                                    (3, 'Limiter', 3), (4, 'Shard', 2)]:
+            start = data.index(name.encode())
+            body_start = sum(map(len, data.splitlines(keepends=True)[:line - 1]))
+            body_end = body_start + len(data.splitlines(keepends=True)[line - 1])
+            docs.append({'node_id': node_id, 'path': 'rate.go', 'qualified_name': name,
+                         'provenance': 'SYNTAX', 'go_package': 'rate',
+                         'span_start': start, 'span_end': start + len(name),
+                         'body_start': body_start, 'body_end': body_end})
+        receipt = {'package': 'rate', 'caller': span(b'Allow'), 'receiver_type': span(b'Limiter'),
+                   'field': span(b'shards'), 'field_type': span(b'Shard'), 'target': span(b'Run'),
+                   'indexed_binding': {'source_hash': 'ab' * 32, 'collection': span(b'[2]Shard'),
+                                       'statement': span(b'shard := &l.shards[0]'),
+                                       'binding': {'start': span(b'shard :=')['start'],
+                                                   'end': span(b'shard :=')['start'] + 5},
+                                       'initializer': span(b'&l.shards[0]'),
+                                       'receiver': {'start': site['start'], 'end': site['start'] + 5}}}
+        docs.append({'node_id': 5, 'path': 'rate.go', 'qualified_name': 'shard.Run',
+                     'provenance': 'CALLS', 'span_start': site['start'], 'span_end': site['end'],
+                     'semantic_tags': ['EXACT_CALL', 'GO_FIELD_CALL', 'GO_INDEXED_FIELD_CALL'],
+                     'go_field_target': receipt})
+        self.index = {'snapshot': {'repo_revision': 'a' * 40, 'graph_generation': 123},
+                      'extraction_revision': 93, 'indexed_files': 1, 'documents': docs,
+                      'path_hashes': {'rate.go': 'ab' * 32}, 'coverage': {'dynamic_dispatch': []},
+                      'arcs': [{'source': 1, 'target': 2, 'kind': 'CALLS', 'evidence': {
+                          'path': 'rate.go', 'span': site, 'source_hash': 'ab' * 32,
+                          'confidence': 'PROVEN', 'resolver': 'SYNTAX_EXACT',
+                          'assumptions': [], 'counter_evidence': []}}]}
+
+    def report(self, index=None, task=None):
+        return score({'tasks': [task or self.task]}, index or self.index, go_indexed_fields=True)
+
+    def test_current_exact_binding_and_declaration_receipts_pass(self):
+        self.assertTrue(self.report()['passed'])
+
+    def test_missing_or_damaged_binding_receipts_fail(self):
+        for case in ('missing', 'hash', 'caller', 'target', 'collection', 'statement',
+                     'binding', 'initializer', 'receiver', 'tag', 'package', 'duplicate'):
+            with self.subTest(case=case):
+                index = copy.deepcopy(self.index)
+                call = index['documents'][-1]
+                receipt = call['go_field_target']
+                if case == 'missing':
+                    receipt.pop('indexed_binding')
+                elif case == 'hash':
+                    receipt['indexed_binding']['source_hash'] = 'cd' * 32
+                elif case in ('caller', 'target'):
+                    receipt[case]['start'] += 1
+                elif case in ('collection', 'statement', 'binding', 'initializer', 'receiver'):
+                    receipt['indexed_binding'][case]['start'] = 0
+                elif case == 'tag':
+                    call['semantic_tags'].remove('GO_INDEXED_FIELD_CALL')
+                elif case == 'package':
+                    receipt['package'] = 'other'
+                else:
+                    duplicate = copy.deepcopy(index['documents'][1])
+                    duplicate['node_id'] = 6
+                    index['documents'].append(duplicate)
+                self.assertFalse(self.report(index)['passed'])
+
+    def test_abstention_requires_an_actual_dispatch_gap(self):
+        task, index = copy.deepcopy(self.task), copy.deepcopy(self.index)
+        task['expected']['relation'] = 'UNRESOLVED'
+        del task['evidence']['target']
+        index['arcs'] = []
+        call = index['documents'][-1]
+        call['semantic_tags'] = ['DYNAMIC_DISPATCH']
+        index['coverage']['dynamic_dispatch'] = [f"rate.go:{call['span_start']}-{call['span_end']}"]
+        self.assertTrue(self.report(index, task)['passed'])
+        index['coverage']['dynamic_dispatch'] = []
+        self.assertFalse(self.report(index, task)['passed'])
+
+    def test_go_receipt_requires_explicit_go_mode(self):
+        with self.assertRaisesRegex(ValueError, 'JavaScript'):
+            score({'tasks': [self.task]}, self.index)
+
+
 class PythonImportIntegrityTests(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()

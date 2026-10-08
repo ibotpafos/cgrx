@@ -38,6 +38,15 @@ proof's first-candidate boundary, including trait-preemption abstentions.
 The five diagnosed cases are implementation-informed observations from one
 source file; they do not establish a broad Rust or resource-efficiency win.
 
+The [Go indexed-field experiment](benchmarks/go-indexed-field-evidence-2026-10-08.md)
+closes the diagnosed Vex `Allow → cleanupLocked` miss with a source-bound proof.
+All previous relationships in ten frozen snapshots are retained. CBM 0.10.8
+also returns that target with heuristic confidence 0.9, and its depth-one trace
+returns a `Run` target absent from the complete caller body, at confidence 0.07.
+This is one implementation-informed source case, not a whole-graph precision
+comparison. Eight constructed Go compiler cases pass native grading and public
+MCP checks, including an unnamed target receiver and two explicit abstentions.
+
 ## (a) Feature comparison
 
 Capabilities are scored against how CGRX actually behaves today. Cells marked

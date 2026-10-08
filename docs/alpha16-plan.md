@@ -15,7 +15,7 @@ their exact snapshots in ten repositories. Explicit Python relative-import
 proofs improve the selected 24 import assertions from 0/24 to 24/24 and are
 visible in compact `get_outline` responses. [Python import evidence](benchmarks/python-import-evidence-2026-10-08.md)
 records the source pins, CBM comparison and remaining limits. Current source
-cache revisions after the Rust parameter iteration are base 77, plus PHP 2,
+cache revisions after the Go indexed-field iteration are base 93, plus PHP 2,
 Swift 4 and JavaScript 8; the revision
 numbers below describe the historical alpha.16 preparation.
 
@@ -25,6 +25,12 @@ The [parameter receiver iteration](benchmarks/rust-parameter-evidence-2026-10-08
 adds first-candidate identity proofs for explicit Rust parameters. It closes
 the typed witness case, for four of five diagnosed targets. Local constructed
 receivers still need proof of the applicable lookup candidates.
+
+The [Go indexed-field iteration](benchmarks/go-indexed-field-evidence-2026-10-08.md)
+closes Vex's `Allow → cleanupLocked` through an explicit local array-element
+address binding. Exact owner/element/target spans and the source hash bind the
+proof; reassignment, shadowing and unsupported element types remain gaps.
+All prior graph relationships across ten frozen snapshots are preserved.
 
 ## Priority and boundary
 

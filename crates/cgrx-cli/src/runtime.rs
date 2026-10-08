@@ -90,10 +90,10 @@ use serde_json::{Value, json};
 
 // Read the effective dependency policy, not just this crate's feature flag:
 // Cargo may enable an experimental language through another workspace member.
-// Revisions through 75 include historical and experimental caches. Distinct bits
+// Revisions through 91 include historical and experimental caches. Distinct bits
 // ensure no old cache acquires a different language policy by matching a number.
 const EXTRACTION_REVISION: u32 =
-    77 + if cgrx_languages::EXPERIMENTAL_PHP_ENABLED {
+    93 + if cgrx_languages::EXPERIMENTAL_PHP_ENABLED {
         2
     } else {
         0

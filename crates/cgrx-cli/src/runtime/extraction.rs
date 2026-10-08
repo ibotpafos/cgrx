@@ -374,6 +374,15 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
         .iter()
         .any(|e| matches!(e.provenance, LanguageProvenance::RustParameter { .. }))
         .then(|| Hash32(*blake3::hash(source).as_bytes()));
+    let go_indexed_source_hash = edges
+        .iter()
+        .any(|e| {
+            matches!(
+                e.provenance,
+                LanguageProvenance::GoIndexedFieldReceiver { .. }
+            )
+        })
+        .then(|| Hash32(*blake3::hash(source).as_bytes()));
     let php_targets: BTreeSet<_> = edges
         .iter()
         .filter_map(|edge| {
@@ -539,6 +548,7 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
             | LanguageProvenance::PhpFunction { .. }
             | LanguageProvenance::PhpType { .. }
             | LanguageProvenance::GoFieldReceiver { .. }
+            | LanguageProvenance::GoIndexedFieldReceiver { .. }
             | LanguageProvenance::GoLocalConstructor { .. }
             | LanguageProvenance::GoImport { .. }
             | LanguageProvenance::TsLexical { .. }
@@ -592,6 +602,15 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
                     field,
                     field_type,
                     target,
+                }
+                | LanguageProvenance::GoIndexedFieldReceiver {
+                    package,
+                    caller,
+                    receiver_type,
+                    field,
+                    field_type,
+                    target,
+                    ..
                 } => {
                     let range = |span: Span| ByteRange::new(span.start, span.end);
                     Some(Box::new(GoFieldTarget {
@@ -602,6 +621,24 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
                         field: range(field),
                         field_type: range(field_type),
                         target: range(target),
+                        indexed_binding: match edge.provenance {
+                            LanguageProvenance::GoIndexedFieldReceiver {
+                                collection,
+                                statement,
+                                binding,
+                                initializer,
+                                receiver,
+                                ..
+                            } => Some(Box::new(super::target_types::GoIndexedFieldBinding {
+                                source_hash: go_indexed_source_hash.expect("Go indexed proof hash"),
+                                collection: range(collection),
+                                statement: range(statement),
+                                binding: range(binding),
+                                initializer: range(initializer),
+                                receiver: range(receiver),
+                            })),
+                            _ => None,
+                        },
                     }))
                 }
                 _ => None,
@@ -733,6 +770,15 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
                 vec!["EXACT_CALL".to_owned(), "RUST_SELF_CALL".to_owned()]
             } else if matches!(edge.provenance, LanguageProvenance::RustParameter { .. }) {
                 vec!["EXACT_CALL".to_owned(), "RUST_PARAMETER_CALL".to_owned()]
+            } else if matches!(
+                edge.provenance,
+                LanguageProvenance::GoIndexedFieldReceiver { .. }
+            ) {
+                vec![
+                    "EXACT_CALL".to_owned(),
+                    "GO_FIELD_CALL".to_owned(),
+                    "GO_INDEXED_FIELD_CALL".to_owned(),
+                ]
             } else if matches!(edge.provenance, LanguageProvenance::GoFieldReceiver { .. }) {
                 vec!["EXACT_CALL".to_owned(), "GO_FIELD_CALL".to_owned()]
             } else if matches!(

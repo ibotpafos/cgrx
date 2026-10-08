@@ -107,6 +107,36 @@ fn assert_len(runtime: &Runtime, source: &str) {
     assert_eq!(node["span"]["end"], start + 3);
 }
 #[test]
+fn go_indexed_field_target_survives_reopen_and_removes_reassigned_binding() {
+    let source = "package queue\ntype Shard struct { count int }\ntype Other struct{}\nfunc (s Other) Len() int { return 0 }\nfunc (*Shard) Len() int { return 1 }\ntype TaskQueue struct { items [2]Shard }\nfunc (q *TaskQueue) Peek() int { shard := &q.items[0]; shard.count++; return shard.Len() }\n";
+    let fixture = Fixture::new(source);
+    assert_len(&fixture.runtime(), source);
+    let stored = fixture.stored();
+    let proof = stored["documents"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find_map(|d| d.get("go_field_target"))
+        .unwrap();
+    assert_eq!(
+        proof["indexed_binding"]["source_hash"],
+        stored["path_hashes"]["queue/queue.go"]
+    );
+    let mut runtime = fixture.runtime();
+    let changed = source.replace("shard.count++;", "shard = other;");
+    fs::write(fixture.root.join("queue/queue.go"), &changed).unwrap();
+    runtime.refresh(&fixture.root).unwrap();
+    assert_eq!(trace(&runtime)["total"], 0);
+    fs::write(
+        fixture.root.join("queue/queue.go"),
+        source.replace("[2]Shard", "[]Shard"),
+    )
+    .unwrap();
+    runtime.refresh(&fixture.root).unwrap();
+    assert_len(&fixture.runtime(), &source.replace("[2]Shard", "[]Shard"));
+}
+
+#[test]
 fn go_field_named_slice_exact_target_span_and_distinct_callsites() {
     let source = good("q.items.Len(); return q.items.Len()");
     let fixture = Fixture::new(&source);
@@ -377,7 +407,7 @@ fn go_field_proof_metadata_binds_caller_field_types_and_target_and_is_optional()
     let stored = fixture.stored();
     assert_eq!(
         stored["extraction_revision"],
-        77 + if cgrx_languages::EXPERIMENTAL_PHP_ENABLED {
+        93 + if cgrx_languages::EXPERIMENTAL_PHP_ENABLED {
             2
         } else {
             0

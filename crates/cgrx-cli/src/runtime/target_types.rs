@@ -13,6 +13,18 @@ pub(super) struct GoFieldTarget {
     pub(super) field: ByteRange,
     pub(super) field_type: ByteRange,
     pub(super) target: ByteRange,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) indexed_binding: Option<Box<GoIndexedFieldBinding>>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
+pub(super) struct GoIndexedFieldBinding {
+    pub(super) source_hash: Hash32,
+    pub(super) collection: ByteRange,
+    pub(super) statement: ByteRange,
+    pub(super) binding: ByteRange,
+    pub(super) initializer: ByteRange,
+    pub(super) receiver: ByteRange,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]

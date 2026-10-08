@@ -80,6 +80,21 @@ pub enum Provenance {
         field_type: Span,
         target: Span,
     },
+    /// Single local binding to the address of a concrete array/slice field element.
+    /// Every span belongs to the same source file; no promotion or type inference.
+    GoIndexedFieldReceiver {
+        package: Span,
+        caller: Span,
+        receiver_type: Span,
+        field: Span,
+        field_type: Span,
+        target: Span,
+        collection: Span,
+        statement: Span,
+        binding: Span,
+        initializer: Span,
+        receiver: Span,
+    },
     /// Local binding assigned exactly once from a direct constructor call.
     /// Runtime resolution proves the constructor result and method receiver
     /// types match before this becomes a graph edge.
@@ -209,6 +224,15 @@ impl Extraction {
                 field,
                 field_type,
                 target,
+            }
+            | Provenance::GoIndexedFieldReceiver {
+                package,
+                caller,
+                receiver_type,
+                field,
+                field_type,
+                target,
+                ..
             } = edge.provenance
             {
                 for (kind, span) in [
@@ -218,6 +242,25 @@ impl Extraction {
                     (b"go_field_name", field),
                     (b"go_field_type", field_type),
                     (b"go_field_target", target),
+                ] {
+                    update(&mut hasher, kind, "", span);
+                }
+            }
+            if let Provenance::GoIndexedFieldReceiver {
+                collection,
+                statement,
+                binding,
+                initializer,
+                receiver,
+                ..
+            } = edge.provenance
+            {
+                for (kind, span) in [
+                    (b"go_indexed_collection".as_slice(), collection),
+                    (b"go_indexed_statement", statement),
+                    (b"go_indexed_binding", binding),
+                    (b"go_indexed_initializer", initializer),
+                    (b"go_indexed_receiver", receiver),
                 ] {
                     update(&mut hasher, kind, "", span);
                 }

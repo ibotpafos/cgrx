@@ -438,6 +438,14 @@ Module-self imports `use crate::worker::{self as api}` and
 Aliases with nested suffixes (`api::inner::target()`), function aliases
 and reexport chains are not covered by this Rust alias proof.
 
+Development builds prove Go method calls through a single local address binding
+to an explicit array or slice field element (`shard := &l.shards[i]`). The owner,
+element declaration, target method, binding and callsite are tied to the current
+source hash. Reassignment, shadowing, interfaces, aliases, generic/imported
+elements and promoted methods remain gaps. Both named and unnamed target
+receivers are supported. [Go indexed-field evidence](docs/benchmarks/go-indexed-field-evidence-2026-10-08.md)
+records the exact source case, compiler checks and compact MCP observations.
+
 Development builds also preserve exact Rust owner and method identity for
 `self` / `Self` calls on local structs and enums with only lifetime parameters,
 including methods in separate inherent impl blocks. Type/const parameters,
