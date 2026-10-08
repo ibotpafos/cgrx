@@ -11,7 +11,8 @@ use schema::{bounded_scope_schema, path_or_scope_schema};
 
 use cgrx_capsule::{ObligationId, QbecV1, RccV1, ResidualObligation, Tokenizer, verify_hashes};
 use cgrx_core::{
-    CapsuleStatus, EvidenceSelector, Hash32, QueryRequest, RepoSnapshot, canonical_hash,
+    CapsuleStatus, EvidenceSelector, Hash32, QueryRequest, RepoSnapshot, SymbolSelector,
+    canonical_hash,
 };
 use cgrx_store::{MAX_CONFIDENCE, MemoryRecallQuery, MemoryRecordInput, MemorySpan, MemoryStore};
 use serde::Deserialize;
@@ -161,6 +162,66 @@ pub trait ToolBackend: Send + Sync {
     }
     fn get_code_snippet(&mut self, symbol: &str, path: Option<&str>)
     -> Result<Value, BackendError>;
+    fn get_code_snippet_selected(
+        &mut self,
+        selector: SymbolSelector<'_>,
+    ) -> Result<Value, BackendError> {
+        if selector.symbol_ref.is_some() {
+            return Err(BackendError::new(
+                "cgrx.symbol_selection_unavailable",
+                "this backend does not support symbol_ref selection",
+            ));
+        }
+        self.get_code_snippet(selector.symbol, selector.path)
+    }
+    fn trace_path_selected(
+        &mut self,
+        selector: SymbolSelector<'_>,
+        direction: &str,
+        depth: u8,
+        scope: Value,
+        limit: u32,
+        evidence: EvidenceSelector,
+    ) -> Result<Value, BackendError> {
+        if selector.symbol_ref.is_some() {
+            return Err(BackendError::new(
+                "cgrx.symbol_selection_unavailable",
+                "this backend does not support symbol_ref selection",
+            ));
+        }
+        self.trace_path_with_evidence(
+            selector.symbol,
+            selector.path,
+            direction,
+            depth,
+            scope,
+            limit,
+            evidence,
+        )
+    }
+    fn find_usages_selected(
+        &mut self,
+        selector: SymbolSelector<'_>,
+        scope: Value,
+        depth: u8,
+        limit: u32,
+        evidence: EvidenceSelector,
+    ) -> Result<Value, BackendError> {
+        if selector.symbol_ref.is_some() {
+            return Err(BackendError::new(
+                "cgrx.symbol_selection_unavailable",
+                "this backend does not support symbol_ref selection",
+            ));
+        }
+        self.find_usages_with_evidence(
+            selector.symbol,
+            selector.path,
+            scope,
+            depth,
+            limit,
+            evidence,
+        )
+    }
     fn explain_symbol(
         &mut self,
         _symbol: &str,
@@ -451,7 +512,7 @@ impl Server {
                 "capabilities": {"tools": {"listChanged": false}},
                 "serverInfo": {"name": "cgrx", "version": env!("CARGO_PKG_VERSION")},
                 "instructions": format!(
-                    "Use status first to verify revision and freshness. Multi-repo calls require repo: absolute Git worktree root. For broad work use orient with a narrow scope, then expand its handle, then read only material snippets. Search symbols before tracing calls. Check coverage for evidence paths; read source for gaps. Empty results do not prove absence. Handles belong to one repo and live session. Active toolset: {}; response profile: {}.",
+                    "Use status first for revision and freshness. Multi-repo calls require repo: absolute Git worktree root. Use orient with a narrow scope, expand its handle, then read material snippets. Discover symbols before tracing calls; copy symbol_ref for exact selection and rediscover after snapshot changes. Check coverage and read source for gaps. Empty results do not prove absence. Handles belong to one repo/session. Active toolset: {}; response profile: {}.",
                     self.toolset.label(), self.response_profile.label()
                 )
             })),
@@ -820,9 +881,12 @@ impl Server {
             ));
         };
         backend
-            .trace_path_with_evidence(
-                &arguments.symbol,
-                arguments.path.as_deref(),
+            .trace_path_selected(
+                SymbolSelector {
+                    symbol: &arguments.symbol,
+                    path: arguments.path.as_deref(),
+                    symbol_ref: arguments.symbol_ref.as_deref(),
+                },
                 &arguments.direction,
                 arguments.depth,
                 arguments.scope,
@@ -841,9 +905,12 @@ impl Server {
             ));
         };
         backend
-            .find_usages_with_evidence(
-                &arguments.symbol,
-                arguments.path.as_deref(),
+            .find_usages_selected(
+                SymbolSelector {
+                    symbol: &arguments.symbol,
+                    path: arguments.path.as_deref(),
+                    symbol_ref: arguments.symbol_ref.as_deref(),
+                },
                 arguments.scope,
                 arguments.depth,
                 arguments.limit,
@@ -887,7 +954,11 @@ impl Server {
             ));
         };
         backend
-            .get_code_snippet(&arguments.symbol, arguments.path.as_deref())
+            .get_code_snippet_selected(SymbolSelector {
+                symbol: &arguments.symbol,
+                path: arguments.path.as_deref(),
+                symbol_ref: arguments.symbol_ref.as_deref(),
+            })
             .map_err(backend_error)
     }
 

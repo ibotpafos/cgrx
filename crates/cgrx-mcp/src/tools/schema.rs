@@ -32,6 +32,12 @@ pub(super) fn model_visible_schema() -> Value {
             {"name":"check_security_gates","description":"Snapshot-bound security gate over working-tree secrets, Cargo.lock dependency hygiene and license allowlist with explicit PASS/WARN/FAIL/INCONCLUSIVE verdict; no LLM executed.","inputSchema":{"type":"object","properties":{"fail_on":{"enum":["error","warning","none"],"default":"error"},"max_secret_findings":{"type":"integer","minimum":0,"maximum":10000,"default":0},"max_dependency_findings":{"type":"integer","minimum":0,"maximum":10000,"default":0},"max_license_findings":{"type":"integer","minimum":0,"maximum":10000,"default":0},"allowlist_paths":{"type":"array","items":{"type":"string"}},"allowlist_licenses":{"type":"array","items":{"type":"string"}}}}}
         ]);
     for tool in tools.as_array_mut().unwrap() {
+        if matches!(
+            tool["name"].as_str(),
+            Some("get_code_snippet" | "trace_path" | "find_usages")
+        ) {
+            tool["inputSchema"]["properties"]["symbol_ref"] = json!({"type":"string"});
+        }
         let name = tool["name"].as_str().expect("tool name is static");
         let (title, description) = tool_metadata(name)
             .unwrap_or_else(|| panic!("missing OpenAI metadata for tool {name}"));
@@ -89,11 +95,11 @@ fn tool_metadata(name: &str) -> Option<(&'static str, &'static str)> {
         ),
         "trace_path" => (
             "Trace calls",
-            "Trace callers or callees of a discovered symbol; use path to resolve ambiguity.",
+            "Trace callers or callees; path or symbol_ref selects the definition.",
         ),
         "find_usages" => (
             "Find usages",
-            "List proven direct or transitive incoming call or implementation sites with hop, resolver evidence and coverage gaps.",
+            "List proven incoming sites with hop, resolver and coverage gaps; symbol_ref selects the definition.",
         ),
         "suggest_refactors" => (
             "Suggest refactors",
@@ -101,7 +107,7 @@ fn tool_metadata(name: &str) -> Option<(&'static str, &'static str)> {
         ),
         "get_code_snippet" => (
             "Read source",
-            "Read the definition of a discovered symbol; use path when names collide.",
+            "Read a definition; path or symbol_ref selects the definition.",
         ),
         "explain_symbol" => (
             "Explain symbol",

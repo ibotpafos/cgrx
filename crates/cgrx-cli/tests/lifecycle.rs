@@ -267,13 +267,22 @@ impl Mcp {
     }
 
     fn start(cwd: &Path) -> Self {
+        Self::start_with_options(cwd, "full", None)
+    }
+
+    fn start_with_options(cwd: &Path, profile: &str, usage_log: Option<&Path>) -> Self {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_cgrx"));
+        command
+            .args(["serve", "--multi-repo"])
+            .env("CGRX_RESPONSE_PROFILE", profile)
+            .current_dir(cwd);
+        if let Some(path) = usage_log {
+            command.env("CGRX_USAGE_LOG", path);
+        } else {
+            command.env_remove("CGRX_USAGE_LOG");
+        }
         let mut mcp = Self {
-            process: Process::spawn(
-                Command::new(env!("CARGO_BIN_EXE_cgrx"))
-                    .args(["serve", "--multi-repo"])
-                    .env("CGRX_RESPONSE_PROFILE", "full")
-                    .current_dir(cwd),
-            ),
+            process: Process::spawn(&mut command),
             next_id: 1,
         };
         let initialized = mcp.request(
@@ -385,6 +394,177 @@ fn one_shot_status(repo: &Path) -> Value {
         .finish(Instant::now() + DEADLINE)
         .expect("bounded MCP exit");
     response
+}
+
+#[test]
+fn actual_mcp_selects_same_file_definitions_in_both_profiles_and_omits_refs_from_usage_logs() {
+    let fixture = Fixture::new();
+    let marker = "SELECTOR_SOURCE_PRIVATE_8f4c";
+    let source = format!(
+        "package example\ntype A struct{{}}\ntype B struct{{}}\nfunc (a *A) Run() int {{ /* {marker} */ return 1 }}\nfunc (b *B) Run() int {{ /* {marker} */ return 2 }}\nfunc (a *A) CallerA() int {{ return a.Run() }}\nfunc (b *B) CallerB() int {{ return b.Run() }}\n"
+    );
+    fs::write(fixture.path().join("main.go"), &source).unwrap();
+    git(fixture.path(), &["add", "main.go"]);
+    git(fixture.path(), &["commit", "-qm", "duplicate methods"]);
+    let other_fixture = Fixture::new();
+    let other = other_fixture.path();
+    git(
+        other,
+        &["fetch", "-q", fixture.path().to_str().unwrap(), "HEAD"],
+    );
+    git(other, &["reset", "--hard", "-q", "FETCH_HEAD"]);
+    assert_eq!(
+        git_output(fixture.path(), &["rev-parse", "HEAD"]),
+        git_output(other, &["rev-parse", "HEAD"])
+    );
+    let read = |response: Value| -> Value {
+        assert!(
+            response.get("error").is_none(),
+            "typed MCP failure: {}",
+            response["error"]["data"]["code"]
+        );
+        if let Some(structured) = response["result"].get("structuredContent") {
+            return structured.clone();
+        }
+        serde_json::from_str(response["result"]["content"][0]["text"].as_str().unwrap()).unwrap()
+    };
+    let call = |mcp: &mut Mcp, tool: &str, arguments: Value| {
+        mcp.request("tools/call", json!({"name":tool,"arguments":arguments}))
+    };
+    for profile in ["full", "token-efficient"] {
+        // Restore the fixture between profiles so both start from the same source.
+        fs::write(fixture.path().join("main.go"), &source).unwrap();
+        let log = fixture
+            .path()
+            .join(".git")
+            .join(format!("usage-{profile}.ndjson"));
+        let mut mcp = Mcp::start_with_options(fixture.path(), profile, Some(&log));
+        let status = mcp.status(fixture.path());
+        if profile == "full" {
+            snapshot(&status);
+        } else {
+            assert!(read(status)["at"].is_string());
+        }
+        let tools = mcp.request("tools/list", json!({}));
+        for name in ["get_code_snippet", "trace_path", "find_usages"] {
+            let tool = tools["result"]["tools"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|tool| tool["name"] == name)
+                .unwrap();
+            assert_eq!(
+                tool["inputSchema"]["properties"]["symbol_ref"]["type"],
+                "string"
+            );
+            assert!(
+                tool["inputSchema"]["required"]
+                    .as_array()
+                    .unwrap()
+                    .contains(&json!("repo"))
+            );
+        }
+        let searched = read(call(
+            &mut mcp,
+            "search_graph",
+            json!({"repo":fixture.path(),"query":marker,"include_body":true,"limit":10}),
+        ));
+        let methods: Vec<Value> = if profile == "full" {
+            searched["matches"].as_array().unwrap().clone()
+        } else {
+            searched["rows"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|row| {
+                    searched["cols"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .zip(row.as_array().unwrap())
+                        .map(|(key, value)| (key.as_str().unwrap().to_owned(), value.clone()))
+                        .collect::<serde_json::Map<_, _>>()
+                        .into()
+                })
+                .collect()
+        };
+        assert_eq!(methods.len(), 2);
+        let outline = read(call(
+            &mut mcp,
+            "get_outline",
+            json!({"repo":fixture.path(),"path":"main.go"}),
+        ));
+        for (method, caller, value) in [(&methods[0], "CallerA", 1), (&methods[1], "CallerB", 2)] {
+            let reference = method["symbol_ref"].as_str().unwrap();
+            assert!(outline.to_string().contains(reference));
+            for tool in ["get_code_snippet", "trace_path", "find_usages"] {
+                let mut arguments = json!({"repo":fixture.path(),"symbol":"Run","path":"main.go","symbol_ref":reference});
+                if tool == "trace_path" {
+                    arguments["direction"] = json!("callers");
+                }
+                let result = read(call(&mut mcp, tool, arguments.clone()));
+                match tool {
+                    "get_code_snippet" => {
+                        assert_eq!(result["symbol_ref"], reference);
+                        assert!(
+                            result["source"]
+                                .as_str()
+                                .unwrap()
+                                .contains(&format!("return {value}"))
+                        );
+                    }
+                    "trace_path" => {
+                        assert_eq!(result["root"]["symbol_ref"], reference);
+                        assert!(result.to_string().contains(caller));
+                    }
+                    _ => {
+                        assert_eq!(result["target"]["symbol_ref"], reference);
+                        assert!(result.to_string().contains(caller));
+                    }
+                }
+                arguments.as_object_mut().unwrap().remove("symbol_ref");
+                assert_eq!(
+                    call(&mut mcp, tool, arguments.clone())["error"]["data"]["code"],
+                    "cgrx.ambiguous_symbol"
+                );
+                arguments["symbol_ref"] = json!(reference);
+                arguments["repo"] = json!(other);
+                assert_eq!(
+                    call(&mut mcp, tool, arguments)["error"]["data"]["code"],
+                    "cgrx.symbol_ref_not_found"
+                );
+            }
+        }
+        let old_ref = methods[0]["symbol_ref"].as_str().unwrap();
+        fs::write(
+            fixture.path().join("main.go"),
+            format!("{source}// snapshot changed\n"),
+        )
+        .unwrap();
+        for tool in ["get_code_snippet", "trace_path", "find_usages"] {
+            assert_eq!(
+                call(
+                    &mut mcp,
+                    tool,
+                    json!({"repo":fixture.path(),"symbol":"Run","path":"main.go","symbol_ref":old_ref})
+                )["error"]["data"]["code"],
+                "cgrx.symbol_ref_not_found"
+            );
+        }
+        mcp.process.finish(Instant::now() + DEADLINE).unwrap();
+        let logged = fs::read_to_string(&log).unwrap();
+        assert!(!logged.contains(marker));
+        assert!(!logged.contains("cgrxs1."));
+        assert!(!logged.contains("\"symbol_ref\""));
+        assert!(!logged.contains("return 1"));
+        for event in logged
+            .lines()
+            .map(|line| serde_json::from_str::<Value>(line).unwrap())
+        {
+            assert!(event.get("arguments").is_none());
+            assert!(event.get("source").is_none());
+        }
+    }
 }
 
 #[test]

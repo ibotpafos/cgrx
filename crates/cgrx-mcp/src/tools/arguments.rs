@@ -164,6 +164,8 @@ const fn default_architecture_limit() -> u32 {
 pub(super) struct TracePathArguments {
     pub(super) symbol: String,
     #[serde(default)]
+    pub(super) symbol_ref: Option<String>,
+    #[serde(default)]
     pub(super) path: Option<String>,
     #[serde(default = "default_trace_direction")]
     pub(super) direction: String,
@@ -180,6 +182,8 @@ pub(super) struct TracePathArguments {
 #[derive(Deserialize)]
 pub(super) struct FindUsagesArguments {
     pub(super) symbol: String,
+    #[serde(default)]
+    pub(super) symbol_ref: Option<String>,
     #[serde(default)]
     pub(super) path: Option<String>,
     #[serde(default)]
@@ -216,6 +220,8 @@ const fn default_refactor_score() -> u16 {
 #[derive(Deserialize)]
 pub(super) struct GetCodeSnippetArguments {
     pub(super) symbol: String,
+    #[serde(default)]
+    pub(super) symbol_ref: Option<String>,
     #[serde(default)]
     pub(super) path: Option<String>,
 }

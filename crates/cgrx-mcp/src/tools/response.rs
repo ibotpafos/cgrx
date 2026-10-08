@@ -447,6 +447,14 @@ pub(super) fn compact_expand(value: &Value) -> Value {
 }
 
 pub(super) fn compact_search(value: &Value) -> Value {
+    let include_refs = value
+        .get("matches")
+        .and_then(Value::as_array)
+        .is_some_and(|items| {
+            items
+                .iter()
+                .any(|item| item.pointer("/symbol_ref").is_some())
+        });
     let snapshot = value.get("snapshot");
     let rows: Vec<_> = value
         .get("matches")
@@ -455,14 +463,18 @@ pub(super) fn compact_search(value: &Value) -> Value {
         .flatten()
         .take(12)
         .map(|item| {
-            json!([
-                item.get("symbol"),
-                item.get("path"),
-                item.pointer("/span/start"),
-                item.pointer("/span/end"),
-                item.get("callers"),
-                item.get("callees"),
-            ])
+            let mut row = vec![
+                item.get("symbol").cloned().unwrap_or(Value::Null),
+                item.get("path").cloned().unwrap_or(Value::Null),
+                item.pointer("/span/start").cloned().unwrap_or(Value::Null),
+                item.pointer("/span/end").cloned().unwrap_or(Value::Null),
+                item.get("callers").cloned().unwrap_or(Value::Null),
+                item.get("callees").cloned().unwrap_or(Value::Null),
+            ];
+            if include_refs {
+                row.push(item.get("symbol_ref").cloned().unwrap_or(Value::Null));
+            }
+            json!(row)
         })
         .collect();
     let mut compact = json!({
@@ -473,22 +485,40 @@ pub(super) fn compact_search(value: &Value) -> Value {
         "n": value.get("total"),
         "gaps": value.get("coverage_gap_count"),
     });
+    if include_refs {
+        compact["cols"]
+            .as_array_mut()
+            .expect("column array")
+            .extend([json!("symbol_ref")]);
+    }
     insert_more_when_true(&mut compact, value.get("truncated"));
     compact
 }
 
 pub(super) fn compact_outline(value: &Value) -> Value {
+    let include_refs = value
+        .get("symbols")
+        .and_then(Value::as_array)
+        .is_some_and(|items| {
+            items
+                .iter()
+                .any(|item| item.pointer("/symbol_ref").is_some())
+        });
     let rows: Vec<_> = value
         .get("symbols")
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
         .map(|item| {
-            json!([
-                item.get("symbol"),
-                item.pointer("/span/start"),
-                item.pointer("/span/end")
-            ])
+            let mut row = vec![
+                item.get("symbol").cloned().unwrap_or(Value::Null),
+                item.pointer("/span/start").cloned().unwrap_or(Value::Null),
+                item.pointer("/span/end").cloned().unwrap_or(Value::Null),
+            ];
+            if include_refs {
+                row.push(item.get("symbol_ref").cloned().unwrap_or(Value::Null));
+            }
+            json!(row)
         })
         .collect();
     let mut compact = json!({
@@ -500,6 +530,12 @@ pub(super) fn compact_outline(value: &Value) -> Value {
         "n":value.get("total"),
         "gaps":value.get("coverage_gap_count"),
     });
+    if include_refs {
+        compact["cols"]
+            .as_array_mut()
+            .expect("column array")
+            .extend([json!("symbol_ref")]);
+    }
     insert_more_when_true(&mut compact, value.get("truncated"));
     if let Some(imports) = value.get("imports").and_then(Value::as_array) {
         compact["import_cols"] = json!([
@@ -708,6 +744,14 @@ pub(super) fn compact_architecture(value: &Value) -> Value {
 }
 
 pub(super) fn compact_trace(value: &Value) -> Value {
+    let include_refs = value
+        .get("nodes")
+        .and_then(Value::as_array)
+        .is_some_and(|items| {
+            items
+                .iter()
+                .any(|item| item.pointer("/symbol_ref").is_some())
+        });
     let snapshot = value.get("snapshot");
     let include_evidence = value.get("evidence").is_some();
     let mut paths = Vec::<String>::new();
@@ -738,6 +782,9 @@ pub(super) fn compact_trace(value: &Value) -> Value {
                     item.get("count").cloned().unwrap_or(Value::Null),
                 ]);
             }
+            if include_refs {
+                row.push(item.get("symbol_ref").cloned().unwrap_or(Value::Null));
+            }
             json!(row)
         })
         .collect();
@@ -754,11 +801,25 @@ pub(super) fn compact_trace(value: &Value) -> Value {
         compact["cols"] = json!(["symbol", "path_id", "hop", "direction", "evidence", "count"]);
         compact["evidence"] = value["evidence"].clone();
     }
+    if include_refs {
+        compact["cols"]
+            .as_array_mut()
+            .expect("column array")
+            .extend([json!("symbol_ref")]);
+    }
     insert_more_when_true(&mut compact, value.get("truncated"));
     compact
 }
 
 pub(super) fn compact_usages(value: &Value) -> Value {
+    let include_refs = value
+        .get("usages")
+        .and_then(Value::as_array)
+        .is_some_and(|items| {
+            items
+                .iter()
+                .any(|item| item.pointer("/source/symbol_ref").is_some())
+        });
     let include_evidence = value.get("evidence").is_some();
     let mut paths = Vec::<String>::new();
     let rows: Vec<_> = value
@@ -799,6 +860,16 @@ pub(super) fn compact_usages(value: &Value) -> Value {
                     item.get("count").cloned().unwrap_or(Value::Null),
                 ]);
             }
+            if include_refs {
+                row.extend([
+                    item.pointer("/source/symbol_ref")
+                        .cloned()
+                        .unwrap_or(Value::Null),
+                    item.pointer("/via/symbol_ref")
+                        .cloned()
+                        .unwrap_or(Value::Null),
+                ]);
+            }
             json!(row)
         })
         .collect();
@@ -825,6 +896,12 @@ pub(super) fn compact_usages(value: &Value) -> Value {
             "count"
         ]);
         compact["evidence"] = value["evidence"].clone();
+    }
+    if include_refs {
+        compact["cols"]
+            .as_array_mut()
+            .expect("column array")
+            .extend([json!("source_ref"), json!("via_ref")]);
     }
     insert_more_when_true(&mut compact, value.get("truncated"));
     compact
@@ -945,14 +1022,21 @@ pub(super) fn compact_uncertainty_counts(uncertainties: Option<&Value>) -> Value
 }
 
 pub(super) fn compact_snippet(value: &Value) -> Value {
-    json!({
+    let mut compact = json!({
         "at":snapshot_tag(value.get("snapshot")),
         "symbol":value.get("symbol"),
         "path":value.get("path"),
         "definition_span":value.get("definition_span"),
         "body_span":value.get("body_span"),
         "source":value.get("source"),
-    })
+    });
+    if let Some(reference) = value.get("symbol_ref") {
+        compact["symbol_ref"] = reference.clone();
+    }
+    if let Some(reference) = value.get("source_hash") {
+        compact["source_hash"] = reference.clone();
+    }
+    compact
 }
 
 pub(super) fn compact_dead_code(value: &Value) -> Value {
@@ -1120,14 +1204,18 @@ pub(super) fn insert_more_when_true(value: &mut Value, more: Option<&Value>) {
 }
 
 pub(super) fn compact_trace_root(value: &Value) -> Value {
-    json!({
+    let mut compact = json!({
         "symbol": value.get("symbol").or_else(|| value.get("qualified_name")),
         "path": value.get("path"),
         "span": [
             value.get("span_start").or_else(|| value.pointer("/span/start")),
             value.get("span_end").or_else(|| value.pointer("/span/end")),
         ],
-    })
+    });
+    if let Some(reference) = value.get("symbol_ref") {
+        compact["symbol_ref"] = reference.clone();
+    }
+    compact
 }
 
 pub(super) fn compact_memory_record(value: &Value) -> Value {

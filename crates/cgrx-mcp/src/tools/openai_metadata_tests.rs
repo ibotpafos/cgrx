@@ -308,6 +308,66 @@ fn compact_trace_adds_runtime_columns_only_for_evidence_aware_results() {
 }
 
 #[test]
+fn compact_discovery_and_traces_preserve_addressable_symbol_references() {
+    let reference = "cgrxs1.0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    let caller_ref = "cgrxs1.1123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+    let node = json!({"symbol":"Run","path":"main.go","span":{"start":100,"end":103},"symbol_ref":reference,"callers":1,"callees":1,"hop":1,"direction":"callees"});
+    let search = compact_search(&json!({"matches":[node.clone()],"total":1}));
+    assert_eq!(search["cols"][6], "symbol_ref");
+    assert_eq!(search["rows"][0][6], reference);
+    let outline = compact_outline(&json!({"symbols":[node.clone()],"total":1}));
+    assert_eq!(outline["cols"][3], "symbol_ref");
+    assert_eq!(outline["rows"][0][3], reference);
+    let mut structured = json!({"root":node,"nodes":[node.clone()],"total":1});
+    for evidence in [false, true] {
+        if evidence {
+            structured["evidence"] = json!("observed");
+        }
+        let trace = compact_trace(&structured);
+        assert_eq!(trace["root"]["symbol_ref"], reference);
+        let last = trace["cols"].as_array().unwrap().len() - 1;
+        assert_eq!(trace["cols"][last], "symbol_ref");
+        assert_eq!(trace["rows"][0][last], reference);
+        let mut usages = json!({"target":node,"usages":[{"source":{"symbol":"Caller","symbol_ref":caller_ref},"via":node,"site":{"path":"main.go","span":{"start":200,"end":210}},"hop":1,"relation":"CALLS","resolver":"SYNTAX_EXACT"}]});
+        if evidence {
+            usages["evidence"] = json!("observed");
+        }
+        let usages = compact_usages(&usages);
+        assert_eq!(usages["target"]["symbol_ref"], reference);
+        let refs = usages["cols"].as_array().unwrap().len() - 2;
+        assert_eq!(usages["cols"][refs], "source_ref");
+        assert_eq!(usages["cols"][refs + 1], "via_ref");
+        assert_eq!(usages["rows"][0][refs], caller_ref);
+        assert_eq!(usages["rows"][0][refs + 1], reference);
+        assert_eq!(usages["rows"][0][5], 200);
+    }
+    let snippet = compact_snippet(
+        &json!({"symbol":"Run","symbol_ref":reference,"source_hash":"ab12","source":"func (*A) Run() {}"}),
+    );
+    assert_eq!(snippet["symbol_ref"], reference);
+    assert_eq!(snippet["source_hash"], "ab12");
+}
+
+#[test]
+fn symbol_selection_schema_keeps_legacy_arguments_and_optional_references() {
+    let tools = model_visible_schema();
+    for name in ["get_code_snippet", "trace_path", "find_usages"] {
+        let tool = tools
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|tool| tool["name"] == name)
+            .unwrap();
+        assert_eq!(tool["inputSchema"]["required"], json!(["symbol"]));
+        assert_eq!(
+            tool["inputSchema"]["properties"]["symbol_ref"]["type"],
+            "string"
+        );
+        assert_eq!(tool["inputSchema"]["properties"]["path"]["type"], "string");
+    }
+}
+
+#[test]
 fn compact_refactors_reports_exact_payload_tokens() {
     let structured = json!({
         "snapshot":{"repo_revision":"abc123","working_tree_digest":"00","graph_generation":9},

@@ -5,7 +5,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-use cgrx_core::{RelationKind, Scope};
+use cgrx_core::{RelationKind, Scope, SymbolSelector, canonical_hash};
 use cgrx_languages::pack_for_path;
 use serde_json::{Value, json};
 
@@ -13,6 +13,79 @@ use super::scan_helpers::{ScopedQuery, matching_symbols as matching_symbol_docum
 use super::{RuntimeError, coverage_gap_count, path_in_scope};
 
 impl super::Runtime {
+    pub(super) fn symbol_reference(&self, document: &super::StoredDocument) -> String {
+        let digest = canonical_hash(&(
+            "cgrx.symbol.v1",
+            self.state_root.as_os_str().as_encoded_bytes(),
+            &self.stored.snapshot,
+            self.stored.extraction_revision,
+            document.node_id,
+            &document.qualified_name,
+            &document.path,
+            document.span_start,
+            document.span_end,
+            self.stored.path_hashes.get(&document.path),
+        ))
+        .expect("symbol reference contains only serializable index identity fields");
+        let hex: String = digest.0.iter().map(|byte| format!("{byte:02x}")).collect();
+        format!("cgrxs1.{hex}")
+    }
+
+    pub(super) fn select_document<'a>(
+        &self,
+        selector: SymbolSelector<'_>,
+        mut candidates: Vec<&'a super::StoredDocument>,
+    ) -> Result<&'a super::StoredDocument, RuntimeError> {
+        if let Some(reference) = selector.symbol_ref {
+            if !reference.strip_prefix("cgrxs1.").is_some_and(|digest| {
+                digest.len() == 64
+                    && digest
+                        .bytes()
+                        .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+            }) {
+                return Err(RuntimeError::new(
+                    "cgrx.invalid_arguments",
+                    "symbol_ref must be an opaque reference returned by search_graph or get_outline",
+                ));
+            }
+            candidates.retain(|document| self.symbol_reference(document) == reference);
+            let [document] = candidates.as_slice() else {
+                return Err(RuntimeError::new(
+                    "cgrx.symbol_ref_not_found",
+                    "symbol_ref does not match the current index snapshot, symbol, path, or scope; rediscover the definition",
+                ));
+            };
+            if super::scan_helpers::syntax_document(&self.stored, document.node_id).is_none() {
+                return Err(RuntimeError::new(
+                    "cgrx.symbol_ref_not_found",
+                    "symbol_ref requires a unique definition identity; rediscover the definition",
+                ));
+            }
+            return Ok(*document);
+        }
+        match candidates.as_slice() {
+            [] => Err(RuntimeError::new(
+                "cgrx.symbol_not_found",
+                format!("symbol {} was not found in scope", selector.symbol),
+            )),
+            [document] => Ok(*document),
+            _ => {
+                let candidates = candidates
+                    .iter()
+                    .map(|document| format!("{}:{}", document.path, document.span_start))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                Err(RuntimeError::new(
+                    "cgrx.ambiguous_symbol",
+                    format!(
+                        "symbol {} matches {candidates}; pass path or symbol_ref from search_graph or get_outline",
+                        selector.symbol
+                    ),
+                ))
+            }
+        }
+    }
+
     pub fn get_outline(&self, path: &str, limit: usize) -> Result<Value, RuntimeError> {
         let path = path.trim();
         if path.is_empty() || Path::new(path).is_absolute() || !(1..=500).contains(&limit) {
@@ -46,6 +119,7 @@ impl super::Runtime {
             .map(|document| {
                 json!({
                     "node_id":document.node_id,
+                    "symbol_ref":self.symbol_reference(document),
                     "symbol":document.qualified_name,
                     "span":{"start":document.span_start,"end":document.span_end}
                 })
@@ -184,6 +258,7 @@ impl super::Runtime {
             .map(|(_, document, callers, callees, matched_by)| {
                 json!({
                     "node_id":document.node_id,
+                    "symbol_ref":self.symbol_reference(document),
                     "symbol":document.qualified_name,
                     "path":document.path,
                     "span":{"start":document.span_start,"end":document.span_end},
@@ -339,6 +414,24 @@ impl super::Runtime {
         scope: &Scope,
         limit: usize,
     ) -> Result<Value, RuntimeError> {
+        self.trace_path_selected(
+            SymbolSelector::new(symbol, path),
+            direction,
+            depth,
+            scope,
+            limit,
+        )
+    }
+
+    pub fn trace_path_selected(
+        &self,
+        selector: SymbolSelector<'_>,
+        direction: &str,
+        depth: u8,
+        scope: &Scope,
+        limit: usize,
+    ) -> Result<Value, RuntimeError> {
+        let SymbolSelector { symbol, path, .. } = selector;
         if symbol.trim().is_empty()
             || !matches!(direction, "callers" | "callees" | "both")
             || !(1..=4).contains(&depth)
@@ -352,26 +445,7 @@ impl super::Runtime {
         let mut scoped = ScopedQuery::new(&self.stored, scope, path_in_scope);
         let roots = scoped.matching_symbols(&self.stored, symbol, path);
         let scoped_documents = scoped.syntax_documents(&self.stored);
-        let root = match roots.as_slice() {
-            [] => {
-                return Err(RuntimeError::new(
-                    "cgrx.symbol_not_found",
-                    format!("symbol {symbol} was not found in scope"),
-                ));
-            }
-            [root] => *root,
-            _ => {
-                let candidates = roots
-                    .iter()
-                    .map(|document| format!("{}:{}", document.path, document.span_start))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                return Err(RuntimeError::new(
-                    "cgrx.ambiguous_symbol",
-                    format!("symbol {symbol} matches {candidates}; pass path"),
-                ));
-            }
-        };
+        let root = self.select_document(selector, roots)?;
         let by_id: BTreeMap<_, _> = scoped_documents
             .iter()
             .copied()
@@ -445,6 +519,7 @@ impl super::Runtime {
                 let document = by_id[&node_id];
                 json!({
                     "node_id":node_id,
+                    "symbol_ref":self.symbol_reference(document),
                     "symbol":document.qualified_name,
                     "path":document.path,
                     "span":{"start":document.span_start,"end":document.span_end},
@@ -455,7 +530,7 @@ impl super::Runtime {
             .collect();
         Ok(json!({
             "snapshot":self.stored.snapshot,
-            "root":{"node_id":root.node_id,"symbol":root.qualified_name,"path":root.path,"span":{"start":root.span_start,"end":root.span_end}},
+            "root":{"node_id":root.node_id,"symbol_ref":self.symbol_reference(root),"symbol":root.qualified_name,"path":root.path,"span":{"start":root.span_start,"end":root.span_end}},
             "direction":direction,
             "depth":depth,
             "nodes":nodes,
@@ -473,6 +548,18 @@ impl super::Runtime {
         depth: u8,
         limit: usize,
     ) -> Result<Value, RuntimeError> {
+        self.find_usages_selected(SymbolSelector::new(symbol, path), scope, depth, limit)
+    }
+
+    pub fn find_usages_selected(
+        &self,
+        selector: SymbolSelector<'_>,
+        scope: &Scope,
+        depth: u8,
+        limit: usize,
+    ) -> Result<Value, RuntimeError> {
+        let symbol = selector.symbol;
+        let path = selector.path;
         let symbol = symbol.trim();
         if symbol.is_empty()
             || path.is_some_and(|path| path.trim().is_empty())
@@ -487,26 +574,7 @@ impl super::Runtime {
         let mut scoped = ScopedQuery::new(&self.stored, scope, path_in_scope);
         let roots = scoped.matching_symbols(&self.stored, symbol, path);
         let scoped_documents = scoped.syntax_documents(&self.stored);
-        let root = match roots.as_slice() {
-            [] => {
-                return Err(RuntimeError::new(
-                    "cgrx.symbol_not_found",
-                    format!("symbol {symbol} was not found in scope"),
-                ));
-            }
-            [root] => *root,
-            _ => {
-                let candidates = roots
-                    .iter()
-                    .map(|document| format!("{}:{}", document.path, document.span_start))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                return Err(RuntimeError::new(
-                    "cgrx.ambiguous_symbol",
-                    format!("symbol {symbol} matches {candidates}; pass path"),
-                ));
-            }
-        };
+        let root = self.select_document(selector, roots)?;
         let by_id: BTreeMap<_, _> = scoped_documents
             .iter()
             .copied()
@@ -579,8 +647,8 @@ impl super::Runtime {
             .take(limit)
             .map(|(arc, source, target, evidence, hop)| {
                 json!({
-                    "source":{"node_id":source.node_id,"symbol":source.qualified_name,"path":source.path,"span":{"start":source.span_start,"end":source.span_end}},
-                    "via":{"node_id":target.node_id,"symbol":target.qualified_name,"path":target.path},
+                    "source":{"node_id":source.node_id,"symbol_ref":self.symbol_reference(source),"symbol":source.qualified_name,"path":source.path,"span":{"start":source.span_start,"end":source.span_end}},
+                    "via":{"node_id":target.node_id,"symbol_ref":self.symbol_reference(target),"symbol":target.qualified_name,"path":target.path},
                     "relation":arc.kind,
                     "site":{"path":evidence.path,"span":evidence.span},
                     "resolver":evidence.resolver,
@@ -591,7 +659,7 @@ impl super::Runtime {
             .collect();
         Ok(json!({
             "snapshot":self.stored.snapshot,
-            "target":{"node_id":root.node_id,"symbol":root.qualified_name,"path":root.path,"span":{"start":root.span_start,"end":root.span_end}},
+            "target":{"node_id":root.node_id,"symbol_ref":self.symbol_reference(root),"symbol":root.qualified_name,"path":root.path,"span":{"start":root.span_start,"end":root.span_end}},
             "depth":depth,
             "usages":rows,
             "total":total,
@@ -605,6 +673,15 @@ impl super::Runtime {
         symbol: &str,
         path: Option<&str>,
     ) -> Result<Value, RuntimeError> {
+        self.get_code_snippet_selected(SymbolSelector::new(symbol, path))
+    }
+
+    pub fn get_code_snippet_selected(
+        &self,
+        selector: SymbolSelector<'_>,
+    ) -> Result<Value, RuntimeError> {
+        let symbol = selector.symbol;
+        let path = selector.path;
         let symbol = symbol.trim();
         if symbol.is_empty() || path.is_some_and(|path| path.trim().is_empty()) {
             return Err(RuntimeError::new(
@@ -613,31 +690,14 @@ impl super::Runtime {
             ));
         }
         let matches = matching_symbol_documents(&self.stored, symbol, path);
-        let document = match matches.as_slice() {
-            [] => {
-                return Err(RuntimeError::new(
-                    "cgrx.symbol_not_found",
-                    format!("symbol {symbol} was not found"),
-                ));
-            }
-            [document] => *document,
-            _ => {
-                let candidates = matches
-                    .iter()
-                    .map(|document| format!("{}:{}", document.path, document.span_start))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                return Err(RuntimeError::new(
-                    "cgrx.ambiguous_symbol",
-                    format!("symbol {symbol} matches {candidates}; pass path"),
-                ));
-            }
-        };
+        let document = self.select_document(selector, matches)?;
         Ok(json!({
             "snapshot":self.stored.snapshot,
             "node_id":document.node_id,
+                    "symbol_ref":self.symbol_reference(document),
             "symbol":document.qualified_name,
             "path":document.path,
+            "source_hash":self.stored.path_hashes.get(&document.path),
             "definition_span":{"start":document.span_start,"end":document.span_end},
             "body_span":{"start":document.body_start,"end":document.body_end},
             "declaration":document.text,

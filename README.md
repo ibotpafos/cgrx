@@ -360,7 +360,20 @@ of being assigned speculatively.
 `CALLS`/`IMPLEMENTS` edges allowed by `scope`, including callsite path/span and
 resolver class. `depth` defaults to 1 and is capped at 4; transitive rows include
 `hop` and the immediate `via` target so every step remains inspectable. It fails
-on ambiguous symbols unless `path` disambiguates them.
+on ambiguous symbols unless `path` or `symbol_ref` disambiguates them.
+
+`search_graph` and `get_outline` return an opaque `symbol_ref` for each
+definition. Copy that string into `get_code_snippet`, `trace_path`, or
+`find_usages` alongside `symbol` to select a specific overload or same-name
+method, including two methods in the same file. Supplied `path` and `scope`
+still constrain the selection. Traces return references for their root and
+neighbors; usages return references for the selected target and caller.
+Compact responses append reference columns without shifting existing columns.
+References bind the index location, full snapshot, extraction policy, definition
+identity and source hash. After a snapshot change, rediscover the definition;
+an outdated reference returns `cgrx.symbol_ref_not_found` without name fallback.
+Existing Rust APIs remain available; `SymbolSelector` and the `*_selected`
+methods provide exact selection. References are not written to usage logs.
 
 `find_similar` keeps exact duplicate bodies in `matches` and reports heuristic
 near-duplicates, similar structure and shared proven functionality separately in

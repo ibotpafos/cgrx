@@ -5,6 +5,7 @@ use std::path::{Component, Path};
 use cgrx_core::{
     EvidenceSelector, MAX_TRACE_BYTES, MAX_TRACE_SPANS, NormalizedBatch, NormalizedObservation,
     ObservationGap, RUNTIME_EVIDENCE_SCHEMA, ResolutionKind, RuntimeEndpoint, Scope,
+    SymbolSelector,
 };
 use cgrx_store::{ObservationStatus, ObservationStore, ResolvedBatch, ResolvedObservation};
 use serde::{Deserialize, Serialize};
@@ -394,8 +395,25 @@ impl Runtime {
         limit: usize,
         evidence: EvidenceSelector,
     ) -> Result<Value, RuntimeError> {
+        self.find_usages_selected_with_evidence(
+            SymbolSelector::new(symbol, path),
+            scope,
+            depth,
+            limit,
+            evidence,
+        )
+    }
+
+    pub fn find_usages_selected_with_evidence(
+        &self,
+        selector: SymbolSelector<'_>,
+        scope: &Scope,
+        depth: u8,
+        limit: usize,
+        evidence: EvidenceSelector,
+    ) -> Result<Value, RuntimeError> {
         if evidence == EvidenceSelector::Static {
-            return self.find_usages(symbol, path, scope, depth, limit);
+            return self.find_usages_selected(selector, scope, depth, limit);
         }
         if limit > 50 {
             return Err(RuntimeError::new(
@@ -403,14 +421,15 @@ impl Runtime {
                 "evidence-aware find_usages limit must be 1..50",
             ));
         }
-        let trace =
-            self.trace_path_with_evidence(symbol, path, "callers", depth, scope, limit, evidence)?;
+        let trace = self.trace_path_selected_with_evidence(
+            selector, "callers", depth, scope, limit, evidence,
+        )?;
         let usages = trace["nodes"]
             .as_array()
             .into_iter()
             .flatten()
             .map(|node| json!({
-                "source":{"node_id":node["node_id"],"symbol":node["symbol"],"path":node["path"]},
+                "source":{"node_id":node["node_id"],"symbol_ref":node["symbol_ref"],"symbol":node["symbol"],"path":node["path"]},
                 "site":{"path":node["path"],"span":node["span"]},
                 "hop":node["hop"],
                 "relation":"CALLS",
@@ -421,6 +440,7 @@ impl Runtime {
         Ok(json!({
             "snapshot":trace["snapshot"],
             "root":trace["root"],
+            "target":trace["root"],
             "evidence":evidence,
             "usages":usages,
             "total":trace["total"],
@@ -439,8 +459,28 @@ impl Runtime {
         limit: usize,
         evidence: EvidenceSelector,
     ) -> Result<Value, RuntimeError> {
+        self.trace_path_selected_with_evidence(
+            SymbolSelector::new(symbol, path),
+            direction,
+            depth,
+            scope,
+            limit,
+            evidence,
+        )
+    }
+
+    pub fn trace_path_selected_with_evidence(
+        &self,
+        selector: SymbolSelector<'_>,
+        direction: &str,
+        depth: u8,
+        scope: &Scope,
+        limit: usize,
+        evidence: EvidenceSelector,
+    ) -> Result<Value, RuntimeError> {
+        let SymbolSelector { symbol, path, .. } = selector;
         if evidence == EvidenceSelector::Static {
-            return self.trace_path(symbol, path, direction, depth, scope, limit);
+            return self.trace_path_selected(selector, direction, depth, scope, limit);
         }
         if symbol.trim().is_empty()
             || !matches!(direction, "callers" | "callees" | "both")
@@ -458,7 +498,19 @@ impl Runtime {
             .into_iter()
             .map(|document| (document.node_id, document))
             .collect();
-        let root = unique_root(by_id.values().copied(), symbol, path)?;
+        let root = if selector.symbol_ref.is_some() {
+            let candidates = by_id
+                .values()
+                .copied()
+                .filter(|document| {
+                    path.is_none_or(|path| document.path == path)
+                        && document.qualified_name.eq_ignore_ascii_case(symbol)
+                })
+                .collect();
+            self.select_document(selector, candidates)?
+        } else {
+            unique_root(by_id.values().copied(), symbol, path)?
+        };
         let observed = self.load_current_observations()?;
 
         let mut edges = BTreeMap::<(u64, u64), EdgeMetadata>::new();
@@ -540,6 +592,7 @@ impl Runtime {
                 let document = by_id[&node];
                 json!({
                     "node_id":node,
+                    "symbol_ref":self.symbol_reference(document),
                     "symbol":document.qualified_name,
                     "path":document.path,
                     "span":{"start":document.span_start,"end":document.span_end},
@@ -552,7 +605,7 @@ impl Runtime {
             .collect::<Vec<_>>();
         Ok(json!({
             "snapshot":self.stored.snapshot,
-            "root":{"node_id":root.node_id,"symbol":root.qualified_name,"path":root.path,"span":{"start":root.span_start,"end":root.span_end}},
+            "root":{"node_id":root.node_id,"symbol_ref":self.symbol_reference(root),"symbol":root.qualified_name,"path":root.path,"span":{"start":root.span_start,"end":root.span_end}},
             "direction":direction,
             "depth":depth,
             "evidence":evidence,
@@ -593,11 +646,16 @@ impl Runtime {
                     format!("line {line} is outside {path}"),
                 )
             })?;
+            let line_end = source[offset..]
+                .iter()
+                .position(|byte| *byte == b'\n')
+                .map_or(source.len(), |length| offset + length);
             let candidates = syntax
                 .clone()
                 .filter(|document| {
                     document.path == path
-                        && document.span_start <= offset
+                        && document.qualified_name == endpoint.function
+                        && document.span_start < line_end
                         && offset < document.span_end
                 })
                 .collect::<Vec<_>>();

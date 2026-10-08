@@ -462,6 +462,40 @@ mod proof_edge_tests {
         (repository, state, runtime, preserved)
     }
 
+    #[test]
+    fn symbol_reference_rejects_colliding_identity_even_with_a_unique_name() {
+        let (_repository, _state, mut runtime, _) = refresh_fixture("symbol-ref-node-collision");
+        let snippet = runtime
+            .get_code_snippet("target", Some("calls.rs"))
+            .unwrap();
+        let reference = snippet["symbol_ref"].as_str().unwrap();
+        let selector =
+            cgrx_core::SymbolSelector::new("target", Some("calls.rs")).with_ref(reference);
+        let mut collision = runtime
+            .stored
+            .documents
+            .iter()
+            .find(|document| document.provenance == "SYNTAX" && document.qualified_name == "target")
+            .unwrap()
+            .clone();
+        collision.qualified_name = "collision".into();
+        collision.path = "impl.rs".into();
+        runtime.stored.documents.push(collision);
+        runtime.stored.query_index = Default::default();
+        for indexed in [false, true] {
+            if indexed {
+                rebuild_query_index(&mut runtime.stored);
+            }
+            assert_eq!(
+                runtime
+                    .get_code_snippet_selected(selector)
+                    .unwrap_err()
+                    .code(),
+                "cgrx.symbol_ref_not_found"
+            );
+        }
+    }
+
     fn syntax(node_id: u64, name: &str, path: &str, start: usize, end: usize) -> StoredDocument {
         StoredDocument {
             php_function_target: None,

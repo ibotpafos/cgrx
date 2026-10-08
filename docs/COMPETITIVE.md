@@ -20,6 +20,12 @@ The comparison is grounded in real CGRX behavior documented in `README.md` and
 out explicitly rather than glossed over. No overall superiority over other
 tools is asserted.
 
+The [symbol selection follow-up](benchmarks/symbol-selection-evidence-2026-10-08.md)
+lets agents address individual same-name definitions using snapshot-bound
+references, including two methods in one file. It improves access to existing
+proven relationships; comparative performance and token-cost conclusions
+require separate measurements.
+
 The [2026-10-08 Python import experiment](benchmarks/python-import-evidence-2026-10-08.md)
 closes a measured navigation gap: CGRX improves from 0/24 to 24/24 selected
 source-curated import assertions, and compact outlines expose target spans and

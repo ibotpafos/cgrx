@@ -9,7 +9,7 @@ use std::sync::Arc;
 use cgrx_cli::{OrientPreparation, Runtime, RuntimeEvidenceFormat, TestRunRecord};
 use cgrx_core::{
     CapsuleStatus, EvidenceSelector, Hash32, QueryRequest, RelationKind, RepoSnapshot, Scope,
-    canonical_hash,
+    SymbolSelector, canonical_hash,
 };
 use cgrx_mcp::{BackendError, ToolBackend, revision_bound_handle};
 use serde::Deserialize;
@@ -527,6 +527,49 @@ impl ToolBackend for RuntimeMcpBackend {
         self.refresh()?;
         self.runtime
             .get_code_snippet(symbol, path)
+            .map_err(runtime_backend_error)
+    }
+
+    fn get_code_snippet_selected(
+        &mut self,
+        selector: SymbolSelector<'_>,
+    ) -> Result<Value, BackendError> {
+        self.refresh()?;
+        self.runtime
+            .get_code_snippet_selected(selector)
+            .map_err(runtime_backend_error)
+    }
+
+    fn trace_path_selected(
+        &mut self,
+        selector: SymbolSelector<'_>,
+        direction: &str,
+        depth: u8,
+        scope: Value,
+        limit: u32,
+        evidence: EvidenceSelector,
+    ) -> Result<Value, BackendError> {
+        self.refresh()?;
+        let scope = graph_scope(&scope)?;
+        let limit = usize_argument(limit, "limit")?;
+        self.runtime
+            .trace_path_selected_with_evidence(selector, direction, depth, &scope, limit, evidence)
+            .map_err(runtime_backend_error)
+    }
+
+    fn find_usages_selected(
+        &mut self,
+        selector: SymbolSelector<'_>,
+        scope: Value,
+        depth: u8,
+        limit: u32,
+        evidence: EvidenceSelector,
+    ) -> Result<Value, BackendError> {
+        self.refresh()?;
+        let scope = graph_scope(&scope)?;
+        let limit = usize_argument(limit, "limit")?;
+        self.runtime
+            .find_usages_selected_with_evidence(selector, &scope, depth, limit, evidence)
             .map_err(runtime_backend_error)
     }
 

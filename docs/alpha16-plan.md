@@ -32,6 +32,13 @@ address binding. Exact owner/element/target spans and the source hash bind the
 proof; reassignment, shadowing and unsupported element types remain gaps.
 All prior graph relationships across ten frozen snapshots are preserved.
 
+The subsequent [symbol selection iteration](benchmarks/symbol-selection-evidence-2026-10-08.md)
+adds snapshot-bound references for selecting distinct same-name definitions,
+including methods in the same file. Discovery, snippets, traces and usages
+carry these references through both MCP response profiles. The extraction
+revision remains unchanged; this iteration improves access to the existing
+graph. Overall quality grading and resource-efficiency measurements remain open.
+
 ## Priority and boundary
 
 1. **JS/TS:** JS is not registered in the alpha.15 default pack: `.js` files

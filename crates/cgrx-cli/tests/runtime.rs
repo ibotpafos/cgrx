@@ -8,7 +8,7 @@ static TEST_DIRECTORY_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 use cgrx_cgcr::QueryClass;
 use cgrx_cli::{GraphDirection, GraphViewRequest, OrientReport, Runtime, RuntimeEvidenceFormat};
-use cgrx_core::{EvidenceSelector, Mode, QueryRequest, RelationKind, Scope};
+use cgrx_core::{EvidenceSelector, Mode, QueryRequest, RelationKind, Scope, SymbolSelector};
 use cgrx_store::GenerationReader;
 
 struct TestDirectory(PathBuf);
@@ -2188,6 +2188,321 @@ fn get_code_snippet_fails_closed_for_ambiguous_and_missing_symbols() {
             .get_code_snippet("duplicate", Some("a.rs"))
             .expect("path disambiguates")["path"],
         "a.rs"
+    );
+}
+
+#[test]
+fn symbol_references_select_same_file_methods_and_follow_each_call_direction() {
+    let source = "package example\ntype A struct{}\ntype B struct{}\nfunc (a *A) Run() { a.helperA() }\nfunc (b *B) Run() { b.helperB() }\nfunc (a *A) helperA() {}\nfunc (b *B) helperB() {}\nfunc (a *A) CallerA() { a.Run() }\nfunc (b *B) CallerB() { b.Run() }\n";
+    let repository = repository_with_file("symbol-reference-methods", "main.go", source.as_bytes());
+    let state = TestDirectory::new("symbol-reference-methods-state");
+    Runtime::index(repository.path(), state.path()).unwrap();
+    let runtime = Runtime::open(state.path()).unwrap();
+    let scope = Scope {
+        include: vec![],
+        exclude: vec![],
+        relation_kinds: vec![RelationKind::Calls],
+        max_depth: 2,
+    };
+    let search = runtime.search_graph("Run", &scope, 10).unwrap();
+    let methods: Vec<_> = search["matches"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|row| row["symbol"] == "Run")
+        .collect();
+    assert_eq!(methods.len(), 2);
+    assert_ne!(methods[0]["symbol_ref"], methods[1]["symbol_ref"]);
+    let outline = runtime.get_outline("main.go", 100).unwrap();
+    assert_eq!(
+        runtime
+            .get_code_snippet("Run", Some("main.go"))
+            .unwrap_err()
+            .code(),
+        "cgrx.ambiguous_symbol"
+    );
+    assert_eq!(
+        runtime
+            .trace_path("Run", Some("main.go"), "callees", 1, &scope, 10)
+            .unwrap_err()
+            .code(),
+        "cgrx.ambiguous_symbol"
+    );
+    assert_eq!(
+        runtime
+            .find_usages("Run", Some("main.go"), &scope, 1, 10)
+            .unwrap_err()
+            .code(),
+        "cgrx.ambiguous_symbol"
+    );
+    let mut observations = String::new();
+    for (caller, callee, caller_anchor, callee_anchor) in [
+        ("CallerA", "Run", "CallerA", "Run() { a.helperA"),
+        ("CallerB", "Run", "CallerB", "Run() { b.helperB"),
+        ("Run", "helperA", "Run() { a.helperA", "helperA() {}"),
+        ("Run", "helperB", "Run() { b.helperB", "helperB() {}"),
+    ] {
+        let line = |anchor: &str| {
+            source[..source.find(anchor).unwrap()]
+                .bytes()
+                .filter(|byte| *byte == b'\n')
+                .count()
+                + 1
+        };
+        observations.push_str(
+            &serde_json::json!({
+                "schema":"cgrx.runtime.v1", "repo_revision":runtime.snapshot().repo_revision,
+                "environment":"test", "observed_at_unix_nanos":1000000000, "count":7,
+                "caller":{"function":caller,"file":"main.go","line":line(caller_anchor)},
+                "callee":{"function":callee,"file":"main.go","line":line(callee_anchor)}
+            })
+            .to_string(),
+        );
+        observations.push('\n');
+    }
+    assert_eq!(
+        runtime
+            .import_runtime_evidence(
+                repository.path(),
+                observations.as_bytes(),
+                RuntimeEvidenceFormat::Ndjson,
+                None,
+                None
+            )
+            .unwrap()
+            .accepted,
+        4
+    );
+    for (method, caller, helper, receiver) in [
+        (methods[0], "CallerA", "helperA", "a *A"),
+        (methods[1], "CallerB", "helperB", "b *B"),
+    ] {
+        let reference = method["symbol_ref"].as_str().unwrap();
+        let selector = SymbolSelector::new("Run", Some("main.go")).with_ref(reference);
+        let snippet = runtime.get_code_snippet_selected(selector).unwrap();
+        assert!(snippet["source"].as_str().unwrap().contains(receiver));
+        assert_eq!(snippet["definition_span"], method["span"]);
+        assert_eq!(
+            snippet["source_hash"],
+            serde_json::json!(blake3::hash(source.as_bytes()).to_hex().to_string())
+        );
+        assert_eq!(snippet["symbol_ref"], reference);
+        let symbol = outline["symbols"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["span"] == method["span"])
+            .unwrap();
+        assert_eq!(symbol["symbol_ref"], reference);
+        for evidence in [
+            EvidenceSelector::Static,
+            EvidenceSelector::All,
+            EvidenceSelector::Observed,
+        ] {
+            let trace = runtime
+                .trace_path_selected_with_evidence(selector, "callees", 1, &scope, 10, evidence)
+                .unwrap();
+            assert_eq!(trace["root"]["span"], method["span"]);
+            assert_eq!(trace["root"]["symbol_ref"], reference);
+            let usages = runtime
+                .find_usages_selected_with_evidence(selector, &scope, 1, 10, evidence)
+                .unwrap();
+            assert_eq!(usages["target"]["symbol_ref"], reference);
+            {
+                assert_eq!(trace["total"], 1);
+                assert_eq!(trace["nodes"][0]["symbol"], helper);
+                assert_eq!(usages["total"], 1);
+                assert_eq!(usages["usages"][0]["source"]["symbol"], caller);
+                for endpoint in [&trace["nodes"][0], &usages["usages"][0]["source"]] {
+                    let next = SymbolSelector::new(
+                        endpoint["symbol"].as_str().unwrap(),
+                        endpoint["path"].as_str(),
+                    )
+                    .with_ref(endpoint["symbol_ref"].as_str().unwrap());
+                    assert_eq!(
+                        runtime.get_code_snippet_selected(next).unwrap()["symbol_ref"],
+                        endpoint["symbol_ref"]
+                    );
+                }
+            }
+        }
+        assert_eq!(
+            Runtime::open(state.path())
+                .unwrap()
+                .get_code_snippet_selected(selector)
+                .unwrap(),
+            snippet
+        );
+        // A reference itself is sufficient to disambiguate the path, but never overrides a supplied path.
+        assert_eq!(
+            runtime
+                .get_code_snippet_selected(SymbolSelector::new("Run", None).with_ref(reference))
+                .unwrap(),
+            snippet
+        );
+        for invalid in [
+            SymbolSelector::new("missing", None).with_ref(reference),
+            SymbolSelector::new("Run", Some("other.go")).with_ref(reference),
+        ] {
+            assert_eq!(
+                runtime
+                    .get_code_snippet_selected(invalid)
+                    .unwrap_err()
+                    .code(),
+                "cgrx.symbol_ref_not_found"
+            );
+            assert_eq!(
+                runtime
+                    .trace_path_selected(invalid, "callers", 1, &scope, 10)
+                    .unwrap_err()
+                    .code(),
+                "cgrx.symbol_ref_not_found"
+            );
+            assert_eq!(
+                runtime
+                    .find_usages_selected(invalid, &scope, 1, 10)
+                    .unwrap_err()
+                    .code(),
+                "cgrx.symbol_ref_not_found"
+            );
+        }
+        let excluded = Scope {
+            exclude: vec!["main.go".into()],
+            ..scope.clone()
+        };
+        assert_eq!(
+            runtime
+                .trace_path_selected(selector, "callees", 1, &excluded, 10)
+                .unwrap_err()
+                .code(),
+            "cgrx.symbol_ref_not_found"
+        );
+        assert_eq!(
+            runtime
+                .find_usages_selected(selector, &excluded, 1, 10)
+                .unwrap_err()
+                .code(),
+            "cgrx.symbol_ref_not_found"
+        );
+    }
+}
+
+#[test]
+fn symbol_references_reject_malformed_stale_and_other_index_selections() {
+    let source = b"fn target() {} fn caller() { target(); }";
+    let repository = repository_with_file("symbol-reference-refresh", "main.rs", source);
+    let state = TestDirectory::new("symbol-reference-refresh-state");
+    Runtime::index(repository.path(), state.path()).unwrap();
+    let mut runtime = Runtime::open(state.path()).unwrap();
+    let scope = Scope {
+        include: vec![],
+        exclude: vec![],
+        relation_kinds: vec![RelationKind::Calls],
+        max_depth: 1,
+    };
+    let search = runtime.search_graph("target", &scope, 10).unwrap();
+    let reference = search["matches"][0]["symbol_ref"].as_str().unwrap();
+    let selector = SymbolSelector::new("target", Some("main.rs")).with_ref(reference);
+    assert!(runtime.get_code_snippet_selected(selector).is_ok());
+    for malformed in [
+        "",
+        "12345678901234567890",
+        "cgrxs1.abcd",
+        "cgrxs1.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    ] {
+        let invalid = SymbolSelector::new("target", Some("main.rs")).with_ref(malformed);
+        assert_eq!(
+            runtime
+                .get_code_snippet_selected(invalid)
+                .unwrap_err()
+                .code(),
+            "cgrx.invalid_arguments"
+        );
+        assert_eq!(
+            runtime
+                .trace_path_selected(invalid, "callers", 1, &scope, 10)
+                .unwrap_err()
+                .code(),
+            "cgrx.invalid_arguments"
+        );
+        assert_eq!(
+            runtime
+                .find_usages_selected(invalid, &scope, 1, 10)
+                .unwrap_err()
+                .code(),
+            "cgrx.invalid_arguments"
+        );
+    }
+    let unknown = format!("cgrxs1.{}", "0".repeat(64));
+    assert_eq!(
+        runtime
+            .get_code_snippet_selected(SymbolSelector::new("target", None).with_ref(&unknown))
+            .unwrap_err()
+            .code(),
+        "cgrx.symbol_ref_not_found"
+    );
+    let second_state = TestDirectory::new("symbol-reference-other-index");
+    Runtime::index(repository.path(), second_state.path()).unwrap();
+    assert_eq!(
+        Runtime::open(second_state.path())
+            .unwrap()
+            .get_code_snippet_selected(selector)
+            .unwrap_err()
+            .code(),
+        "cgrx.symbol_ref_not_found"
+    );
+    // Even an unrelated indexed source change expires all references in the snapshot.
+    fs::write(
+        repository.path().join("main.rs"),
+        b"fn target() {} fn caller() { target(); target(); }",
+    )
+    .unwrap();
+    assert!(runtime.refresh(repository.path()).unwrap());
+    for evidence in [
+        EvidenceSelector::Static,
+        EvidenceSelector::All,
+        EvidenceSelector::Observed,
+    ] {
+        assert_eq!(
+            runtime
+                .trace_path_selected_with_evidence(selector, "callers", 1, &scope, 10, evidence)
+                .unwrap_err()
+                .code(),
+            "cgrx.symbol_ref_not_found"
+        );
+        assert_eq!(
+            runtime
+                .find_usages_selected_with_evidence(selector, &scope, 1, 10, evidence)
+                .unwrap_err()
+                .code(),
+            "cgrx.symbol_ref_not_found"
+        );
+    }
+    assert_eq!(
+        runtime
+            .get_code_snippet_selected(selector)
+            .unwrap_err()
+            .code(),
+        "cgrx.symbol_ref_not_found"
+    );
+    let updated = runtime.search_graph("target", &scope, 10).unwrap();
+    let fresh_ref = updated["matches"][0]["symbol_ref"].as_str().unwrap();
+    assert_ne!(fresh_ref, reference);
+    let fresh_selector = SymbolSelector::new("target", None).with_ref(fresh_ref);
+    assert_eq!(
+        runtime
+            .find_usages_selected(fresh_selector, &scope, 1, 10)
+            .unwrap()["total"],
+        2
+    );
+    fs::remove_file(repository.path().join("main.rs")).unwrap();
+    runtime.refresh(repository.path()).unwrap();
+    assert_eq!(
+        runtime
+            .get_code_snippet_selected(fresh_selector)
+            .unwrap_err()
+            .code(),
+        "cgrx.symbol_ref_not_found"
     );
 }
 

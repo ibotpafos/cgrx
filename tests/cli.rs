@@ -1801,11 +1801,16 @@ fn serve_exposes_real_search_graph_and_trace_path_tools() {
     assert_eq!(trace_visible["paths"], serde_json::json!(["main.rs"]));
     assert_eq!(
         trace_visible["cols"],
-        serde_json::json!(["symbol", "path_id", "hop", "direction"])
+        serde_json::json!(["symbol", "path_id", "hop", "direction", "symbol_ref"])
     );
     assert_eq!(
         trace_visible["rows"][0],
-        serde_json::json!(["middle", 0, 1, "callers"])
+        serde_json::json!(["middle", 0, 1, "callers", traced["nodes"][0]["symbol_ref"]])
+    );
+    assert!(traced["nodes"][0]["symbol_ref"].is_string());
+    assert_eq!(
+        traced["root"]["symbol_ref"],
+        searched["matches"][0]["symbol_ref"]
     );
     let snippet = &responses[2];
     assert_eq!(
