@@ -5,6 +5,7 @@ use std::fs;
 use std::path::{Component, Path};
 
 use cgrx_core::{ByteRange, ConfidenceClass, EdgeEvidence, Hash32, RelationKind, ResolverClass};
+use cgrx_languages::{Span, call_target_spans};
 use protobuf::Message;
 use scip::types::occurrence::Typed_range;
 use scip::types::symbol_information::Kind as SymbolKind;
@@ -13,6 +14,15 @@ use scip::types::{Index, Occurrence, PositionEncoding, SymbolRole};
 use super::{RuntimeError, StoredArc, StoredDocument};
 
 const MAX_SCIP_BYTES: u64 = 512 * 1024 * 1024;
+pub(super) const RESOLUTION_REVISION: u32 = 2;
+
+pub(super) fn semantic_hash(bytes: &[u8]) -> Hash32 {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"cgrx.scip-resolution\0");
+    hasher.update(&RESOLUTION_REVISION.to_le_bytes());
+    hasher.update(bytes);
+    Hash32(*hasher.finalize().as_bytes())
+}
 
 pub(super) fn read_index(path: &Path) -> Result<Vec<u8>, RuntimeError> {
     let metadata =
@@ -56,6 +66,7 @@ pub(super) fn resolve(
         .documents
         .iter()
         .flat_map(|document| &document.symbols)
+        .chain(&index.external_symbols)
         .filter_map(|symbol| {
             symbol
                 .kind
@@ -87,7 +98,7 @@ pub(super) fn resolve(
         }
         let line_starts = line_starts(source);
         for occurrence in &document.occurrences {
-            if occurrence.symbol.is_empty() || scip::symbol::is_local_symbol(&occurrence.symbol) {
+            if occurrence.symbol.is_empty() {
                 continue;
             }
             let Some(span) = occurrence_span(occurrence, source, &line_starts, encoding) else {
@@ -103,6 +114,10 @@ pub(super) fn resolve(
                     definition: occurrence.symbol_roles & SymbolRole::Definition as i32 != 0,
                 });
         }
+    }
+
+    for items in occurrences.values_mut() {
+        items.sort_unstable_by_key(|occurrence| (occurrence.start, occurrence.end));
     }
 
     let mut targets = BTreeMap::<String, BTreeSet<u64>>::new();
@@ -133,6 +148,7 @@ pub(super) fn resolve(
             by_path
         });
     let mut arcs = Vec::new();
+    let mut call_names = BTreeMap::new();
     for call in documents.iter().filter(|document| {
         document.provenance == "CALLS"
             && document
@@ -141,6 +157,22 @@ pub(super) fn resolve(
                 .any(|tag| tag == "DYNAMIC_DISPATCH" || tag == "DYNAMIC_PROPERTY")
     }) {
         let Some(source_hash) = path_hashes.get(&call.path).copied() else {
+            continue;
+        };
+        let Some(source_bytes) = source_by_path.get(call.path.as_str()).copied() else {
+            continue;
+        };
+        let Some(names) = call_names
+            .entry(call.path.as_str())
+            .or_insert_with(|| call_target_spans(Path::new(&call.path), source_bytes))
+            .as_ref()
+        else {
+            continue;
+        };
+        let Some(name) = names.get(&Span {
+            start: call.span_start,
+            end: call.span_end,
+        }) else {
             continue;
         };
         let Some(source) = syntax_by_path
@@ -159,23 +191,34 @@ pub(super) fn resolve(
         else {
             continue;
         };
-        let candidate_targets: BTreeSet<_> = occurrences
-            .get(&call.path)
-            .into_iter()
-            .flatten()
-            .filter(|occurrence| {
-                !occurrence.definition
-                    && occurrence.start >= call.span_start
-                    && occurrence.end <= call.span_end
-            })
-            .filter_map(|occurrence| {
-                let nodes = targets.get(&occurrence.symbol)?;
-                let mut nodes = nodes.iter().copied();
-                let target = nodes.next()?;
-                nodes.next().is_none().then_some(target)
-            })
+        // Resolve one semantic identity at the callee itself before mapping it
+        // to graph nodes. Unknown, local or polymorphic alternatives cannot be
+        // discarded to manufacture a unique concrete target.
+        let Some(references) = occurrences.get(&call.path) else {
+            continue;
+        };
+        let name_span = (name.start, name.end);
+        let first = references.partition_point(|item| (item.start, item.end) < name_span);
+        let identities: BTreeSet<_> = references[first..]
+            .iter()
+            .take_while(|item| (item.start, item.end) == name_span)
+            .filter(|occurrence| !occurrence.definition)
+            .map(|occurrence| occurrence.symbol.as_str())
             .collect();
-        let mut candidate_targets = candidate_targets.into_iter();
+        let mut identities = identities.into_iter();
+        let Some(identity) = identities.next() else {
+            continue;
+        };
+        if identities.next().is_some()
+            || scip::symbol::is_local_symbol(identity)
+            || polymorphic_symbols.contains(identity)
+        {
+            continue;
+        }
+        let Some(candidate_targets) = targets.get(identity) else {
+            continue;
+        };
+        let mut candidate_targets = candidate_targets.iter().copied();
         let Some(target) = candidate_targets.next() else {
             continue;
         };

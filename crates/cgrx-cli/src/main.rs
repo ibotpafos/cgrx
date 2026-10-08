@@ -881,7 +881,12 @@ fn open_managed_runtime_with_scip(
         .map_err(|error| error.to_string())?;
     }
     match Runtime::open(state) {
-        Err(error) if error.code() == "extraction_revision" => {
+        Err(error)
+            if matches!(
+                error.code(),
+                "extraction_revision" | "scip_resolution_revision"
+            ) =>
+        {
             if let Some(path) = scip_index {
                 Runtime::index_committed_head_with_scip(root, state, path)
             } else {

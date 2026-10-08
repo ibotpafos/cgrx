@@ -71,7 +71,7 @@ pub(super) fn index_source(
         .transpose()?;
     let scip_hash = scip_bytes
         .as_deref()
-        .map(|bytes| Hash32(*blake3::hash(bytes).as_bytes()));
+        .map(super::scip_resolution::semantic_hash);
     let graph_generation = generation_id_with_semantic(&revision, scip_hash);
     let snapshot = RepoSnapshot {
         repo_revision: revision,
@@ -295,6 +295,9 @@ pub(super) fn index_source(
         index_input_bytes,
         indexed_files,
         scip_edges,
+        scip_resolution_revision: scip_bytes
+            .as_ref()
+            .map(|_| super::scip_resolution::RESOLUTION_REVISION),
         path_hashes,
         documents,
         arcs,

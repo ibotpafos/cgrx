@@ -134,11 +134,18 @@ cgrx serve --root . --scip index.scip
 
 For an explicit index destination, use `cgrx index --root . --state /path/to/state
 --scip /path/to/index.scip --json`. CGRX matches SCIP definition and reference
-ranges against the current source before adding `SCIP_CONFIRMED` call edges. The
-SCIP file hash is part of the graph generation, so replacing the semantic index
-cannot reuse a syntax-only cache. Only a unique concrete target closes the gap;
-trait, abstract, protocol, specification, and pure-virtual method targets remain
+ranges to the exact called name before adding `SCIP_CONFIRMED` call edges.
+References in receivers, type arguments, and callback arguments cannot resolve
+the enclosing call. Only one global identity mapped to one concrete indexed
+definition closes the gap; unknown or local alternatives preserve ambiguity.
+Trait, abstract, protocol, specification, and pure-virtual method targets remain
 visible as `DYNAMIC_DISPATCH` because their runtime implementation is still open.
+
+Generate SCIP from the same source revision you index. Embedded document text,
+when supplied by the indexer, must match the source; SCIP also permits omitted
+text. Both the SCIP bytes and the import policy are part of the graph generation.
+An obsolete semantic policy requires reindexing; a managed server rebuilds from
+its source and supplied SCIP index. Without SCIP it rebuilds native evidence.
 
 ## Explore the graph locally
 

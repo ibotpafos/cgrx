@@ -287,6 +287,8 @@ struct StoredIndex {
     indexed_files: u64,
     #[serde(default)]
     scip_edges: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    scip_resolution_revision: Option<u32>,
     path_hashes: BTreeMap<String, Hash32>,
     documents: Vec<StoredDocument>,
     arcs: Vec<StoredArc>,
@@ -295,6 +297,22 @@ struct StoredIndex {
     #[serde(default)]
     similarity_index: refactors::SimilarityIndex,
     coverage: CoverageMetadata,
+}
+
+impl StoredIndex {
+    fn scip_policy_is_current(&self) -> bool {
+        match self.scip_resolution_revision {
+            Some(revision) => revision == scip_resolution::RESOLUTION_REVISION,
+            None => {
+                self.scip_edges == 0
+                    && !self.arcs.iter().any(|arc| {
+                        arc.evidence.as_ref().is_some_and(|evidence| {
+                            evidence.resolver == cgrx_core::ResolverClass::ScipConfirmed
+                        })
+                    })
+            }
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -367,6 +385,7 @@ fn open_current_report(state: &Path, snapshot: &RepoSnapshot) -> Option<IndexRep
     let stored: StoredIndex = serde_json::from_slice(&bytes).ok()?;
     if stored.snapshot != *snapshot
         || stored.extraction_revision != EXTRACTION_REVISION
+        || !stored.scip_policy_is_current()
         || !stored.similarity_index.is_current()
         || reader.read_segment(TERMS_SEGMENT).ok().as_deref() != Some(TERMS_MARKER)
     {
@@ -857,6 +876,12 @@ impl Runtime {
             return Err(RuntimeError::new(
                 "extraction_revision",
                 "stored extraction revision is obsolete; reindex source before opening",
+            ));
+        }
+        if !stored.scip_policy_is_current() {
+            return Err(RuntimeError::new(
+                "scip_resolution_revision",
+                "stored SCIP resolution policy is obsolete; reindex source with a current SCIP index",
             ));
         }
         normalize_stored(&mut stored);

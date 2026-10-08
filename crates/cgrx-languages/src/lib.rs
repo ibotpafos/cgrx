@@ -1,6 +1,7 @@
 //! Narrow, deterministic C, Go, Java, Kotlin, TypeScript, Python, and Rust extraction packs.
 
 mod c;
+mod call_targets;
 mod go;
 mod java;
 pub mod javascript;
@@ -37,6 +38,7 @@ pub const EXPERIMENTAL_PHP_ENABLED: bool = cfg!(feature = "experimental-php");
 pub const EXPERIMENTAL_SWIFT_ENABLED: bool = cfg!(feature = "experimental-swift");
 pub const EXPERIMENTAL_JAVASCRIPT_ENABLED: bool = cfg!(feature = "experimental-javascript");
 
+pub use call_targets::call_target_spans;
 pub use go::{GoCallableKind, GoCallableType, go_callable_type};
 pub use python::{PythonFileFacts, PythonImportBinding};
 pub use rust::RustFileFacts;

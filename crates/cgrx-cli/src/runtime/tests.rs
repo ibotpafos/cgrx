@@ -962,6 +962,7 @@ mod proof_edge_tests {
             index_input_bytes: 0,
             indexed_files: 1,
             scip_edges: 0,
+            scip_resolution_revision: None,
             path_hashes: BTreeMap::from([("src/main.py".to_owned(), Hash32([4; 32]))]),
             documents: vec![
                 syntax(1, "caller", "src/main.py", 0, 80),
@@ -1015,6 +1016,7 @@ mod proof_edge_tests {
             index_input_bytes: 0,
             indexed_files: 1,
             scip_edges: 0,
+            scip_resolution_revision: None,
             path_hashes: BTreeMap::from([("src/trait.rs".to_owned(), Hash32([7; 32]))]),
             documents: vec![
                 syntax(1, "implementation", "src/trait.rs", 0, 40),
@@ -1124,6 +1126,7 @@ mod proof_edge_tests {
                 index_input_bytes: 0,
                 indexed_files: 1,
                 scip_edges: 0,
+                scip_resolution_revision: None,
                 path_hashes: BTreeMap::from([(path.to_owned(), hash)]),
                 documents: extracted.documents,
                 arcs: vec![StoredArc {
@@ -1173,6 +1176,7 @@ mod proof_edge_tests {
             index_input_bytes: 0,
             indexed_files: 1,
             scip_edges: 0,
+            scip_resolution_revision: None,
             path_hashes: BTreeMap::from([("main.py".to_owned(), hash)]),
             documents: vec![
                 syntax(1, "caller", "main.py", 0, 80),
