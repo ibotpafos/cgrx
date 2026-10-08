@@ -24,7 +24,7 @@ the refreshed graph.
 Use the smallest useful sequence:
 
 1. `search_graph` with a symbol or intent and a small limit.
-2. `trace_path` from a returned symbol and path, initially at depth 1.
+2. `trace_path` from a returned definition, initially at depth 1.
 3. `get_code_snippet` for definitions behind material claims.
 4. `check_index_coverage` for every evidence path used in the conclusion.
 
@@ -32,6 +32,25 @@ Use `get_outline` for file structure, `find_usages` for bounded references,
 `get_architecture` for package and symbol topology, and `suggest_refactors` for
 candidate refactors. Treat returned limits and `truncated` as real boundaries;
 narrow the request instead of inventing pagination fields.
+
+Carry the returned `symbol`, `path`, and `symbol_ref` together when selecting a
+definition with `get_code_snippet`, `trace_path`, or `find_usages`. Select the
+correct definition span from `search_graph` or `get_outline` when names repeat.
+Treat `symbol_ref` as opaque and bound to that repository's index snapshot;
+never derive it from a name or node ID. After `cgrx.symbol_ref_not_found`, refresh
+status and rediscover the definition. Older servers without `symbol_ref` need a
+unique symbol/path match; inspect ambiguity instead of choosing the first match.
+
+For import or declaration dependency questions, use `find_usages` with an
+explicit `scope.relation_kinds` such as `IMPORTS` or `REFERENCES`, depth 1, and a
+small limit. Select the destination's syntax definition. An import binding may
+have no definition `symbol_ref`; do not turn its source site into a selector.
+`IMPORTS` and `REFERENCES` establish dependency identity, not a `CALLS` callee.
+Keep type, value, and `typeof` uses distinct and inspect owned coverage gaps for
+unsupported module configuration, shadowing, merges, or dynamic dispatch.
+
+Decode compact `cols`/`rows` responses by their returned column names. Preserve
+evidence, coverage, and truncation fields just as with the `full` profile.
 
 Read source directly when coverage is partial, unknown, excluded, or stale,
 when an answer is ambiguous, or when a relation looks suspicious. Use direct
