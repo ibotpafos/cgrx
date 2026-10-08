@@ -10,6 +10,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+import re
 import sys
 
 from validate_real_tasks import validate
@@ -38,11 +39,15 @@ def load_index(state):
 
 
 def score(corpus, index, python_imports=False, rust_self=False, rust_receivers=False,
-          go_indexed_fields=False):
+          go_indexed_fields=False, source_relationships=False):
     tasks = corpus['tasks']
-    require(sum((python_imports, rust_self, rust_receivers, go_indexed_fields)) <= 1,
+    require(sum((python_imports, rust_self, rust_receivers, go_indexed_fields,
+                 source_relationships)) <= 1,
             'choose one evidence mode')
-    if python_imports:
+    if source_relationships:
+        require(all(t['expected']['relation'] in ('CALLS', 'IMPORTS', 'REFERENCE', 'UNRESOLVED')
+                    for t in tasks), 'unsupported source relationship')
+    elif python_imports:
         require(all(Path(t['evidence']['source']['path']).suffix == '.py'
                     and t['expected']['relation'] == 'IMPORTS' for t in tasks),
                 'Python mode requires explicit import assertions')
@@ -76,6 +81,18 @@ def score(corpus, index, python_imports=False, rust_self=False, rust_receivers=F
         return (document['path'] == anchor['path']
                 and document['qualified_name'] == anchor['symbol']
                 and start <= document['span_start'] < document['span_end'] <= end)
+
+    def called_name(document):
+        name = document['qualified_name']
+        if name.startswith('unresolved:'):
+            # Use only the callee prefix, never identifiers in call arguments.
+            expression = name[len('unresolved:'):]
+            prefix, opening, _ = expression.partition('(')
+            if not opening:
+                return None
+            match = re.search(r'([A-Za-z_$][\w$]*)\s*$', prefix)
+            return match.group(1) if match else None
+        return re.split(r'\.|::', name)[-1]
 
     def rust_identity(proof, source, target):
         path = proof['path']
@@ -186,19 +203,34 @@ def score(corpus, index, python_imports=False, rust_self=False, rust_receivers=F
         kind = {'REFERENCE': 'REFERENCES', 'UNRESOLVED': 'CALLS'}.get(
             task['expected']['relation'], task['expected']['relation'])
         at_site = []
+        owned_calls = [d for d in documents.values()
+                       if d['path'] == anchors['site']['path'] and d['provenance'] == 'CALLS'
+                       and start <= d['span_start'] < end
+                       and 'STATEMENT_CALL' not in d.get('semantic_tags', [])
+                       and called_name(d) == anchors['site']['symbol']]
+        call_spans = {(d['span_start'], d['span_end']) for d in owned_calls}
+
+        def reference_owned(site):
+            lines = source_cache[(task['repo'], anchors['site']['path'])]
+            text = b''.join(lines)[site['start']:site['end']].decode('utf-8', errors='replace')
+            return (re.fullmatch(r'[A-Za-z_$][\w$]*(?:(?:\.|::)[A-Za-z_$][\w$]*)*', text)
+                    is not None and re.split(r'\.|::', text)[-1] == anchors['site']['symbol'])
         # A Python line can import several members. Each curated assertion
         # owns a named member, so unrelated members on the line are not FPs.
         member_spans = {(d['span_start'], d['span_end']) for d in documents.values()
                         if d['provenance'] == 'IMPORTS'
                         and d.get('semantic_tags') == ['PY_IMPORT_BINDING']
-                        and in_anchor(task, d, anchors['source'])} if python_imports else None
+                        and in_anchor(task, d, anchors['source'])} if (python_imports
+                            or (source_relationships and kind == 'IMPORTS')) else None
         for arc in index['arcs']:
             evidence = arc.get('evidence') or {}
             site = evidence.get('span', {})
             if (arc['kind'] == kind and evidence.get('path') == anchors['site']['path']
                     and start <= site.get('start', -1) < end
-                    and (member_spans is None or (site.get('start'), site.get('end')) in member_spans)
-                    and site.get('start', -1) < site.get('end', -1)):
+                    and site.get('start', -1) < site.get('end', -1)
+                    and (kind != 'CALLS' or (site.get('start'), site.get('end')) in call_spans)
+                    and (not source_relationships or kind != 'REFERENCES' or reference_owned(site))
+                    and (member_spans is None or (site.get('start'), site.get('end')) in member_spans)):
                 at_site.append(arc)
         proven = [arc for arc in at_site if arc['evidence'].get('confidence') == 'PROVEN']
         matched = []
@@ -216,15 +248,24 @@ def score(corpus, index, python_imports=False, rust_self=False, rust_receivers=F
                              and src_start <= source['span_start'] < source['span_end'] <= src_end)
             ledger = index.get('python_files' if python_imports else 'ts_files', {})
             ledger_ok = proof.get('source_hash') == ledger.get(proof['path'], {}).get('source_hash')
+            if source_relationships:
+                # All-language grading checks the source-bound graph contract.
+                # Language-specific receipt grading remains in the existing modes.
+                ledger_ok = proof.get('source_hash') == hashes.get(proof['path'])
+                source_ok = in_anchor(task, source, anchors['source'])
+            source_ok &= source['provenance'] == ('IMPORTS' if kind == 'IMPORTS' else 'SYNTAX')
             if rust_self or rust_receivers:
                 ledger_ok = rust_identity(proof, source, target)
             if go_indexed_fields:
                 ledger_ok = go_indexed_identity(proof, source, target)
-            if python_imports:
+            if python_imports or (source_relationships and kind == 'IMPORTS'
+                                  and source.get('semantic_tags') == ['PY_IMPORT_BINDING']):
+                ledger = index.get('python_files', {})
                 source_facts = ledger.get(proof['path'], {}).get('facts', {})
                 target_entry = ledger.get(target['path'], {})
                 target_facts = target_entry.get('facts', {})
                 ledger_ok &= (source_facts.get('valid') is True and target_facts.get('valid') is True
+                              and ledger.get(proof['path'], {}).get('source_hash') == proof.get('source_hash')
                               and source['provenance'] == 'IMPORTS'
                               and source.get('semantic_tags') == ['PY_IMPORT_BINDING']
                               and target_entry.get('source_hash') == hashes.get(target['path'])
@@ -243,10 +284,9 @@ def score(corpus, index, python_imports=False, rust_self=False, rust_receivers=F
                 matched.append(arc)
         # A call may start on the anchored line and end several lines later.
         # CGRX coalesces nested dynamic gaps into their enclosing expression.
-        unresolved_calls = [d for d in documents.values()
-                            if d['path'] == anchors['site']['path'] and d['provenance'] == 'CALLS'
-                            and start <= d['span_start'] < end
-                            and 'DYNAMIC_DISPATCH' in d.get('semantic_tags', [])]
+        unresolved_calls = [d for d in owned_calls
+                            if 'DYNAMIC_DISPATCH' in d.get('semantic_tags', [])
+                            or (source_relationships and 'EXACT_CALL' in d.get('semantic_tags', []))]
         gap = False
         for location in index['coverage']['dynamic_dispatch']:
             prefix = anchors['site']['path'] + ':'
@@ -260,6 +300,7 @@ def score(corpus, index, python_imports=False, rust_self=False, rust_receivers=F
             'id': task['id'], 'relation': task['expected']['relation'],
             'passed': passed, 'proven_arcs_at_site': len(proven),
             'matching_exact_arcs': len(matched), 'dispatch_gap_at_site': gap,
+            'owned_call_spans': len(call_spans) if kind == 'CALLS' else None,
         })
     positives = [o for o in outcomes if o['relation'] != 'UNRESOLVED']
     negatives = [o for o in outcomes if o['relation'] == 'UNRESOLVED']
@@ -273,7 +314,8 @@ def score(corpus, index, python_imports=False, rust_self=False, rust_receivers=F
         'abstention_assertions': len(negatives), 'respected_abstentions': sum(o['passed'] for o in negatives),
         'false_proven_at_abstention_sites': sum(o['proven_arcs_at_site'] for o in negatives),
         'passed': all(o['passed'] for o in outcomes), 'outcomes': outcomes,
-        'language_scope': ('python explicit imports' if python_imports else
+        'language_scope': ('source-curated native relationships' if source_relationships else
+                          'python explicit imports' if python_imports else
                           'go indexed field calls' if go_indexed_fields else
                           'rust receiver calls' if rust_receivers else
                           'rust self calls' if rust_self else 'javascript'),
@@ -291,6 +333,8 @@ def main():
     modes.add_argument('--rust-self', action='store_true')
     modes.add_argument('--rust-receivers', action='store_true')
     modes.add_argument('--go-indexed-fields', action='store_true')
+    modes.add_argument('--source-relationships', action='store_true',
+                       help='grade native caller, target, named-site and hash ownership across languages')
     args = parser.parse_args()
     try:
         data = args.corpus.read_bytes()
@@ -298,7 +342,8 @@ def main():
         validate(corpus)
         report = score(corpus, load_index(args.state), python_imports=args.python_imports,
                        rust_self=args.rust_self, rust_receivers=args.rust_receivers,
-                       go_indexed_fields=args.go_indexed_fields)
+                       go_indexed_fields=args.go_indexed_fields,
+                       source_relationships=args.source_relationships)
         report['corpus_sha256'] = hashlib.sha256(data).hexdigest()
         encoded = json.dumps(report, indent=2) + '\n'
         if args.output:

@@ -35,6 +35,7 @@ impl LanguagePack for Python {
             .parse(source, None)
             .ok_or(ExtractError::ParseFailed)?;
         let references = python_reference_imports(tree.root_node(), source);
+        let mut call_shadows = BTreeMap::new();
         let mut extraction = Extraction {
             python_file: Some(PythonFileFacts::from_tree(tree.root_node(), source)),
             ..Extraction::default()
@@ -63,7 +64,14 @@ impl LanguagePack for Python {
                         provenance: Provenance::Syntax,
                     });
                 }
-                self.classify(node, source, extraction);
+                if node.kind() == "call"
+                    && !has_ancestor(node, "decorator")
+                    && bare_call_is_shadowed(node, source, &mut call_shadows)
+                {
+                    unresolved(UnresolvedKind::Dispatch, node, source, extraction);
+                } else {
+                    self.classify(node, source, extraction);
+                }
             },
         );
         normalize_extraction(&mut extraction);
@@ -110,6 +118,73 @@ impl LanguagePack for Python {
             _ => {}
         }
     }
+}
+
+fn bare_call_is_shadowed(
+    call: Node<'_>,
+    source: &[u8],
+    cache: &mut BTreeMap<usize, BTreeSet<String>>,
+) -> bool {
+    let Some(function) = call
+        .child_by_field_name("function")
+        .filter(|node| node.kind() == "identifier")
+    else {
+        return false;
+    };
+    let name = text(function, source);
+    let mut parent = call.parent();
+    while let Some(scope) = parent {
+        if matches!(scope.kind(), "function_definition" | "lambda")
+            && scope.child_by_field_name("body").is_some_and(|body| {
+                body.start_byte() <= call.start_byte() && call.end_byte() <= body.end_byte()
+            })
+        {
+            let shadows = cache.entry(scope.id()).or_insert_with(|| {
+                let mut names = BTreeSet::new();
+                if let Some(parameters) = scope.child_by_field_name("parameters") {
+                    let mut cursor = parameters.walk();
+                    for parameter in parameters.named_children(&mut cursor) {
+                        let binding = parameter
+                            .child_by_field_name("name")
+                            .or_else(|| {
+                                matches!(
+                                    parameter.kind(),
+                                    "typed_parameter"
+                                        | "list_splat_pattern"
+                                        | "dictionary_splat_pattern"
+                                )
+                                .then(|| parameter.named_child(0))
+                                .flatten()
+                            })
+                            .unwrap_or(parameter);
+                        collect_binding_names(binding, source, &mut names);
+                    }
+                }
+                if let Some(body) = scope.child_by_field_name("body") {
+                    let mut bindings = BTreeMap::new();
+                    module_bindings(body, source, &mut bindings);
+                    // A unique direct local function declaration can still bind
+                    // a callable. Parameters and other local writes cannot.
+                    let mut cursor = body.walk();
+                    let functions: BTreeSet<_> = body
+                        .named_children(&mut cursor)
+                        .filter(|node| node.kind() == "function_definition")
+                        .filter_map(|node| node.child_by_field_name("name"))
+                        .map(|node| text(node, source))
+                        .collect();
+                    names.extend(bindings.into_iter().filter_map(|(name, count)| {
+                        (count != 1 || !functions.contains(&name)).then_some(name)
+                    }));
+                }
+                names
+            });
+            if shadows.contains(&name) || shadows.contains("*") {
+                return true;
+            }
+        }
+        parent = scope.parent();
+    }
+    false
 }
 
 /// Source declarations and explicit relative import clauses. These facts do
@@ -364,7 +439,14 @@ fn collect_binding_names(node: Node<'_>, source: &[u8], names: &mut BTreeSet<Str
     }
     if matches!(
         node.kind(),
-        "list" | "tuple" | "list_pattern" | "tuple_pattern" | "pattern_list" | "as_pattern_target"
+        "list"
+            | "tuple"
+            | "list_pattern"
+            | "tuple_pattern"
+            | "pattern_list"
+            | "as_pattern_target"
+            | "list_splat_pattern"
+            | "dictionary_splat_pattern"
     ) {
         let mut cursor = node.walk();
         for child in node.named_children(&mut cursor) {
@@ -495,5 +577,117 @@ mod import_fact_tests {
         );
         assert!(facts.valid);
         assert!(facts.exports.contains_key("helper"));
+    }
+}
+
+#[cfg(test)]
+mod call_shadow_tests {
+    use super::*;
+    use std::path::Path;
+
+    fn assert_helper_call(source: &str, exact: bool) {
+        let extraction = PYTHON
+            .extract(Path::new("calls.py"), source.as_bytes())
+            .unwrap();
+        assert!(extraction.python_file.as_ref().unwrap().valid, "{source}");
+        let call = source.rfind("helper()").unwrap();
+        assert_eq!(
+            extraction.edges.iter().any(|edge| {
+                edge.relation == RelationKind::Calls
+                    && edge.target == "helper"
+                    && edge.span.start == call
+            }),
+            exact,
+            "{source}"
+        );
+        assert_eq!(
+            extraction
+                .unresolved
+                .iter()
+                .any(|site| { site.kind == UnresolvedKind::Dispatch && site.span.start == call }),
+            !exact,
+            "{source}"
+        );
+    }
+
+    #[test]
+    fn parameters_shadow_global_functions_in_all_parameter_forms() {
+        for parameter in [
+            "helper",
+            "helper=None",
+            "helper: Callable",
+            "helper: Callable=None",
+            "*helper",
+            "**helper",
+            "*helper: Callable",
+            "**helper: Callable",
+            "helper, /",
+            "*, helper",
+        ] {
+            assert_helper_call(
+                &format!("def helper():\n return 1\ndef invoke({parameter}):\n return helper()\n"),
+                false,
+            );
+        }
+    }
+
+    #[test]
+    fn local_writes_shadow_the_entire_function_even_after_a_call() {
+        for statement in [
+            "helper = other",
+            "helper: Callable = other",
+            "helper, other = values",
+            "*helper, other = values",
+            "helper += other",
+            "del helper",
+            "for helper in values:\n  pass",
+            "with resource as helper:\n  pass",
+            "try:\n  pass\n except Exception as helper:\n  pass",
+            "from package import helper",
+            "import package as helper",
+        ] {
+            assert_helper_call(
+                &format!("def helper():\n return 1\ndef invoke():\n helper()\n {statement}\n"),
+                false,
+            );
+        }
+    }
+
+    #[test]
+    fn enclosing_parameters_and_lambda_parameters_shadow_global_functions() {
+        assert_helper_call(
+            "def helper():\n return 1\ndef outer(helper):\n def inner():\n  return helper()\n return inner\n",
+            false,
+        );
+        for parameter in ["helper", "helper=None", "*helper", "**helper"] {
+            assert_helper_call(
+                &format!("def helper():\n return 1\ninvoke = lambda {parameter}: helper()\n"),
+                false,
+            );
+        }
+    }
+
+    #[test]
+    fn a_default_expression_uses_the_enclosing_scope() {
+        assert_helper_call(
+            "def helper():\n return 1\ndef invoke(helper=helper()):\n return helper\n",
+            true,
+        );
+        assert_helper_call(
+            "def helper():\n return 1\ndef outer(helper):\n def inner(helper=helper()):\n  return helper\n return inner\n",
+            false,
+        );
+    }
+
+    #[test]
+    fn unrelated_bindings_and_nested_parameters_preserve_known_calls() {
+        assert_helper_call(
+            "def helper():\n return 1\ndef invoke(other):\n other = None\n def inner(helper):\n  return helper\n return helper()\n",
+            true,
+        );
+        assert_helper_call(
+            "def invoke():\n def helper():\n  return 1\n return helper()\n",
+            true,
+        );
     }
 }

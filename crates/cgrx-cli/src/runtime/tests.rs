@@ -463,6 +463,83 @@ mod proof_edge_tests {
     }
 
     #[test]
+    fn python_named_callback_without_proof_has_a_gap_at_its_own_callsite() {
+        let (repo, state, _, _) = refresh_fixture("python-callback-gap");
+        let source = "def helper(): return 1\ndef invoke(callback): return callback() + helper()\n";
+        fs::write(repo.path().join("callbacks.py"), source).unwrap();
+        git(repo.path(), &["add", "callbacks.py"]);
+        git(repo.path(), &["commit", "-qm", "callback fixture"]);
+        Runtime::index(repo.path(), state.path()).unwrap();
+        let runtime = Runtime::open(state.path()).unwrap();
+        let callback = source.find("callback()").unwrap();
+        let helper = source.rfind("helper()").unwrap();
+        assert!(runtime.stored.coverage.dynamic_dispatch.contains(&format!(
+            "callbacks.py:{callback}-{}",
+            callback + "callback()".len()
+        )));
+        assert!(!runtime.stored.coverage.dynamic_dispatch.contains(&format!(
+            "callbacks.py:{helper}-{}",
+            helper + "helper()".len()
+        )));
+        assert!(runtime.stored.arcs.iter().any(|arc| {
+            arc.kind == RelationKind::Calls
+                && arc.evidence.as_ref().is_some_and(|proof| {
+                    proof.path == "callbacks.py"
+                        && proof.span == ByteRange::new(helper, helper + "helper()".len())
+                        && proof.is_definitive()
+                })
+        }));
+    }
+
+    #[test]
+    fn python_parameter_shadowing_refreshes_proof_and_gap_together() {
+        let (repo, state, _, _) = refresh_fixture("python-callback-shadow-gap");
+        let original = "def helper(): return 1\ndef invoke(): return helper()\n";
+        fs::write(repo.path().join("callbacks.py"), original).unwrap();
+        git(repo.path(), &["add", "callbacks.py"]);
+        git(repo.path(), &["commit", "-qm", "known call fixture"]);
+        Runtime::index(repo.path(), state.path()).unwrap();
+        let mut runtime = Runtime::open(state.path()).unwrap();
+        let count = |runtime: &Runtime| {
+            runtime
+                .stored
+                .arcs
+                .iter()
+                .filter(|arc| {
+                    arc.kind == RelationKind::Calls
+                        && arc.evidence.as_ref().is_some_and(|proof| {
+                            proof.path == "callbacks.py" && proof.is_definitive()
+                        })
+                })
+                .count()
+        };
+        assert_eq!(count(&runtime), 1);
+        let shadowed = "def helper(): return 1\ndef invoke(helper): return helper()\n";
+        fs::write(repo.path().join("callbacks.py"), shadowed).unwrap();
+        assert!(runtime.refresh(repo.path()).unwrap());
+        assert_eq!(count(&runtime), 0);
+        let site = shadowed.rfind("helper()").unwrap();
+        assert!(
+            runtime
+                .stored
+                .coverage
+                .dynamic_dispatch
+                .contains(&format!("callbacks.py:{site}-{}", site + "helper()".len()))
+        );
+        fs::write(repo.path().join("callbacks.py"), original).unwrap();
+        assert!(runtime.refresh(repo.path()).unwrap());
+        assert_eq!(count(&runtime), 1);
+        assert!(
+            !runtime
+                .stored
+                .coverage
+                .dynamic_dispatch
+                .iter()
+                .any(|location| location.starts_with("callbacks.py:"))
+        );
+    }
+
+    #[test]
     fn symbol_reference_rejects_colliding_identity_even_with_a_unique_name() {
         let (_repository, _state, mut runtime, _) = refresh_fixture("symbol-ref-node-collision");
         let snippet = runtime
@@ -1431,7 +1508,7 @@ mod compact_storage_tests {
         );
         assert_eq!(
             EXTRACTION_REVISION,
-            93 + if cgrx_languages::EXPERIMENTAL_PHP_ENABLED {
+            109 + if cgrx_languages::EXPERIMENTAL_PHP_ENABLED {
                 2
             } else {
                 0

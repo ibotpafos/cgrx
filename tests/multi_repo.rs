@@ -636,7 +636,23 @@ fn risk_scan_four_language_matrix_and_cache() {
         fs::write(&path, broken).unwrap();
         let v = risks(&mut m, &a);
         let r = &v["result"]["structuredContent"];
-        assert_eq!(r["findings"].as_array().unwrap().len(), 1, "{ext}: {v}");
+        // Unknown Python callees now carry a dispatch gap, so an absence-based
+        // removed-target candidate cannot claim clean relationship coverage.
+        assert_eq!(
+            r["findings"].as_array().unwrap().len(),
+            usize::from(ext != "py"),
+            "{ext}: {v}"
+        );
+        if ext == "py" {
+            assert_eq!(r["partial"], true);
+            assert!(
+                r["coverage_gaps"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|gap| { gap["code"] == "DYNAMIC_DISPATCH" && gap["path"] == "main.py" })
+            );
+        }
         assert_eq!(r["baseline_cache_hit"], false);
         let warm = risks(&mut m, &a);
         assert_eq!(
@@ -644,10 +660,17 @@ fn risk_scan_four_language_matrix_and_cache() {
             true
         );
         fs::write(&path, fixed).unwrap();
+        let repaired = risks(&mut m, &a);
         assert_eq!(
-            risks(&mut m, &a)["result"]["structuredContent"]["findings"],
+            repaired["result"]["structuredContent"]["findings"],
             json!([])
         );
+        if ext == "py" {
+            assert_eq!(
+                repaired["result"]["structuredContent"]["coverage_gap_count"],
+                0
+            );
+        }
         git(&a, &["add", "-A"]);
         git(&a, &["commit", "-qm", "repair"]);
         let fresh = risks(&mut m, &a);

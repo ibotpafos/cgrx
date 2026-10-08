@@ -98,6 +98,103 @@ class EvidenceIntegrityTests(unittest.TestCase):
         self.assertFalse(result['passed'])
         self.assertEqual(result['unmatched_proven_at_positive_sites'], 1)
 
+    def nested(self):
+        data = (b'function target() {}\nfunction wrap(value) { return value; }\n'
+                b'function caller() {\n wrap(target());\n}\n')
+        self.root.joinpath('main.js').write_bytes(data)
+        task = copy.deepcopy(self.task)
+        task['evidence']['source'].update(start_line=3, end_line=5)
+        task['evidence']['site'].update(start_line=4, end_line=4)
+        index = copy.deepcopy(self.index)
+        for document in index['documents'][:2]:
+            document['span_start'] = data.index(document['qualified_name'].encode())
+            document['span_end'] = document['span_start'] + len(document['qualified_name'])
+        inner_start = data.index(b'target()', data.index(b'caller'))
+        outer_start = data.index(b'wrap(target())')
+        inner = {'start': inner_start, 'end': inner_start + len(b'target()')}
+        outer = {'start': outer_start, 'end': outer_start + len(b'wrap(target())')}
+        index['documents'][2].update(span_start=inner['start'], span_end=inner['end'])
+        wrap_start = data.index(b'wrap')
+        index['documents'] += [
+            {'node_id': 4, 'path': 'main.js', 'qualified_name': 'wrap', 'provenance': 'SYNTAX',
+             'span_start': wrap_start, 'span_end': wrap_start + 4},
+            {'node_id': 5, 'path': 'main.js', 'qualified_name': 'wrap', 'provenance': 'CALLS',
+             'span_start': outer['start'], 'span_end': outer['end'], 'semantic_tags': ['EXACT_CALL']},
+        ]
+        index['arcs'][0]['evidence']['span'] = inner
+        outer_arc = copy.deepcopy(index['arcs'][0])
+        outer_arc['target'] = 4
+        outer_arc['evidence']['span'] = outer
+        index['arcs'].append(outer_arc)
+        return task, index, inner
+
+    def test_known_enclosing_call_does_not_own_the_nested_assertion(self):
+        task, index, _ = self.nested()
+        for mode in ({}, {'source_relationships': True}):
+            result = score({'tasks': [task]}, index, **mode)
+            self.assertTrue(result['passed'])
+            self.assertEqual(result['outcomes'][0]['proven_arcs_at_site'], 1)
+
+    def test_known_enclosing_call_is_not_a_false_proof_for_nested_abstention(self):
+        task, index, inner = self.nested()
+        task['expected']['relation'] = 'UNRESOLVED'
+        del task['evidence']['target']
+        index['arcs'].pop(0)
+        index['documents'][2]['semantic_tags'] = ['DYNAMIC_DISPATCH']
+        index['coverage']['dynamic_dispatch'] = [f"main.js:{inner['start']}-{inner['end']}"]
+        result = score({'tasks': [task]}, index, source_relationships=True)
+        self.assertTrue(result['passed'])
+        self.assertEqual(result['false_proven_at_abstention_sites'], 0)
+
+    def test_nested_name_in_an_unrelated_gap_cannot_satisfy_abstention(self):
+        task, index, _ = self.nested()
+        task['expected']['relation'] = 'UNRESOLVED'
+        del task['evidence']['target']
+        index['arcs'].clear()
+        index['documents'][2]['semantic_tags'] = ['EXACT_CALL']
+        outer = index['documents'][-1]
+        outer['qualified_name'] = 'unresolved:wrap(target())'
+        outer['semantic_tags'] = ['DYNAMIC_DISPATCH']
+        index['coverage']['dynamic_dispatch'] = [f"main.js:{outer['span_start']}-{outer['span_end']}"]
+        self.assertFalse(score({'tasks': [task]}, index)['passed'])
+
+    def test_source_relationships_reject_wrong_owner_and_missing_call_identity(self):
+        for case in ('source-kind', 'call-name', 'call-span', 'source', 'target', 'hash', 'resolver'):
+            with self.subTest(case=case):
+                index = copy.deepcopy(self.index)
+                if case == 'source-kind':
+                    index['documents'][1]['provenance'] = 'IMPORTS'
+                elif case == 'call-name':
+                    index['documents'][2]['qualified_name'] = 'other'
+                elif case == 'call-span':
+                    index['documents'][2]['span_end'] -= 1
+                elif case in ('source', 'target'):
+                    index['documents'][1 if case == 'source' else 0]['qualified_name'] = 'other'
+                elif case == 'hash':
+                    index['arcs'][0]['evidence']['source_hash'] = 'cd' * 32
+                else:
+                    index['arcs'][0]['evidence']['resolver'] = 'FALLBACK'
+                self.assertFalse(score({'tasks': [self.task]}, index,
+                                       source_relationships=True)['passed'])
+
+    def test_reference_requires_the_named_identifier_at_the_proof_span(self):
+        data = b'function target() {}\nfunction caller() {\n return target;\n}\n'
+        self.root.joinpath('main.js').write_bytes(data)
+        task = copy.deepcopy(self.task)
+        task['expected']['relation'] = 'REFERENCE'
+        task['evidence']['source']['end_line'] = 4
+        index = copy.deepcopy(self.index)
+        index['arcs'][0]['kind'] = 'REFERENCES'
+        start = data.rindex(b'target')
+        index['arcs'][0]['evidence']['span'] = {'start': start, 'end': start + 6}
+        self.assertTrue(score({'tasks': [task]}, index, source_relationships=True)['passed'])
+        for span in ({'start': start - 7, 'end': start + 6},
+                     {'start': start, 'end': start + 3}, {'start': start}):
+            with self.subTest(span=span):
+                index['arcs'][0]['evidence']['span'] = span
+                self.assertFalse(score({'tasks': [task]}, index,
+                                       source_relationships=True)['passed'])
+
     def test_stale_snapshot_is_invalid(self):
         self.index['snapshot']['repo_revision'] = 'b' * 40
         with self.assertRaisesRegex(ValueError, 'stale'):
@@ -442,7 +539,11 @@ class PythonImportIntegrityTests(unittest.TestCase):
                       'coverage': {'dynamic_dispatch': []}}
 
     def report(self, index=None):
-        return score({'tasks': [self.task]}, index or self.index, python_imports=True)
+        index = index or self.index
+        result = score({'tasks': [self.task]}, index, python_imports=True)
+        native = score({'tasks': [self.task]}, index, source_relationships=True)
+        self.assertEqual(native['outcomes'], result['outcomes'])
+        return result
 
     def test_other_member_on_same_line_is_not_a_false_edge(self):
         result = self.report()
@@ -458,7 +559,7 @@ class PythonImportIntegrityTests(unittest.TestCase):
         self.assertEqual(result['unmatched_proven_at_positive_sites'], 1)
 
     def test_missing_or_inconsistent_source_and_target_ledgers_fail(self):
-        for case in ('source', 'target', 'invalid-source', 'invalid-target', 'target-hash',
+        for case in ('source', 'target', 'invalid-source', 'invalid-target', 'source-hash', 'target-hash',
                      'export-span', 'import-span', 'imported-name', 'source-tag'):
             with self.subTest(case=case):
                 index = copy.deepcopy(self.index)
@@ -467,8 +568,8 @@ class PythonImportIntegrityTests(unittest.TestCase):
                     del files['main.py' if case == 'source' else 'helper.py']
                 elif case.startswith('invalid'):
                     files['main.py' if case == 'invalid-source' else 'helper.py']['facts']['valid'] = False
-                elif case == 'target-hash':
-                    files['helper.py']['source_hash'] = 'ef' * 32
+                elif case in ('source-hash', 'target-hash'):
+                    files['main.py' if case == 'source-hash' else 'helper.py']['source_hash'] = 'ef' * 32
                 elif case == 'export-span':
                     files['helper.py']['facts']['exports']['target'] = [0, 1]
                 elif case == 'source-tag':

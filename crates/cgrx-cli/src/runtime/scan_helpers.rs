@@ -412,6 +412,9 @@ pub(super) fn refresh_proof_gaps(stored: &mut StoredIndex) {
         .iter()
         .filter(|doc| {
             doc.go_import_path.is_some()
+                || (doc.path.ends_with(".py")
+                    && doc.provenance == "CALLS"
+                    && doc.semantic_tags.iter().any(|tag| tag == "EXACT_CALL"))
                 || (matches!(doc.provenance.as_str(), "CALLS" | "REFERENCES")
                     && super::php_resolution::is_php_path(&doc.path))
                 || doc

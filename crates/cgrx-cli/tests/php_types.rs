@@ -470,7 +470,7 @@ fn php_type_revision_30_cache_requires_a_new_generation() {
     let mut old = fixture.stored();
     assert_eq!(
         old["extraction_revision"],
-        95 + 4 * u32::from(cgrx_languages::EXPERIMENTAL_SWIFT_ENABLED)
+        111 + 4 * u32::from(cgrx_languages::EXPERIMENTAL_SWIFT_ENABLED)
             + 8 * u32::from(cgrx_languages::EXPERIMENTAL_JAVASCRIPT_ENABLED)
     );
     old["extraction_revision"] = json!(30);
