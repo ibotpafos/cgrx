@@ -29,7 +29,12 @@ overall superiority or resource efficiency.
 
 The [Rust receiver follow-up](benchmarks/rust-lifetime-evidence-2026-10-08.md)
 resolves three lifetime-based self calls that CBM's selected CALLS queries miss.
-CBM finds the two remaining local/parameter receiver targets that CGRX still misses.
+At that iteration CBM finds the two remaining local/parameter receiver targets
+that CGRX misses. The subsequent [parameter receiver experiment](benchmarks/rust-parameter-evidence-2026-10-08.md)
+closes the witness parameter case, bringing CGRX to four of five selected
+targets while CBM 0.10.8 returns two. The local constructed receiver remains
+missing in CGRX. Eight constructed Rust compiler checks validate the native
+proof's first-candidate boundary, including trait-preemption abstentions.
 The five diagnosed cases are implementation-informed observations from one
 source file; they do not establish a broad Rust or resource-efficiency win.
 

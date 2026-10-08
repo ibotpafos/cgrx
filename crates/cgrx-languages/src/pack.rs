@@ -58,6 +58,18 @@ pub enum Provenance {
         caller: Span,
         target: Span,
     },
+    /// A named, explicitly typed parameter whose receiver type exactly matches
+    /// the first Rust method-lookup candidate of a same-module inherent method.
+    RustParameter {
+        owner: Span,
+        caller: Span,
+        parameter: Span,
+        binding: Span,
+        receiver_type: Span,
+        receiver: Span,
+        target_implementation: Span,
+        target: Span,
+    },
     /// Same-file own receiver -> direct concrete field -> declared method.
     /// Type spans identify declarations, not guessed names; field is its name.
     GoFieldReceiver {
@@ -242,6 +254,30 @@ impl Extraction {
                     (b"rust_self_target_impl", target_implementation),
                     (b"rust_self_caller", caller),
                     (b"rust_self_target", target),
+                ] {
+                    update(&mut hasher, kind, "", span);
+                }
+            }
+            if let Provenance::RustParameter {
+                owner,
+                caller,
+                parameter,
+                binding,
+                receiver_type,
+                receiver,
+                target_implementation,
+                target,
+            } = edge.provenance
+            {
+                for (kind, span) in [
+                    (b"rust_parameter_owner".as_slice(), owner),
+                    (b"rust_parameter_caller", caller),
+                    (b"rust_parameter_declaration", parameter),
+                    (b"rust_parameter_binding", binding),
+                    (b"rust_parameter_type", receiver_type),
+                    (b"rust_parameter_receiver", receiver),
+                    (b"rust_parameter_impl", target_implementation),
+                    (b"rust_parameter_target", target),
                 ] {
                     update(&mut hasher, kind, "", span);
                 }

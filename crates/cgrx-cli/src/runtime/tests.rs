@@ -149,6 +149,86 @@ mod proof_edge_tests {
     }
 
     #[test]
+    fn rust_parameter_proof_requires_exact_identity_and_current_source_hash() {
+        let source = b"#[derive(Default)] struct A; impl A { fn run(&self) {} } fn caller(value: &A) { value.run(); }";
+        let extracted = extract_path("main.rs", source).unwrap();
+        let hashes = BTreeMap::from([(
+            "main.rs".to_owned(),
+            Hash32(*blake3::hash(source).as_bytes()),
+        )]);
+        let arcs = rebuild_arcs(&extracted.documents, &hashes, &BTreeMap::new());
+        assert_eq!(
+            arcs.iter()
+                .filter(|arc| arc.kind == RelationKind::Calls)
+                .count(),
+            1
+        );
+        for case in [
+            "missing",
+            "caller",
+            "target",
+            "owner",
+            "parameter",
+            "binding",
+            "type",
+            "receiver",
+            "impl",
+            "hash",
+            "tag",
+            "duplicate",
+        ] {
+            let mut docs = extracted.documents.clone();
+            let call = docs
+                .iter_mut()
+                .find(|d| d.rust_parameter_target.is_some())
+                .unwrap();
+            if case == "missing" {
+                call.rust_parameter_target = None;
+            } else if case == "tag" {
+                call.semantic_tags.retain(|t| t != "RUST_PARAMETER_CALL");
+            } else if case == "duplicate" {
+                let span = call.rust_parameter_target.as_ref().unwrap().target;
+                let target = docs
+                    .iter()
+                    .find(|d| {
+                        d.provenance == "SYNTAX"
+                            && d.span_start == span.start
+                            && d.span_end == span.end
+                    })
+                    .unwrap()
+                    .clone();
+                docs.push(target);
+            } else {
+                let proof = call.rust_parameter_target.as_mut().unwrap();
+                match case {
+                    "caller" => proof.caller.start += 1,
+                    "target" => proof.target.start += 1,
+                    "owner" => proof.owner.start += 1,
+                    "parameter" => proof.parameter.start = 0,
+                    "binding" => proof.binding.end = proof.receiver_type.end,
+                    "type" => proof.receiver_type.start = proof.binding.start,
+                    "receiver" => proof.receiver.start += 1,
+                    "impl" => proof.target_implementation.end = proof.target_implementation.start,
+                    "hash" => proof.source_hash = Hash32([9; 32]),
+                    _ => unreachable!(),
+                }
+            }
+            assert!(
+                rebuild_arcs(&docs, &hashes, &BTreeMap::new())
+                    .iter()
+                    .all(|arc| arc.kind != RelationKind::Calls),
+                "{case}"
+            );
+        }
+        let changed_hashes = BTreeMap::from([("main.rs".to_owned(), Hash32([7; 32]))]);
+        assert!(
+            rebuild_arcs(&extracted.documents, &changed_hashes, &BTreeMap::new())
+                .iter()
+                .all(|arc| arc.kind != RelationKind::Calls)
+        );
+    }
+
+    #[test]
     fn rust_self_owner_proof_missing_or_stale_metadata_never_guesses() {
         let source = b"struct A; impl A { fn caller(&self) { self.run(); } fn run(&self) {} }";
         let extracted = extract_path("main.rs", source).unwrap();
@@ -299,6 +379,7 @@ mod proof_edge_tests {
             php_type_target: None,
             rust_module_target: None,
             rust_self_target: None,
+            rust_parameter_target: None,
             ts_lexical_target: None,
             ts_constructor_target: None,
             go_field_target: None,
@@ -329,6 +410,7 @@ mod proof_edge_tests {
             php_type_target: None,
             rust_module_target: None,
             rust_self_target: None,
+            rust_parameter_target: None,
             ts_lexical_target: None,
             ts_constructor_target: None,
             go_field_target: None,
@@ -1218,7 +1300,7 @@ mod compact_storage_tests {
         );
         assert_eq!(
             EXTRACTION_REVISION,
-            61 + if cgrx_languages::EXPERIMENTAL_PHP_ENABLED {
+            77 + if cgrx_languages::EXPERIMENTAL_PHP_ENABLED {
                 2
             } else {
                 0

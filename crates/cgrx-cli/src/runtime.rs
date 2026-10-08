@@ -50,7 +50,7 @@ use scan_helpers::{
 };
 use target_types::{
     GoFieldTarget, GoLocalConstructorTarget, GoReceiverTarget, JavaConstructorTarget,
-    RustSelfTarget, TsLexicalTarget,
+    RustParameterTarget, RustSelfTarget, TsLexicalTarget,
 };
 use ts_config::TsResolutionConfig;
 use ts_helpers::{
@@ -90,10 +90,10 @@ use serde_json::{Value, json};
 
 // Read the effective dependency policy, not just this crate's feature flag:
 // Cargo may enable an experimental language through another workspace member.
-// Revisions through 59 include historical and experimental caches. Distinct bits
+// Revisions through 75 include historical and experimental caches. Distinct bits
 // ensure no old cache acquires a different language policy by matching a number.
 const EXTRACTION_REVISION: u32 =
-    61 + if cgrx_languages::EXPERIMENTAL_PHP_ENABLED {
+    77 + if cgrx_languages::EXPERIMENTAL_PHP_ENABLED {
         2
     } else {
         0
@@ -213,6 +213,8 @@ struct StoredDocument {
     rust_module_target: Option<TsLexicalTarget>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     rust_self_target: Option<Box<RustSelfTarget>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    rust_parameter_target: Option<Box<RustParameterTarget>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     ts_lexical_target: Option<TsLexicalTarget>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -2810,6 +2810,52 @@ fn rust_receiver_calls_never_guess_same_named_free_function() {
 }
 
 #[test]
+fn rust_parameter_proofs_survive_reopen_and_invalidate_changed_receiver_types() {
+    let source = "#[derive(Default)] struct A; struct B; impl A { fn run(&self) {} } impl B { fn run(&self) {} } fn run() {} fn caller(value: &A) { value.run(); }";
+    let repository = repository_with_file("rust-parameter-owner", "main.rs", source.as_bytes());
+    let state = TestDirectory::new("rust-parameter-owner-state");
+    Runtime::index(repository.path(), state.path()).unwrap();
+    let mut runtime = Runtime::open(state.path()).unwrap();
+    let scope = Scope {
+        include: vec!["**".to_owned()],
+        exclude: vec![],
+        relation_kinds: vec![RelationKind::Calls],
+        max_depth: 1,
+    };
+    let check = |runtime: &Runtime, target_start: usize| {
+        let result = runtime
+            .trace_path("caller", Some("main.rs"), "callees", 1, &scope, 50)
+            .unwrap();
+        let nodes = result["nodes"].as_array().unwrap();
+        assert_eq!(nodes.len(), 1, "{result}");
+        assert_eq!(nodes[0]["span"]["start"], target_start);
+    };
+    check(&runtime, source.find("fn run").unwrap() + 3);
+    check(
+        &Runtime::open(state.path()).unwrap(),
+        source.find("fn run").unwrap() + 3,
+    );
+    let changed = source.replace("value: &A", "value: &B");
+    fs::write(repository.path().join("main.rs"), &changed).unwrap();
+    assert!(runtime.refresh(repository.path()).unwrap());
+    check(&runtime, changed.find("impl B { fn run").unwrap() + 12);
+    fs::write(
+        repository.path().join("main.rs"),
+        source.replace("value: &A", "value: A"),
+    )
+    .unwrap();
+    assert!(runtime.refresh(repository.path()).unwrap());
+    let result = runtime
+        .trace_path("caller", Some("main.rs"), "callees", 1, &scope, 50)
+        .unwrap();
+    assert_eq!(result["nodes"], serde_json::json!([]));
+    assert!(!runtime.coverage().dynamic_dispatch.is_empty());
+    fs::write(repository.path().join("main.rs"), source).unwrap();
+    assert!(runtime.refresh(repository.path()).unwrap());
+    check(&runtime, source.find("fn run").unwrap() + 3);
+}
+
+#[test]
 fn rust_lifetime_self_proofs_survive_reopen_and_refresh_without_retargeting() {
     let source = "struct A<'a>(&'a u8); struct B; impl A<'_> { fn caller(&self) { self.run(); Self::build(); } } impl<'x> A<'x> { fn run(&self) {} fn build() {} } impl B { fn run(&self) {} fn build() {} } fn run() {}";
     let repository = repository_with_file("rust-lifetime-owner", "main.rs", source.as_bytes());

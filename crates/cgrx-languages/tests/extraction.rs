@@ -463,6 +463,122 @@ fn rebuild_arcs() {}
 }
 
 #[test]
+fn rust_parameter_calls_prove_the_first_receiver_candidate_and_exact_declarations() {
+    for source in [
+        "struct A; impl A { fn run(&self) {} } fn caller(value: &A) { value.run(); }",
+        "struct A; impl A { fn run(&mut self) {} } fn caller(value: &mut A) { value.run(); }",
+        "struct A; impl A { fn run(self) {} } fn caller(value: A) { value.run(); }",
+        "struct A<'a>(&'a u8); impl A<'_> { fn run(&self) {} } fn caller(value: &A<'_>) { value.run(); }",
+        "#[derive(Default)] struct A { #[cfg(test)] field: u8 } impl A { fn run(&self) {} } fn caller(value: &A) { value.run(); }",
+        "struct A; impl A { fn run(&mut self) {} } trait T { fn run(&self); } impl T for A { fn run(&self) {} } fn caller(value: &mut A) { value.run(); }",
+        "struct A; impl A { fn run(&self) {} } fn caller<T>(value: &A, _other: T) { value.run(); }",
+        "mod inner { struct A; impl A { fn run(&self) {} } fn caller(value: &A) { value.run(); } }",
+        "struct A; impl A { fn run(&self) {} } fn caller(value: &A) { { let value = 0; } value.run(); }",
+        "struct A; impl A { fn run(&self) {} } fn caller(value: &A) { let value = value.run(); }",
+    ] {
+        let source =
+            format!("{source} struct Other; impl Other {{ fn run(&self) {{}} }} fn run() {{}}");
+        let extraction = pack_for_path(Path::new("main.rs"))
+            .unwrap()
+            .extract(Path::new("main.rs"), source.as_bytes())
+            .unwrap();
+        let calls: Vec<_> = extraction
+            .edges
+            .iter()
+            .filter(|edge| edge.relation == RelationKind::Calls)
+            .collect();
+        assert_eq!(calls.len(), 1, "{source}");
+        let Provenance::RustParameter {
+            owner,
+            caller,
+            parameter,
+            binding,
+            receiver_type,
+            receiver,
+            target_implementation,
+            target,
+        } = calls[0].provenance
+        else {
+            panic!("missing parameter proof: {source}")
+        };
+        assert_eq!(&source[owner.start..owner.end], "A");
+        assert_eq!(caller.start, source.find("fn caller").unwrap() + 3);
+        assert_eq!(target.start, source.find("fn run").unwrap() + 3);
+        assert_eq!(&source[binding.start..binding.end], "value");
+        assert_eq!(&source[receiver.start..receiver.end], "value");
+        assert_eq!(
+            &source[receiver_type.start..receiver_type.end],
+            source[parameter.start..parameter.end]
+                .split_once(':')
+                .unwrap()
+                .1
+                .trim()
+        );
+        assert!(parameter.start <= binding.start && binding.end < receiver_type.start);
+        assert!(receiver_type.end <= parameter.end && parameter.end < receiver.start);
+        assert!(
+            target_implementation.start < target.start && target.end < target_implementation.end
+        );
+    }
+}
+
+#[test]
+fn rust_parameter_calls_abstain_on_shadowing_and_later_lookup_candidates() {
+    for source in [
+        "struct A; impl A { fn run(&self) {} } fn caller(value: A) { value.run(); }",
+        "struct A; impl A { fn run(&self) {} } fn caller(value: &mut A) { value.run(); }",
+        "struct A; impl A { fn run(self) {} } fn caller(value: &A) { value.run(); }",
+        "struct A; impl A { fn run(&self) {} } fn caller(value: Box<A>) { value.run(); }",
+        "struct A; impl A { fn run(&self) {} } fn caller(value: &self::A) { value.run(); }",
+        "struct A; impl A { fn run(&self) {} } type Alias = A; fn caller(value: &Alias) { value.run(); }",
+        "struct A<T>(T); impl<T> A<T> { fn run(&self) {} } fn caller(value: &A<u8>) { value.run(); }",
+        "struct A; impl A { fn run(&self) {} } fn caller<A>(value: &A) { value.run(); }",
+        "struct A; impl A { fn run(&self) {} } fn caller((value, _): (&A, u8)) { value.run(); }",
+        "struct A; impl A { fn run(&self) {} } fn caller(value: &A) { let f = || value.run(); }",
+        "struct A; impl A { fn run(&self) {} } fn caller(value: &A) { let value = Other; value.run(); }",
+        "struct A; impl A { fn run(&self) {} } fn caller(value: &A) { match 1 { value => value.run() } }",
+        "struct A; impl A { fn run(&self) {} } fn caller(value: &A) { for value in [] { value.run(); } }",
+        "struct A; impl A { fn run(&self) {} } fn caller(value: &A) { if let Some(value) = None { value.run(); } }",
+        "struct A; impl A { fn run(&self) {} } fn caller(value: &A) { while let Some(value) = None { value.run(); } }",
+        "struct A; impl A { fn run(&self) {} } fn caller(value: &A) { shadow!(); value.run(); }",
+        "struct A; impl A { fn run(&self) {} } fn caller(#[cfg(test)] value: &A) { value.run(); }",
+        "struct A; impl A { fn run(&self) {} } #[cfg(test)] fn caller(value: &A) { value.run(); }",
+        "#[cfg(test)] struct A; impl A { fn run(&self) {} } fn caller(value: &A) { value.run(); }",
+        "#[replace] #[derive(Default)] struct A; impl A { fn run(&self) {} } fn caller(value: &A) { value.run(); }",
+        "struct A; impl A { #[cfg(test)] fn run(&self) {} } fn caller(value: &A) { value.run(); }",
+        "struct A; #[cfg(test)] impl A { fn run(&self) {} } fn caller(value: &A) { value.run(); }",
+        "#[cfg(test)] mod inner { struct A; impl A { fn run(&self) {} } fn caller(value: &A) { value.run(); } }",
+        "struct A; struct A; impl A { fn run(&self) {} } fn caller(value: &A) { value.run(); }",
+        "struct A; impl A { fn run(&self) {} } impl A { fn run(&self) {} } fn caller(value: &A) { value.run(); }",
+        "struct A<'a: 'static>(&'a u8); impl A<'_> { fn run(&self) {} } fn caller(value: &A<'_>) { value.run(); }",
+        "struct A; impl A { fn run() {} } fn caller(value: &A) { value.run(); }",
+        "struct A; impl A { fn run(&self) {} } fn caller(value: &A) { value.field.run(); }",
+        "struct A; impl A { fn run(&mut self) {} } trait T { fn run(&self); } impl T for A { fn run(&self) {} } fn caller(mut value: A) { value.run(); }",
+    ] {
+        let source =
+            format!("{source} struct Other; impl Other {{ fn run(&self) {{}} }} fn run() {{}}");
+        let extraction = pack_for_path(Path::new("main.rs"))
+            .unwrap()
+            .extract(Path::new("main.rs"), source.as_bytes())
+            .unwrap();
+        assert!(
+            !extraction
+                .edges
+                .iter()
+                .any(|e| e.relation == RelationKind::Calls),
+            "{source}"
+        );
+        assert!(
+            extraction
+                .unresolved
+                .iter()
+                .any(|u| u.kind == UnresolvedKind::Dispatch),
+            "{source}"
+        );
+    }
+}
+
+#[test]
 fn rust_lifetime_only_self_calls_retain_exact_owner_and_target_identity() {
     for source in [
         "struct A<'a>(&'a u8); impl A<'_> { fn caller(&self) { self.run(); } fn run(&self) {} }",

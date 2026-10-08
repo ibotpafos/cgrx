@@ -788,6 +788,7 @@ mod tests {
             php_type_target: None,
             rust_module_target: None,
             rust_self_target: None,
+            rust_parameter_target: None,
             ts_lexical_target: None,
             ts_constructor_target: None,
             go_field_target: None,

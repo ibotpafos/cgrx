@@ -239,6 +239,68 @@ class RustSelfIntegrityTests(unittest.TestCase):
         self.assertFalse(self.report(index, task)['passed'])
 
 
+class RustParameterIntegrityTests(RustSelfIntegrityTests):
+    def setUp(self):
+        super().setUp()
+        data = b"#[derive(Default)] struct A;\nimpl A { fn target(&self) {} }\nfn caller(value: &A) { value.target(); }\n"
+        self.root.joinpath('main.rs').write_bytes(data)
+        docs = []
+        for node_id, name in ((1, 'caller'), (2, 'target'), (4, 'A')):
+            body_start = data.index(b'struct') if name == 'A' else data.index(f'fn {name}'.encode())
+            start = data.index(name.encode(), body_start)
+            docs.append({'node_id': node_id, 'path': 'main.rs', 'qualified_name': name,
+                         'provenance': 'SYNTAX', 'span_start': start, 'span_end': start + len(name),
+                         'body_start': body_start, 'body_end': data.index(b'\n', body_start)})
+        span = lambda d: {'start': d['span_start'], 'end': d['span_end']}
+        position = lambda fragment: {'start': data.index(fragment),
+                                     'end': data.index(fragment) + len(fragment)}
+        call_start = data.index(b'value.target()')
+        call_end = call_start + len(b'value.target()')
+        docs.append({'node_id': 3, 'path': 'main.rs', 'qualified_name': 'target',
+                     'provenance': 'CALLS', 'span_start': call_start, 'span_end': call_end,
+                     'semantic_tags': ['EXACT_CALL', 'RUST_PARAMETER_CALL'], 'rust_parameter_target': {
+                         'source_hash': 'ab' * 32, 'caller': span(docs[0]), 'target': span(docs[1]),
+                         'owner': span(docs[2]), 'parameter': position(b'value: &A'),
+                         'binding': position(b'value'), 'receiver_type': position(b'&A'),
+                         'receiver': {'start': call_start, 'end': call_start + len(b'value')},
+                         'target_implementation': position(b'impl A { fn target(&self) {} }')}})
+        self.index.update(extraction_revision=77, documents=docs)
+        self.index['arcs'][0]['evidence']['span'] = {'start': call_start, 'end': call_end}
+        self.task['evidence']['target'].update(start_line=2, end_line=2)
+
+    def report(self, index=None, task=None):
+        return score({'tasks': [task or self.task]}, index or self.index, rust_receivers=True)
+
+    def test_damaged_receipt_cannot_turn_membership_into_proof(self):
+        for case in ('caller', 'target', 'owner', 'target_implementation', 'parameter',
+                     'binding', 'receiver_type', 'receiver', 'source_hash', 'tag',
+                     'missing-receipt', 'missing-ledger', 'duplicate-owner', 'hash'):
+            with self.subTest(case=case):
+                index = copy.deepcopy(self.index)
+                call = index['documents'][-1]
+                if case in ('caller', 'target', 'owner', 'target_implementation', 'parameter',
+                            'binding', 'receiver_type', 'receiver'):
+                    call['rust_parameter_target'][case]['start'] = 9999
+                elif case == 'source_hash':
+                    call['rust_parameter_target']['source_hash'] = 'cd' * 32
+                elif case == 'tag':
+                    call['semantic_tags'] = ['EXACT_CALL']
+                elif case == 'missing-receipt':
+                    del call['rust_parameter_target']
+                elif case == 'missing-ledger':
+                    del index['rust_files']
+                elif case == 'duplicate-owner':
+                    owner = copy.deepcopy(index['documents'][2])
+                    owner['node_id'] = 99
+                    index['documents'].append(owner)
+                else:
+                    index['arcs'][0]['evidence']['source_hash'] = 'cd' * 32
+                self.assertFalse(self.report(index)['passed'])
+
+    def test_parameter_receipt_requires_parameter_mode(self):
+        self.assertFalse(score({'tasks': [self.task]}, self.index, rust_self=True)['passed'])
+
+
 class PythonImportIntegrityTests(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()

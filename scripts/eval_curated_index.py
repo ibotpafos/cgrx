@@ -37,17 +37,17 @@ def load_index(state):
     return index
 
 
-def score(corpus, index, python_imports=False, rust_self=False):
+def score(corpus, index, python_imports=False, rust_self=False, rust_receivers=False):
     tasks = corpus['tasks']
-    require(not (python_imports and rust_self), 'choose one evidence mode')
+    require(sum((python_imports, rust_self, rust_receivers)) <= 1, 'choose one evidence mode')
     if python_imports:
         require(all(Path(t['evidence']['source']['path']).suffix == '.py'
                     and t['expected']['relation'] == 'IMPORTS' for t in tasks),
                 'Python mode requires explicit import assertions')
-    elif rust_self:
+    elif rust_self or rust_receivers:
         require(all(Path(t['evidence']['source']['path']).suffix == '.rs'
                     and t['expected']['relation'] in ('CALLS', 'UNRESOLVED') for t in tasks),
-                'Rust mode requires self-call or abstention assertions')
+                'Rust mode requires call or abstention assertions')
     else:
         require(all(Path(t['evidence']['source']['path']).suffix in ('.js', '.mjs', '.cjs')
                     for t in tasks), 'this evaluator requires JavaScript evidence')
@@ -80,25 +80,46 @@ def score(corpus, index, python_imports=False, rust_self=False):
         if len(calls) != 1 or path not in index.get('rust_files', {}):
             return False
         call = calls[0]
-        receipt = call.get('rust_self_target') or {}
+        parameter_call = rust_receivers and 'RUST_PARAMETER_CALL' in call.get('semantic_tags', [])
+        receipt = call.get('rust_parameter_target' if parameter_call else 'rust_self_target') or {}
         owner = receipt.get('owner') or {}
         owners = [d for d in documents.values() if d['path'] == path
                   and d['provenance'] == 'SYNTAX'
                   and d['span_start'] == owner.get('start') and d['span_end'] == owner.get('end')]
         if (len(owners) != 1 or call['qualified_name'] != target['qualified_name']
-                or not {'EXACT_CALL', 'RUST_SELF_CALL'}.issubset(call.get('semantic_tags', []))):
+                or not {'EXACT_CALL', 'RUST_PARAMETER_CALL' if parameter_call else 'RUST_SELF_CALL'}
+                    .issubset(call.get('semantic_tags', []))):
             return False
-        for name, impl_name, document in (('caller', 'implementation', source),
-                                         ('target', 'target_implementation', target)):
+        for name, document in (('caller', source), ('target', target)):
             identity = receipt.get(name) or {}
-            implementation = receipt.get(impl_name) or {}
             if (identity != {'start': document['span_start'], 'end': document['span_end']}
-                    or implementation.get('start', -1) < 0
-                    or not implementation.get('start', 0) < implementation.get('end', 0)
-                    or document.get('body_start', -1) < implementation['start']
-                    or document.get('body_end', -1) > implementation['end']
                     or document.get('body_start', -1) >= document.get('body_end', -1)):
                 return False
+
+        def encloses(outer, inner):
+            return (0 <= outer.get('start', -1) <= inner.get('start', -1)
+                    < inner.get('end', -1) <= outer.get('end', -1)
+                    and outer['start'] < outer['end'])
+
+        body = lambda d: {'start': d.get('body_start', -1), 'end': d.get('body_end', -1)}
+        if not encloses(receipt.get('target_implementation') or {}, body(target)):
+            return False
+        if parameter_call:
+            parameter = receipt.get('parameter') or {}
+            binding = receipt.get('binding') or {}
+            receiver_type = receipt.get('receiver_type') or {}
+            receiver = receipt.get('receiver') or {}
+            if (receipt.get('source_hash') != hashes.get(path)
+                    or not encloses(body(source), parameter)
+                    or not encloses(parameter, binding)
+                    or not encloses(parameter, receiver_type)
+                    or binding['end'] >= receiver_type['start']
+                    or parameter['start'] < source['span_end']
+                    or parameter['end'] >= span['start']
+                    or not encloses(span, receiver) or receiver['start'] != span['start']):
+                return False
+        elif not encloses(receipt.get('implementation') or {}, body(source)):
+            return False
         return True
 
     outcomes = []
@@ -138,7 +159,7 @@ def score(corpus, index, python_imports=False, rust_self=False):
                              and src_start <= source['span_start'] < source['span_end'] <= src_end)
             ledger = index.get('python_files' if python_imports else 'ts_files', {})
             ledger_ok = proof.get('source_hash') == ledger.get(proof['path'], {}).get('source_hash')
-            if rust_self:
+            if rust_self or rust_receivers:
                 ledger_ok = rust_identity(proof, source, target)
             if python_imports:
                 source_facts = ledger.get(proof['path'], {}).get('facts', {})
@@ -194,6 +215,7 @@ def score(corpus, index, python_imports=False, rust_self=False):
         'false_proven_at_abstention_sites': sum(o['proven_arcs_at_site'] for o in negatives),
         'passed': all(o['passed'] for o in outcomes), 'outcomes': outcomes,
         'language_scope': ('python explicit imports' if python_imports else
+                          'rust receiver calls' if rust_receivers else
                           'rust self calls' if rust_self else 'javascript'),
         'scope': 'supplied source-curated sites only; not whole-repository precision or completeness',
     }
@@ -207,13 +229,14 @@ def main():
     modes = parser.add_mutually_exclusive_group()
     modes.add_argument('--python-imports', action='store_true')
     modes.add_argument('--rust-self', action='store_true')
+    modes.add_argument('--rust-receivers', action='store_true')
     args = parser.parse_args()
     try:
         data = args.corpus.read_bytes()
         corpus = json.loads(data)
         validate(corpus)
         report = score(corpus, load_index(args.state), python_imports=args.python_imports,
-                       rust_self=args.rust_self)
+                       rust_self=args.rust_self, rust_receivers=args.rust_receivers)
         report['corpus_sha256'] = hashlib.sha256(data).hexdigest()
         encoded = json.dumps(report, indent=2) + '\n'
         if args.output:

@@ -228,7 +228,9 @@ pub(super) fn rebuild_arcs_with_cargo(
         .iter()
         .filter(|document| {
             (document.path.ends_with(".go") && document.go_field_target.is_some())
-                || (document.path.ends_with(".rs") && document.rust_module_target.is_some())
+                || (document.path.ends_with(".rs")
+                    && (document.rust_module_target.is_some()
+                        || document.rust_parameter_target.is_some()))
                 || (document.path.ends_with(".java") && document.java_constructor_target.is_some())
         })
         .map(|document| document.path.as_str())
@@ -351,10 +353,12 @@ pub(super) fn rebuild_arcs_with_cargo(
             })
             .copied();
         if call.path.ends_with(".rs")
-            && !call
-                .semantic_tags
-                .iter()
-                .any(|tag| tag == "RUST_SELF_CALL" || tag == "RUST_MODULE_CALL")
+            && !call.semantic_tags.iter().any(|tag| {
+                matches!(
+                    tag.as_str(),
+                    "RUST_SELF_CALL" | "RUST_MODULE_CALL" | "RUST_PARAMETER_CALL"
+                )
+            })
             && !rust_valid_calls.contains(&(
                 call.path.clone(),
                 call.span_start,
@@ -506,6 +510,60 @@ pub(super) fn rebuild_arcs_with_cargo(
                     return None;
                 };
                 (target.qualified_name == target_name).then_some(target.node_id)
+            })
+        } else if call
+            .semantic_tags
+            .iter()
+            .any(|tag| tag == "RUST_PARAMETER_CALL")
+        {
+            call.rust_parameter_target.as_ref().and_then(|proof| {
+                if !call.path.ends_with(".rs")
+                    || path_hashes.get(&call.path) != Some(&proof.source_hash)
+                {
+                    return None;
+                }
+                let exact = |span: &ByteRange| {
+                    let [document] = syntax_by_span
+                        .get(&(call.path.as_str(), span.start, span.end))?
+                        .as_slice()
+                    else {
+                        return None;
+                    };
+                    Some(*document)
+                };
+                let caller = exact(&proof.caller)?;
+                let target = exact(&proof.target)?;
+                let _owner = exact(&proof.owner)?;
+                let encloses = |outer: ByteRange, inner: ByteRange| {
+                    outer.start < outer.end
+                        && inner.start < inner.end
+                        && outer.start <= inner.start
+                        && inner.end <= outer.end
+                };
+                if source != Some(caller.node_id)
+                    || target.qualified_name != call.qualified_name
+                    || !encloses(
+                        ByteRange::new(caller.body_start, caller.body_end),
+                        proof.parameter,
+                    )
+                    || !encloses(proof.parameter, proof.binding)
+                    || !encloses(proof.parameter, proof.receiver_type)
+                    || proof.binding.end >= proof.receiver_type.start
+                    || proof.parameter.start < caller.span_end
+                    || proof.parameter.end >= call.span_start
+                    || proof.receiver.start != call.span_start
+                    || !encloses(
+                        ByteRange::new(call.span_start, call.span_end),
+                        proof.receiver,
+                    )
+                    || !encloses(
+                        proof.target_implementation,
+                        ByteRange::new(target.body_start, target.body_end),
+                    )
+                {
+                    return None;
+                }
+                Some(target.node_id)
             })
         } else if call.semantic_tags.iter().any(|tag| tag == "RUST_SELF_CALL") {
             call.rust_self_target.as_ref().and_then(|proof| {

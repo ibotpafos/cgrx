@@ -444,7 +444,14 @@ including methods in separate inherent impl blocks. Type/const parameters,
 bounded lifetimes, trait dispatch and ambiguous impls remain gaps.
 Static `find_usages` includes recursive call sites once without repeating the
 traversal. [Rust receiver evidence](docs/benchmarks/rust-lifetime-evidence-2026-10-08.md)
-records the measured improvement and remaining local/parameter receiver misses.
+records the measured improvement at that iteration. Development builds now
+also resolve explicitly typed parameters when their value/reference type is
+the first receiver candidate of a unique same-module inherent method. Exact
+parameter, owner, caller and target spans are bound to the current source hash.
+Autoref/deref, local constructed receivers, aliases, type/const generics and
+shadowed or macro-dependent bindings remain gaps. See
+[parameter receiver evidence](docs/benchmarks/rust-parameter-evidence-2026-10-08.md)
+for the measured scope and lookup-order checks.
 
 Development builds resolve named imports and bounded named reexports to direct
 module-level `const` arrow functions as well as free-function declarations.

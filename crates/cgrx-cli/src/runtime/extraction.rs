@@ -20,7 +20,7 @@ use super::helpers::{
 };
 use super::{
     GoFieldTarget, GoLocalConstructorTarget, GoReceiverTarget, JavaConstructorTarget,
-    RustSelfTarget, StoredArc, StoredDocument, TsLexicalTarget,
+    RustParameterTarget, RustSelfTarget, StoredArc, StoredDocument, TsLexicalTarget,
 };
 
 use cgrx_cgcr::SourceRange;
@@ -101,6 +101,7 @@ fn plain_document(relative: &str, seed: DocumentSeed) -> StoredDocument {
         php_type_target: None,
         rust_module_target: None,
         rust_self_target: None,
+        rust_parameter_target: None,
         ts_lexical_target: None,
         ts_constructor_target: None,
         go_field_target: None,
@@ -369,6 +370,10 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
     let swift_free_functions: BTreeSet<_> = extraction.swift_free_functions.into_iter().collect();
     let symbols = extraction.symbols;
     let edges = extraction.edges;
+    let rust_parameter_source_hash = edges
+        .iter()
+        .any(|e| matches!(e.provenance, LanguageProvenance::RustParameter { .. }))
+        .then(|| Hash32(*blake3::hash(source).as_bytes()));
     let php_targets: BTreeSet<_> = edges
         .iter()
         .filter_map(|edge| {
@@ -540,6 +545,7 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
             | LanguageProvenance::TsConstructor { .. }
             | LanguageProvenance::JavaConstructor { .. }
             | LanguageProvenance::RustSelf { .. }
+            | LanguageProvenance::RustParameter { .. }
             | LanguageProvenance::RustModule { .. }
             | LanguageProvenance::SwiftDirect { .. }
             | LanguageProvenance::RustConstructor { .. } => None,
@@ -664,6 +670,32 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
                 }
                 _ => None,
             },
+            rust_parameter_target: match edge.provenance {
+                LanguageProvenance::RustParameter {
+                    owner,
+                    caller,
+                    parameter,
+                    binding,
+                    receiver_type,
+                    receiver,
+                    target_implementation,
+                    target,
+                } => {
+                    let range = |s: Span| ByteRange::new(s.start, s.end);
+                    Some(Box::new(RustParameterTarget {
+                        source_hash: rust_parameter_source_hash.expect("Rust parameter proof hash"),
+                        owner: range(owner),
+                        caller: range(caller),
+                        parameter: range(parameter),
+                        binding: range(binding),
+                        receiver_type: range(receiver_type),
+                        receiver: range(receiver),
+                        target_implementation: range(target_implementation),
+                        target: range(target),
+                    }))
+                }
+                _ => None,
+            },
             ts_constructor_target: match edge.provenance {
                 LanguageProvenance::TsConstructor { target, caller } => Some(TsLexicalTarget {
                     target: ByteRange::new(target.start, target.end),
@@ -699,6 +731,8 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
                 vec!["EXACT_CALL".to_owned(), "SWIFT_DIRECT_CALL".to_owned()]
             } else if matches!(edge.provenance, LanguageProvenance::RustSelf { .. }) {
                 vec!["EXACT_CALL".to_owned(), "RUST_SELF_CALL".to_owned()]
+            } else if matches!(edge.provenance, LanguageProvenance::RustParameter { .. }) {
+                vec!["EXACT_CALL".to_owned(), "RUST_PARAMETER_CALL".to_owned()]
             } else if matches!(edge.provenance, LanguageProvenance::GoFieldReceiver { .. }) {
                 vec!["EXACT_CALL".to_owned(), "GO_FIELD_CALL".to_owned()]
             } else if matches!(

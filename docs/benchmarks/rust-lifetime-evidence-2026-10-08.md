@@ -61,7 +61,9 @@ The before binary is the Python iteration at
 The final after binary has SHA-256
 `89f4b2060ca6045ee0296624ab8adaf6526e798f538a7e21599c2776b6860456`.
 Both are optimized macOS builds with JavaScript enabled. The extraction base
-is now 61; PHP adds 2, Swift 4 and JavaScript 8, so this build uses revision 69.
+at this iteration is 61; PHP adds 2, Swift 4 and JavaScript 8, so this build uses
+revision 69. The subsequent [parameter iteration](rust-parameter-evidence-2026-10-08.md)
+uses base 77 and JS revision 85; the binary and indexes measured here retain 69.
 Earlier caches require a source reindex.
 
 The final binary also includes the recursion correction described below.

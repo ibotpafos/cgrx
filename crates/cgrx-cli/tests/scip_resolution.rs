@@ -63,7 +63,9 @@ fn scip_discharges_a_dynamic_rust_method_call_with_proven_evidence() {
         "impl Worker {\n",
         "    fn work(&self) {}\n",
         "}\n",
-        "fn caller(worker: &Worker) {\n",
+        // An owned receiver needs autoref; native first-candidate parameter
+        // proofs deliberately leave this case to compiler-backed resolution.
+        "fn caller(worker: Worker) {\n",
         "    worker.work();\n",
         "}\n",
     );
@@ -84,6 +86,7 @@ fn scip_discharges_a_dynamic_rust_method_call_with_proven_evidence() {
     let mut document = Document::new();
     document.language = "rust".to_owned();
     document.relative_path = "main.rs".to_owned();
+    document.text = source.to_owned();
     document.position_encoding = PositionEncoding::UTF8CodeUnitOffsetFromLineStart.into();
     document.occurrences = vec![
         occurrence(2, 7, 11, symbol, true),

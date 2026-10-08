@@ -134,13 +134,234 @@ fn static_call_target<'tree>(
         return None;
     }
     let receiver = function.child_by_field_name("value")?;
-    // A field name is not a receiver-type proof. Never turn Vec::push,
-    // generic/foreign methods or chained calls into unrelated free functions.
-    if receiver.kind() != "self" {
+    let field = function.child_by_field_name("field")?;
+    let proof = if receiver.kind() == "self" {
+        self_method_proof(call, field, source, true)?
+    } else {
+        parameter_method_proof(call, receiver, field, source)?
+    };
+    Some((field, proof))
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum ReceiverKind {
+    Value,
+    Shared,
+    Mutable,
+}
+
+fn parameter_method_proof(
+    call: Node<'_>,
+    receiver: Node<'_>,
+    field: Node<'_>,
+    source: &[u8],
+) -> Option<Provenance> {
+    if receiver.kind() != "identifier" {
         return None;
     }
-    let field = function.child_by_field_name("field")?;
-    Some((field, self_method_proof(call, field, source, true)?))
+    let mut caller = call;
+    while caller.kind() != "function_item" {
+        if caller.kind() == "closure_expression" {
+            return None;
+        }
+        caller = caller.parent()?;
+    }
+    if caller.has_error() || !only_non_binding_attributes(caller, source, false) {
+        return None;
+    }
+    let parameters = caller.child_by_field_name("parameters")?;
+    let binding_name = text(receiver, source);
+    let mut cursor = parameters.walk();
+    let mut matches = parameters.named_children(&mut cursor).filter(|p| {
+        p.child_by_field_name("pattern")
+            .is_some_and(|p| pattern_binds(p, &binding_name, source))
+    });
+    let parameter = matches.next()?;
+    let binding = parameter.child_by_field_name("pattern")?;
+    if matches.next().is_some()
+        || parameter.kind() != "parameter"
+        || binding.kind() != "identifier"
+        || attributed(parameter)
+    {
+        return None;
+    }
+    let receiver_type = parameter.child_by_field_name("type")?;
+    let (nominal, kind) = if receiver_type.kind() == "reference_type" {
+        (
+            receiver_type.child_by_field_name("type")?,
+            if mutable(receiver_type) {
+                ReceiverKind::Mutable
+            } else {
+                ReceiverKind::Shared
+            },
+        )
+    } else {
+        (receiver_type, ReceiverKind::Value)
+    };
+    let nominal_name = match nominal.kind() {
+        "type_identifier" => nominal,
+        "generic_type" if lifetime_arguments_only(nominal).is_some() => {
+            let name = nominal.child_by_field_name("type")?;
+            (name.kind() == "type_identifier").then_some(name)?
+        }
+        _ => return None,
+    };
+    let owner_name = text(nominal_name, source);
+    if caller
+        .child_by_field_name("type_parameters")
+        .is_some_and(|p| {
+            let mut cursor = p.walk();
+            p.named_children(&mut cursor).any(|p| {
+                p.child_by_field_name("name")
+                    .is_some_and(|name| text(name, source) == owner_name)
+            })
+        })
+    {
+        return None;
+    }
+    let mut module = caller.parent()?;
+    if module.parent().is_some_and(|p| p.kind() == "impl_item") {
+        let implementation = module.parent()?;
+        if implementation.child_by_field_name("trait").is_some()
+            || attributed(implementation)
+            || lifetime_parameter_count(implementation).is_none()
+        {
+            return None;
+        }
+        module = implementation.parent()?;
+    }
+    if !parameter_module(module) {
+        return None;
+    }
+    let owner = unique_module_member(module, &owner_name, source)?;
+    if !matches!(owner.kind(), "struct_item" | "enum_item")
+        || owner.has_error()
+        || !only_non_binding_attributes(owner, source, true)
+    {
+        return None;
+    }
+    let arity = lifetime_parameter_count(owner)?;
+    if nominal.kind() == "generic_type" && lifetime_arguments_only(nominal) != Some(arity) {
+        return None;
+    }
+    let (target, target_implementation) = inherent_method(
+        module,
+        &owner_name,
+        arity,
+        &text(field, source),
+        source,
+        true,
+    )?;
+    if self_parameter_kind(target) != Some(kind)
+        || locally_bound_except(call, &binding_name, source, Some(parameter))
+        || contains_macro(caller.child_by_field_name("body")?)
+    {
+        // Later candidates need proof about autoref/deref and all visible traits.
+        // An exact first candidate gives inherent methods precedence over traits.
+        return None;
+    }
+    Some(Provenance::RustParameter {
+        owner: Span::from(owner.child_by_field_name("name")?),
+        caller: Span::from(caller.child_by_field_name("name")?),
+        parameter: Span::from(parameter),
+        binding: Span::from(binding),
+        receiver_type: Span::from(receiver_type),
+        receiver: Span::from(receiver),
+        target_implementation: Span::from(target_implementation),
+        target: Span::from(target.child_by_field_name("name")?),
+    })
+}
+
+fn mutable(node: Node<'_>) -> bool {
+    let mut cursor = node.walk();
+    node.named_children(&mut cursor)
+        .any(|n| n.kind() == "mutable_specifier")
+}
+
+fn self_parameter_kind(method: Node<'_>) -> Option<ReceiverKind> {
+    let parameters = method.child_by_field_name("parameters")?;
+    let mut cursor = parameters.walk();
+    let parameter = parameters
+        .named_children(&mut cursor)
+        .find(|n| n.kind() == "self_parameter")?;
+    let mut cursor = parameter.walk();
+    if parameter.children(&mut cursor).any(|n| n.kind() == "&") {
+        Some(if mutable(parameter) {
+            ReceiverKind::Mutable
+        } else {
+            ReceiverKind::Shared
+        })
+    } else {
+        Some(ReceiverKind::Value)
+    }
+}
+
+fn contains_macro(node: Node<'_>) -> bool {
+    if node.kind() == "macro_invocation" {
+        return true;
+    }
+    let mut cursor = node.walk();
+    node.named_children(&mut cursor).any(contains_macro)
+}
+
+fn only_non_binding_attributes(node: Node<'_>, source: &[u8], allow_derive: bool) -> bool {
+    let mut previous = node.prev_named_sibling();
+    while let Some(n) = previous {
+        match n.kind() {
+            "line_comment" | "block_comment" => {}
+            "attribute_item" => {
+                let derive = allow_derive
+                    && n.named_child(0).is_some_and(|attribute| {
+                        attribute.named_child(0).is_some_and(|name| {
+                            name.kind() == "identifier" && text(name, source) == "derive"
+                        }) && attribute.child_by_field_name("arguments").is_some()
+                    });
+                // Derives append items; they cannot replace this nominal owner.
+                // They may introduce traits, so only an exact first-candidate
+                // inherent method proof is allowed to use this exception.
+                if !derive && !non_binding_attribute(n, source) {
+                    return false;
+                }
+            }
+            "inner_attribute_item" => return false,
+            _ => break,
+        }
+        previous = n.prev_named_sibling();
+    }
+    true
+}
+
+fn parameter_module(module: Node<'_>) -> bool {
+    if module.kind() != "source_file"
+        && !(module.kind() == "declaration_list"
+            && module.parent().is_some_and(|p| p.kind() == "mod_item"))
+    {
+        return false;
+    }
+    let mut ancestor = Some(module);
+    while let Some(n) = ancestor {
+        if n.kind() == "source_file"
+            || n.kind() == "declaration_list" && n.parent().is_some_and(|p| p.kind() == "mod_item")
+        {
+            if n.has_error()
+                || n.parent()
+                    .is_some_and(|p| p.kind() == "mod_item" && attributed(p))
+            {
+                return false;
+            }
+            let mut cursor = n.walk();
+            if n.named_children(&mut cursor).any(|item| {
+                matches!(
+                    item.kind(),
+                    "inner_attribute_item" | "macro_invocation" | "expression_statement"
+                )
+            }) {
+                return false;
+            }
+        }
+        ancestor = n.parent();
+    }
+    true
 }
 
 fn self_method_proof(
@@ -188,6 +409,29 @@ fn self_method_proof(
     // Lifetimes do not change the nominal owner identity. Keep type/const
     // substitutions unsupported, and include qualified competing impls as
     // blockers instead of treating them as evidence of a unique target.
+    let name = text(field, source);
+    let (target, target_implementation) =
+        inherent_method(module, &owner_name, arity, &name, source, false)?;
+    if receiver_call && !has_self_parameter(target) {
+        return None;
+    }
+    Some(Provenance::RustSelf {
+        owner: Span::from(owner.child_by_field_name("name")?),
+        implementation: Span::from(implementation),
+        target_implementation: Span::from(target_implementation),
+        caller: Span::from(caller.child_by_field_name("name")?),
+        target: Span::from(target.child_by_field_name("name")?),
+    })
+}
+
+fn inherent_method<'a>(
+    module: Node<'a>,
+    owner_name: &str,
+    arity: usize,
+    name: &str,
+    source: &[u8],
+    first_candidate: bool,
+) -> Option<(Node<'a>, Node<'a>)> {
     let mut cursor = module.walk();
     let implementations: Vec<_> = module
         .named_children(&mut cursor)
@@ -198,9 +442,14 @@ fn self_method_proof(
                     .is_some_and(|name| text(name, source) == owner_name)
         })
         .collect();
-    let name = text(field, source);
     let mut targets = Vec::new();
     for candidate in implementations {
+        if first_candidate && candidate.child_by_field_name("trait").is_some() {
+            if candidate.has_error() {
+                return None;
+            }
+            continue;
+        }
         if candidate.has_error()
             || attributed(candidate)
             || candidate.child_by_field_name("trait").is_some()
@@ -230,16 +479,7 @@ fn self_method_proof(
     let [(target, target_implementation)] = targets.as_slice() else {
         return None;
     };
-    if receiver_call && !has_self_parameter(*target) {
-        return None;
-    }
-    Some(Provenance::RustSelf {
-        owner: Span::from(owner.child_by_field_name("name")?),
-        implementation: Span::from(implementation),
-        target_implementation: Span::from(*target_implementation),
-        caller: Span::from(caller.child_by_field_name("name")?),
-        target: Span::from(target.child_by_field_name("name")?),
-    })
+    Some((*target, *target_implementation))
 }
 
 fn nominal_type_name(ty: Node<'_>) -> Option<Node<'_>> {
@@ -298,9 +538,11 @@ fn lifetime_only_impl(implementation: Node<'_>, owner_arity: usize) -> bool {
     {
         return false;
     }
-    let Some(arguments) = ty.child_by_field_name("type_arguments") else {
-        return false;
-    };
+    lifetime_arguments_only(ty) == Some(owner_arity) && owner_arity > 0
+}
+
+fn lifetime_arguments_only(ty: Node<'_>) -> Option<usize> {
+    let arguments = ty.child_by_field_name("type_arguments")?;
     let mut count = 0;
     let mut cursor = arguments.walk();
     for argument in arguments.named_children(&mut cursor) {
@@ -308,11 +550,11 @@ fn lifetime_only_impl(implementation: Node<'_>, owner_arity: usize) -> bool {
             continue;
         }
         if argument.kind() != "lifetime" {
-            return false;
+            return None;
         }
         count += 1;
     }
-    count > 0 && count == owner_arity
+    Some(count)
 }
 
 // Deliberately tiny whitelist: these built-ins cannot add/remove/rename methods.
@@ -354,6 +596,15 @@ fn attributed(node: Node<'_>) -> bool {
 // Walk only lexical ancestors and their immediately preceding declarations. A binding
 // becomes visible after its initializer/let-else, never in a sibling or expired scope.
 fn locally_bound_before(call: Node<'_>, binding: &str, source: &[u8]) -> bool {
+    locally_bound_except(call, binding, source, None)
+}
+
+fn locally_bound_except(
+    call: Node<'_>,
+    binding: &str,
+    source: &[u8],
+    excluded_parameter: Option<Node<'_>>,
+) -> bool {
     let mut child = call;
     while let Some(scope) = child.parent() {
         let declares = |pattern| pattern_binds(pattern, binding, source);
@@ -376,11 +627,12 @@ fn locally_bound_before(call: Node<'_>, binding: &str, source: &[u8]) -> bool {
                     .is_some_and(|parameters| {
                         let mut cursor = parameters.walk();
                         parameters.named_children(&mut cursor).any(|parameter| {
-                            declares(
-                                parameter
-                                    .child_by_field_name("pattern")
-                                    .unwrap_or(parameter),
-                            )
+                            Some(parameter) != excluded_parameter
+                                && declares(
+                                    parameter
+                                        .child_by_field_name("pattern")
+                                        .unwrap_or(parameter),
+                                )
                         })
                     })
                 {

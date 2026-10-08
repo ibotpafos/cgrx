@@ -54,6 +54,8 @@ PHP adds 2, Swift 4 and JavaScript 8, so this measured build uses revision 53.
 Old caches require a source reindex.
 The subsequent [Rust iteration](rust-lifetime-evidence-2026-10-08.md) raises
 the source cache base to 61 without changing these measured Python artifacts.
+The subsequent Rust parameter iteration raises the base to 77, again retaining
+the historical binary and index revisions in this experiment.
 
 For CGRX, each assertion requires the right named import member, exact source
 and target identities/spans, matching evidence and ledger hashes, and
