@@ -39,6 +39,11 @@ carry these references through both MCP response profiles. The extraction
 revision remains unchanged; this iteration improves access to the existing
 graph. Overall quality grading and resource-efficiency measurements remain open.
 
+The [reference encoding follow-up](benchmarks/symbol-reference-cost-2026-10-08.md)
+keeps the full digest and all snapshot guards while reducing measured query
+payload costs. Legacy references remain accepted. Extraction and cache policy
+are unchanged; independent competitor/task-level cost measurements remain open.
+
 ## Priority and boundary
 
 1. **JS/TS:** JS is not registered in the alpha.15 default pack: `.js` files

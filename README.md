@@ -374,6 +374,10 @@ identity and source hash. After a snapshot change, rediscover the definition;
 an outdated reference returns `cgrx.symbol_ref_not_found` without name fallback.
 Existing Rust APIs remain available; `SymbolSelector` and the `*_selected`
 methods provide exact selection. References are not written to usage logs.
+Current responses use the shorter `cgrxs2` encoding of the complete 256-bit
+digest. Previously issued `cgrxs1` references remain accepted in their original
+index and snapshot. Treat both formats as opaque strings and copy them from
+discovery results.
 
 `find_similar` keeps exact duplicate bodies in `matches` and reports heuristic
 near-duplicates, similar structure and shared proven functionality separately in

@@ -22,6 +22,7 @@ cgrx-retrieval.workspace = true
 cgrx-store.workspace = true
 cgrx-metrics.workspace = true
 blake3.workspace = true
+base64 = "=0.22.1"
 levenshtein = "1.0.5"
 serde.workspace = true
 serde_json.workspace = true

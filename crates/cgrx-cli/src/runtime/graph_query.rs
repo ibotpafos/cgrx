@@ -5,16 +5,44 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-use cgrx_core::{RelationKind, Scope, SymbolSelector, canonical_hash};
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use cgrx_core::{Hash32, RelationKind, Scope, SymbolSelector, canonical_hash};
 use cgrx_languages::pack_for_path;
+use serde::Deserialize;
 use serde_json::{Value, json};
 
 use super::scan_helpers::{ScopedQuery, matching_symbols as matching_symbol_documents};
 use super::{RuntimeError, coverage_gap_count, path_in_scope};
 
+fn parse_symbol_reference(reference: &str) -> Option<Hash32> {
+    if let Some(encoded) = reference.strip_prefix("cgrxs1.") {
+        // Reuse the strict lowercase-hex parser for references issued by v1.
+        return Hash32::deserialize(
+            serde::de::value::StrDeserializer::<serde::de::value::Error>::new(encoded),
+        )
+        .ok();
+    }
+    let encoded = reference.strip_prefix("cgrxs2.")?;
+    if encoded.len() != 43 {
+        return None;
+    }
+    let mut digest = [0_u8; 32];
+    // This engine rejects padding, foreign alphabet bytes and nonzero trailing bits.
+    let length = URL_SAFE_NO_PAD.decode_slice(encoded, &mut digest).ok()?;
+    (length == digest.len()).then_some(Hash32(digest))
+}
+
 impl super::Runtime {
     pub(super) fn symbol_reference(&self, document: &super::StoredDocument) -> String {
-        let digest = canonical_hash(&(
+        format!(
+            "cgrxs2.{}",
+            URL_SAFE_NO_PAD.encode(self.symbol_reference_digest(document).0)
+        )
+    }
+
+    fn symbol_reference_digest(&self, document: &super::StoredDocument) -> Hash32 {
+        canonical_hash(&(
+            // Keep the identity domain stable across wire encodings for v1 compatibility.
             "cgrx.symbol.v1",
             self.state_root.as_os_str().as_encoded_bytes(),
             &self.stored.snapshot,
@@ -26,9 +54,7 @@ impl super::Runtime {
             document.span_end,
             self.stored.path_hashes.get(&document.path),
         ))
-        .expect("symbol reference contains only serializable index identity fields");
-        let hex: String = digest.0.iter().map(|byte| format!("{byte:02x}")).collect();
-        format!("cgrxs1.{hex}")
+        .expect("symbol reference contains only serializable index identity fields")
     }
 
     pub(super) fn select_document<'a>(
@@ -37,18 +63,13 @@ impl super::Runtime {
         mut candidates: Vec<&'a super::StoredDocument>,
     ) -> Result<&'a super::StoredDocument, RuntimeError> {
         if let Some(reference) = selector.symbol_ref {
-            if !reference.strip_prefix("cgrxs1.").is_some_and(|digest| {
-                digest.len() == 64
-                    && digest
-                        .bytes()
-                        .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-            }) {
-                return Err(RuntimeError::new(
+            let digest = parse_symbol_reference(reference).ok_or_else(|| {
+                RuntimeError::new(
                     "cgrx.invalid_arguments",
                     "symbol_ref must be an opaque reference returned by search_graph or get_outline",
-                ));
-            }
-            candidates.retain(|document| self.symbol_reference(document) == reference);
+                )
+            })?;
+            candidates.retain(|document| self.symbol_reference_digest(document) == digest);
             let [document] = candidates.as_slice() else {
                 return Err(RuntimeError::new(
                     "cgrx.symbol_ref_not_found",
@@ -829,5 +850,53 @@ impl super::Runtime {
             "callees_count": callees.len(),
             "usages_count": usages.len(),
         }))
+    }
+}
+
+#[cfg(test)]
+mod reference_tests {
+    use super::*;
+
+    #[test]
+    fn symbol_reference_codecs_preserve_all_digest_bytes() {
+        for seed in 0..=u8::MAX {
+            let digest = Hash32(std::array::from_fn(|index| {
+                seed.wrapping_add(u8::try_from(index).unwrap())
+            }));
+            let current = format!("cgrxs2.{}", URL_SAFE_NO_PAD.encode(digest.0));
+            let legacy = format!(
+                "cgrxs1.{}",
+                serde_json::to_value(digest).unwrap().as_str().unwrap()
+            );
+            assert_eq!(current.len(), 50);
+            assert_eq!(parse_symbol_reference(&current), Some(digest));
+            assert_eq!(parse_symbol_reference(&legacy), Some(digest));
+        }
+    }
+
+    #[test]
+    fn symbol_reference_decoder_rejects_aliases_and_unbounded_inputs() {
+        let canonical = format!("cgrxs2.{}", "A".repeat(43));
+        assert_eq!(parse_symbol_reference(&canonical), Some(Hash32([0; 32])));
+        for invalid in [
+            format!("{canonical}="),
+            format!("{canonical}\n"),
+            format!("cgrxs2.{}", "A".repeat(42)),
+            format!("cgrxs2.{}", "A".repeat(44)),
+            format!("cgrxs2.{}", "A".repeat(65_536)),
+            format!("cgrxs2.{}", "+".repeat(43)),
+            format!("cgrxs2.{}", "/".repeat(43)),
+            format!("cgrxs2.{}", "é".repeat(22)),
+            format!("cgrxs3.{}", "A".repeat(43)),
+            format!("cgrxs1.{}", "A".repeat(64)),
+        ] {
+            assert_eq!(parse_symbol_reference(&invalid), None);
+        }
+        // Last character has two unused bits for a 32-byte digest. Nonzero
+        // values would otherwise alias the canonical string's decoded identity.
+        for last in ['B', 'C', 'D'] {
+            let alias = format!("cgrxs2.{}{last}", "A".repeat(42));
+            assert_eq!(parse_symbol_reference(&alias), None);
+        }
     }
 }

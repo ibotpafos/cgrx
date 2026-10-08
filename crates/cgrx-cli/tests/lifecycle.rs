@@ -398,6 +398,23 @@ fn one_shot_status(repo: &Path) -> Value {
 
 #[test]
 fn actual_mcp_selects_same_file_definitions_in_both_profiles_and_omits_refs_from_usage_logs() {
+    use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+    use cgrx_core::Hash32;
+
+    let legacy_reference = |reference: &str| {
+        let digest: [u8; 32] = URL_SAFE_NO_PAD
+            .decode(reference.strip_prefix("cgrxs2.").unwrap())
+            .unwrap()
+            .try_into()
+            .unwrap();
+        format!(
+            "cgrxs1.{}",
+            serde_json::to_value(Hash32(digest))
+                .unwrap()
+                .as_str()
+                .unwrap()
+        )
+    };
     let fixture = Fixture::new();
     let marker = "SELECTOR_SOURCE_PRIVATE_8f4c";
     let source = format!(
@@ -497,64 +514,71 @@ fn actual_mcp_selects_same_file_definitions_in_both_profiles_and_omits_refs_from
         for (method, caller, value) in [(&methods[0], "CallerA", 1), (&methods[1], "CallerB", 2)] {
             let reference = method["symbol_ref"].as_str().unwrap();
             assert!(outline.to_string().contains(reference));
-            for tool in ["get_code_snippet", "trace_path", "find_usages"] {
-                let mut arguments = json!({"repo":fixture.path(),"symbol":"Run","path":"main.go","symbol_ref":reference});
-                if tool == "trace_path" {
-                    arguments["direction"] = json!("callers");
+            let legacy = legacy_reference(reference);
+            for requested_reference in [reference, legacy.as_str()] {
+                for tool in ["get_code_snippet", "trace_path", "find_usages"] {
+                    let mut arguments = json!({"repo":fixture.path(),"symbol":"Run","path":"main.go","symbol_ref":requested_reference});
+                    if tool == "trace_path" {
+                        arguments["direction"] = json!("callers");
+                    }
+                    let result = read(call(&mut mcp, tool, arguments.clone()));
+                    match tool {
+                        "get_code_snippet" => {
+                            assert_eq!(result["symbol_ref"], reference);
+                            assert!(
+                                result["source"]
+                                    .as_str()
+                                    .unwrap()
+                                    .contains(&format!("return {value}"))
+                            );
+                        }
+                        "trace_path" => {
+                            assert_eq!(result["root"]["symbol_ref"], reference);
+                            assert!(result.to_string().contains(caller));
+                        }
+                        _ => {
+                            assert_eq!(result["target"]["symbol_ref"], reference);
+                            assert!(result.to_string().contains(caller));
+                        }
+                    }
+                    arguments.as_object_mut().unwrap().remove("symbol_ref");
+                    assert_eq!(
+                        call(&mut mcp, tool, arguments.clone())["error"]["data"]["code"],
+                        "cgrx.ambiguous_symbol"
+                    );
+                    arguments["symbol_ref"] = json!(requested_reference);
+                    arguments["repo"] = json!(other);
+                    assert_eq!(
+                        call(&mut mcp, tool, arguments)["error"]["data"]["code"],
+                        "cgrx.symbol_ref_not_found"
+                    );
                 }
-                let result = read(call(&mut mcp, tool, arguments.clone()));
-                match tool {
-                    "get_code_snippet" => {
-                        assert_eq!(result["symbol_ref"], reference);
-                        assert!(
-                            result["source"]
-                                .as_str()
-                                .unwrap()
-                                .contains(&format!("return {value}"))
-                        );
-                    }
-                    "trace_path" => {
-                        assert_eq!(result["root"]["symbol_ref"], reference);
-                        assert!(result.to_string().contains(caller));
-                    }
-                    _ => {
-                        assert_eq!(result["target"]["symbol_ref"], reference);
-                        assert!(result.to_string().contains(caller));
-                    }
-                }
-                arguments.as_object_mut().unwrap().remove("symbol_ref");
-                assert_eq!(
-                    call(&mut mcp, tool, arguments.clone())["error"]["data"]["code"],
-                    "cgrx.ambiguous_symbol"
-                );
-                arguments["symbol_ref"] = json!(reference);
-                arguments["repo"] = json!(other);
-                assert_eq!(
-                    call(&mut mcp, tool, arguments)["error"]["data"]["code"],
-                    "cgrx.symbol_ref_not_found"
-                );
             }
         }
         let old_ref = methods[0]["symbol_ref"].as_str().unwrap();
+        let old_legacy = legacy_reference(old_ref);
         fs::write(
             fixture.path().join("main.go"),
             format!("{source}// snapshot changed\n"),
         )
         .unwrap();
-        for tool in ["get_code_snippet", "trace_path", "find_usages"] {
-            assert_eq!(
-                call(
-                    &mut mcp,
-                    tool,
-                    json!({"repo":fixture.path(),"symbol":"Run","path":"main.go","symbol_ref":old_ref})
-                )["error"]["data"]["code"],
-                "cgrx.symbol_ref_not_found"
-            );
+        for expired in [old_ref, old_legacy.as_str()] {
+            for tool in ["get_code_snippet", "trace_path", "find_usages"] {
+                assert_eq!(
+                    call(
+                        &mut mcp,
+                        tool,
+                        json!({"repo":fixture.path(),"symbol":"Run","path":"main.go","symbol_ref":expired})
+                    )["error"]["data"]["code"],
+                    "cgrx.symbol_ref_not_found"
+                );
+            }
         }
         mcp.process.finish(Instant::now() + DEADLINE).unwrap();
         let logged = fs::read_to_string(&log).unwrap();
         assert!(!logged.contains(marker));
         assert!(!logged.contains("cgrxs1."));
+        assert!(!logged.contains("cgrxs2."));
         assert!(!logged.contains("\"symbol_ref\""));
         assert!(!logged.contains("return 1"));
         for event in logged

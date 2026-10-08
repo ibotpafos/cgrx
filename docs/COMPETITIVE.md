@@ -26,6 +26,11 @@ references, including two methods in one file. It improves access to existing
 proven relationships; comparative performance and token-cost conclusions
 require separate measurements.
 
+The [reference cost experiment](benchmarks/symbol-reference-cost-2026-10-08.md)
+reduces emitted content tokens by 8.414% across 300 paired queries per profile
+on ten retained snapshots, while preserving full digests and legacy references.
+This compares two CGRX versions; whole-task costs against competitors remain open.
+
 The [2026-10-08 Python import experiment](benchmarks/python-import-evidence-2026-10-08.md)
 closes a measured navigation gap: CGRX improves from 0/24 to 24/24 selected
 source-curated import assertions, and compact outlines expose target spans and
