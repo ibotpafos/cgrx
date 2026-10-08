@@ -289,6 +289,8 @@ struct StoredIndex {
     scip_edges: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     scip_resolution_revision: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    scip_input_hash: Option<Hash32>,
     path_hashes: BTreeMap<String, Hash32>,
     documents: Vec<StoredDocument>,
     arcs: Vec<StoredArc>,
@@ -302,9 +304,12 @@ struct StoredIndex {
 impl StoredIndex {
     fn scip_policy_is_current(&self) -> bool {
         match self.scip_resolution_revision {
-            Some(revision) => revision == scip_resolution::RESOLUTION_REVISION,
+            Some(revision) => {
+                revision == scip_resolution::RESOLUTION_REVISION && self.scip_input_hash.is_some()
+            }
             None => {
-                self.scip_edges == 0
+                self.scip_input_hash.is_none()
+                    && self.scip_edges == 0
                     && !self.arcs.iter().any(|arc| {
                         arc.evidence.as_ref().is_some_and(|evidence| {
                             evidence.resolver == cgrx_core::ResolverClass::ScipConfirmed
@@ -400,6 +405,17 @@ fn open_current_report(state: &Path, snapshot: &RepoSnapshot) -> Option<IndexRep
 }
 
 impl Runtime {
+    /// The exact SCIP input accepted by this base snapshot, when supplied.
+    #[must_use]
+    pub const fn scip_input_hash(&self) -> Option<Hash32> {
+        self.stored.scip_input_hash
+    }
+
+    /// Hash a size-checked SCIP artifact for managed refresh decisions.
+    pub fn scip_file_hash(path: &Path) -> Result<Hash32, RuntimeError> {
+        scip_resolution::read_index(path).map(|bytes| Hash32(*blake3::hash(&bytes).as_bytes()))
+    }
+
     #[must_use]
     pub const fn snapshot(&self) -> &RepoSnapshot {
         &self.stored.snapshot
@@ -846,13 +862,23 @@ impl Runtime {
         Self::index_source(root, state, true, Some(scip_index))
     }
 
+    /// Import only the compiler input observed by the managed refresh.
+    pub fn index_committed_head_with_scip_if_hash(
+        root: &Path,
+        state: &Path,
+        scip_index: &Path,
+        expected_hash: Hash32,
+    ) -> Result<IndexReport, RuntimeError> {
+        index_helpers::index_source(root, state, true, Some(scip_index), Some(expected_hash))
+    }
+
     fn index_source(
         root: &Path,
         state: &Path,
         committed_head: bool,
         scip_index: Option<&Path>,
     ) -> Result<IndexReport, RuntimeError> {
-        index_helpers::index_source(root, state, committed_head, scip_index)
+        index_helpers::index_source(root, state, committed_head, scip_index, None)
     }
 
     pub fn open(state: &Path) -> Result<Self, RuntimeError> {
@@ -881,7 +907,7 @@ impl Runtime {
         if !stored.scip_policy_is_current() {
             return Err(RuntimeError::new(
                 "scip_resolution_revision",
-                "stored SCIP resolution policy is obsolete; reindex source with a current SCIP index",
+                "stored SCIP policy or input identity is obsolete; reindex source with a current SCIP index",
             ));
         }
         normalize_stored(&mut stored);

@@ -364,6 +364,7 @@ fn publish_policy_fixture(
     state: &Path,
     revision: Option<u32>,
     clear_count: bool,
+    clear_input_hash: bool,
 ) {
     let mut stored: Value =
         serde_json::from_slice(&reader.read_segment("nodes.seg").unwrap()).unwrap();
@@ -380,6 +381,9 @@ fn publish_policy_fixture(
     }
     if clear_count {
         stored["scip_edges"] = serde_json::json!(0);
+    }
+    if clear_input_hash {
+        stored.as_object_mut().unwrap().remove("scip_input_hash");
     }
     let mut writer = GenerationWriter::begin(state, snapshot).unwrap();
     writer
@@ -402,14 +406,15 @@ fn stale_semantic_policies_are_quarantined_and_reindexed_at_the_same_commit() {
     let current: Value =
         serde_json::from_slice(&reader.read_segment("nodes.seg").unwrap()).unwrap();
     let revision = u32::try_from(current["scip_resolution_revision"].as_u64().unwrap()).unwrap();
-    for (label, policy, clear_count) in [
-        ("legacy", None, false),
-        ("obsolete", Some(revision - 1), false),
-        ("future", Some(revision + 1), false),
-        ("legacy-zero-count", None, true),
+    for (label, policy, clear_count, clear_input_hash) in [
+        ("legacy", None, false, false),
+        ("obsolete", Some(revision - 1), false, false),
+        ("future", Some(revision + 1), false, false),
+        ("legacy-zero-count", None, true, false),
+        ("missing-input-identity", Some(revision), false, true),
     ] {
         let state = artifact.path().join(label);
-        publish_policy_fixture(&reader, &state, policy, clear_count);
+        publish_policy_fixture(&reader, &state, policy, clear_count, clear_input_hash);
         let pinned = GenerationReader::open_current(&state).unwrap();
         let old_bytes = pinned.read_segment("nodes.seg").unwrap();
         let error = Runtime::open(&state)
@@ -440,7 +445,7 @@ fn managed_startup_replaces_an_obsolete_semantic_policy() {
     let (repository, artifact, _runtime, _edges) = argument_reference_runtime(true, false, false);
     let reader = GenerationReader::open_current(artifact.path().join("state")).unwrap();
     let managed = repository.path().join(".git/cgrx/managed");
-    publish_policy_fixture(&reader, &managed, None, false);
+    publish_policy_fixture(&reader, &managed, None, false, false);
     let pinned = GenerationReader::open_current(&managed).unwrap();
     let old_bytes = pinned.read_segment("nodes.seg").unwrap();
     let output = Command::new(env!("CARGO_BIN_EXE_cgrx"))

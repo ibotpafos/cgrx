@@ -5,6 +5,7 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::SystemTime;
 
 use cgrx_cli::{OrientPreparation, Runtime, RuntimeEvidenceFormat, TestRunRecord};
 use cgrx_core::{
@@ -21,6 +22,8 @@ pub(super) struct RuntimeMcpBackend {
     watch_root: Option<PathBuf>,
     managed_state: Option<PathBuf>,
     scip_index: Option<PathBuf>,
+    imported_scip_hash: Option<Hash32>,
+    observed_scip: Option<(ScipFileStamp, Hash32)>,
     expansions: BTreeMap<String, ExpansionState>,
     orient_preparations: BTreeMap<Hash32, Arc<OrientPreparation>>,
     orient_preparation_order: VecDeque<Hash32>,
@@ -28,6 +31,43 @@ pub(super) struct RuntimeMcpBackend {
 }
 
 const ORIENT_PREPARATION_CACHE_LIMIT: usize = 8;
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+struct ScipFileStamp {
+    length: u64,
+    modified: SystemTime,
+    #[cfg(unix)]
+    device: u64,
+    #[cfg(unix)]
+    inode: u64,
+    #[cfg(unix)]
+    changed_seconds: i64,
+    #[cfg(unix)]
+    changed_nanoseconds: i64,
+}
+
+impl ScipFileStamp {
+    fn read(path: &Path) -> Result<Self, BackendError> {
+        #[cfg(unix)]
+        use std::os::unix::fs::MetadataExt;
+        let metadata = fs::metadata(path)
+            .map_err(|error| BackendError::new("scip_read", error.to_string()))?;
+        Ok(Self {
+            length: metadata.len(),
+            modified: metadata
+                .modified()
+                .map_err(|error| BackendError::new("scip_read", error.to_string()))?,
+            #[cfg(unix)]
+            device: metadata.dev(),
+            #[cfg(unix)]
+            inode: metadata.ino(),
+            #[cfg(unix)]
+            changed_seconds: metadata.ctime(),
+            #[cfg(unix)]
+            changed_nanoseconds: metadata.ctime_nsec(),
+        })
+    }
+}
 
 #[derive(Clone)]
 struct ExpansionState {
@@ -52,6 +92,8 @@ impl RuntimeMcpBackend {
             watch_root,
             managed_state: None,
             scip_index: None,
+            imported_scip_hash: None,
+            observed_scip: None,
             expansions: BTreeMap::new(),
             orient_preparations: BTreeMap::new(),
             orient_preparation_order: VecDeque::new(),
@@ -70,11 +112,14 @@ impl RuntimeMcpBackend {
         state: PathBuf,
         scip_index: Option<PathBuf>,
     ) -> Self {
+        let imported_scip_hash = runtime.scip_input_hash();
         Self {
             runtime,
             watch_root: Some(root),
             managed_state: Some(state),
             scip_index,
+            imported_scip_hash,
+            observed_scip: None,
             expansions: BTreeMap::new(),
             orient_preparations: BTreeMap::new(),
             orient_preparation_order: VecDeque::new(),
@@ -84,19 +129,19 @@ impl RuntimeMcpBackend {
     }
 
     fn refresh(&mut self) -> Result<(), BackendError> {
+        let current_scip_hash = self.current_scip_hash()?;
+        let scip_changed =
+            current_scip_hash.is_some() && current_scip_hash != self.imported_scip_hash;
         let Some(root) = &self.watch_root else {
             return Ok(());
         };
-        let changed = match self.runtime.refresh(root) {
+        let mut changed = match self.runtime.refresh(root) {
             Ok(changed) => changed,
             Err(error) if error.code() == "revision_changed" && self.managed_state.is_some() => {
                 let state = self.managed_state.as_ref().expect("managed state exists");
-                let indexed = if let Some(path) = &self.scip_index {
-                    Runtime::index_committed_head_with_scip(root, state, path)
-                } else {
-                    Runtime::index_committed_head(root, state)
-                };
-                indexed.map_err(runtime_backend_error)?;
+                // An unchanged compiler artifact describes the old source
+                // snapshot. Rebuild native evidence until new SCIP arrives.
+                Runtime::index_committed_head(root, state).map_err(runtime_backend_error)?;
                 self.risk_baseline = None;
                 self.runtime = Runtime::open(state).map_err(runtime_backend_error)?;
                 self.runtime.refresh(root).map_err(runtime_backend_error)?;
@@ -104,12 +149,52 @@ impl RuntimeMcpBackend {
             }
             Err(error) => return Err(BackendError::new(error.code(), error.to_string())),
         };
+        // A newly generated artifact can restore semantic evidence without a
+        // server restart, once the indexed working sources match committed HEAD.
+        if scip_changed
+            && self.runtime.changed_paths().is_empty()
+            && let (Some(path), Some(state)) = (&self.scip_index, &self.managed_state)
+        {
+            Runtime::index_committed_head_with_scip_if_hash(
+                root,
+                state,
+                path,
+                current_scip_hash.expect("changed SCIP input has a hash"),
+            )
+            .map_err(runtime_backend_error)?;
+            self.runtime = Runtime::open(state).map_err(runtime_backend_error)?;
+            self.runtime.refresh(root).map_err(runtime_backend_error)?;
+            self.imported_scip_hash = self.runtime.scip_input_hash();
+            changed = true;
+            self.risk_baseline = None;
+        }
         if changed {
             self.expansions.clear();
             self.orient_preparations.clear();
             self.orient_preparation_order.clear();
         }
         Ok(())
+    }
+
+    fn current_scip_hash(&mut self) -> Result<Option<Hash32>, BackendError> {
+        let Some(path) = &self.scip_index else {
+            return Ok(None);
+        };
+        let stamp = ScipFileStamp::read(path)?;
+        if let Some((previous, hash)) = self.observed_scip
+            && stamp == previous
+        {
+            return Ok(Some(hash));
+        }
+        let hash = Runtime::scip_file_hash(path).map_err(runtime_backend_error)?;
+        if ScipFileStamp::read(path)? != stamp {
+            return Err(BackendError::new(
+                "scip_changed_during_read",
+                "compiler index changed while reading; retry after generation finishes",
+            ));
+        }
+        self.observed_scip = Some((stamp, hash));
+        Ok(Some(hash))
     }
 
     fn orient_preparation(

@@ -14,7 +14,7 @@ use scip::types::{Index, Occurrence, PositionEncoding, SymbolRole};
 use super::{RuntimeError, StoredArc, StoredDocument};
 
 const MAX_SCIP_BYTES: u64 = 512 * 1024 * 1024;
-pub(super) const RESOLUTION_REVISION: u32 = 2;
+pub(super) const RESOLUTION_REVISION: u32 = 3;
 
 pub(super) fn semantic_hash(bytes: &[u8]) -> Hash32 {
     let mut hasher = blake3::Hasher::new();

@@ -30,6 +30,7 @@ pub(super) fn index_source(
     state: &Path,
     committed_head: bool,
     scip_index: Option<&Path>,
+    expected_scip_hash: Option<Hash32>,
 ) -> Result<IndexReport, RuntimeError> {
     let root = root
         .canonicalize()
@@ -69,6 +70,17 @@ pub(super) fn index_source(
     let scip_bytes = scip_index
         .map(super::scip_resolution::read_index)
         .transpose()?;
+    let scip_input_hash = scip_bytes
+        .as_deref()
+        .map(|bytes| Hash32(*blake3::hash(bytes).as_bytes()));
+    if let Some(expected) = expected_scip_hash
+        && scip_input_hash != Some(expected)
+    {
+        return Err(RuntimeError::new(
+            "scip_changed_during_read",
+            "compiler index changed before import; retry after generation finishes",
+        ));
+    }
     let scip_hash = scip_bytes
         .as_deref()
         .map(super::scip_resolution::semantic_hash);
@@ -298,6 +310,7 @@ pub(super) fn index_source(
         scip_resolution_revision: scip_bytes
             .as_ref()
             .map(|_| super::scip_resolution::RESOLUTION_REVISION),
+        scip_input_hash,
         path_hashes,
         documents,
         arcs,

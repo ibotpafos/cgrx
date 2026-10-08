@@ -146,6 +146,13 @@ when supplied by the indexer, must match the source; SCIP also permits omitted
 text. Both the SCIP bytes and the import policy are part of the graph generation.
 An obsolete semantic policy requires reindexing; a managed server rebuilds from
 its source and supplied SCIP index. Without SCIP it rebuilds native evidence.
+During live serving, a new Git HEAD withdraws the previous SCIP proofs. A
+different SCIP artifact restores them once the indexed working sources match
+committed HEAD. Publish the new file atomically after generating it for that
+revision; rewriting identical bytes does not establish freshness. Missing or
+incomplete files return typed errors until publication finishes. An omitted-text
+artifact carries no source attestation, so its producer must ensure that its
+references describe the current source, including the first explicit import.
 
 ## Explore the graph locally
 
