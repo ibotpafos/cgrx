@@ -478,7 +478,7 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
     }
     for edge in edges
         .iter()
-        .filter(|edge| edge.relation == LanguageRelation::References)
+        .filter(|edge| edge.relation == LanguageRelation::References && ts_file.is_none())
     {
         let text = String::from_utf8_lossy(&source[edge.span.start..edge.span.end]).into_owned();
         let php_type_target = if let LanguageProvenance::PhpType {
@@ -848,6 +848,89 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
                     span,
                     provenance: "IMPORTS",
                     semantic_tags: vec!["PY_IMPORT_BINDING".to_owned()],
+                },
+            ));
+        }
+    }
+    if let Some(facts) = ts_file
+        .as_ref()
+        .and_then(|file| file.declaration_facts.as_ref())
+    {
+        let mut declaration_spans: BTreeSet<_> = documents
+            .iter()
+            .filter(|d| d.provenance == "SYNTAX")
+            .map(|d| (d.span_start, d.span_end))
+            .collect();
+        for (name, declarations) in &facts.declarations {
+            for declaration in declarations {
+                let span = Span {
+                    start: declaration.name[0],
+                    end: declaration.name[1],
+                };
+                if !declaration_spans.insert((span.start, span.end)) {
+                    continue;
+                }
+                let text = String::from_utf8_lossy(&source[span.start..span.end]).into_owned();
+                let search_text =
+                    String::from_utf8_lossy(&source[declaration.body[0]..declaration.body[1]])
+                        .into_owned();
+                documents.push(StoredDocument {
+                    body_start: declaration.body[0],
+                    body_end: declaration.body[1],
+                    ..plain_document(
+                        relative,
+                        DocumentSeed {
+                            node_id: stable_node_id(relative, span, name),
+                            qualified_name: name.clone(),
+                            text,
+                            search_text,
+                            span,
+                            provenance: "SYNTAX",
+                            semantic_tags: vec!["TS_DEPENDENCY_DECLARATION".to_owned()],
+                        },
+                    )
+                });
+            }
+        }
+        for import in &facts.imports {
+            let span = Span {
+                start: import.member[0],
+                end: import.member[1],
+            };
+            let text = String::from_utf8_lossy(&source[span.start..span.end]).into_owned();
+            documents.push(plain_document(
+                relative,
+                DocumentSeed {
+                    node_id: stable_node_id(relative, span, &format!("ts-import:{}", import.local)),
+                    qualified_name: import.local.clone(),
+                    text: text.clone(),
+                    search_text: text,
+                    span,
+                    provenance: "IMPORTS",
+                    semantic_tags: vec!["TS_IMPORT_BINDING".to_owned()],
+                },
+            ));
+        }
+        for reference in &facts.references {
+            let span = Span {
+                start: reference.site[0],
+                end: reference.site[1],
+            };
+            let text = String::from_utf8_lossy(&source[span.start..span.end]).into_owned();
+            documents.push(plain_document(
+                relative,
+                DocumentSeed {
+                    node_id: stable_node_id(
+                        relative,
+                        span,
+                        &format!("ts-reference:{}", reference.local),
+                    ),
+                    qualified_name: reference.local.clone(),
+                    text: text.clone(),
+                    search_text: text,
+                    span,
+                    provenance: "REFERENCES",
+                    semantic_tags: vec!["TS_DECLARATION_REFERENCE".to_owned()],
                 },
             ));
         }

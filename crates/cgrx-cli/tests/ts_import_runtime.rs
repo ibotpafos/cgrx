@@ -101,6 +101,376 @@ impl Drop for Fixture {
         let _ = fs::remove_dir_all(self.root.parent().unwrap());
     }
 }
+
+fn dependency_targets(f: &Fixture, kind: &str) -> Vec<(String, String, String)> {
+    let scope = Scope {
+        include: vec![],
+        exclude: vec![],
+        relation_kinds: vec![serde_json::from_value(serde_json::json!(kind)).unwrap()],
+        max_depth: 1,
+    };
+    let graph = f.runtime.repository_graph(&scope, 100, 100).unwrap();
+    assert_eq!(graph["truncated"], false);
+    let documents: std::collections::BTreeMap<_, _> = graph["nodes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|d| (d["node_id"].as_str().unwrap(), d))
+        .collect();
+    let mut result: Vec<_> = graph["edges"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|a| a["relation"] == kind && a["evidence"]["path"] == "main.ts")
+        .map(|a| {
+            let source = documents[a["source"].as_str().unwrap()];
+            let target = documents[a["target"].as_str().unwrap()];
+            assert_eq!(a["confidence"], "PROVEN");
+            assert_eq!(a["evidence"]["resolver"], "SYNTAX_EXACT");
+            (
+                source["symbol"].as_str().unwrap().to_owned(),
+                target["path"].as_str().unwrap().to_owned(),
+                target["symbol"].as_str().unwrap().to_owned(),
+            )
+        })
+        .collect();
+    result.sort();
+    result
+}
+
+fn publish_metadata(f: &mut Fixture, mut nodes: serde_json::Value) {
+    let reader = GenerationReader::open_current(&f.state).unwrap();
+    let mut snapshot = reader.snapshot().clone();
+    snapshot.graph_generation += 1;
+    nodes["snapshot"] = serde_json::to_value(&snapshot).unwrap();
+    let mut writer = cgrx_store::GenerationWriter::begin(&f.state, snapshot).unwrap();
+    writer
+        .write_segment("nodes.seg", &serde_json::to_vec(&nodes).unwrap())
+        .unwrap();
+    for name in ["edges.seg", "terms.fst"] {
+        writer
+            .write_segment(name, &reader.read_segment(name).unwrap())
+            .unwrap();
+    }
+    writer.validate().unwrap();
+    writer.publish().unwrap();
+    f.runtime = Runtime::open(&f.state).unwrap();
+}
+
+#[test]
+fn named_dependency_imports_resolve_classes_types_variables_and_defaults_without_call_promotion() {
+    let mut f = Fixture::new(&[
+        (
+            "main.ts",
+            "import {Item as Local, type Payload, schema} from './barrel'; import Render from './types'; export function caller() { Local(); schema(); Payload(); Render(); }",
+        ),
+        (
+            "barrel.ts",
+            "export {Box as Item, schema} from './types'; export type {Payload} from './types';",
+        ),
+        (
+            "types.ts",
+            "export class Box {} export type Payload = string; export const schema = 1; export default function render() {}",
+        ),
+        (
+            "decoy.ts",
+            "export function Local() {} export function Payload() {} export function schema() {} export function Render() {}",
+        ),
+    ]);
+    assert_eq!(
+        dependency_targets(&f, "IMPORTS"),
+        [
+            ("Local".into(), "types.ts".into(), "Box".into()),
+            ("Payload".into(), "types.ts".into(), "Payload".into()),
+            ("Render".into(), "types.ts".into(), "render".into()),
+            ("schema".into(), "types.ts".into(), "schema".into()),
+        ]
+    );
+    assert!(f.targets().is_empty());
+    let before = dependency_targets(&f, "IMPORTS");
+    f.runtime = Runtime::open(&f.state).unwrap();
+    assert_eq!(dependency_targets(&f, "IMPORTS"), before);
+}
+
+#[test]
+fn type_references_have_declaration_owners_exact_targets_and_type_query_namespaces() {
+    let f = Fixture::new(&[
+        (
+            "main.ts",
+            "import type {Payload as Local, run} from './types'; export const schema = 1; export type Shape = typeof schema; export type Fn = typeof run; export function caller(Local: number, value: Local) {}",
+        ),
+        (
+            "types.ts",
+            "export type Payload = string; export function run() {}",
+        ),
+        (
+            "decoy.ts",
+            "export type Local = boolean; export const schema = 2; export function run() {}",
+        ),
+    ]);
+    assert_eq!(
+        dependency_targets(&f, "REFERENCES"),
+        [
+            ("Fn".into(), "types.ts".into(), "run".into()),
+            ("Shape".into(), "main.ts".into(), "schema".into()),
+            ("caller".into(), "types.ts".into(), "Payload".into()),
+        ]
+    );
+    let stored = f.stored();
+    for arc in stored["arcs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|a| a["kind"] == "REFERENCES")
+    {
+        let source = stored["documents"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|d| d["node_id"] == arc["source"])
+            .unwrap();
+        assert_eq!(source["provenance"], "SYNTAX");
+        assert!(
+            source["body_start"].as_u64().unwrap()
+                <= arc["evidence"]["span"]["start"].as_u64().unwrap()
+        );
+        assert!(
+            source["body_end"].as_u64().unwrap()
+                >= arc["evidence"]["span"]["end"].as_u64().unwrap()
+        );
+    }
+}
+
+#[test]
+fn refused_type_reference_sites_never_use_global_fallback_and_expose_owned_gaps() {
+    for source in [
+        "import type {Payload} from './types'; export function caller<Payload>(x: Payload) {}",
+        "import type {Payload} from './types'; export function caller() { type Payload = number; let x: Payload; }",
+        "export const schema = 1; export function caller(schema: number) { type Shape = typeof schema; }",
+        "export type Payload = string; export type Shape = { [Payload in 'x']: Payload };",
+        "type Payload = string; function caller(x: Payload) {}",
+        "export type Payload = string; export function caller() { [1].map(function(x: Payload) {}); }",
+    ] {
+        let f = Fixture::new(&[
+            ("main.ts", source),
+            ("types.ts", "export type Payload = string;"),
+            (
+                "decoy.ts",
+                "export type Payload = number; export const schema = 2;",
+            ),
+        ]);
+        assert!(dependency_targets(&f, "REFERENCES").is_empty(), "{source}");
+        let stored = f.stored();
+        let sites = stored["ts_files"]["main.ts"]["facts"]["declaration_facts"]["references"]
+            .as_array()
+            .unwrap();
+        assert!(!sites.is_empty());
+        for reference in sites {
+            let start = reference["site"][0].as_u64().unwrap();
+            let end = reference["site"][1].as_u64().unwrap();
+            let location = format!("main.ts:{start}-{end}");
+            assert!(
+                stored["coverage"]["dynamic_dispatch"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|g| g == &location),
+                "{source}: {location}"
+            );
+        }
+    }
+}
+
+#[test]
+fn dependency_proofs_withdraw_on_export_source_or_resolution_changes_and_restore() {
+    let mut f = Fixture::new(&[
+        (
+            "main.ts",
+            "import type {Payload} from './barrel'; export function caller(x: Payload) {}",
+        ),
+        ("barrel.ts", "export type {Payload} from './types';"),
+        ("types.ts", "export type Payload = string;"),
+    ]);
+    assert_eq!(dependency_targets(&f, "REFERENCES").len(), 1);
+    assert_eq!(dependency_targets(&f, "IMPORTS").len(), 1);
+    for (file, changed, original) in [
+        (
+            "types.ts",
+            "type Payload = string;",
+            "export type Payload = string;",
+        ),
+        (
+            "barrel.ts",
+            "export type {Payload} from './missing';",
+            "export type {Payload} from './types';",
+        ),
+        (
+            "tsconfig.json",
+            "{\"compilerOptions\":{\"moduleSuffixes\":[\".native\",\"\"]}}",
+            "{}",
+        ),
+    ] {
+        fs::write(f.root.join(file), changed).unwrap();
+        f.refresh();
+        assert!(dependency_targets(&f, "REFERENCES").is_empty(), "{file}");
+        assert!(dependency_targets(&f, "IMPORTS").is_empty(), "{file}");
+        fs::write(f.root.join(file), original).unwrap();
+        f.refresh();
+        assert_eq!(dependency_targets(&f, "REFERENCES").len(), 1, "{file}");
+        assert_eq!(dependency_targets(&f, "IMPORTS").len(), 1, "{file}");
+    }
+}
+
+#[test]
+fn missing_or_hash_mismatched_dependency_ledger_never_retains_a_proven_arc() {
+    for missing in [true, false] {
+        let mut f = Fixture::new(&[
+            (
+                "main.ts",
+                "import type {Payload} from './types'; export function caller(x: Payload) {}",
+            ),
+            ("types.ts", "export type Payload = string;"),
+        ]);
+        let mut stored = f.stored();
+        if missing {
+            stored["ts_files"]["types.ts"]["facts"]["declaration_facts"] = serde_json::Value::Null;
+        } else {
+            stored["ts_files"]["types.ts"]["source_hash"] = serde_json::json!("00".repeat(32));
+        }
+        publish_metadata(&mut f, stored);
+        let usages = f
+            .runtime
+            .find_usages(
+                "Payload",
+                Some("types.ts"),
+                &Scope {
+                    include: vec![],
+                    exclude: vec![],
+                    relation_kinds: vec![RelationKind::References],
+                    max_depth: 1,
+                },
+                1,
+                20,
+            )
+            .unwrap();
+        assert!(usages["usages"].as_array().unwrap().is_empty());
+        assert!(dependency_targets(&f, "IMPORTS").is_empty());
+        // Explicit rebuilding restores an incomplete/corrupted metadata ledger.
+        Runtime::index(&f.root, &f.state).unwrap();
+        f.runtime = Runtime::open(&f.state).unwrap();
+        assert_eq!(dependency_targets(&f, "REFERENCES").len(), 1);
+        assert_eq!(dependency_targets(&f, "IMPORTS").len(), 1);
+    }
+}
+
+#[test]
+fn public_import_usages_keep_definition_selection_and_respect_scope_and_relation() {
+    for (origin, target, source, destination, name, local) in [
+        (
+            "main.ts",
+            "types.ts",
+            "import {Box as Local} from './types'; export {};",
+            "export class Box {}",
+            "Box",
+            "Local",
+        ),
+        (
+            "pkg/main.py",
+            "pkg/helper.py",
+            "from .helper import target as local\n",
+            "def target():\n return 1\n",
+            "target",
+            "local",
+        ),
+    ] {
+        let f = Fixture::new(&[
+            (origin, source),
+            (target, destination),
+            ("pkg/__init__.py", ""),
+        ]);
+        let scope = Scope {
+            include: vec![],
+            exclude: vec![],
+            relation_kinds: vec![RelationKind::Imports],
+            max_depth: 1,
+        };
+        let usages = f
+            .runtime
+            .find_usages(name, Some(target), &scope, 1, 20)
+            .unwrap();
+        assert_eq!(usages["target"]["symbol"], name);
+        assert_eq!(usages["total"], 1);
+        assert_eq!(usages["usages"][0]["source"]["symbol"], local);
+        assert_eq!(usages["usages"][0]["site"]["path"], origin);
+        assert_eq!(usages["usages"][0]["relation"], "IMPORTS");
+        assert!(usages["usages"][0]["source"]["symbol_ref"].is_null());
+        let outline = f.runtime.get_outline(origin, 20).unwrap();
+        assert_eq!(outline["imports"][0]["local"], local);
+        assert_eq!(outline["imports"][0]["target"]["symbol"], name);
+        assert_eq!(outline["total_imports"], 1);
+        let calls = f
+            .runtime
+            .find_usages(
+                name,
+                Some(target),
+                &Scope {
+                    relation_kinds: vec![RelationKind::Calls],
+                    ..scope.clone()
+                },
+                1,
+                20,
+            )
+            .unwrap();
+        assert_eq!(calls["total"], 0);
+        let hidden = f
+            .runtime
+            .find_usages(
+                name,
+                Some(target),
+                &Scope {
+                    exclude: vec![origin.into()],
+                    ..scope
+                },
+                1,
+                20,
+            )
+            .unwrap();
+        assert_eq!(hidden["total"], 0);
+    }
+}
+
+#[test]
+fn stale_competing_module_or_ambient_augmentation_never_supplies_unique_dependency_proof() {
+    let mut f = Fixture::new(&[
+        (
+            "main.ts",
+            "import {Box} from './types'; export function caller(x: Box) {}",
+        ),
+        ("types.ts", "export class Box {}"),
+        ("types.tsx", "export class Box {}"),
+    ]);
+    assert!(dependency_targets(&f, "IMPORTS").is_empty());
+    let mut stored = f.stored();
+    stored["ts_files"]["types.tsx"]["source_hash"] = serde_json::json!("00".repeat(32));
+    publish_metadata(&mut f, stored);
+    assert!(dependency_targets(&f, "IMPORTS").is_empty());
+    assert!(dependency_targets(&f, "REFERENCES").is_empty());
+    fs::remove_file(f.root.join("types.tsx")).unwrap();
+    f.refresh();
+    assert_eq!(dependency_targets(&f, "IMPORTS").len(), 1);
+    fs::write(
+        f.root.join("augmentation.ts"),
+        "export {}; declare module './types' { interface Box { extra: number } }",
+    )
+    .unwrap();
+    f.refresh();
+    assert!(dependency_targets(&f, "IMPORTS").is_empty());
+    assert!(dependency_targets(&f, "REFERENCES").is_empty());
+    fs::remove_file(f.root.join("augmentation.ts")).unwrap();
+    f.refresh();
+    assert_eq!(dependency_targets(&f, "IMPORTS").len(), 1);
+    assert_eq!(dependency_targets(&f, "REFERENCES").len(), 1);
+}
 #[test]
 fn imported_alias_uses_export_identity_not_decoy_and_reopens() {
     let mut f = Fixture::new(&[
@@ -130,7 +500,7 @@ fn imported_alias_uses_export_identity_not_decoy_and_reopens() {
         .as_array()
         .unwrap()
         .iter()
-        .find(|arc| arc["evidence"]["path"] == "main.ts")
+        .find(|arc| arc["kind"] == "CALLS" && arc["evidence"]["path"] == "main.ts")
         .unwrap();
     assert_eq!(arc["evidence"]["span"]["start"], call_start);
     assert_eq!(
@@ -350,6 +720,35 @@ fn local_function_shadow_stays_local() {
         ("worker.ts", "export function target() {}"),
     ]);
     assert_eq!(f.targets(), ["main.ts"]);
+}
+
+#[test]
+fn local_module_references_do_not_require_module_resolution_or_merge_global_names() {
+    let f = Fixture::new(&[
+        (
+            "main.ts",
+            "import {Box} from './types'; export class Window {} export function caller(value: Window, box: Box) {}",
+        ),
+        ("types.ts", "export class Box {}"),
+        (
+            "augment.ts",
+            "export {}; declare global { interface Window { localExtra: string } }",
+        ),
+        (
+            "tsconfig.json",
+            "{\"references\":[{\"path\":\"./tsconfig.node.json\"}],\"compilerOptions\":{\"resolveJsonModule\":true}}",
+        ),
+    ]);
+    assert!(dependency_targets(&f, "IMPORTS").is_empty());
+    assert_eq!(
+        dependency_targets(&f, "REFERENCES"),
+        [("caller".into(), "main.ts".into(), "Window".into())]
+    );
+    let stored = f.stored();
+    assert_eq!(
+        stored["ts_resolution_configs"]["tsconfig.json"]["supported"],
+        false
+    );
 }
 
 #[test]

@@ -1508,7 +1508,7 @@ mod compact_storage_tests {
         );
         assert_eq!(
             EXTRACTION_REVISION,
-            109 + if cgrx_languages::EXPERIMENTAL_PHP_ENABLED {
+            125 + if cgrx_languages::EXPERIMENTAL_PHP_ENABLED {
                 2
             } else {
                 0

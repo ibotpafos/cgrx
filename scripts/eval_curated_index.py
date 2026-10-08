@@ -94,6 +94,63 @@ def score(corpus, index, python_imports=False, rust_self=False, rust_receivers=F
             return match.group(1) if match else None
         return re.split(r'\.|::', name)[-1]
 
+    def ts_dependency_identity(proof, source, target, kind):
+        files = index.get('ts_files', {})
+        origin = files.get(proof['path'], {})
+        destination = files.get(target['path'], {})
+        facts = origin.get('facts', {})
+        target_facts = destination.get('facts', {})
+        declarations = facts.get('declaration_facts') or {}
+        target_declarations = target_facts.get('declaration_facts') or {}
+        if (facts.get('valid') is not True or target_facts.get('valid') is not True
+                or declarations.get('valid') is not True or target_declarations.get('valid') is not True
+                or origin.get('source_hash') != proof.get('source_hash')
+                or destination.get('source_hash') != hashes.get(target['path'])):
+            return False
+        targets = target_declarations.get('declarations', {}).get(target['qualified_name'], [])
+        if (len(targets) != 1 or targets[0].get('name') != [target['span_start'], target['span_end']]
+                or target['qualified_name'] in target_declarations.get('blockers', {})
+                or any(i.get('local') == target['qualified_name'] for i in target_declarations.get('imports', []))):
+            return False
+        site = [proof['span']['start'], proof['span']['end']]
+        if kind == 'IMPORTS':
+            imports = [i for i in declarations.get('imports', []) if i.get('member') == site
+                       and i.get('local') == source['qualified_name']]
+            return (source.get('semantic_tags') == ['TS_IMPORT_BINDING'] and len(imports) == 1
+                    and imports[0]['local'] not in declarations.get('declarations', {})
+                    and imports[0]['local'] not in declarations.get('blockers', {})
+                    and sum(i.get('local') == imports[0]['local'] for i in declarations.get('imports', [])) == 1)
+        references = [r for r in declarations.get('references', []) if r.get('site') == site]
+        if len(references) != 1 or declarations.get('external_module') is not True:
+            return False
+        reference = references[0]
+        if (reference.get('caller') != [source['span_start'], source['span_end']]
+                or not reference.get('binding')
+                or not any(d['path'] == proof['path'] and d['provenance'] == 'REFERENCES'
+                           and d.get('semantic_tags') == ['TS_DECLARATION_REFERENCE']
+                           and [d['span_start'], d['span_end']] == site
+                           and d['qualified_name'] == reference.get('local') for d in documents.values())):
+            return False
+        binding = reference['binding']
+        if binding == 'Local':
+            if target['path'] != proof['path'] or reference['local'] != target['qualified_name']:
+                return False
+        elif isinstance(binding, dict) and 'Import' in binding:
+            members = [i for i in declarations.get('imports', [])
+                       if i.get('member') == binding['Import'].get('member') and i.get('local') == reference['local']]
+            if (len(members) != 1 or reference['local'] in declarations.get('declarations', {})
+                    or reference['local'] in declarations.get('blockers', {})
+                    or sum(i.get('local') == reference['local'] for i in declarations.get('imports', [])) != 1):
+                return False
+        else:
+            return False
+        usage, role = reference.get('usage'), targets[0].get('kind')
+        if usage == 'Type':
+            return role in ('Class', 'TypeAlias', 'Interface')
+        if usage in ('TypeQuery', 'Value'):
+            return role in ('Function', 'Class', 'Variable')
+        return False
+
     def rust_identity(proof, source, target):
         path = proof['path']
         span = proof['span']
@@ -215,11 +272,11 @@ def score(corpus, index, python_imports=False, rust_self=False, rust_receivers=F
             text = b''.join(lines)[site['start']:site['end']].decode('utf-8', errors='replace')
             return (re.fullmatch(r'[A-Za-z_$][\w$]*(?:(?:\.|::)[A-Za-z_$][\w$]*)*', text)
                     is not None and re.split(r'\.|::', text)[-1] == anchors['site']['symbol'])
-        # A Python line can import several members. Each curated assertion
+        # A source line can import several members. Each curated assertion
         # owns a named member, so unrelated members on the line are not FPs.
         member_spans = {(d['span_start'], d['span_end']) for d in documents.values()
                         if d['provenance'] == 'IMPORTS'
-                        and d.get('semantic_tags') == ['PY_IMPORT_BINDING']
+                        and d.get('semantic_tags') in (['PY_IMPORT_BINDING'], ['TS_IMPORT_BINDING'])
                         and in_anchor(task, d, anchors['source'])} if (python_imports
                             or (source_relationships and kind == 'IMPORTS')) else None
         for arc in index['arcs']:
@@ -253,6 +310,9 @@ def score(corpus, index, python_imports=False, rust_self=False, rust_receivers=F
                 # Language-specific receipt grading remains in the existing modes.
                 ledger_ok = proof.get('source_hash') == hashes.get(proof['path'])
                 source_ok = in_anchor(task, source, anchors['source'])
+                if (kind in ('IMPORTS', 'REFERENCES')
+                        and Path(proof['path']).suffix in ('.ts', '.tsx')):
+                    ledger_ok &= ts_dependency_identity(proof, source, target, kind)
             source_ok &= source['provenance'] == ('IMPORTS' if kind == 'IMPORTS' else 'SYNTAX')
             if rust_self or rust_receivers:
                 ledger_ok = rust_identity(proof, source, target)

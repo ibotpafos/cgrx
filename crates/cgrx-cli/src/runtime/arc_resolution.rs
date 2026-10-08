@@ -23,6 +23,13 @@ fn javascript_path(path: &str) -> bool {
     )
 }
 
+fn typescript_path(path: &str) -> bool {
+    matches!(
+        Path::new(path).extension().and_then(|s| s.to_str()),
+        Some("ts" | "tsx")
+    )
+}
+
 fn append_reference_arcs(
     documents: &[StoredDocument],
     path_hashes: &BTreeMap<String, Hash32>,
@@ -35,6 +42,7 @@ fn append_reference_arcs(
             && !php_resolution::is_php_path(&d.path)
             && !d.path.ends_with(".swift")
             && !javascript_path(&d.path)
+            && !typescript_path(&d.path)
     }) {
         // Try exact match first, then extract last segment for qualified names
         let targets = by_name.get(document.qualified_name.as_str()).or_else(|| {
@@ -87,6 +95,7 @@ fn append_import_arcs(
             && !php_resolution::is_php_path(&d.path)
             && !d.path.ends_with(".py")
             && !javascript_path(&d.path)
+            && !typescript_path(&d.path)
     }) {
         // Try to find the imported module by matching the qualified_name to a file path
         let import_target = &document.qualified_name;
@@ -216,8 +225,11 @@ pub(super) fn rebuild_arcs_with_cargo(
     let cargo = crate::cargo_roots::CargoRoots::new(cargo_manifests, rust_files);
     let ts_inventory: BTreeMap<_, _> = ts_files
         .iter()
-        .filter(|(path, stored)| path_hashes.get(*path) == Some(&stored.source_hash))
-        .map(|(path, stored)| (path.clone(), stored.facts.clone()))
+        .map(|(path, stored)| {
+            let mut facts = stored.facts.clone();
+            facts.valid &= path_hashes.get(path) == Some(&stored.source_hash);
+            (path.clone(), facts)
+        })
         .collect();
     let modules = ts_config_modules(ts_files, ts_resolution_configs);
     let mut by_name = BTreeMap::<&str, Vec<&StoredDocument>>::new();
@@ -242,11 +254,12 @@ pub(super) fn rebuild_arcs_with_cargo(
     {
         // Newly exposed arrows require lexical proof, even for other languages'
         // callsites. Never let the legacy resolver discover them by name.
-        if !document
-            .semantic_tags
-            .iter()
-            .any(|tag| tag == "TS_LEXICAL_ARROW")
-            && !php_resolution::is_php_path(&document.path)
+        if !document.semantic_tags.iter().any(|tag| {
+            matches!(
+                tag.as_str(),
+                "TS_LEXICAL_ARROW" | "TS_DEPENDENCY_DECLARATION"
+            )
+        }) && !php_resolution::is_php_path(&document.path)
             && !document.path.ends_with(".swift")
             && !javascript_path(&document.path)
         {
@@ -977,6 +990,16 @@ pub(super) fn rebuild_arcs_with_cargo(
     }
     append_reference_arcs(documents, path_hashes, &by_name, &mut arcs);
     append_import_arcs(documents, path_hashes, &syntax_by_path, &by_name, &mut arcs);
+    super::ts_dependency_resolution::append_arcs(
+        documents,
+        path_hashes,
+        ts_files,
+        &ts_inventory,
+        ts_resolution_configs,
+        &modules,
+        &syntax_by_path,
+        &mut arcs,
+    );
     arcs.sort_by_key(|arc| (arc.source, arc.target, arc.kind, arc.evidence.clone()));
     arcs.dedup();
     arcs

@@ -24,6 +24,7 @@ mod target_types;
 #[cfg(test)]
 mod tests;
 mod ts_config;
+mod ts_dependency_resolution;
 mod ts_helpers;
 
 use arc_resolution::go_module_name;
@@ -90,10 +91,10 @@ use serde_json::{Value, json};
 
 // Read the effective dependency policy, not just this crate's feature flag:
 // Cargo may enable an experimental language through another workspace member.
-// Revisions through 107 include historical and experimental caches. Start a new
+// Revisions through 123 include historical and experimental caches. Start a new
 // block so old caches cannot acquire a different language policy by matching a number.
 const EXTRACTION_REVISION: u32 =
-    109 + if cgrx_languages::EXPERIMENTAL_PHP_ENABLED {
+    125 + if cgrx_languages::EXPERIMENTAL_PHP_ENABLED {
         2
     } else {
         0

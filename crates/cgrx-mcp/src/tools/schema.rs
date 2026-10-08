@@ -15,7 +15,7 @@ pub(super) fn model_visible_schema() -> Value {
             {"name":"ingest_runtime_evidence","description":"Import revision-pinned runtime call evidence from a local file.","inputSchema":{"type":"object","required":["input_path"],"properties":{"input_path":{"type":"string"},"format":{"enum":["auto","ndjson","otlp-json"],"default":"auto"},"revision":{"type":"string"},"environment":{"type":"string"}}}},
             {"name":"orient","description":"Adaptive context","inputSchema":{"type":"object","required":["task","mode","scope"],"properties":{"task":{"type":"string"},"budget":{"type":"integer","minimum":1},"budget_preset":{"enum":["quick","standard","deep"]},"mode":{"enum":["FAST","PRECISE","BOUNDED"]},"scope":bounded_scope.clone()}}},
             {"name":"search_graph","description":"Symbols or bodies","inputSchema":{"type":"object","required":["query"],"properties":{"query":{"type":"string"},"language":{"enum":["typescript","javascript","go","java","python","rust","c","cpp","csharp","ruby","php","swift","scala","elixir","kotlin"]},"include_body":{"type":"boolean"},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":50}}}},
-            {"name":"get_outline","description":"File symbols and proven Python imports","inputSchema":{"type":"object","required":["path"],"properties":{"path":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":500}}}},
+            {"name":"get_outline","description":"File symbols and proven named imports","inputSchema":{"type":"object","required":["path"],"properties":{"path":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":500}}}},
             {"name":"get_architecture","description":"Paginated packages, proven boundaries, communities and graph futures","inputSchema":{"type":"object","properties":{"scope":path_or_scope.clone(),"package_depth":{"type":"integer","minimum":1,"maximum":4},"limit":{"type":"integer","minimum":1,"maximum":100},"offset":{"type":"integer","minimum":0,"maximum":1000000}}}},
             {"name":"trace_path","description":"Calls","inputSchema":{"type":"object","required":["symbol"],"properties":{"symbol":{"type":"string"},"path":{"type":"string"},"direction":{"enum":["callers","callees","both"]},"depth":{"type":"integer","minimum":1,"maximum":4},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":50},"evidence":{"enum":["static","observed","all"],"default":"static"}}}},
             {"name":"find_usages","description":"Proven usages","inputSchema":{"type":"object","required":["symbol"],"properties":{"symbol":{"type":"string"},"path":{"type":"string"},"depth":{"type":"integer","minimum":1,"maximum":4},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":500},"evidence":{"enum":["static","observed","all"],"default":"static"}}}},
@@ -32,6 +32,12 @@ pub(super) fn model_visible_schema() -> Value {
             {"name":"check_security_gates","description":"Snapshot-bound security gate over working-tree secrets, Cargo.lock dependency hygiene and license allowlist with explicit PASS/WARN/FAIL/INCONCLUSIVE verdict; no LLM executed.","inputSchema":{"type":"object","properties":{"fail_on":{"enum":["error","warning","none"],"default":"error"},"max_secret_findings":{"type":"integer","minimum":0,"maximum":10000,"default":0},"max_dependency_findings":{"type":"integer","minimum":0,"maximum":10000,"default":0},"max_license_findings":{"type":"integer","minimum":0,"maximum":10000,"default":0},"allowlist_paths":{"type":"array","items":{"type":"string"}},"allowlist_licenses":{"type":"array","items":{"type":"string"}}}}}
         ]);
     for tool in tools.as_array_mut().unwrap() {
+        if tool["name"] == "find_usages" {
+            let mut scope = bounded_scope.clone();
+            scope["properties"]["relation_kinds"]["items"]["enum"] =
+                json!(["CALLS", "IMPLEMENTS", "IMPORTS", "REFERENCES"]);
+            tool["inputSchema"]["properties"]["scope"] = path_or_scope_schema(&scope);
+        }
         if matches!(
             tool["name"].as_str(),
             Some("get_code_snippet" | "trace_path" | "find_usages")
@@ -87,7 +93,7 @@ fn tool_metadata(name: &str) -> Option<(&'static str, &'static str)> {
         ),
         "get_outline" => (
             "Outline a file",
-            "List indexed symbols and definition spans in source order, plus proven Python relative import bindings and targets. Limit bounds each collection; inspect symbols and imports truncation separately.",
+            "List indexed symbols and definition spans in source order, plus proven named import bindings and targets. Limit bounds each collection; inspect symbols and imports truncation separately.",
         ),
         "get_architecture" => (
             "Map architecture",
@@ -99,7 +105,7 @@ fn tool_metadata(name: &str) -> Option<(&'static str, &'static str)> {
         ),
         "find_usages" => (
             "Find usages",
-            "List proven incoming sites with hop, resolver and coverage gaps; symbol_ref selects the definition.",
+            "List proven incoming calls, imports, references or implementations; scope selects relations and symbol_ref selects the definition.",
         ),
         "suggest_refactors" => (
             "Suggest refactors",

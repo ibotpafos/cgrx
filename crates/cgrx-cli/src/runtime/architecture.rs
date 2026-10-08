@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::Path;
 
 use cgrx_core::{
     ByteRange, ConfidenceClass, EdgeEvidence, Hash32, RepoSnapshot, ResolverClass, Scope,
@@ -263,20 +264,95 @@ impl Runtime {
         let mut external_references = 0usize;
         let mut out_of_scope_references = 0usize;
         let mut unresolved_references = Vec::new();
+        let mut ts_reference_proofs = BTreeMap::<(&str, usize, usize), Vec<&EdgeEvidence>>::new();
+        let mut ts_reference_targets = BTreeMap::<(&str, usize, usize), Vec<&str>>::new();
+        for arc in self
+            .stored
+            .arcs
+            .iter()
+            .filter(|a| a.kind == cgrx_core::RelationKind::References)
+        {
+            let Some(evidence) = arc.evidence.as_ref().filter(|e| {
+                e.is_definitive()
+                    && e.resolver == ResolverClass::SyntaxExact
+                    && self.stored.path_hashes.get(&e.path) == Some(&e.source_hash)
+            }) else {
+                continue;
+            };
+            let Some(target) = super::scan_helpers::syntax_document(&self.stored, arc.target)
+            else {
+                continue;
+            };
+            let key = (
+                evidence.path.as_str(),
+                evidence.span.start,
+                evidence.span.end,
+            );
+            ts_reference_proofs.entry(key).or_default().push(evidence);
+            ts_reference_targets
+                .entry(key)
+                .or_default()
+                .push(&target.path);
+        }
         for reference in scoped_documents
             .iter()
             .copied()
             .filter(|document| document.provenance == "REFERENCES")
         {
-            let resolution = resolve_import(
-                &reference.path,
-                &reference.qualified_name,
-                &self.stored.path_hashes,
-                &self.stored.go_modules,
-                &self.stored.cargo_manifests,
-                &ts_files,
-                &ts_modules,
+            let key = (
+                reference.path.as_str(),
+                reference.span_start,
+                reference.span_end,
             );
+            let typed_reference = matches!(
+                Path::new(&reference.path)
+                    .extension()
+                    .and_then(|e| e.to_str()),
+                Some("ts" | "tsx")
+            );
+            let native_evidence =
+                ts_reference_proofs
+                    .get(&key)
+                    .and_then(|proofs| match proofs.as_slice() {
+                        [proof] => Some(*proof),
+                        _ => None,
+                    });
+            let resolution = if typed_reference {
+                match ts_reference_targets.get(&key).map(Vec::as_slice) {
+                    Some([target]) => ImportResolution::Proven((*target).to_owned()),
+                    _ => {
+                        let module = self
+                            .stored
+                            .ts_files
+                            .get(&reference.path)
+                            .and_then(|f| f.facts.declaration_facts.as_ref())
+                            .and_then(|f| {
+                                f.imports
+                                    .iter()
+                                    .find(|i| i.local == reference.qualified_name)
+                            })
+                            .map(|i| i.module.as_str());
+                        if module.is_some_and(|m| {
+                            !m.starts_with('.')
+                                && !ts_modules.contains_key(&(reference.path.clone(), m.to_owned()))
+                        }) {
+                            ImportResolution::External
+                        } else {
+                            ImportResolution::UnresolvedLocal
+                        }
+                    }
+                }
+            } else {
+                resolve_import(
+                    &reference.path,
+                    &reference.qualified_name,
+                    &self.stored.path_hashes,
+                    &self.stored.go_modules,
+                    &self.stored.cargo_manifests,
+                    &ts_files,
+                    &ts_modules,
+                )
+            };
             let target_path = match resolution {
                 ImportResolution::Proven(path) if path_in_scope(&path, scope) => path,
                 ImportResolution::Proven(_) => {
@@ -321,7 +397,7 @@ impl Runtime {
             boundary.edges += 1;
             boundary.relations.insert("REFERENCES".to_owned());
             if boundary.evidence.len() < 8 {
-                let evidence = EdgeEvidence {
+                let evidence = native_evidence.cloned().unwrap_or_else(|| EdgeEvidence {
                     path: reference.path.clone(),
                     span: ByteRange::new(reference.span_start, reference.span_end),
                     source_hash: self.stored.path_hashes[&reference.path],
@@ -329,7 +405,7 @@ impl Runtime {
                     confidence: ConfidenceClass::Proven,
                     assumptions: Vec::new(),
                     counter_evidence: Vec::new(),
-                };
+                });
                 boundary
                     .evidence
                     .push(serde_json::to_value(evidence).expect("serialize reference evidence"));

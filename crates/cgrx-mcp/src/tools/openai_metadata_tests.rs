@@ -1,6 +1,30 @@
 use super::*;
 
 #[test]
+fn usage_scope_advertises_dependencies_without_changing_call_scope_contracts() {
+    let tools = model_visible_schema();
+    for (name, kinds) in [
+        (
+            "find_usages",
+            json!(["CALLS", "IMPLEMENTS", "IMPORTS", "REFERENCES"]),
+        ),
+        ("trace_path", json!(["CALLS", "IMPLEMENTS"])),
+    ] {
+        let tool = tools
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|t| t["name"] == name)
+            .unwrap();
+        assert_eq!(
+            tool["inputSchema"]["properties"]["scope"]["anyOf"][2]["properties"]["relation_kinds"]
+                ["items"]["enum"],
+            kinds
+        );
+    }
+}
+
+#[test]
 fn openai_tool_contract() {
     let tools = model_visible_schema();
     assert!(

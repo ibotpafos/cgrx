@@ -114,6 +114,27 @@ pub(super) fn ts_module_specifiers(facts: &TsFileFacts) -> BTreeSet<&str> {
                 None
             }
         }))
+        .chain(
+            facts
+                .declaration_facts
+                .iter()
+                .flat_map(|facts| facts.imports.iter().map(|i| i.module.as_str())),
+        )
+        .chain(facts.declaration_facts.iter().flat_map(|facts| {
+            facts.exports.values().flatten().filter_map(|export| {
+                if let cgrx_languages::ts_declarations::Export::From { module, .. } = export {
+                    Some(module.as_str())
+                } else {
+                    None
+                }
+            })
+        }))
+        .chain(facts.declaration_facts.iter().flat_map(|facts| {
+            facts
+                .augmentations
+                .iter()
+                .filter_map(|a| a.module.as_deref())
+        }))
         .collect()
 }
 

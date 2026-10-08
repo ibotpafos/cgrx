@@ -580,5 +580,109 @@ class PythonImportIntegrityTests(unittest.TestCase):
                 self.assertFalse(self.report(index)['passed'])
 
 
+class TypeScriptDependencyIdentityTests(unittest.TestCase):
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.root = Path(self.directory.name)
+        source = b'import type {Payload as Local} from "./types";\nexport function caller(value: Local) {}\n'
+        target = b'export type Payload = string;\n'
+        self.root.joinpath('main.ts').write_bytes(source)
+        self.root.joinpath('types.ts').write_bytes(target)
+        member = [source.index(b'Payload'), source.index(b'Local') + 5]
+        caller = [source.index(b'caller'), source.index(b'caller') + 6]
+        site = [source.rindex(b'Local'), source.rindex(b'Local') + 5]
+        destination = [target.index(b'Payload'), target.index(b'Payload') + 7]
+        docs = [
+            {'node_id': 1, 'path': 'main.ts', 'qualified_name': 'Local', 'provenance': 'IMPORTS',
+             'span_start': member[0], 'span_end': member[1], 'semantic_tags': ['TS_IMPORT_BINDING']},
+            {'node_id': 2, 'path': 'main.ts', 'qualified_name': 'caller', 'provenance': 'SYNTAX',
+             'span_start': caller[0], 'span_end': caller[1]},
+            {'node_id': 3, 'path': 'types.ts', 'qualified_name': 'Payload', 'provenance': 'SYNTAX',
+             'span_start': destination[0], 'span_end': destination[1]},
+            {'node_id': 4, 'path': 'main.ts', 'qualified_name': 'Local', 'provenance': 'REFERENCES',
+             'span_start': site[0], 'span_end': site[1], 'semantic_tags': ['TS_DECLARATION_REFERENCE']},
+        ]
+        imported = {'local': 'Local', 'imported': 'Payload', 'module': './types',
+                    'member': member, 'name': [member[1] - 5, member[1]], 'type_only': True}
+        reference = {'local': 'Local', 'site': site, 'caller': caller, 'usage': 'Type',
+                     'binding': {'Import': {'member': member}}}
+        declaration = {'name': destination, 'body': [0, len(target)], 'kind': 'TypeAlias'}
+        origin = {'valid': True, 'external_module': True, 'ambient_augmentation': False,
+                  'imports': [imported], 'references': [reference], 'declarations': {}, 'blockers': {}}
+        destination_facts = {'valid': True, 'external_module': True, 'ambient_augmentation': False,
+                             'imports': [], 'references': [], 'declarations': {'Payload': [declaration]},
+                             'blockers': {}}
+        arc = lambda kind, src, span: {'source': src, 'target': 3, 'kind': kind, 'evidence': {
+            'path': 'main.ts', 'span': {'start': span[0], 'end': span[1]}, 'source_hash': 'ab' * 32,
+            'confidence': 'PROVEN', 'resolver': 'SYNTAX_EXACT', 'assumptions': [], 'counter_evidence': []}}
+        self.index = {'snapshot': {'repo_revision': 'a' * 40, 'graph_generation': 123},
+                      'extraction_revision': 125, 'indexed_files': 2, 'documents': docs,
+                      'arcs': [arc('IMPORTS', 1, member), arc('REFERENCES', 2, site)],
+                      'path_hashes': {'main.ts': 'ab' * 32, 'types.ts': 'cd' * 32},
+                      'ts_files': {'main.ts': {'source_hash': 'ab' * 32, 'facts': {'valid': True, 'declaration_facts': origin}},
+                                   'types.ts': {'source_hash': 'cd' * 32, 'facts': {'valid': True, 'declaration_facts': destination_facts}}},
+                      'coverage': {'dynamic_dispatch': []}}
+        anchor = lambda path, name, line: {'path': path, 'symbol': name, 'start_line': line, 'end_line': line}
+        self.tasks = [
+            {'id': 'ts-import', 'repo': str(self.root), 'revision': 'a' * 40, 'expected': {'relation': 'IMPORTS'},
+             'evidence': {'source': anchor('main.ts', 'Local', 1), 'site': anchor('main.ts', 'Local', 1),
+                          'target': anchor('types.ts', 'Payload', 1)}},
+            {'id': 'ts-reference', 'repo': str(self.root), 'revision': 'a' * 40, 'expected': {'relation': 'REFERENCE'},
+             'evidence': {'source': anchor('main.ts', 'caller', 2), 'site': anchor('main.ts', 'Local', 2),
+                          'target': anchor('types.ts', 'Payload', 1)}},
+        ]
+
+    def report(self, index=None, tasks=None):
+        return score({'tasks': tasks or self.tasks}, index or self.index, source_relationships=True)
+
+    def test_exact_import_alias_and_type_reference_receipts_pass(self):
+        result = self.report()
+        self.assertTrue(result['passed'])
+        self.assertEqual(result['matched_positive_assertions'], 2)
+
+    def test_missing_invalid_or_hash_mismatched_type_dependency_facts_fail(self):
+        for mode in ('source', 'target', 'source-hash', 'target-hash', 'invalid-source', 'invalid-target',
+                     'missing-source-facts', 'missing-target-facts', 'merged-target', 'blocked-target'):
+            with self.subTest(mode=mode):
+                index = copy.deepcopy(self.index)
+                files = index['ts_files']
+                if mode in ('source', 'target'):
+                    del files['main.ts' if mode == 'source' else 'types.ts']
+                elif mode.endswith('hash'):
+                    files['main.ts' if mode.startswith('source') else 'types.ts']['source_hash'] = 'ef' * 32
+                elif mode.startswith('invalid'):
+                    files['main.ts' if mode.endswith('source') else 'types.ts']['facts']['valid'] = False
+                elif mode.startswith('missing'):
+                    del files['main.ts' if 'source' in mode else 'types.ts']['facts']['declaration_facts']
+                elif mode == 'merged-target':
+                    declarations = files['types.ts']['facts']['declaration_facts']['declarations']['Payload']
+                    declarations.append(copy.deepcopy(declarations[0]))
+                else:
+                    files['types.ts']['facts']['declaration_facts']['blockers']['Payload'] = 1
+                self.assertFalse(self.report(index)['passed'])
+
+    def test_wrong_namespace_owner_binding_or_reference_site_cannot_pass(self):
+        for mode in ('wrong-kind', 'owner', 'binding', 'script', 'site', 'import-span', 'duplicate-import'):
+            with self.subTest(mode=mode):
+                index = copy.deepcopy(self.index)
+                facts = index['ts_files']['main.ts']['facts']['declaration_facts']
+                if mode == 'wrong-kind':
+                    index['ts_files']['types.ts']['facts']['declaration_facts']['declarations']['Payload'][0]['kind'] = 'Variable'
+                elif mode == 'owner':
+                    facts['references'][0]['caller'] = [0, 1]
+                elif mode == 'binding':
+                    facts['references'][0]['binding'] = None
+                elif mode == 'script':
+                    facts['external_module'] = False
+                elif mode == 'site':
+                    index['documents'][3]['semantic_tags'] = []
+                elif mode == 'import-span':
+                    facts['imports'][0]['member'] = [0, 1]
+                else:
+                    facts['imports'].append(copy.deepcopy(facts['imports'][0]))
+                self.assertFalse(self.report(index)['passed'])
+
+
 if __name__ == '__main__':
     unittest.main()

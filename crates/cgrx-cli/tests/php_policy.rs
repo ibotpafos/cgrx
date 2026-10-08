@@ -71,8 +71,8 @@ fn php_registry_policy_has_separate_cache_identity_and_reindexes_the_same_commit
     );
     let other_languages = 4 * u32::from(cgrx_languages::EXPERIMENTAL_SWIFT_ENABLED)
         + 8 * u32::from(cgrx_languages::EXPERIMENTAL_JAVASCRIPT_ENABLED);
-    let active_policy = (if enabled { 111 } else { 109 }) + other_languages;
-    let foreign_policy = (if enabled { 109 } else { 111 }) + other_languages;
+    let active_policy = (if enabled { 127 } else { 125 }) + other_languages;
+    let foreign_policy = (if enabled { 125 } else { 127 }) + other_languages;
     let report = Runtime::index(&root, &fresh).unwrap();
     assert_eq!(report.indexed_files, if enabled { 2 } else { 1 });
     assert_eq!(

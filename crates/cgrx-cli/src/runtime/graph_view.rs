@@ -55,7 +55,7 @@ impl Runtime {
         }
         let mut scoped = ScopedQuery::new(&self.stored, scope, path_in_scope);
         let documents = scoped
-            .syntax_documents(&self.stored)
+            .relationship_documents(&self.stored)
             .into_iter()
             .map(|document| (document.node_id, document))
             .collect::<BTreeMap<_, _>>();
@@ -193,7 +193,7 @@ impl Runtime {
         let root = resolve_root(self, &request)?;
         let mut scoped = ScopedQuery::new(&self.stored, &request.scope, path_in_scope);
         let documents = scoped
-            .syntax_documents(&self.stored)
+            .relationship_documents(&self.stored)
             .into_iter()
             .map(|document| (document.node_id, document))
             .collect::<BTreeMap<_, _>>();

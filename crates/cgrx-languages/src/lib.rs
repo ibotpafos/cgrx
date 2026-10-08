@@ -44,6 +44,7 @@ pub use python::{PythonFileFacts, PythonImportBinding};
 pub use rust::RustFileFacts;
 
 // Exact import facts and conservative site classification for runtime integration.
+pub use typescript::ts_declarations;
 pub use typescript::ts_imports;
 
 #[cfg(test)]

@@ -29,6 +29,7 @@ const UNTRACKED_SCAN_ENTRY_LIMIT: usize = 64;
 pub(super) struct QueryIndex {
     ready: bool,
     document_indices_by_path: BTreeMap<String, Vec<usize>>,
+    import_document_indices_by_path: BTreeMap<String, Vec<usize>>,
     syntax_documents_by_node: BTreeMap<u64, Vec<usize>>,
     syntax_documents_by_name: BTreeMap<String, Vec<usize>>,
     syntax_documents_by_folded_name: BTreeMap<String, Vec<usize>>,
@@ -40,6 +41,7 @@ pub(super) struct QueryIndex {
 
 pub(super) fn rebuild_query_index(stored: &mut StoredIndex) {
     let mut document_indices_by_path = BTreeMap::<String, Vec<usize>>::new();
+    let mut import_document_indices_by_path = BTreeMap::<String, Vec<usize>>::new();
     let mut syntax_documents_by_node = BTreeMap::<u64, Vec<usize>>::new();
     let mut syntax_documents_by_name = BTreeMap::<String, Vec<usize>>::new();
     let mut syntax_documents_by_folded_name = BTreeMap::<String, Vec<usize>>::new();
@@ -51,6 +53,13 @@ pub(super) fn rebuild_query_index(stored: &mut StoredIndex) {
             .or_default()
             .push(index);
         if document.provenance != "SYNTAX" {
+            if named_import_document(document) {
+                import_document_indices_by_path
+                    .entry(document.path.clone())
+                    .or_default()
+                    .push(index);
+                live_nodes.insert(document.node_id);
+            }
             continue;
         }
         syntax_documents_by_node
@@ -97,6 +106,7 @@ pub(super) fn rebuild_query_index(stored: &mut StoredIndex) {
     stored.query_index = QueryIndex {
         ready: true,
         document_indices_by_path,
+        import_document_indices_by_path,
         syntax_documents_by_node,
         syntax_documents_by_name,
         syntax_documents_by_folded_name,
@@ -105,6 +115,14 @@ pub(super) fn rebuild_query_index(stored: &mut StoredIndex) {
         incoming_definitive_arcs,
         outgoing_definitive_arcs,
     };
+}
+
+fn named_import_document(document: &StoredDocument) -> bool {
+    document.provenance == "IMPORTS"
+        && document
+            .semantic_tags
+            .iter()
+            .any(|tag| matches!(tag.as_str(), "TS_IMPORT_BINDING" | "PY_IMPORT_BINDING"))
 }
 
 pub(super) fn crosses_nested_git_boundary(
@@ -377,6 +395,7 @@ pub(super) fn normalize_stored(stored: &mut StoredIndex) {
         stored.arcs = migrated;
     }
     super::php_resolution::normalize(stored);
+    super::ts_dependency_resolution::normalize(stored);
     refresh_proof_gaps(stored);
     // QueryIndex stores positions into the normalized documents/arcs vectors.
     // Rebuild it unconditionally after every normalization pass so an early
@@ -425,10 +444,15 @@ pub(super) fn refresh_proof_gaps(stored: &mut StoredIndex) {
                     .semantic_tags
                     .iter()
                     .any(|tag| tag == "JAVA_CONSTRUCTOR_CALL")
-                || doc
-                    .semantic_tags
-                    .iter()
-                    .any(|tag| tag == "TS_IMPORT_CALL" || tag == "TS_IMPORT_REJECTED")
+                || doc.semantic_tags.iter().any(|tag| {
+                    matches!(
+                        tag.as_str(),
+                        "TS_IMPORT_CALL"
+                            | "TS_IMPORT_REJECTED"
+                            | "TS_IMPORT_BINDING"
+                            | "TS_DECLARATION_REFERENCE"
+                    )
+                })
                 || doc
                     .semantic_tags
                     .iter()
@@ -440,10 +464,10 @@ pub(super) fn refresh_proof_gaps(stored: &mut StoredIndex) {
         .map(|doc| {
             (
                 format!("{}:{}-{}", doc.path, doc.span_start, doc.span_end),
-                if doc.provenance == "REFERENCES" {
-                    cgrx_core::RelationKind::References
-                } else {
-                    cgrx_core::RelationKind::Calls
+                match doc.provenance.as_str() {
+                    "REFERENCES" => cgrx_core::RelationKind::References,
+                    "IMPORTS" => cgrx_core::RelationKind::Imports,
+                    _ => cgrx_core::RelationKind::Calls,
                 },
             )
         })
@@ -553,6 +577,14 @@ impl<'a, F: FnMut(&str, &Scope) -> bool> ScopedQuery<'a, F> {
                 .map(|document| document.node_id)
                 .collect()
         };
+        if scope.relation_kinds.is_empty()
+            || scope
+                .relation_kinds
+                .contains(&cgrx_core::RelationKind::Imports)
+        {
+            let imports = query.import_documents(stored);
+            query.live.extend(imports.iter().map(|d| d.node_id));
+        }
         query
     }
 
@@ -616,6 +648,40 @@ impl<'a, F: FnMut(&str, &Scope) -> bool> ScopedQuery<'a, F> {
                 document.provenance == "SYNTAX" && self.contains_path(&document.path)
             })
             .collect()
+    }
+
+    fn import_documents<'s: 'a>(&mut self, stored: &'s StoredIndex) -> Vec<&'s StoredDocument> {
+        if stored.query_index.ready {
+            let mut result = Vec::new();
+            for (path, indices) in &stored.query_index.import_document_indices_by_path {
+                if self.contains_path(path) {
+                    result.extend(indices.iter().filter_map(|i| stored.documents.get(*i)));
+                }
+            }
+            result
+        } else {
+            stored
+                .documents
+                .iter()
+                .filter(|d| named_import_document(d) && self.contains_path(&d.path))
+                .collect()
+        }
+    }
+
+    pub(super) fn relationship_documents<'s: 'a>(
+        &mut self,
+        stored: &'s StoredIndex,
+    ) -> Vec<&'s StoredDocument> {
+        let mut documents = self.syntax_documents(stored);
+        if self.scope.relation_kinds.is_empty()
+            || self
+                .scope
+                .relation_kinds
+                .contains(&cgrx_core::RelationKind::Imports)
+        {
+            documents.extend(self.import_documents(stored));
+        }
+        documents
     }
 
     pub(super) fn matching_symbols<'s: 'a>(

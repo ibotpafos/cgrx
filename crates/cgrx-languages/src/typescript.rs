@@ -1,3 +1,5 @@
+#[path = "ts_declarations.rs"]
+pub mod ts_declarations;
 #[path = "ts_imports.rs"]
 pub mod ts_imports;
 

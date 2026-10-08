@@ -155,7 +155,7 @@ impl super::Runtime {
             "truncated":total > limit,
             "coverage_gap_count":coverage_gap_count(&scoped.coverage(&self.stored.coverage))
         });
-        if language == "python" {
+        if matches!(language, "python" | "typescript") {
             let sources: BTreeMap<_, _> = self
                 .stored
                 .documents
@@ -594,7 +594,7 @@ impl super::Runtime {
         }
         let mut scoped = ScopedQuery::new(&self.stored, scope, path_in_scope);
         let roots = scoped.matching_symbols(&self.stored, symbol, path);
-        let scoped_documents = scoped.syntax_documents(&self.stored);
+        let scoped_documents = scoped.relationship_documents(&self.stored);
         let root = self.select_document(selector, roots)?;
         let by_id: BTreeMap<_, _> = scoped_documents
             .iter()
@@ -668,7 +668,7 @@ impl super::Runtime {
             .take(limit)
             .map(|(arc, source, target, evidence, hop)| {
                 json!({
-                    "source":{"node_id":source.node_id,"symbol_ref":self.symbol_reference(source),"symbol":source.qualified_name,"path":source.path,"span":{"start":source.span_start,"end":source.span_end}},
+                    "source":{"node_id":source.node_id,"symbol_ref":(source.provenance == "SYNTAX").then(|| self.symbol_reference(source)),"symbol":source.qualified_name,"path":source.path,"span":{"start":source.span_start,"end":source.span_end}},
                     "via":{"node_id":target.node_id,"symbol_ref":self.symbol_reference(target),"symbol":target.qualified_name,"path":target.path},
                     "relation":arc.kind,
                     "site":{"path":evidence.path,"span":evidence.span},

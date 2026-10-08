@@ -8,6 +8,8 @@ use tree_sitter::{Node, Parser};
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TsFileFacts {
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub declaration_facts: Option<super::ts_declarations::DeclarationFacts>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub javascript: Option<crate::javascript::FileFacts>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub javascript_package: Option<crate::javascript::PackageKind>,
@@ -374,6 +376,9 @@ impl TsFileFacts {
         let root = tree.root_node();
         let mut facts = Self {
             valid: !root.has_error(),
+            declaration_facts: Some(super::ts_declarations::DeclarationFacts::from_tree(
+                root, source,
+            )),
             ..Self::default()
         };
         let mut cursor = root.walk();
