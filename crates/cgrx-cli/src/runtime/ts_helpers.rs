@@ -3,6 +3,7 @@
 //! These functions handle TS config parsing, module resolution,
 //! inventory scanning, path validation, and source fingerprinting.
 
+use std::borrow::{Borrow, Cow};
 #[cfg(test)]
 use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet};
@@ -29,6 +30,25 @@ thread_local! {
 }
 
 // ExtractedPath and ExtractedSource are defined in extraction.rs
+
+// Retain every candidate path, including stale/invalid competitors. Only a
+// current valid file can support a proof. Borrow its immutable facts instead of
+// cloning the whole declaration ledger on every graph reconstruction.
+pub(super) fn ts_current_inventory<'a>(
+    files: &'a BTreeMap<String, StoredTsFileFacts>,
+    hashes: &BTreeMap<String, Hash32>,
+) -> BTreeMap<String, Cow<'a, TsFileFacts>> {
+    files
+        .iter()
+        .map(|(path, stored)| {
+            let mut facts = Cow::Borrowed(&stored.facts);
+            if stored.facts.valid && hashes.get(path) != Some(&stored.source_hash) {
+                facts.to_mut().valid = false;
+            }
+            (path.clone(), facts)
+        })
+        .collect()
+}
 
 pub(super) fn is_ts_resolution_config(path: &Path) -> bool {
     path.file_name()
@@ -138,12 +158,13 @@ pub(super) fn ts_module_specifiers(facts: &TsFileFacts) -> BTreeSet<&str> {
         .collect()
 }
 
-pub(super) fn ts_config_modules(
-    files: &BTreeMap<String, StoredTsFileFacts>,
+pub(super) fn ts_config_modules<F: Borrow<StoredTsFileFacts>>(
+    files: &BTreeMap<String, F>,
     configs: &BTreeMap<String, TsResolutionConfig>,
 ) -> BTreeMap<(String, String), String> {
     let mut modules = BTreeMap::new();
     for (path, stored) in files {
+        let stored = stored.borrow();
         for module in ts_module_specifiers(&stored.facts) {
             if let Some(mapped) = ts_config::mapped(path, module, configs) {
                 modules.insert((path.clone(), module.to_owned()), mapped);
@@ -153,8 +174,8 @@ pub(super) fn ts_config_modules(
     modules
 }
 
-pub(super) fn ts_inventory_candidates(
-    ts_files: &BTreeMap<String, StoredTsFileFacts>,
+pub(super) fn ts_inventory_candidates<F: Borrow<StoredTsFileFacts>>(
+    ts_files: &BTreeMap<String, F>,
 ) -> BTreeSet<String> {
     #[cfg(test)]
     INVENTORY_BUILDS.with(|count| count.set(count.get() + 1));
@@ -168,6 +189,7 @@ pub(super) fn ts_inventory_candidates(
                     Some("js" | "mjs" | "cjs")
                 ))
     }) {
+        let stored = stored.borrow();
         paths.insert(caller.clone());
         let mut directory: Vec<_> = caller.split('/').collect();
         directory.pop();
@@ -215,11 +237,7 @@ pub(super) fn ts_paths_portable_for(
 ) -> bool {
     let dependency_files: BTreeMap<_, _> = dependencies
         .iter()
-        .filter_map(|path| {
-            ts_files
-                .get(path)
-                .map(|facts| (path.clone(), facts.clone()))
-        })
+        .filter_map(|path| ts_files.get(path).map(|facts| (path.clone(), facts)))
         .collect();
     let mut expected = ts_inventory_candidates(&dependency_files);
     for ((from, _), mapped) in ts_config_modules(&dependency_files, configs) {

@@ -443,7 +443,12 @@ fn missing_facts_wrong_full_span_and_top_level_are_rejected() {
         );
     }
     assert_eq!(
-        classify_call(&BTreeMap::new(), "main.ts", [start, start + 5]).classification,
+        classify_call(
+            &BTreeMap::<String, TsFileFacts>::new(),
+            "main.ts",
+            [start, start + 5]
+        )
+        .classification,
         ImportClassification::Rejected
     );
 }

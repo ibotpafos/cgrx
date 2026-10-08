@@ -1,6 +1,8 @@
 //! Declaration identity for dependency edges, separate from callable identity.
 use crate::pack::text;
+use crate::ts_imports::TsFileFacts;
 use serde::{Deserialize, Serialize};
+use std::borrow::Borrow;
 use std::collections::{BTreeMap, BTreeSet};
 use tree_sitter::Node;
 
@@ -763,223 +765,276 @@ impl DeclarationFacts {
 
 /// Resolve an explicit source import through the existing conservative module
 /// candidate policy. This result never establishes a CALLS target.
-pub fn resolve_import(
-    files: &BTreeMap<String, crate::ts_imports::TsFileFacts>,
+pub fn resolve_import<F: Borrow<TsFileFacts>>(
+    files: &BTreeMap<String, F>,
     path: &str,
     member: [usize; 2],
     usage: DependencyUse,
     modules: &BTreeMap<(String, String), String>,
 ) -> Option<ResolvedDeclaration> {
-    let file = files.get(path).filter(|file| file.valid)?;
-    let facts = file
-        .declaration_facts
-        .as_ref()
-        .filter(|facts| facts.valid)?;
-    let members: Vec<_> = facts
-        .imports
-        .iter()
-        .filter(|item| item.member == member)
-        .collect();
-    let [import] = members.as_slice() else {
-        return None;
-    };
-    if facts.blockers.contains_key(&import.local)
-        || facts.declarations.contains_key(&import.local)
-        || facts
-            .imports
-            .iter()
-            .filter(|i| i.local == import.local)
-            .count()
-            != 1
-        || (import.type_only && usage == DependencyUse::Value)
-    {
-        return None;
-    }
-    let target = crate::ts_imports::resolve_module_path(files, path, &import.module, modules)?;
-    if ambient_import_override(files, &import.module) {
-        return None;
-    }
-    let mut dependencies = vec![path.to_owned()];
-    let (path, name, declaration) = resolve_export(
-        files,
-        &target,
-        &import.imported,
-        usage,
-        modules,
-        &mut BTreeSet::new(),
-        &mut dependencies,
-    )?;
-    if augmented(files, &path, &name, modules) {
-        return None;
-    }
-    Some(ResolvedDeclaration {
-        path,
-        name,
-        target: declaration.name,
-        kind: declaration.kind,
-        dependencies,
-        module_dependency: true,
-    })
+    DeclarationResolver::new(files, modules).resolve_import(path, member, usage)
 }
 
-pub fn resolve_reference(
-    files: &BTreeMap<String, crate::ts_imports::TsFileFacts>,
+pub fn resolve_reference<F: Borrow<TsFileFacts>>(
+    files: &BTreeMap<String, F>,
     path: &str,
     site: [usize; 2],
     modules: &BTreeMap<(String, String), String>,
 ) -> Option<(Reference, ResolvedDeclaration)> {
-    let file = files.get(path).filter(|file| file.valid)?;
-    let facts = file
-        .declaration_facts
-        .as_ref()
-        .filter(|facts| facts.valid && facts.external_module)?;
-    let sites: Vec<_> = facts.references.iter().filter(|r| r.site == site).collect();
-    let [reference] = sites.as_slice() else {
-        return None;
-    };
-    reference.caller?;
-    let resolved = match reference.binding.as_ref()? {
-        ReferenceBinding::Import { member } => {
-            let import = facts
-                .imports
-                .iter()
-                .find(|i| i.member == *member && i.local == reference.local)?;
-            resolve_import(files, path, import.member, reference.usage, modules)?
-        }
-        ReferenceBinding::Local => {
-            let namespace = match reference.usage {
-                DependencyUse::Type => Namespace::Type,
-                DependencyUse::TypeQuery | DependencyUse::Value => Namespace::Value,
-                _ => return None,
-            };
-            let declaration = facts.unique_declaration(&reference.local, namespace)?;
-            ResolvedDeclaration {
-                path: path.to_owned(),
-                name: reference.local.clone(),
-                target: declaration.name,
-                kind: declaration.kind,
-                dependencies: vec![path.to_owned()],
-                module_dependency: false,
+    DeclarationResolver::new(files, modules).resolve_reference(path, site)
+}
+
+/// Reuse an immutable augmentation inventory while rebuilding dependency edges.
+/// All candidate files remain available to the conservative module resolver,
+/// including invalid facts that may still contain an augmentation blocker.
+pub struct DeclarationResolver<'a, F: Borrow<TsFileFacts>> {
+    files: &'a BTreeMap<String, F>,
+    modules: &'a BTreeMap<(String, String), String>,
+    module_augmentations: Vec<(&'a str, &'a ModuleAugmentation)>,
+    ambient_modules: Vec<&'a ModuleAugmentation>,
+}
+
+impl<'a, F: Borrow<TsFileFacts>> DeclarationResolver<'a, F> {
+    pub fn new(
+        files: &'a BTreeMap<String, F>,
+        modules: &'a BTreeMap<(String, String), String>,
+    ) -> Self {
+        let mut module_augmentations = Vec::new();
+        let mut ambient_modules = Vec::new();
+        for (path, file) in files {
+            if let Some(facts) = file.borrow().declaration_facts.as_ref() {
+                for augmentation in &facts.augmentations {
+                    if facts.external_module {
+                        module_augmentations.push((path.as_str(), augmentation));
+                    } else {
+                        ambient_modules.push(augmentation);
+                    }
+                }
             }
         }
-    };
-    if augmented(files, &resolved.path, &resolved.name, modules) {
-        return None;
+        Self {
+            files,
+            modules,
+            module_augmentations,
+            ambient_modules,
+        }
     }
-    Some(((*reference).clone(), resolved))
-}
 
-fn augmented(
-    files: &BTreeMap<String, crate::ts_imports::TsFileFacts>,
-    target_path: &str,
-    target_name: &str,
-    modules: &BTreeMap<(String, String), String>,
-) -> bool {
-    files.iter().any(|(path, file)| {
-        file.declaration_facts.as_ref().is_some_and(|facts| {
-            facts.external_module
-                && facts.augmentations.iter().any(|augmentation| {
-                    // `declare global` does not merge a module's local names. Explicit
-                    // module augmentations with the target name need a merge receipt.
-                    (augmentation.unknown_members || augmentation.names.contains(target_name))
-                        && augmentation.module.as_ref().is_none_or(|module| {
-                            crate::ts_imports::resolve_module_path(files, path, module, modules)
-                                .is_none_or(|resolved| resolved == target_path)
-                        })
-                })
+    pub fn resolve_import(
+        &self,
+        path: &str,
+        member: [usize; 2],
+        usage: DependencyUse,
+    ) -> Option<ResolvedDeclaration> {
+        let files = self.files;
+        let modules = self.modules;
+        let file = files
+            .get(path)
+            .map(Borrow::borrow)
+            .filter(|file| file.valid)?;
+        let facts = file
+            .declaration_facts
+            .as_ref()
+            .filter(|facts| facts.valid)?;
+        let members: Vec<_> = facts
+            .imports
+            .iter()
+            .filter(|item| item.member == member)
+            .collect();
+        let [import] = members.as_slice() else {
+            return None;
+        };
+        if facts.blockers.contains_key(&import.local)
+            || facts.declarations.contains_key(&import.local)
+            || facts
+                .imports
+                .iter()
+                .filter(|i| i.local == import.local)
+                .count()
+                != 1
+            || (import.type_only && usage == DependencyUse::Value)
+        {
+            return None;
+        }
+        let target = crate::ts_imports::resolve_module_path(files, path, &import.module, modules)?;
+        if self.ambient_import_override(&import.module) {
+            return None;
+        }
+        let mut dependencies = vec![path.to_owned()];
+        let (path, name, declaration) = self.resolve_export(
+            &target,
+            &import.imported,
+            usage,
+            &mut BTreeSet::new(),
+            &mut dependencies,
+        )?;
+        if self.augmented(&path, &name) {
+            return None;
+        }
+        Some(ResolvedDeclaration {
+            path,
+            name,
+            target: declaration.name,
+            kind: declaration.kind,
+            dependencies,
+            module_dependency: true,
         })
-    })
-}
+    }
 
-fn ambient_import_override(
-    files: &BTreeMap<String, crate::ts_imports::TsFileFacts>,
-    module: &str,
-) -> bool {
-    files.values().any(|file| {
-        file.declaration_facts.as_ref().is_some_and(|facts| {
-            !facts.external_module
-                && facts.augmentations.iter().any(|a| {
-                    a.module.as_ref().is_none_or(|pattern| {
-                        if let Some((prefix, suffix)) = pattern.split_once('*') {
-                            suffix.contains('*')
-                                || (module.starts_with(prefix) && module.ends_with(suffix))
-                        } else {
-                            pattern == module
-                        }
+    pub fn resolve_reference(
+        &self,
+        path: &str,
+        site: [usize; 2],
+    ) -> Option<(Reference, ResolvedDeclaration)> {
+        let files = self.files;
+        let file = files
+            .get(path)
+            .map(Borrow::borrow)
+            .filter(|file| file.valid)?;
+        let facts = file
+            .declaration_facts
+            .as_ref()
+            .filter(|facts| facts.valid && facts.external_module)?;
+        let sites: Vec<_> = facts.references.iter().filter(|r| r.site == site).collect();
+        let [reference] = sites.as_slice() else {
+            return None;
+        };
+        reference.caller?;
+        let resolved = match reference.binding.as_ref()? {
+            ReferenceBinding::Import { member } => {
+                let import = facts
+                    .imports
+                    .iter()
+                    .find(|i| i.member == *member && i.local == reference.local)?;
+                self.resolve_import(path, import.member, reference.usage)?
+            }
+            ReferenceBinding::Local => {
+                let namespace = match reference.usage {
+                    DependencyUse::Type => Namespace::Type,
+                    DependencyUse::TypeQuery | DependencyUse::Value => Namespace::Value,
+                    _ => return None,
+                };
+                let declaration = facts.unique_declaration(&reference.local, namespace)?;
+                ResolvedDeclaration {
+                    path: path.to_owned(),
+                    name: reference.local.clone(),
+                    target: declaration.name,
+                    kind: declaration.kind,
+                    dependencies: vec![path.to_owned()],
+                    module_dependency: false,
+                }
+            }
+        };
+        if self.augmented(&resolved.path, &resolved.name) {
+            return None;
+        }
+        Some(((*reference).clone(), resolved))
+    }
+
+    fn augmented(&self, target_path: &str, target_name: &str) -> bool {
+        self.module_augmentations
+            .iter()
+            .any(|(path, augmentation)| {
+                // `declare global` does not merge a module's local names. Explicit
+                // module augmentations with the target name need a merge receipt.
+                (augmentation.unknown_members || augmentation.names.contains(target_name))
+                    && augmentation.module.as_ref().is_none_or(|module| {
+                        crate::ts_imports::resolve_module_path(
+                            self.files,
+                            path,
+                            module,
+                            self.modules,
+                        )
+                        .is_none_or(|resolved| resolved == target_path)
                     })
-                })
-        })
-    })
-}
-
-fn resolve_export(
-    files: &BTreeMap<String, crate::ts_imports::TsFileFacts>,
-    path: &str,
-    name: &str,
-    usage: DependencyUse,
-    modules: &BTreeMap<(String, String), String>,
-    seen: &mut BTreeSet<(String, String)>,
-    dependencies: &mut Vec<String>,
-) -> Option<(String, String, Declaration)> {
-    if seen.len() >= 8 || !seen.insert((path.to_owned(), name.to_owned())) {
-        return None;
+            })
     }
-    let file = files.get(path).filter(|file| file.valid)?;
-    let facts = file
-        .declaration_facts
-        .as_ref()
-        .filter(|facts| facts.valid)?;
-    dependencies.push(path.to_owned());
-    let [export] = facts.exports.get(name)?.as_slice() else {
-        return None;
-    };
-    let (module, imported, type_only) = match export {
-        Export::Local { local, type_only } => {
-            if *type_only && usage == DependencyUse::Value {
-                return None;
-            }
-            if facts.blockers.contains_key(local) {
-                return None;
-            }
-            let imports: Vec<_> = facts
-                .imports
-                .iter()
-                .filter(|item| &item.local == local)
-                .collect();
-            if imports.is_empty() {
-                let [declaration] = facts.declarations.get(local)?.as_slice() else {
+
+    fn ambient_import_override(&self, module: &str) -> bool {
+        self.ambient_modules.iter().any(|a| {
+            a.module.as_ref().is_none_or(|pattern| {
+                if let Some((prefix, suffix)) = pattern.split_once('*') {
+                    suffix.contains('*') || (module.starts_with(prefix) && module.ends_with(suffix))
+                } else {
+                    pattern == module
+                }
+            })
+        })
+    }
+
+    fn resolve_export(
+        &self,
+        path: &str,
+        name: &str,
+        usage: DependencyUse,
+        seen: &mut BTreeSet<(String, String)>,
+        dependencies: &mut Vec<String>,
+    ) -> Option<(String, String, Declaration)> {
+        let files = self.files;
+        let modules = self.modules;
+        if seen.len() >= 8 || !seen.insert((path.to_owned(), name.to_owned())) {
+            return None;
+        }
+        let file = files
+            .get(path)
+            .map(Borrow::borrow)
+            .filter(|file| file.valid)?;
+        let facts = file
+            .declaration_facts
+            .as_ref()
+            .filter(|facts| facts.valid)?;
+        dependencies.push(path.to_owned());
+        let [export] = facts.exports.get(name)?.as_slice() else {
+            return None;
+        };
+        let (module, imported, type_only) = match export {
+            Export::Local { local, type_only } => {
+                if *type_only && usage == DependencyUse::Value {
+                    return None;
+                }
+                if facts.blockers.contains_key(local) {
+                    return None;
+                }
+                let imports: Vec<_> = facts
+                    .imports
+                    .iter()
+                    .filter(|item| &item.local == local)
+                    .collect();
+                if imports.is_empty() {
+                    let [declaration] = facts.declarations.get(local)?.as_slice() else {
+                        return None;
+                    };
+                    return usage
+                        .accepts(declaration.kind)
+                        .then(|| (path.to_owned(), local.clone(), declaration.clone()));
+                }
+                if facts.declarations.contains_key(local) {
+                    return None;
+                }
+                let [import] = imports.as_slice() else {
                     return None;
                 };
-                return usage
-                    .accepts(declaration.kind)
-                    .then(|| (path.to_owned(), local.clone(), declaration.clone()));
+                (
+                    &import.module,
+                    &import.imported,
+                    *type_only || import.type_only,
+                )
             }
-            if facts.declarations.contains_key(local) {
-                return None;
-            }
-            let [import] = imports.as_slice() else {
-                return None;
-            };
-            (
-                &import.module,
-                &import.imported,
-                *type_only || import.type_only,
-            )
+            Export::From {
+                module,
+                imported,
+                type_only,
+            } => (module, imported, *type_only),
+        };
+        if type_only && usage == DependencyUse::Value {
+            return None;
         }
-        Export::From {
-            module,
-            imported,
-            type_only,
-        } => (module, imported, *type_only),
-    };
-    if type_only && usage == DependencyUse::Value {
-        return None;
+        if self.ambient_import_override(module) {
+            return None;
+        }
+        let target = crate::ts_imports::resolve_module_path(files, path, module, modules)?;
+        self.resolve_export(&target, imported, usage, seen, dependencies)
     }
-    if ambient_import_override(files, module) {
-        return None;
-    }
-    let target = crate::ts_imports::resolve_module_path(files, path, module, modules)?;
-    resolve_export(files, &target, imported, usage, modules, seen, dependencies)
 }
 
 #[cfg(test)]
@@ -1156,6 +1211,66 @@ mod tests {
         ]);
         assert!(imported(&files, "Box", DependencyUse::Import).is_some());
         assert!(reference(&files, "Box").is_some());
+    }
+
+    #[test]
+    fn reused_resolver_rechecks_added_removed_and_invalid_augmentation_facts() {
+        for source in [
+            "export {}; declare module './types' { interface Box { extra: number } }",
+            "declare module './types';",
+            "declare module '*types';",
+        ] {
+            let mut files = files(&[
+                (
+                    "main.ts",
+                    "import {Box} from './types'; export function caller(x: Box) {}",
+                ),
+                ("types.ts", "export class Box {}"),
+            ]);
+            let facts = files["main.ts"].declaration_facts.as_ref().unwrap();
+            let member = facts.imports[0].member;
+            let site = facts
+                .references
+                .iter()
+                .find(|r| r.local == "Box")
+                .unwrap()
+                .site;
+            let modules = BTreeMap::new();
+            {
+                let resolver = DeclarationResolver::new(&files, &modules);
+                for _ in 0..2 {
+                    assert!(
+                        resolver
+                            .resolve_import("main.ts", member, DependencyUse::Import)
+                            .is_some()
+                    );
+                    assert!(resolver.resolve_reference("main.ts", site).is_some());
+                }
+            }
+            let mut augmentation = TsFileFacts::parse("augment.ts", source.as_bytes());
+            // Invalid source candidates remain blockers until they are reparsed
+            // or removed; borrowing must not erase their last known facts.
+            augmentation.valid = false;
+            augmentation.declaration_facts.as_mut().unwrap().valid = false;
+            files.insert("augment.ts".into(), augmentation);
+            {
+                let resolver = DeclarationResolver::new(&files, &modules);
+                assert!(
+                    resolver
+                        .resolve_import("main.ts", member, DependencyUse::Import)
+                        .is_none()
+                );
+                assert!(resolver.resolve_reference("main.ts", site).is_none());
+            }
+            files.remove("augment.ts");
+            let resolver = DeclarationResolver::new(&files, &modules);
+            assert!(
+                resolver
+                    .resolve_import("main.ts", member, DependencyUse::Import)
+                    .is_some()
+            );
+            assert!(resolver.resolve_reference("main.ts", site).is_some());
+        }
     }
 
     #[test]

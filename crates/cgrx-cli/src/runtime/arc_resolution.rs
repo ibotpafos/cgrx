@@ -223,14 +223,7 @@ pub(super) fn rebuild_arcs_with_cargo(
     ts_resolution_configs: &BTreeMap<String, TsResolutionConfig>,
 ) -> Vec<StoredArc> {
     let cargo = crate::cargo_roots::CargoRoots::new(cargo_manifests, rust_files);
-    let ts_inventory: BTreeMap<_, _> = ts_files
-        .iter()
-        .map(|(path, stored)| {
-            let mut facts = stored.facts.clone();
-            facts.valid &= path_hashes.get(path) == Some(&stored.source_hash);
-            (path.clone(), facts)
-        })
-        .collect();
+    let ts_inventory = super::ts_helpers::ts_current_inventory(ts_files, path_hashes);
     let modules = ts_config_modules(ts_files, ts_resolution_configs);
     let mut by_name = BTreeMap::<&str, Vec<&StoredDocument>>::new();
     let mut syntax_by_path = BTreeMap::<&str, Vec<&StoredDocument>>::new();
@@ -1000,7 +993,9 @@ pub(super) fn rebuild_arcs_with_cargo(
         &syntax_by_path,
         &mut arcs,
     );
-    arcs.sort_by_key(|arc| (arc.source, arc.target, arc.kind, arc.evidence.clone()));
+    arcs.sort_by(|a, b| {
+        (a.source, a.target, a.kind, &a.evidence).cmp(&(b.source, b.target, b.kind, &b.evidence))
+    });
     arcs.dedup();
     arcs
 }
