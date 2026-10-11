@@ -2,6 +2,7 @@ mod arc_resolution;
 mod architecture;
 mod check_helpers;
 mod config;
+mod edit_distance;
 mod extraction;
 mod frameworks;
 mod git_helpers;

@@ -271,6 +271,7 @@ impl super::Runtime {
             3
         };
         let fuzzy_allowed = !query_tokens.is_empty() && !query.chars().any(char::is_whitespace);
+        let mut fuzzy_query_characters = None::<Vec<char>>;
         let mut scoped = ScopedQuery::new(&self.stored, scope, matches_scope);
         let mut matches: Vec<_> = scoped
             .syntax_documents(&self.stored)
@@ -313,12 +314,17 @@ impl super::Runtime {
                         {
                             return None;
                         }
-                        let distance = levenshtein::levenshtein(&name, &folded);
-                        if distance <= max_distance {
-                            (6, distance, "fuzzy")
-                        } else {
-                            return None;
-                        }
+                        let query_characters = fuzzy_query_characters.get_or_insert_with(|| {
+                            let mut characters = Vec::with_capacity(query_length);
+                            characters.extend(folded.chars());
+                            characters
+                        });
+                        let distance = super::edit_distance::bounded_levenshtein(
+                            &name,
+                            query_characters,
+                            max_distance,
+                        )?;
+                        (6, distance, "fuzzy")
                     }
                 };
                 Some((rank, detail, document, matched_by))
