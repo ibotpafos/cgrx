@@ -1,4 +1,4 @@
-use cgrx_core::{EvidenceSelector, Mode, Scope};
+use cgrx_core::{EvidenceSelector, Hash32, Mode, Scope};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -111,6 +111,10 @@ pub(super) struct SearchGraphArguments {
     pub(super) scope: Value,
     #[serde(default = "default_graph_limit")]
     pub(super) limit: u32,
+    #[serde(default)]
+    pub(super) offset: u32,
+    #[serde(default)]
+    pub(super) expected_snapshot: Option<Hash32>,
     #[serde(default)]
     pub(super) language: Option<String>,
     #[serde(default)]

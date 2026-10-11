@@ -461,7 +461,6 @@ pub(super) fn compact_search(value: &Value) -> Value {
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
-        .take(12)
         .map(|item| {
             let mut row = vec![
                 item.get("symbol").cloned().unwrap_or(Value::Null),
@@ -474,6 +473,7 @@ pub(super) fn compact_search(value: &Value) -> Value {
             if include_refs {
                 row.push(item.get("symbol_ref").cloned().unwrap_or(Value::Null));
             }
+            row.push(item.get("matched_by").cloned().unwrap_or(Value::Null));
             json!(row)
         })
         .collect();
@@ -484,6 +484,8 @@ pub(super) fn compact_search(value: &Value) -> Value {
         "rows": rows,
         "n": value.get("total"),
         "gaps": value.get("coverage_gap_count"),
+        "page": value.get("page"),
+        "llm_used": value.get("llm_used"),
     });
     if include_refs {
         compact["cols"]
@@ -491,6 +493,10 @@ pub(super) fn compact_search(value: &Value) -> Value {
             .expect("column array")
             .extend([json!("symbol_ref")]);
     }
+    compact["cols"]
+        .as_array_mut()
+        .expect("column array")
+        .push(json!("matched_by"));
     insert_more_when_true(&mut compact, value.get("truncated"));
     compact
 }

@@ -453,6 +453,19 @@ impl Runtime {
         language: Option<&str>,
         include_body: bool,
     ) -> Result<Value, RuntimeError> {
+        self.search_graph_page(query, scope, limit, 0, language, include_body)
+    }
+
+    /// Discover a bounded page of symbols in the current index snapshot.
+    pub fn search_graph_page(
+        &self,
+        query: &str,
+        scope: &Scope,
+        limit: usize,
+        offset: usize,
+        language: Option<&str>,
+        include_body: bool,
+    ) -> Result<Value, RuntimeError> {
         let language = language.map(str::trim);
         if language.is_some_and(|language| {
             !matches!(
@@ -479,7 +492,14 @@ impl Runtime {
                 "language must be one of typescript, javascript, go, java, python, rust, c, cpp, csharp, ruby, php, swift, scala, elixir, or kotlin",
             ));
         }
-        self.search_graph_with_matcher(query, scope, limit, language, include_body, path_in_scope)
+        self.search_graph_page_with_matcher(
+            query,
+            scope,
+            (limit, offset),
+            language,
+            include_body,
+            path_in_scope,
+        )
     }
 
     pub fn check_index_coverage(

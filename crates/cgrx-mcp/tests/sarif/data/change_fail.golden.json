@@ -6,10 +6,22 @@
         "id": "cgrx/change-gates"
       },
       "properties": {
+        "cgrxAgentHandoff": {
+          "requirements": [
+            "Revalidate the snapshot before acting."
+          ],
+          "schema_version": "cgrx.agent.quality-gate.v1"
+        },
         "cgrxAlgorithm": "change_quality_gate_v1",
+        "cgrxCoverageGapCount": 2,
         "cgrxFailOn": "error",
         "cgrxGate": "change",
-        "cgrxPartial": false,
+        "cgrxPartial": true,
+        "cgrxSnapshot": {
+          "graph_generation": 1,
+          "repo_revision": "0123456789abcdef0123456789abcdef01234567",
+          "working_tree_digest": "0000000000000000000000000000000000000000000000000000000000000000"
+        },
         "cgrxVerdict": "FAIL",
         "cgrxWouldBlock": true,
         "llmUsed": false
@@ -20,12 +32,47 @@
           "message": {
             "text": "cgrx change gate verdict FAIL (fail_on=error, would_block=true)"
           },
+          "partialFingerprints": {
+            "cgrxEvidence/v1": "cf1761516715dabc1aeb4f5d373c26123e93a548f3397d28cd651763b68a6a4e"
+          },
+          "properties": {
+            "cgrxEvidence": {
+              "verdict": "FAIL"
+            }
+          },
           "ruleId": "cgrx/gate-verdict"
         },
         {
           "level": "error",
           "message": {
+            "text": "cgrx max_coverage_gaps breached: value 2 exceeds threshold 0 (severity error)"
+          },
+          "partialFingerprints": {
+            "cgrxEvidence/v1": "7c37839f28b9f2cf51d3bdb1ec0deb1225fbcb9df8d49bc1878ce8d2df0fd22e"
+          },
+          "properties": {
+            "cgrxEvidence": {
+              "status": "breached",
+              "threshold": 0,
+              "value": 2
+            }
+          },
+          "ruleId": "cgrx/max_coverage_gaps"
+        },
+        {
+          "level": "error",
+          "message": {
             "text": "cgrx max_warning_findings breached: value 2 exceeds threshold 0 (severity error)"
+          },
+          "partialFingerprints": {
+            "cgrxEvidence/v1": "42ea9276424c66f8bd54d8e51cceb114508f211f01a46340efc67057feb25b73"
+          },
+          "properties": {
+            "cgrxEvidence": {
+              "status": "breached",
+              "threshold": 0,
+              "value": 2
+            }
           },
           "ruleId": "cgrx/max_warning_findings"
         },
@@ -38,46 +85,25 @@
                   "uri": "src/broken.ts"
                 },
                 "region": {
-                  "byteLength": 25,
-                  "byteOffset": 0
+                  "byteLength": 7,
+                  "byteOffset": 5
                 }
               }
             }
           ],
           "message": {
-            "text": "cgrx coverage gap PARSER_ERROR_RANGE: src/broken.ts:0-25"
+            "text": "cgrx coverage gap PARSER_ERROR_RANGE: src/broken.ts"
           },
-          "ruleId": "cgrx/max_coverage_gaps"
-        },
-        {
-          "level": "warning",
-          "locations": [
-            {
-              "physicalLocation": {
-                "artifactLocation": {
-                  "uri": "vendor/gen.ts"
-                }
-              }
-            }
-          ],
-          "message": {
-            "text": "cgrx coverage gap EXCLUDED_PATH: vendor/gen.ts"
+          "partialFingerprints": {
+            "cgrxEvidence/v1": "cd04f7cb5c4628c1138fe970b6158837c29a7ba5eb04985d6ff0eef4f3255504"
           },
-          "ruleId": "cgrx/max_coverage_gaps"
-        },
-        {
-          "level": "warning",
-          "locations": [
-            {
-              "physicalLocation": {
-                "artifactLocation": {
-                  "uri": "src/moved.ts"
-                }
-              }
+          "properties": {
+            "cgrxEvidence": {
+              "code": "PARSER_ERROR_RANGE",
+              "end": 12,
+              "path": "src/broken.ts",
+              "start": 5
             }
-          ],
-          "message": {
-            "text": "cgrx coverage gap STALE_PATH: src/moved.ts"
           },
           "ruleId": "cgrx/max_coverage_gaps"
         },
@@ -93,104 +119,28 @@
             }
           ],
           "message": {
-            "text": "cgrx coverage gap DYNAMIC_DISPATCH: src/dyn.ts:4-9"
+            "text": "cgrx coverage gap DYNAMIC_DISPATCH: src/dyn.ts"
           },
-          "ruleId": "cgrx/max_coverage_gaps"
-        },
-        {
-          "level": "warning",
-          "locations": [
-            {
-              "physicalLocation": {
-                "artifactLocation": {
-                  "uri": "src/other.ts"
-                }
-              }
+          "partialFingerprints": {
+            "cgrxEvidence/v1": "87a0d51d6685c4811e7809dffd22f9e25824b00293827f795e435894566a6ae9"
+          },
+          "properties": {
+            "cgrxEvidence": {
+              "code": "DYNAMIC_DISPATCH",
+              "location": "src/dyn.ts:4-9"
             }
-          ],
-          "message": {
-            "text": "cgrx coverage gap DYNAMIC_DISPATCH: src/other.ts:1-2"
           },
-          "ruleId": "cgrx/max_coverage_gaps"
-        },
-        {
-          "level": "error",
-          "message": {
-            "text": "cgrx max_coverage_gaps breached: value 5 exceeds threshold 0 (severity error)"
-          },
-          "relatedLocations": [
-            {
-              "id": 1,
-              "message": {
-                "text": "cgrx coverage gap PARSER_ERROR_RANGE: src/broken.ts:0-25"
-              },
-              "physicalLocation": {
-                "artifactLocation": {
-                  "uri": "src/broken.ts"
-                },
-                "region": {
-                  "byteLength": 25,
-                  "byteOffset": 0
-                }
-              }
-            },
-            {
-              "id": 1,
-              "message": {
-                "text": "cgrx coverage gap EXCLUDED_PATH: vendor/gen.ts"
-              },
-              "physicalLocation": {
-                "artifactLocation": {
-                  "uri": "vendor/gen.ts"
-                }
-              }
-            },
-            {
-              "id": 1,
-              "message": {
-                "text": "cgrx coverage gap STALE_PATH: src/moved.ts"
-              },
-              "physicalLocation": {
-                "artifactLocation": {
-                  "uri": "src/moved.ts"
-                }
-              }
-            },
-            {
-              "id": 1,
-              "message": {
-                "text": "cgrx coverage gap DYNAMIC_DISPATCH: src/dyn.ts:4-9"
-              },
-              "physicalLocation": {
-                "artifactLocation": {
-                  "uri": "src/dyn.ts"
-                }
-              }
-            },
-            {
-              "id": 1,
-              "message": {
-                "text": "cgrx coverage gap DYNAMIC_DISPATCH: src/other.ts:1-2"
-              },
-              "physicalLocation": {
-                "artifactLocation": {
-                  "uri": "src/other.ts"
-                }
-              }
-            }
-          ],
           "ruleId": "cgrx/max_coverage_gaps"
         }
       ],
       "tool": {
         "driver": {
-          "fullName": "CGRX code graph gates",
           "informationUri": "https://github.com/ibotpafos/cgrx",
           "name": "cgrx",
           "rules": [
             {
               "fullDescription": {
-                "text": "Snapshot-bound CGRX quality-gate verdict. No tests or LLM were executed."
+                "text": "Snapshot-bound deterministic gate verdict. No tests or LLM were executed."
               },
               "id": "cgrx/gate-verdict",
               "name": "GateVerdict",
@@ -202,68 +152,26 @@
               "defaultConfiguration": {
                 "level": "error"
               },
-              "fullDescription": {
-                "text": "Change findings above the warning budget."
+              "id": "cgrx/max_coverage_gaps",
+              "name": "max_coverage_gaps",
+              "properties": {
+                "threshold": 0
+              },
+              "shortDescription": {
+                "text": "CGRX threshold: max_coverage_gaps"
+              }
+            },
+            {
+              "defaultConfiguration": {
+                "level": "error"
               },
               "id": "cgrx/max_warning_findings",
               "name": "max_warning_findings",
               "properties": {
-                "severity": "error",
                 "threshold": 0
               },
               "shortDescription": {
-                "text": "Change findings above the warning budget."
-              }
-            },
-            {
-              "defaultConfiguration": {
-                "level": "error"
-              },
-              "fullDescription": {
-                "text": "Blocked change missions above the budget."
-              },
-              "id": "cgrx/max_blocked_missions",
-              "name": "max_blocked_missions",
-              "properties": {
-                "severity": "error",
-                "threshold": 0
-              },
-              "shortDescription": {
-                "text": "Blocked change missions above the budget."
-              }
-            },
-            {
-              "defaultConfiguration": {
-                "level": "error"
-              },
-              "fullDescription": {
-                "text": "Index coverage gaps above the budget."
-              },
-              "id": "cgrx/max_coverage_gaps",
-              "name": "max_coverage_gaps",
-              "properties": {
-                "severity": "error",
-                "threshold": 0
-              },
-              "shortDescription": {
-                "text": "Index coverage gaps above the budget."
-              }
-            },
-            {
-              "defaultConfiguration": {
-                "level": "warning"
-              },
-              "fullDescription": {
-                "text": "Unverified blast-radius impacts above the budget."
-              },
-              "id": "cgrx/max_unverified_impacts",
-              "name": "max_unverified_impacts",
-              "properties": {
-                "severity": "warning",
-                "threshold": 0
-              },
-              "shortDescription": {
-                "text": "Unverified blast-radius impacts above the budget."
+                "text": "CGRX threshold: max_warning_findings"
               }
             }
           ],

@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "runs": [
+    {
+      "automationDetails": {
+        "id": "cgrx/repository-gates"
+      },
+      "properties": {
+        "cgrxAgentHandoff": {
+          "requirements": [
+            "Revalidate the snapshot before acting."
+          ],
+          "schema_version": "cgrx.agent.quality-gate.v1"
+        },
+        "cgrxAlgorithm": "repository_quality_gate_v1",
+        "cgrxCoverageGapCount": 1,
+        "cgrxFailOn": "error",
+        "cgrxGate": "repository",
+        "cgrxPartial": true,
+        "cgrxSnapshot": {
+          "graph_generation": 1,
+          "repo_revision": "0123456789abcdef0123456789abcdef01234567",
+          "working_tree_digest": "0000000000000000000000000000000000000000000000000000000000000000"
+        },
+        "cgrxVerdict": "INCONCLUSIVE",
+        "cgrxWouldBlock": true,
+        "llmUsed": false
+      },
+      "results": [
+        {
+          "level": "warning",
+          "message": {
+            "text": "cgrx repository gate verdict INCONCLUSIVE (fail_on=error, would_block=true)"
+          },
+          "partialFingerprints": {
+            "cgrxEvidence/v1": "dcadb2d3c3041b81719f685714d5c188bd4eb19e00e33ed9166e3d3f47ee81a6"
+          },
+          "properties": {
+            "cgrxEvidence": {
+              "verdict": "INCONCLUSIVE"
+            }
+          },
+          "ruleId": "cgrx/gate-verdict"
+        },
+        {
+          "level": "warning",
+          "message": {
+            "text": "cgrx coverage gap TRAVERSAL_TRUNCATED"
+          },
+          "partialFingerprints": {
+            "cgrxEvidence/v1": "99876e6d0924ea574ec773e286f7e4a8828fd7e9353803a4ecadc4b796f9a989"
+          },
+          "properties": {
+            "cgrxEvidence": {
+              "code": "TRAVERSAL_TRUNCATED"
+            }
+          },
+          "ruleId": "cgrx/max_coverage_gaps"
+        }
+      ],
+      "tool": {
+        "driver": {
+          "informationUri": "https://github.com/ibotpafos/cgrx",
+          "name": "cgrx",
+          "rules": [
+            {
+              "fullDescription": {
+                "text": "Snapshot-bound deterministic gate verdict. No tests or LLM were executed."
+              },
+              "id": "cgrx/gate-verdict",
+              "name": "GateVerdict",
+              "shortDescription": {
+                "text": "Overall CGRX repository gate verdict."
+              }
+            },
+            {
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "id": "cgrx/max_coverage_gaps",
+              "name": "max_coverage_gaps",
+              "properties": {
+                "threshold": 10
+              },
+              "shortDescription": {
+                "text": "CGRX threshold: max_coverage_gaps"
+              }
+            }
+          ],
+          "version": "0.1.0"
+        }
+      }
+    }
+  ],
+  "version": "2.1.0"
+}

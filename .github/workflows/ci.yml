@@ -78,6 +78,8 @@ jobs:
       - run: chmod +x target/release/cgrx
       - run: python3 scripts/smoke_mcp.py target/release/cgrx
       - run: python3 scripts/smoke_scopes.py target/release/cgrx
+      - name: Validate code discovery and complete compact search pages
+        run: python3 scripts/eval_search_discovery.py target/release/cgrx
       - run: python3 scripts/eval_relationships.py target/release/cgrx
       - run: python3 scripts/eval_change_missions.py target/release/cgrx
       - run: python3 scripts/eval_change_quality_gates.py target/release/cgrx

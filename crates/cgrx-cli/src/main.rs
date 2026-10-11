@@ -31,7 +31,7 @@ fn main() {
 fn run(args: Vec<String>) -> Result<(), String> {
     let Some(command) = args.first().map(String::as_str) else {
         return Err(
-            "expected init, index, observe, serve, visualize, orient, expand, status, check-gates, schema, skill, usage-report, or bench"
+            "expected init, index, observe, serve, visualize, search, orient, expand, status, check-gates, schema, skill, usage-report, or bench"
                 .to_owned(),
         );
     };
@@ -47,6 +47,7 @@ fn run(args: Vec<String>) -> Result<(), String> {
         "observe" => observe(&args[1..])?,
         "serve" => serve(&args[1..])?,
         "visualize" => visualize::run(&args[1..])?,
+        "search" => search(&args[1..])?,
         "orient" => {
             if let Some(state) = optional_flag(&args[1..], "--state") {
                 runtime_orient(Path::new(state), &args[1..])?;
@@ -934,6 +935,65 @@ fn managed_structured_content(response: &Value, tool: &str) -> Result<Value, Str
         .pointer("/result/structuredContent")
         .cloned()
         .ok_or_else(|| format!("{tool} returned no structuredContent"))
+}
+
+/// Discover symbols through the same bounded, managed search used by MCP clients.
+fn search(args: &[String]) -> Result<(), String> {
+    const ALLOWED: &[&str] = &[
+        "--root",
+        "--query",
+        "--limit",
+        "--offset",
+        "--language",
+        "--include-body",
+        "--paths",
+        "--exclude",
+        "--expected-snapshot",
+    ];
+    validate_value_flags(args, ALLOWED)?;
+    let mut seen = BTreeSet::new();
+    for pair in args.chunks_exact(2) {
+        if !seen.insert(&pair[0]) {
+            return Err(format!("duplicate {}", pair[0]));
+        }
+    }
+    let query = flag(args, "--query")?;
+    if query.trim().is_empty() {
+        return Err("--query must not be empty".to_owned());
+    }
+    let limit = parse_bounded_usize(flag_or(args, "--limit", "20"), "--limit", 1, 50)?;
+    let offset = parse_bounded_usize(flag_or(args, "--offset", "0"), "--offset", 0, 1_000_000)?;
+    let include_body = match flag_or(args, "--include-body", "false") {
+        "true" => true,
+        "false" => false,
+        _ => return Err("--include-body must be true or false".to_owned()),
+    };
+    if let Some(snapshot) = optional_flag(args, "--expected-snapshot") {
+        serde_json::from_value::<Hash32>(json!(snapshot))
+            .map_err(|_| "--expected-snapshot must be a 64-character hex digest".to_owned())?;
+    }
+    let arguments = json!({
+        "query": query,
+        "limit": limit,
+        "offset": offset,
+        "language": optional_flag(args, "--language"),
+        "include_body": include_body,
+        "expected_snapshot": optional_flag(args, "--expected-snapshot"),
+        "scope": {
+            "include": comma_separated_flag(args, "--paths"),
+            "exclude": comma_separated_flag(args, "--exclude"),
+            "relation_kinds": ["CALLS"],
+            "max_depth": 1,
+        },
+    });
+    let root = Path::new(optional_flag(args, "--root").unwrap_or("."));
+    let response = call_managed_tool("search_graph", arguments, root)?;
+    let report = managed_structured_content(&response, "search_graph")?;
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&report).map_err(|error| error.to_string())?
+    );
+    Ok(())
 }
 
 /// Run `check_change_gates` or `check_repository_gates` and render the

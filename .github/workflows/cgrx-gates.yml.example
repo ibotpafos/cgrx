@@ -10,7 +10,7 @@
 #      Reports are written BEFORE the command exits nonzero on a blocking
 #      verdict, so upload steps with `if: always()` still publish alerts.
 #   3. Uploads both SARIF reports to code scanning.
-#   4. Fails the job exactly when a gate would_block.
+#   4. A blocking gate verdict fails the job.
 
 name: CGRX gates
 
@@ -57,42 +57,67 @@ jobs:
         run: rustup toolchain install 1.89.0 --profile minimal
 
       - name: Build cgrx
+        id: build
         run: cargo build --locked --release -p cgrx-cli
 
       - name: Change gates (SARIF)
         id: change
+        if: always() && steps.build.outcome == 'success'
         working-directory: ${{ inputs.working-directory }}
+        env:
+          CGRX_GATE_FAIL_ON: ${{ inputs.fail-on }}
+          CGRX_GATE_LIMIT: ${{ inputs.change-limit }}
+          CGRX_GATE_MAX_GAPS: ${{ inputs.max-coverage-gaps }}
         run: |
+          report="$RUNNER_TEMP/cgrx-change.sarif"
+          set +e
           "$GITHUB_WORKSPACE/target/release/cgrx" check-gates \
             --gate change \
             --format sarif \
-            --fail-on "${{ inputs.fail-on }}" \
-            --limit "${{ inputs.change-limit }}" \
-            --max-coverage-gaps "${{ inputs.max-coverage-gaps }}" \
-            --output cgrx-change.sarif
+            --fail-on "$CGRX_GATE_FAIL_ON" \
+            --limit "$CGRX_GATE_LIMIT" \
+            --max-coverage-gaps "$CGRX_GATE_MAX_GAPS" \
+            --output "$report"
+          cgrx_gate_exit=$?
+          if [ -s "$report" ]; then
+            printf 'report=%s\n' "$report" >> "$GITHUB_OUTPUT"
+          fi
+          exit "$cgrx_gate_exit"
 
       - name: Upload change-gate SARIF
-        if: always()
+        if: always() && steps.change.outputs.report != ''
         uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: ${{ inputs.working-directory }}/cgrx-change.sarif
+          sarif_file: ${{ steps.change.outputs.report }}
           category: cgrx-change-gates
 
       - name: Repository gates (SARIF)
         id: repository
+        if: always() && steps.build.outcome == 'success'
         working-directory: ${{ inputs.working-directory }}
+        env:
+          CGRX_GATE_FAIL_ON: ${{ inputs.fail-on }}
+          CGRX_GATE_PACKAGE_DEPTH: ${{ inputs.package-depth }}
+          CGRX_GATE_MAX_GAPS: ${{ inputs.max-coverage-gaps }}
         run: |
+          report="$RUNNER_TEMP/cgrx-repository.sarif"
+          set +e
           "$GITHUB_WORKSPACE/target/release/cgrx" check-gates \
             --gate repository \
             --format sarif \
-            --fail-on "${{ inputs.fail-on }}" \
-            --package-depth "${{ inputs.package-depth }}" \
-            --max-coverage-gaps "${{ inputs.max-coverage-gaps }}" \
-            --output cgrx-repository.sarif
+            --fail-on "$CGRX_GATE_FAIL_ON" \
+            --package-depth "$CGRX_GATE_PACKAGE_DEPTH" \
+            --max-coverage-gaps "$CGRX_GATE_MAX_GAPS" \
+            --output "$report"
+          cgrx_gate_exit=$?
+          if [ -s "$report" ]; then
+            printf 'report=%s\n' "$report" >> "$GITHUB_OUTPUT"
+          fi
+          exit "$cgrx_gate_exit"
 
       - name: Upload repository-gate SARIF
-        if: always()
+        if: always() && steps.repository.outputs.report != ''
         uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: ${{ inputs.working-directory }}/cgrx-repository.sarif
+          sarif_file: ${{ steps.repository.outputs.report }}
           category: cgrx-repository-gates

@@ -550,6 +550,68 @@ mod tests {
     }
 
     #[test]
+    fn identifier_search_keeps_exact_evidence_and_hybrid_opt_in() {
+        let docs = vec![
+            doc(1, "HTTPRequest", "return send();"),
+            doc(2, "http_request", "return send();"),
+            doc(3, "dispatch", "return send();"),
+            doc(4, "MetricsCollector", "return collect();"),
+        ];
+        let request = QueryRequest {
+            task: "HTTPRequest".to_owned(),
+            scope: base_scope(),
+            mode: Mode::Precise,
+            token_budget: 1000,
+        };
+        for hybrid in [false, true] {
+            let engine = RetrievalEngine::default().with_hybrid(hybrid);
+            let result = engine.retrieve_scoped(&request, &docs, &[]).unwrap();
+            assert_eq!(result.candidates[0].node_id, 1);
+            assert!(result.candidates[0].scores.exact > 0);
+            let snake = result
+                .candidates
+                .iter()
+                .find(|candidate| candidate.node_id == 2)
+                .unwrap();
+            assert!(snake.scores.bm25 > 0);
+            assert_eq!(snake.scores.exact, 0);
+            assert_eq!(snake.scores.structural > 0, hybrid);
+            assert_eq!(
+                result
+                    .candidates
+                    .iter()
+                    .any(|candidate| candidate.node_id == 3),
+                hybrid
+            );
+            assert!(
+                !result
+                    .candidates
+                    .iter()
+                    .any(|candidate| candidate.node_id == 4)
+            );
+
+            let borrowed = docs
+                .iter()
+                .map(|document| GraphDocumentRef {
+                    node_id: document.node_id,
+                    qualified_name: &document.qualified_name,
+                    path: &document.path,
+                    text: &document.text,
+                    span: document.span,
+                    provenance: document.provenance,
+                    semantic_fingerprint: document.semantic_fingerprint.as_deref(),
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(
+                engine
+                    .retrieve_scoped_refs(&request, &borrowed, &[])
+                    .unwrap(),
+                result
+            );
+        }
+    }
+
+    #[test]
     fn structural_finds_renamed_symbol() {
         let docs = vec![
             doc(1, "processData", "let x = 1; let y = 2; return x + y;"),

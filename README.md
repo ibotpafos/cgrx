@@ -337,10 +337,30 @@ is not required by the released executable.
 | check_repository_gates | Architecture gate for cycles, coupling, unresolved local dependencies and graph coverage |
 | suggest_refactors | Similar callable bodies and a hypothetical extract-helper graph delta |
 
-`search_graph` searches symbol names by default. Set `include_body: true` to
-also locate a term inside symbol bodies, and use `language` (`typescript`, `go`,
+`search_graph` searches symbol names by default, including all terms of a query
+such as `http request` in `HTTPRequest`, `http_request`, or `HTTP2Request`.
+Exact, prefix and substring names retain priority over token matches. Set
+`include_body: true` to also find every query term in a symbol body, even when
+the terms are separated, and use `language` (`typescript`, `go`,
 `java`, `python`, or `rust`) to keep mixed-repository results focused. TypeScript covers
-both `.ts` and `.tsx`. Every match reports `matched_by` as `symbol` or `body`.
+both `.ts` and `.tsx`. Every match reports its literal, token or fuzzy lane
+through `matched_by`.
+`limit` bounds a page to 1–50 results; `offset` resumes in deterministic order.
+Continue with `page.next_offset` and `expected_snapshot: page.snapshot_id` to
+reject a changed source snapshot rather than mixing pages. Compact responses
+retain every requested match and include the same pagination metadata.
+
+The same managed search is available directly from a terminal:
+
+~~~sh
+cgrx search --root /absolute/path/to/repository --query "http request" --language rust
+cgrx search --root /absolute/path/to/repository --query "cache expiry" --include-body true --paths 'src/**'
+~~~
+
+The command prints JSON with source spans, symbol references and pagination.
+See [search discovery](docs/search-discovery.md) for ranking, safe continuation
+and a reproducible comparison with alpha.17.
+
 Use `get_outline` with a repository-relative source path to inspect its symbols
 in source order without paying for function bodies; `limit` defaults to 200 and
 is capped at 500.
