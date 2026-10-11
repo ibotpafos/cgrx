@@ -13,4 +13,4 @@ pub use graph::{
     BaseGraph, CandidateProvenance, GraphArc, GraphDocument, GraphDocumentRef, GraphEdge,
     SnapshotView, ViewError,
 };
-pub use identifier::identifier_tokens;
+pub use identifier::{contains_identifier_tokens, identifier_tokens};

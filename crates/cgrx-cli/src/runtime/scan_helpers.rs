@@ -819,6 +819,54 @@ impl<'a, F: FnMut(&str, &Scope) -> bool> ScopedQuery<'a, F> {
             .collect()
     }
 
+    /// Count distinct scoped relationships only for the requested page nodes.
+    ///
+    /// Indexed snapshots consult adjacent arcs. The legacy fallback scans the
+    /// graph once for the whole page, rather than once per returned definition.
+    pub(super) fn relationship_degrees(
+        &mut self,
+        stored: &'a StoredIndex,
+        node_ids: &BTreeSet<u64>,
+    ) -> BTreeMap<u64, (usize, usize)> {
+        if node_ids.is_empty() {
+            return BTreeMap::new();
+        }
+        if stored.query_index.ready {
+            return node_ids
+                .iter()
+                .map(|node_id| {
+                    let incoming: BTreeSet<_> = self
+                        .incoming_arcs(stored, *node_id)
+                        .into_iter()
+                        .map(|arc| (arc.source, arc.target, arc.kind))
+                        .collect();
+                    let outgoing: BTreeSet<_> = self
+                        .outgoing_arcs(stored, *node_id)
+                        .into_iter()
+                        .map(|arc| (arc.source, arc.target, arc.kind))
+                        .collect();
+                    (*node_id, (incoming.len(), outgoing.len()))
+                })
+                .collect();
+        }
+        let distinct: BTreeSet<_> = self
+            .definitive_arcs(stored)
+            .into_iter()
+            .filter(|arc| node_ids.contains(&arc.source) || node_ids.contains(&arc.target))
+            .map(|arc| (arc.source, arc.target, arc.kind))
+            .collect();
+        let mut degrees = BTreeMap::<u64, (usize, usize)>::new();
+        for (source, target, _) in distinct {
+            if node_ids.contains(&source) {
+                degrees.entry(source).or_default().1 += 1;
+            }
+            if node_ids.contains(&target) {
+                degrees.entry(target).or_default().0 += 1;
+            }
+        }
+        degrees
+    }
+
     pub(super) fn definitive_arcs<'s: 'a>(
         &mut self,
         stored: &'s StoredIndex,

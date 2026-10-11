@@ -8,12 +8,32 @@ use std::path::Path;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use cgrx_core::{Hash32, RelationKind, Scope, SymbolSelector, canonical_hash};
 use cgrx_languages::pack_for_path;
-use cgrx_retrieval::identifier_tokens;
+use cgrx_retrieval::{contains_identifier_tokens, identifier_tokens};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
 use super::scan_helpers::{ScopedQuery, matching_symbols as matching_symbol_documents};
 use super::{RuntimeError, coverage_gap_count, path_in_scope};
+
+const MAX_SEARCH_OFFSET: usize = 1_000_000;
+
+fn search_continuation(
+    offset: usize,
+    returned: usize,
+    total: usize,
+) -> Result<Option<usize>, RuntimeError> {
+    let returned_end = offset.saturating_add(returned);
+    if returned_end >= total {
+        return Ok(None);
+    }
+    if returned_end > MAX_SEARCH_OFFSET {
+        return Err(RuntimeError::new(
+            "cgrx.search_pagination_limit",
+            "search continuation exceeds offset 1000000; narrow the query or path scope",
+        ));
+    }
+    Ok(Some(returned_end))
+}
 
 fn parse_symbol_reference(reference: &str) -> Option<Hash32> {
     if let Some(encoded) = reference.strip_prefix("cgrxs1.") {
@@ -232,14 +252,16 @@ impl super::Runtime {
     ) -> Result<Value, RuntimeError> {
         let (limit, offset) = page;
         let query = query.trim();
-        if query.is_empty() || !(1..=50).contains(&limit) || offset > 1_000_000 {
+        if query.is_empty() || !(1..=50).contains(&limit) || offset > MAX_SEARCH_OFFSET {
             return Err(RuntimeError::new(
                 "cgrx.invalid_arguments",
                 "query must be non-empty; limit must be between 1 and 50; offset must be between 0 and 1000000",
             ));
         }
         let folded = query.to_lowercase();
-        let query_tokens: BTreeSet<_> = identifier_tokens(query).into_iter().collect();
+        let mut query_tokens = identifier_tokens(query);
+        query_tokens.sort_unstable();
+        query_tokens.dedup();
         let query_length = folded.chars().count();
         let max_distance = if query_length <= 4 {
             1
@@ -250,18 +272,6 @@ impl super::Runtime {
         };
         let fuzzy_allowed = !query_tokens.is_empty() && !query.chars().any(char::is_whitespace);
         let mut scoped = ScopedQuery::new(&self.stored, scope, matches_scope);
-        let qualifying = scoped.definitive_arcs(&self.stored);
-        let distinct: BTreeSet<_> = qualifying
-            .iter()
-            .map(|arc| (arc.source, arc.target, arc.kind))
-            .collect();
-        let mut caller_counts = BTreeMap::<u64, usize>::new();
-        let mut callee_counts = BTreeMap::<u64, usize>::new();
-        for (source, target, _kind) in distinct {
-            debug_assert!(scoped.live.contains(&source) && scoped.live.contains(&target));
-            *caller_counts.entry(target).or_default() += 1;
-            *callee_counts.entry(source).or_default() += 1;
-        }
         let mut matches: Vec<_> = scoped
             .syntax_documents(&self.stored)
             .into_iter()
@@ -283,18 +293,16 @@ impl super::Runtime {
                     let name_tokens: BTreeSet<_> = identifier_tokens(&document.qualified_name)
                         .into_iter()
                         .collect();
-                    if !query_tokens.is_empty() && query_tokens.is_subset(&name_tokens) {
+                    if !query_tokens.is_empty()
+                        && query_tokens.iter().all(|token| name_tokens.contains(token))
+                    {
                         (3, name_tokens.len() - query_tokens.len(), "symbol_tokens")
                     } else if include_body && document.search_text.to_lowercase().contains(&folded)
                     {
                         (4, 0, "body")
                     } else if include_body
                         && !query_tokens.is_empty()
-                        && query_tokens.is_subset(
-                            &identifier_tokens(&document.search_text)
-                                .into_iter()
-                                .collect(),
-                        )
+                        && contains_identifier_tokens(&document.search_text, &query_tokens)
                     {
                         (5, 0, "body_tokens")
                     } else {
@@ -313,12 +321,10 @@ impl super::Runtime {
                         }
                     }
                 };
-                let callers = caller_counts.get(&document.node_id).copied().unwrap_or(0);
-                let callees = callee_counts.get(&document.node_id).copied().unwrap_or(0);
-                Some((rank, detail, document, callers, callees, matched_by))
+                Some((rank, detail, document, matched_by))
             })
             .collect();
-        matches.sort_by_key(|(rank, detail, document, _, _, _)| {
+        matches.sort_by_key(|(rank, detail, document, _)| {
             (
                 *rank,
                 *detail,
@@ -328,11 +334,17 @@ impl super::Runtime {
             )
         });
         let total = matches.len();
-        let rows: Vec<_> = matches
+        let page: Vec<_> = matches.into_iter().skip(offset).take(limit).collect();
+        let page_node_ids = page
+            .iter()
+            .map(|(_, _, document, _)| document.node_id)
+            .collect();
+        let degrees = scoped.relationship_degrees(&self.stored, &page_node_ids);
+        let rows: Vec<_> = page
             .into_iter()
-            .skip(offset)
-            .take(limit)
-            .map(|(_, _, document, callers, callees, matched_by)| {
+            .map(|(_, _, document, matched_by)| {
+                let (callers, callees) =
+                    degrees.get(&document.node_id).copied().unwrap_or_default();
                 json!({
                     "node_id":document.node_id,
                     "symbol_ref":self.symbol_reference(document),
@@ -345,9 +357,8 @@ impl super::Runtime {
                 })
             })
             .collect();
-        let returned_end = offset.saturating_add(rows.len());
-        let has_more = returned_end < total;
-        let next_offset = has_more.then_some(returned_end);
+        let next_offset = search_continuation(offset, rows.len(), total)?;
+        let has_more = next_offset.is_some();
         let snapshot_id = canonical_hash(&(
             "cgrx.search.snapshot.v1",
             self.state_root.as_os_str().as_encoded_bytes(),
@@ -925,6 +936,22 @@ impl super::Runtime {
 #[cfg(test)]
 mod reference_tests {
     use super::*;
+
+    #[test]
+    fn search_continuations_stay_within_the_accepted_offset_range() {
+        for (offset, returned, total, next) in [
+            (0, 20, 57, Some(20)),
+            (40, 17, 57, None),
+            (60, 0, 57, None),
+            (999_999, 1, 1_000_002, Some(1_000_000)),
+            (1_000_000, 2, 1_000_002, None),
+        ] {
+            assert_eq!(search_continuation(offset, returned, total).unwrap(), next);
+        }
+        let error = search_continuation(1_000_000, 1, 1_000_002).unwrap_err();
+        assert_eq!(error.code(), "cgrx.search_pagination_limit");
+        assert!(error.to_string().contains("narrow"));
+    }
 
     #[test]
     fn symbol_reference_codecs_preserve_all_digest_bytes() {

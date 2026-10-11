@@ -48,6 +48,11 @@ all requested rows and the continuation metadata, rather than silently dropping
 rows above twelve. Complete traversal of matches is distinct from complete
 relationship coverage; inspect coverage before relying on a missing edge.
 
+For searches with over one million matches, a page that would require an offset
+above 1,000,000 returns `cgrx.search_pagination_limit`. Narrow the query or path
+scope before restarting. A final page may cross that position when it needs no
+further continuation.
+
 ## CLI
 
 ```sh
