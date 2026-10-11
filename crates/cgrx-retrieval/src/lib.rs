@@ -2,6 +2,7 @@ mod bm25;
 mod exact;
 mod fusion;
 mod graph;
+mod identifier;
 mod structural;
 
 pub use fusion::{
@@ -12,3 +13,4 @@ pub use graph::{
     BaseGraph, CandidateProvenance, GraphArc, GraphDocument, GraphDocumentRef, GraphEdge,
     SnapshotView, ViewError,
 };
+pub use identifier::identifier_tokens;

@@ -1,5 +1,6 @@
 use crate::fusion::LaneHit;
 use crate::graph::RetrievalDocument;
+use crate::identifier::{identifier_tokens, visit_identifier_tokens};
 use std::collections::BTreeMap;
 
 #[derive(Clone, Debug)]
@@ -9,7 +10,7 @@ struct DocumentStats {
 }
 
 pub(crate) fn rank<D: RetrievalDocument>(query: &str, documents: &[D]) -> Vec<LaneHit> {
-    let query_tokens = tokenize(query);
+    let query_tokens = identifier_tokens(query);
     if query_tokens.is_empty() || documents.is_empty() {
         return Vec::new();
     }
@@ -29,7 +30,7 @@ pub(crate) fn rank<D: RetrievalDocument>(query: &str, documents: &[D]) -> Vec<La
         let mut length = 0_usize;
         let mut term_frequency = vec![0_usize; query_index.len()];
         for value in [document.qualified_name(), document.path(), document.text()] {
-            visit_tokens_with_buffer(value, &mut token_buffer, |token| {
+            visit_identifier_tokens(value, &mut token_buffer, |token| {
                 length = length.saturating_add(1);
                 if let Some(index) = query_index.get(token) {
                     term_frequency[*index] = term_frequency[*index].saturating_add(1);
@@ -78,43 +79,6 @@ pub(crate) fn rank<D: RetrievalDocument>(query: &str, documents: &[D]) -> Vec<La
             .then_with(|| left.node_id.cmp(&right.node_id))
     });
     hits
-}
-
-pub(crate) fn tokenize(value: &str) -> Vec<String> {
-    let mut tokens = Vec::new();
-    visit_tokens(value, |token| tokens.push(token.to_owned()));
-    tokens
-}
-
-fn visit_tokens(value: &str, visit: impl FnMut(&str)) {
-    let mut current = String::new();
-    visit_tokens_with_buffer(value, &mut current, visit);
-}
-
-fn visit_tokens_with_buffer(value: &str, current: &mut String, mut visit: impl FnMut(&str)) {
-    current.clear();
-    let mut previous_lowercase = false;
-    for character in value.chars() {
-        if character.is_alphanumeric() {
-            if character.is_uppercase() && previous_lowercase && !current.is_empty() {
-                current.make_ascii_lowercase();
-                visit(current);
-                current.clear();
-            }
-            previous_lowercase = character.is_lowercase();
-            current.extend(character.to_lowercase());
-        } else {
-            if !current.is_empty() {
-                visit(current);
-                current.clear();
-            }
-            previous_lowercase = false;
-        }
-    }
-    if !current.is_empty() {
-        visit(current);
-    }
-    current.clear();
 }
 
 #[cfg(test)]
@@ -184,5 +148,77 @@ mod tests {
             hits.is_empty(),
             "documents without query terms must not rank"
         );
+    }
+
+    #[test]
+    fn acronym_queries_retrieve_words_across_name_path_and_body() {
+        let documents = vec![
+            doc(1, "HTTPRequest", "src/a.rs", "send"),
+            doc(2, "handler", "src/http_request.rs", "send"),
+            doc(3, "handler", "src/c.rs", "HTTP_REQUEST"),
+            doc(4, "MetricsCollector", "src/d.rs", "collect"),
+            doc(5, "requester", "src/e.rs", "shipping"),
+        ];
+        let expected = rank("http request", &documents);
+        assert_eq!(
+            expected
+                .iter()
+                .map(|hit| hit.node_id)
+                .collect::<std::collections::BTreeSet<_>>(),
+            [1, 2, 3].into_iter().collect()
+        );
+        for query in ["HTTPRequest", "httpRequest", "HTTP_REQUEST"] {
+            assert_eq!(rank(query, &documents), expected, "{query}");
+        }
+    }
+
+    #[test]
+    fn unicode_and_version_queries_use_complete_numeric_terms() {
+        let documents = vec![
+            doc(1, "ОбработатьHTTP2Запрос", "src/a.rs", "send"),
+            doc(2, "ОбработатьHTTP12Запрос", "src/b.rs", "send"),
+            doc(3, "MetricsCollector", "src/c.rs", "collect"),
+        ];
+        assert_eq!(
+            rank("2", &documents)
+                .iter()
+                .map(|hit| hit.node_id)
+                .collect::<Vec<_>>(),
+            [1]
+        );
+        let hits = rank("обработать http 2 запрос", &documents);
+        assert_eq!(hits[0].node_id, 1);
+        assert_eq!(hits.len(), 2);
+        assert!(hits[0].raw_score > hits[1].raw_score);
+        assert_eq!(rank("ОбработатьHTTP2Запрос", &documents), hits);
+    }
+
+    #[test]
+    fn unicode_expanding_lowercase_retrieves_the_original_identifier() {
+        let documents = vec![
+            doc(1, "İstanbul", "src/a.rs", "send"),
+            doc(2, "Berlin", "src/b.rs", "collect"),
+        ];
+        let expected = rank("İstanbul", &documents);
+        assert_eq!(
+            expected.iter().map(|hit| hit.node_id).collect::<Vec<_>>(),
+            [1]
+        );
+        assert_eq!(rank(&"İstanbul".to_lowercase(), &documents), expected);
+    }
+
+    #[test]
+    fn identifier_tokenization_preserves_stable_tie_order() {
+        let mut documents = vec![
+            doc(9, "HTTPRequest", "src/a.rs", "send"),
+            doc(2, "HTTPRequest", "src/a.rs", "send"),
+        ];
+        let expected = rank("http request", &documents);
+        assert_eq!(
+            expected.iter().map(|hit| hit.node_id).collect::<Vec<_>>(),
+            [2, 9]
+        );
+        documents.reverse();
+        assert_eq!(rank("HTTPRequest", &documents), expected);
     }
 }
