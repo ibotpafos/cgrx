@@ -376,7 +376,10 @@ fn tools_list_documents_the_exact_scope_contract() {
         json!(["include", "exclude", "relation_kinds", "max_depth"])
     );
 
-    for name in ["search_graph", "trace_path"] {
+    for (name, relations) in [
+        ("search_graph", json!(["CALLS", "IMPLEMENTS"])),
+        ("trace_path", json!(["CALLS", "IMPLEMENTS", "CONTAINS"])),
+    ] {
         let tool = tools
             .iter()
             .find(|tool| tool["name"] == name)
@@ -386,7 +389,7 @@ fn tools_list_documents_the_exact_scope_contract() {
         assert_eq!(scope["anyOf"][1]["items"]["type"], "string");
         assert_eq!(
             scope["anyOf"][2]["properties"]["relation_kinds"]["items"]["enum"],
-            json!(["CALLS", "IMPLEMENTS"])
+            relations
         );
     }
 }

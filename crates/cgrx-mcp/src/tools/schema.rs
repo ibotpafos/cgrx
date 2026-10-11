@@ -32,6 +32,12 @@ pub(super) fn model_visible_schema() -> Value {
             {"name":"check_security_gates","description":"Snapshot-bound security gate over working-tree secrets, Cargo.lock dependency hygiene and license allowlist with explicit PASS/WARN/FAIL/INCONCLUSIVE verdict; no LLM executed.","inputSchema":{"type":"object","properties":{"fail_on":{"enum":["error","warning","none"],"default":"error"},"max_secret_findings":{"type":"integer","minimum":0,"maximum":10000,"default":0},"max_dependency_findings":{"type":"integer","minimum":0,"maximum":10000,"default":0},"max_license_findings":{"type":"integer","minimum":0,"maximum":10000,"default":0},"allowlist_paths":{"type":"array","items":{"type":"string"}},"allowlist_licenses":{"type":"array","items":{"type":"string"}}}}}
         ]);
     for tool in tools.as_array_mut().unwrap() {
+        if tool["name"] == "trace_path" {
+            let mut scope = bounded_scope.clone();
+            scope["properties"]["relation_kinds"]["items"]["enum"] =
+                json!(["CALLS", "IMPLEMENTS", "CONTAINS"]);
+            tool["inputSchema"]["properties"]["scope"] = path_or_scope_schema(&scope);
+        }
         if tool["name"] == "find_usages" {
             let mut scope = bounded_scope.clone();
             scope["properties"]["relation_kinds"]["items"]["enum"] =
@@ -100,8 +106,8 @@ fn tool_metadata(name: &str) -> Option<(&'static str, &'static str)> {
             "Summarize proven packages and weighted symbol communities with representatives.",
         ),
         "trace_path" => (
-            "Trace calls",
-            "Trace callers or callees; path or symbol_ref selects the definition.",
+            "Trace relations",
+            "Trace selected relations; path or symbol_ref selects definitions.",
         ),
         "find_usages" => (
             "Find usages",

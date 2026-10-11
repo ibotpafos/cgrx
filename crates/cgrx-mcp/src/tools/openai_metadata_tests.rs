@@ -1,14 +1,14 @@
 use super::*;
 
 #[test]
-fn usage_scope_advertises_dependencies_without_changing_call_scope_contracts() {
+fn graph_tools_advertise_dependency_and_containment_scopes() {
     let tools = model_visible_schema();
     for (name, kinds) in [
         (
             "find_usages",
             json!(["CALLS", "IMPLEMENTS", "IMPORTS", "REFERENCES"]),
         ),
-        ("trace_path", json!(["CALLS", "IMPLEMENTS"])),
+        ("trace_path", json!(["CALLS", "IMPLEMENTS", "CONTAINS"])),
     ] {
         let tool = tools
             .as_array()

@@ -604,6 +604,384 @@ mod proof_edge_tests {
         }
     }
 
+    fn containment_syntax(
+        node_id: u64,
+        name: &str,
+        path: &str,
+        name_span: ByteRange,
+        body: ByteRange,
+    ) -> StoredDocument {
+        let mut document = syntax(node_id, name, path, name_span.start, name_span.end);
+        document.body_start = body.start;
+        document.body_end = body.end;
+        document
+    }
+
+    #[test]
+    fn syntax_containment_proves_real_nested_ancestors_not_the_first_file_symbol() {
+        let source =
+            b"fn anchor() {}\nfn parent() {\n fn middle() { fn child() {} }\n}\nfn sibling() {}\n";
+        let documents = extract_path("src/main.rs", source).unwrap().documents;
+        let source_hash = Hash32(*blake3::hash(source).as_bytes());
+        let hashes = BTreeMap::from([("src/main.rs".to_owned(), source_hash)]);
+        let arcs = super::super::containment::syntax_containment_arcs(&documents, &hashes);
+        let symbol = |node_id| {
+            documents
+                .iter()
+                .find(|document| document.provenance == "SYNTAX" && document.node_id == node_id)
+                .unwrap()
+        };
+        assert_eq!(
+            arcs.iter()
+                .map(|arc| {
+                    (
+                        symbol(arc.source).qualified_name.as_str(),
+                        symbol(arc.target).qualified_name.as_str(),
+                    )
+                })
+                .collect::<BTreeSet<_>>(),
+            BTreeSet::from([
+                ("parent", "middle"),
+                ("parent", "child"),
+                ("middle", "child"),
+            ])
+        );
+        assert_eq!(arcs.len(), 3);
+        for arc in &arcs {
+            let parent = symbol(arc.source);
+            let child = symbol(arc.target);
+            assert_ne!(arc.source, arc.target);
+            assert_eq!(arc.kind, RelationKind::Contains);
+            assert!(parent.body_start <= child.body_start && child.body_end <= parent.body_end);
+            assert_ne!(
+                (parent.body_start, parent.body_end),
+                (child.body_start, child.body_end)
+            );
+            let evidence = arc.evidence.as_ref().unwrap();
+            assert_eq!(evidence.path, "src/main.rs");
+            assert_eq!(
+                evidence.span,
+                ByteRange::new(child.span_start, child.span_end)
+            );
+            assert_eq!(
+                &source[evidence.span.start..evidence.span.end],
+                child.qualified_name.as_bytes()
+            );
+            assert_eq!(evidence.source_hash, source_hash);
+            assert_eq!(evidence.resolver, ResolverClass::SyntaxExact);
+            assert_eq!(evidence.confidence, ConfidenceClass::Proven);
+            assert!(evidence.assumptions.is_empty());
+            assert!(evidence.counter_evidence.is_empty());
+        }
+        let mut reversed = documents.clone();
+        reversed.reverse();
+        assert_eq!(
+            super::super::containment::syntax_containment_arcs(&reversed, &hashes),
+            arcs
+        );
+    }
+
+    #[test]
+    fn syntax_containment_allows_declaration_names_before_their_own_body() {
+        // Arrow initializers may begin after their declaration's name. The
+        // child's name and its whole body still belong inside the parent.
+        let documents = vec![
+            containment_syntax(
+                1,
+                "same",
+                "main.ts",
+                ByteRange::new(0, 1),
+                ByteRange::new(5, 100),
+            ),
+            containment_syntax(
+                2,
+                "same",
+                "main.ts",
+                ByteRange::new(10, 11),
+                ByteRange::new(20, 60),
+            ),
+            containment_syntax(
+                3,
+                "same",
+                "main.ts",
+                ByteRange::new(25, 26),
+                ByteRange::new(30, 40),
+            ),
+        ];
+        let hashes = BTreeMap::from([("main.ts".to_owned(), Hash32([7; 32]))]);
+        let arcs = super::super::containment::syntax_containment_arcs(&documents, &hashes);
+        assert_eq!(
+            arcs.iter()
+                .map(|arc| (arc.source, arc.target))
+                .collect::<BTreeSet<_>>(),
+            BTreeSet::from([(1, 2), (1, 3), (2, 3)])
+        );
+        assert_eq!(arcs.len(), 3);
+    }
+
+    #[test]
+    fn syntax_containment_rejects_invalid_or_unbound_proofs() {
+        let parent = containment_syntax(
+            1,
+            "parent",
+            "main.rs",
+            ByteRange::new(1, 2),
+            ByteRange::new(0, 100),
+        );
+        let child = containment_syntax(
+            2,
+            "child",
+            "main.rs",
+            ByteRange::new(21, 22),
+            ByteRange::new(20, 30),
+        );
+        for case in [
+            "missing_hash",
+            "zero_hash",
+            "cross_file",
+            "empty_body",
+            "inverted_body",
+            "empty_name",
+            "inverted_name",
+            "empty_parent_name",
+            "inverted_parent_body",
+            "parent_name_after_own_body",
+            "child_name_after_own_body",
+            "name_outside_parent",
+            "body_overlaps_parent",
+            "equal_body",
+            "non_syntax",
+            "same_node",
+            "duplicate_node_other_path",
+            "duplicate_node_malformed",
+        ] {
+            let mut documents = vec![parent.clone(), child.clone()];
+            let mut hashes = BTreeMap::from([("main.rs".to_owned(), Hash32([7; 32]))]);
+            match case {
+                "missing_hash" => hashes.clear(),
+                "zero_hash" => {
+                    hashes.insert("main.rs".to_owned(), Hash32([0; 32]));
+                }
+                "cross_file" => documents[1].path = "other.rs".to_owned(),
+                "empty_body" => documents[1].body_end = documents[1].body_start,
+                "inverted_body" => documents[1].body_end = documents[1].body_start - 1,
+                "empty_name" => documents[1].span_end = documents[1].span_start,
+                "inverted_name" => documents[1].span_end = documents[1].span_start - 1,
+                "empty_parent_name" => documents[0].span_end = documents[0].span_start,
+                "inverted_parent_body" => documents[0].body_start = documents[0].body_end + 1,
+                "parent_name_after_own_body" => {
+                    documents[0].span_start = 110;
+                    documents[0].span_end = 111;
+                }
+                "child_name_after_own_body" => {
+                    documents[1].span_start = 31;
+                    documents[1].span_end = 32;
+                }
+                "name_outside_parent" => {
+                    documents[1].span_start = 110;
+                    documents[1].span_end = 111;
+                }
+                "body_overlaps_parent" => documents[0].body_end = 25,
+                "equal_body" => {
+                    documents[1].body_start = documents[0].body_start;
+                    documents[1].body_end = documents[0].body_end;
+                }
+                "non_syntax" => documents[1].provenance = "CALLS".to_owned(),
+                "same_node" => documents[1].node_id = documents[0].node_id,
+                "duplicate_node_other_path" => {
+                    let mut duplicate = child.clone();
+                    duplicate.path = "other.rs".to_owned();
+                    documents.push(duplicate);
+                }
+                "duplicate_node_malformed" => {
+                    let mut duplicate = child.clone();
+                    duplicate.span_end = duplicate.span_start;
+                    documents.push(duplicate);
+                }
+                _ => unreachable!(),
+            }
+            assert!(
+                super::super::containment::syntax_containment_arcs(&documents, &hashes).is_empty(),
+                "{case}"
+            );
+        }
+    }
+
+    #[test]
+    fn syntax_containment_equal_extent_peers_have_no_unambiguous_parent_role() {
+        let documents = vec![
+            containment_syntax(
+                1,
+                "outer",
+                "main.rs",
+                ByteRange::new(1, 2),
+                ByteRange::new(0, 100),
+            ),
+            containment_syntax(
+                2,
+                "peer",
+                "main.rs",
+                ByteRange::new(12, 13),
+                ByteRange::new(10, 80),
+            ),
+            containment_syntax(
+                3,
+                "peer",
+                "main.rs",
+                ByteRange::new(15, 16),
+                ByteRange::new(10, 80),
+            ),
+            containment_syntax(
+                4,
+                "child",
+                "main.rs",
+                ByteRange::new(21, 22),
+                ByteRange::new(20, 30),
+            ),
+        ];
+        let hashes = BTreeMap::from([("main.rs".to_owned(), Hash32([7; 32]))]);
+        let arcs = super::super::containment::syntax_containment_arcs(&documents, &hashes);
+        assert_eq!(
+            arcs.iter()
+                .map(|arc| (arc.source, arc.target))
+                .collect::<BTreeSet<_>>(),
+            BTreeSet::from([(1, 2), (1, 3), (1, 4)])
+        );
+        assert_eq!(arcs.len(), 3);
+    }
+
+    #[test]
+    fn syntax_containment_includes_proper_subranges_with_shared_boundaries() {
+        let documents = vec![
+            containment_syntax(
+                1,
+                "outer",
+                "main.rs",
+                ByteRange::new(1, 2),
+                ByteRange::new(0, 100),
+            ),
+            containment_syntax(
+                2,
+                "left",
+                "main.rs",
+                ByteRange::new(10, 11),
+                ByteRange::new(0, 50),
+            ),
+            containment_syntax(
+                3,
+                "right",
+                "main.rs",
+                ByteRange::new(60, 61),
+                ByteRange::new(50, 100),
+            ),
+        ];
+        let hashes = BTreeMap::from([("main.rs".to_owned(), Hash32([7; 32]))]);
+        let arcs = super::super::containment::syntax_containment_arcs(&documents, &hashes);
+        assert_eq!(
+            arcs.iter()
+                .map(|arc| (arc.source, arc.target))
+                .collect::<BTreeSet<_>>(),
+            BTreeSet::from([(1, 2), (1, 3)])
+        );
+        assert_eq!(arcs.len(), 2);
+    }
+
+    #[test]
+    fn syntax_containment_crossing_endpoints_abstain_but_valid_ancestors_survive() {
+        let documents = vec![
+            containment_syntax(
+                1,
+                "outer",
+                "bad.rs",
+                ByteRange::new(1, 2),
+                ByteRange::new(0, 100),
+            ),
+            containment_syntax(
+                2,
+                "left",
+                "bad.rs",
+                ByteRange::new(11, 12),
+                ByteRange::new(10, 50),
+            ),
+            containment_syntax(
+                3,
+                "right",
+                "bad.rs",
+                ByteRange::new(41, 42),
+                ByteRange::new(40, 80),
+            ),
+            containment_syntax(
+                4,
+                "nested",
+                "bad.rs",
+                ByteRange::new(21, 22),
+                ByteRange::new(20, 30),
+            ),
+            containment_syntax(
+                5,
+                "branch",
+                "bad.rs",
+                ByteRange::new(91, 92),
+                ByteRange::new(90, 95),
+            ),
+            containment_syntax(
+                6,
+                "parent",
+                "good.rs",
+                ByteRange::new(1, 2),
+                ByteRange::new(0, 100),
+            ),
+            containment_syntax(
+                7,
+                "child",
+                "good.rs",
+                ByteRange::new(21, 22),
+                ByteRange::new(20, 30),
+            ),
+        ];
+        let hashes = BTreeMap::from([
+            ("bad.rs".to_owned(), Hash32([7; 32])),
+            ("good.rs".to_owned(), Hash32([9; 32])),
+        ]);
+        let arcs = super::super::containment::syntax_containment_arcs(&documents, &hashes);
+        assert_eq!(
+            arcs.iter()
+                .map(|arc| (arc.source, arc.target))
+                .collect::<BTreeSet<_>>(),
+            BTreeSet::from([(1, 4), (1, 5), (6, 7)])
+        );
+        assert_eq!(arcs.len(), 3);
+    }
+
+    #[test]
+    fn syntax_containment_crossings_with_already_rejected_extents_also_abstain() {
+        let documents = vec![
+            containment_syntax(
+                1,
+                "left",
+                "main.rs",
+                ByteRange::new(1, 2),
+                ByteRange::new(0, 10),
+            ),
+            containment_syntax(
+                2,
+                "right",
+                "main.rs",
+                ByteRange::new(6, 7),
+                ByteRange::new(5, 15),
+            ),
+            containment_syntax(
+                3,
+                "inner",
+                "main.rs",
+                ByteRange::new(8, 9),
+                ByteRange::new(7, 11),
+            ),
+        ];
+        let hashes = BTreeMap::from([("main.rs".to_owned(), Hash32([7; 32]))]);
+        assert!(super::super::containment::syntax_containment_arcs(&documents, &hashes).is_empty());
+    }
+
     fn call(node_id: u64, name: &str, path: &str, start: usize, end: usize) -> StoredDocument {
         StoredDocument {
             php_function_target: None,
@@ -1819,7 +2197,7 @@ mod compact_storage_tests {
         );
         assert_eq!(
             EXTRACTION_REVISION,
-            125 + if cgrx_languages::EXPERIMENTAL_PHP_ENABLED {
+            141 + if cgrx_languages::EXPERIMENTAL_PHP_ENABLED {
                 2
             } else {
                 0
