@@ -373,6 +373,84 @@ fn compact_discovery_and_traces_preserve_addressable_symbol_references() {
 }
 
 #[test]
+fn compact_search_keeps_the_complete_page_and_continuation_identity() {
+    let rows = (0..50)
+        .map(|index| {
+            json!({
+                "symbol":format!("item_{index:02}"),"path":"main.rs",
+                "span":{"start":index,"end":index+1},"callers":0,"callees":0,
+                "symbol_ref":format!("reference_{index}"),"matched_by":"symbol_tokens"
+            })
+        })
+        .collect::<Vec<_>>();
+    let snapshot_id = json!("a".repeat(64));
+    let page =
+        json!({"offset":0,"limit":50,"next_offset":50,"has_more":true,"snapshot_id":snapshot_id});
+    let compact = compact_search(
+        &json!({"query":"item","matches":rows,"total":53,"truncated":true,"page":page}),
+    );
+    assert_eq!(compact["rows"].as_array().unwrap().len(), 50);
+    assert_eq!(compact["rows"][49][0], "item_49");
+    assert_eq!(compact["rows"][49][6], "reference_49");
+    assert_eq!(compact["rows"][49][7], "symbol_tokens");
+    assert_eq!(compact["cols"][7], "matched_by");
+    assert_eq!(compact["n"], 53);
+    assert_eq!(compact["more"], true);
+    assert_eq!(compact["page"], page);
+    let final_page = json!({"offset":50,"limit":50,"next_offset":null,"has_more":false,"snapshot_id":snapshot_id});
+    let empty =
+        compact_search(&json!({"matches":[],"total":0,"truncated":false,"page":final_page}));
+    assert_eq!(empty["rows"], json!([]));
+    assert_eq!(empty["page"], final_page);
+    assert!(empty.get("more").is_none());
+}
+
+#[test]
+fn search_schema_and_argument_validation_agree_on_page_bounds() {
+    let tools = model_visible_schema();
+    let search = tools
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|tool| tool["name"] == "search_graph")
+        .unwrap();
+    assert_eq!(search["inputSchema"]["properties"]["offset"]["default"], 0);
+    assert_eq!(
+        search["inputSchema"]["properties"]["offset"]["maximum"],
+        1_000_000
+    );
+    assert_eq!(
+        search["inputSchema"]["properties"]["expected_snapshot"]["pattern"],
+        "^[0-9a-f]{64}$"
+    );
+    let valid: SearchGraphArguments = from_value(json!({"query":"http request"})).unwrap();
+    assert_eq!(valid.offset, 0);
+    assert!(valid.expected_snapshot.is_none());
+    let mut server = Server::new(RepoSnapshot {
+        repo_revision: "test".into(),
+        working_tree_digest: Hash32([0; 32]),
+        graph_generation: 1,
+    });
+    for arguments in [
+        json!({"query":" "}),
+        json!({"query":"x","limit":0}),
+        json!({"query":"x","limit":51}),
+        json!({"query":"x","offset":1_000_001}),
+        json!({"query":"x","offset":-1}),
+        json!({"query":"x","expected_snapshot":"not-a-snapshot"}),
+    ] {
+        let response: Value = serde_json::from_str(&server.dispatch_line(&json!({
+            "jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"search_graph","arguments":arguments}
+        }).to_string())).unwrap();
+        assert_eq!(response["error"]["code"], -32602, "{response}");
+        assert_eq!(
+            response["error"]["data"]["code"], "cgrx.invalid_arguments",
+            "{response}"
+        );
+    }
+}
+
+#[test]
 fn symbol_selection_schema_keeps_legacy_arguments_and_optional_references() {
     let tools = model_visible_schema();
     for name in ["get_code_snippet", "trace_path", "find_usages"] {

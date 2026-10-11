@@ -8,6 +8,7 @@ use std::path::Path;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use cgrx_core::{Hash32, RelationKind, Scope, SymbolSelector, canonical_hash};
 use cgrx_languages::pack_for_path;
+use cgrx_retrieval::identifier_tokens;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -200,6 +201,7 @@ impl super::Runtime {
         Ok(result)
     }
 
+    #[cfg(test)]
     pub(super) fn search_graph_with_matcher(
         &self,
         query: &str,
@@ -209,14 +211,44 @@ impl super::Runtime {
         include_body: bool,
         matches_scope: impl FnMut(&str, &Scope) -> bool,
     ) -> Result<Value, RuntimeError> {
+        self.search_graph_page_with_matcher(
+            query,
+            scope,
+            (limit, 0),
+            language,
+            include_body,
+            matches_scope,
+        )
+    }
+
+    pub(super) fn search_graph_page_with_matcher(
+        &self,
+        query: &str,
+        scope: &Scope,
+        page: (usize, usize),
+        language: Option<&str>,
+        include_body: bool,
+        matches_scope: impl FnMut(&str, &Scope) -> bool,
+    ) -> Result<Value, RuntimeError> {
+        let (limit, offset) = page;
         let query = query.trim();
-        if query.is_empty() || !(1..=50).contains(&limit) {
+        if query.is_empty() || !(1..=50).contains(&limit) || offset > 1_000_000 {
             return Err(RuntimeError::new(
                 "cgrx.invalid_arguments",
-                "query must be non-empty and limit must be between 1 and 50",
+                "query must be non-empty; limit must be between 1 and 50; offset must be between 0 and 1000000",
             ));
         }
         let folded = query.to_lowercase();
+        let query_tokens: BTreeSet<_> = identifier_tokens(query).into_iter().collect();
+        let query_length = folded.chars().count();
+        let max_distance = if query_length <= 4 {
+            1
+        } else if query_length <= 8 {
+            2
+        } else {
+            3
+        };
+        let fuzzy_allowed = !query_tokens.is_empty() && !query.chars().any(char::is_whitespace);
         let mut scoped = ScopedQuery::new(&self.stored, scope, matches_scope);
         let qualifying = scoped.definitive_arcs(&self.stored);
         let distinct: BTreeSet<_> = qualifying
@@ -241,42 +273,66 @@ impl super::Runtime {
             })
             .filter_map(|document| {
                 let name = document.qualified_name.to_lowercase();
-                let (rank, matched_by) = if name == folded {
-                    (0, "symbol")
+                let (rank, detail, matched_by) = if name == folded {
+                    (0, 0, "symbol")
                 } else if name.starts_with(&folded) {
-                    (1, "symbol")
+                    (1, 0, "symbol")
                 } else if name.contains(&folded) {
-                    (2, "symbol")
-                } else if include_body && document.search_text.to_lowercase().contains(&folded) {
-                    (3, "body")
+                    (2, 0, "symbol")
                 } else {
-                    // Fuzzy matching: allow up to 2 edits for short queries, 3 for longer
-                    let max_distance = if folded.len() <= 4 {
-                        1
-                    } else if folded.len() <= 8 {
-                        2
+                    let name_tokens: BTreeSet<_> = identifier_tokens(&document.qualified_name)
+                        .into_iter()
+                        .collect();
+                    if !query_tokens.is_empty() && query_tokens.is_subset(&name_tokens) {
+                        (3, name_tokens.len() - query_tokens.len(), "symbol_tokens")
+                    } else if include_body && document.search_text.to_lowercase().contains(&folded)
+                    {
+                        (4, 0, "body")
+                    } else if include_body
+                        && !query_tokens.is_empty()
+                        && query_tokens.is_subset(
+                            &identifier_tokens(&document.search_text)
+                                .into_iter()
+                                .collect(),
+                        )
+                    {
+                        (5, 0, "body_tokens")
                     } else {
-                        3
-                    };
-                    if levenshtein::levenshtein(&name, &folded) <= max_distance {
-                        (4, "fuzzy")
-                    } else {
-                        return None;
+                        // Multi-term queries require every term, so fuzzy name
+                        // matching applies only to a single identifier.
+                        if !fuzzy_allowed
+                            || name.chars().count().abs_diff(query_length) > max_distance
+                        {
+                            return None;
+                        }
+                        let distance = levenshtein::levenshtein(&name, &folded);
+                        if distance <= max_distance {
+                            (6, distance, "fuzzy")
+                        } else {
+                            return None;
+                        }
                     }
                 };
                 let callers = caller_counts.get(&document.node_id).copied().unwrap_or(0);
                 let callees = callee_counts.get(&document.node_id).copied().unwrap_or(0);
-                Some((rank, document, callers, callees, matched_by))
+                Some((rank, detail, document, callers, callees, matched_by))
             })
             .collect();
-        matches.sort_by_key(|(rank, document, _, _, _)| {
-            (*rank, &document.path, document.span_start, document.node_id)
+        matches.sort_by_key(|(rank, detail, document, _, _, _)| {
+            (
+                *rank,
+                *detail,
+                &document.path,
+                document.span_start,
+                document.node_id,
+            )
         });
         let total = matches.len();
         let rows: Vec<_> = matches
             .into_iter()
+            .skip(offset)
             .take(limit)
-            .map(|(_, document, callers, callees, matched_by)| {
+            .map(|(_, _, document, callers, callees, matched_by)| {
                 json!({
                     "node_id":document.node_id,
                     "symbol_ref":self.symbol_reference(document),
@@ -289,14 +345,27 @@ impl super::Runtime {
                 })
             })
             .collect();
+        let returned_end = offset.saturating_add(rows.len());
+        let has_more = returned_end < total;
+        let next_offset = has_more.then_some(returned_end);
+        let snapshot_id = canonical_hash(&(
+            "cgrx.search.snapshot.v1",
+            self.state_root.as_os_str().as_encoded_bytes(),
+            &self.stored.snapshot,
+            self.stored.extraction_revision,
+        ))
+        .map_err(|error| RuntimeError::new("cgrx.search_snapshot", error.to_string()))?;
         Ok(json!({
             "snapshot":self.stored.snapshot,
             "query":query,
             "language":language,
             "include_body":include_body,
+            "algorithm":"identifier_discovery_v1",
+            "llm_used":false,
             "matches":rows,
             "total":total,
-            "truncated":total > limit,
+            "truncated":has_more,
+            "page":{"offset":offset,"limit":limit,"next_offset":next_offset,"has_more":has_more,"snapshot_id":snapshot_id},
             "coverage_gap_count":coverage_gap_count(&scoped.coverage(&self.stored.coverage))
         }))
     }

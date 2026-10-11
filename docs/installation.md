@@ -146,6 +146,22 @@ args = ["serve", "--multi-repo", "--response-profile", "token-efficient"]
 {"repo": "/absolute/path/to/project", "query": "target", "limit": 10}
 ~~~
 
+Поиск понимает составные имена: `http request` находит `HTTPRequest` и
+`http_request`. Для нескольких слов в теле функции добавьте `include_body: true`.
+В ответе `page.next_offset` указывает следующую страницу; передайте его в
+`offset`, а `page.snapshot_id` — в `expected_snapshot`. Если исходники изменились,
+повторите поиск с первой страницы.
+
+Можно искать прямо из терминала без MCP-клиента:
+
+~~~sh
+cgrx search --root /absolute/path/to/project --query "http request" --limit 20
+cgrx search --root /absolute/path/to/project --query "cache expiry" --include-body true --paths 'src/**'
+~~~
+
+Команда выводит JSON с определениями и данными для продолжения поиска.
+[Подробности и проверяемое сравнение](search-discovery.md).
+
 Нужен репозиторий с существующим коммитом HEAD. Изменённые/новые файлы
 обновляются в рабочем представлении. Первый запрос на большой базе может
 быть долгим. Индекс создаётся автоматически в Git metadata.

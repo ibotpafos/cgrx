@@ -487,11 +487,24 @@ impl ToolBackend for RuntimeMcpBackend {
         language: Option<&str>,
         include_body: bool,
     ) -> Result<Value, BackendError> {
+        self.search_graph_page(query, scope, limit, 0, language, include_body)
+    }
+
+    fn search_graph_page(
+        &mut self,
+        query: &str,
+        scope: Value,
+        limit: u32,
+        offset: u32,
+        language: Option<&str>,
+        include_body: bool,
+    ) -> Result<Value, BackendError> {
         self.refresh()?;
         let scope = graph_scope(&scope)?;
         let limit = usize_argument(limit, "limit")?;
+        let offset = usize_argument(offset, "offset")?;
         self.runtime
-            .search_graph_filtered(query, &scope, limit, language, include_body)
+            .search_graph_page(query, &scope, limit, offset, language, include_body)
             .map_err(runtime_backend_error)
     }
 

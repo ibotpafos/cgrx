@@ -14,7 +14,7 @@ pub(super) fn model_visible_schema() -> Value {
             {"name":"check_repository_gates","description":"Snapshot-bound architecture gate over package cycles, graph coupling, unresolved local dependencies and coverage; no LLM executed.","inputSchema":{"type":"object","properties":{"scope":path_or_scope.clone(),"package_depth":{"type":"integer","minimum":1,"maximum":4,"default":2},"fail_on":{"enum":["error","warning","none"],"default":"error"},"max_package_cycles":{"type":"integer","minimum":0,"maximum":1000000,"default":0},"max_package_fan_out":{"type":"integer","minimum":0,"maximum":1000000,"default":20},"max_symbol_fan_in":{"type":"integer","minimum":0,"maximum":1000000,"default":50},"max_unresolved_local_dependencies":{"type":"integer","minimum":0,"maximum":1000000,"default":0},"max_coverage_gaps":{"type":"integer","minimum":0,"maximum":1000000,"default":0}}}},
             {"name":"ingest_runtime_evidence","description":"Import revision-pinned runtime call evidence from a local file.","inputSchema":{"type":"object","required":["input_path"],"properties":{"input_path":{"type":"string"},"format":{"enum":["auto","ndjson","otlp-json"],"default":"auto"},"revision":{"type":"string"},"environment":{"type":"string"}}}},
             {"name":"orient","description":"Adaptive context","inputSchema":{"type":"object","required":["task","mode","scope"],"properties":{"task":{"type":"string"},"budget":{"type":"integer","minimum":1},"budget_preset":{"enum":["quick","standard","deep"]},"mode":{"enum":["FAST","PRECISE","BOUNDED"]},"scope":bounded_scope.clone()}}},
-            {"name":"search_graph","description":"Symbols or bodies","inputSchema":{"type":"object","required":["query"],"properties":{"query":{"type":"string"},"language":{"enum":["typescript","javascript","go","java","python","rust","c","cpp","csharp","ruby","php","swift","scala","elixir","kotlin"]},"include_body":{"type":"boolean"},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":50}}}},
+            {"name":"search_graph","description":"Paginated symbol and body discovery with identifier tokens","inputSchema":{"type":"object","required":["query"],"properties":{"query":{"type":"string"},"language":{"enum":["typescript","javascript","go","java","python","rust","c","cpp","csharp","ruby","php","swift","scala","elixir","kotlin"]},"include_body":{"type":"boolean"},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":50},"offset":{"type":"integer","minimum":0,"maximum":1000000,"default":0},"expected_snapshot":{"type":"string","pattern":"^[0-9a-f]{64}$","description":"First page.snapshot_id; rejects changed snapshots."}}}},
             {"name":"get_outline","description":"File symbols and proven named imports","inputSchema":{"type":"object","required":["path"],"properties":{"path":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":500}}}},
             {"name":"get_architecture","description":"Paginated packages, proven boundaries, communities and graph futures","inputSchema":{"type":"object","properties":{"scope":path_or_scope.clone(),"package_depth":{"type":"integer","minimum":1,"maximum":4},"limit":{"type":"integer","minimum":1,"maximum":100},"offset":{"type":"integer","minimum":0,"maximum":1000000}}}},
             {"name":"trace_path","description":"Calls","inputSchema":{"type":"object","required":["symbol"],"properties":{"symbol":{"type":"string"},"path":{"type":"string"},"direction":{"enum":["callers","callees","both"]},"depth":{"type":"integer","minimum":1,"maximum":4},"scope":path_or_scope.clone(),"limit":{"type":"integer","minimum":1,"maximum":50},"evidence":{"enum":["static","observed","all"],"default":"static"}}}},
@@ -73,7 +73,7 @@ fn tool_metadata(name: &str) -> Option<(&'static str, &'static str)> {
         ),
         "check_change_gates" => (
             "Check change quality gates",
-            "Evaluate snapshot-bound change findings, mission blockers and graph coverage with explicit pass, warning, fail or inconclusive semantics.",
+            "Evaluate snapshot-bound findings, mission blockers and coverage: pass, warning, fail or inconclusive.",
         ),
         "check_repository_gates" => (
             "Check repository quality gates",
@@ -81,23 +81,23 @@ fn tool_metadata(name: &str) -> Option<(&'static str, &'static str)> {
         ),
         "ingest_runtime_evidence" => (
             "Import runtime evidence",
-            "Import bounded OTLP/JSON or CGRX NDJSON from an approved local path without accepting inline trace bodies.",
+            "Import bounded OTLP/JSON or CGRX NDJSON from approved local files; no inline traces.",
         ),
         "orient" => (
             "Orient on a task",
-            "Retrieve task-relevant evidence within a token budget; keep returned handles for follow-up.",
+            "Retrieve budgeted task evidence; keep handles for follow-up.",
         ),
         "search_graph" => (
             "Search symbols",
-            "Find code symbols by name, or opt into body search and language filtering, before tracing calls or reading definitions.",
+            "Find all query tokens in names or optional bodies; filter by language. Continue with page.next_offset and expected_snapshot=page.snapshot_id; restart after snapshot changes.",
         ),
         "get_outline" => (
             "Outline a file",
-            "List indexed symbols and definition spans in source order, plus proven named import bindings and targets. Limit bounds each collection; inspect symbols and imports truncation separately.",
+            "List ordered symbol spans and proven named imports with targets. Each collection has its own limit and truncation.",
         ),
         "get_architecture" => (
             "Map architecture",
-            "Summarize proven architecture, including weighted package and symbol communities with representatives.",
+            "Summarize proven packages and weighted symbol communities with representatives.",
         ),
         "trace_path" => (
             "Trace calls",
@@ -105,7 +105,7 @@ fn tool_metadata(name: &str) -> Option<(&'static str, &'static str)> {
         ),
         "find_usages" => (
             "Find usages",
-            "List proven incoming calls, imports, references or implementations; scope selects relations and symbol_ref selects the definition.",
+            "Find proven calls, imports, references and implementations; scope selects relations, symbol_ref selects definitions.",
         ),
         "suggest_refactors" => (
             "Suggest refactors",
@@ -117,7 +117,7 @@ fn tool_metadata(name: &str) -> Option<(&'static str, &'static str)> {
         ),
         "explain_symbol" => (
             "Explain symbol",
-            "Explain a symbol with its definition, callers, callees, and usages in one call.",
+            "Get a symbol's definition, callers, callees and usages together.",
         ),
         "detect_dead_code" => (
             "Detect dead code",
@@ -129,27 +129,27 @@ fn tool_metadata(name: &str) -> Option<(&'static str, &'static str)> {
         ),
         "check_framework_gates" => (
             "Check framework gates",
-            "Detect Django, FastAPI and Express usage within scope and evaluate a snapshot-bound, model-free gate with explicit pass, warning, fail or inconclusive semantics.",
+            "Detect scoped Django/FastAPI/Express usage; deterministic snapshot-bound pass, warning, fail or inconclusive gate.",
         ),
         "expand" => (
             "Expand context",
-            "Retrieve more evidence using a returned handle from the same repository and server session.",
+            "Expand a handle in the same repository and server session.",
         ),
         "status" => (
             "Check index status",
-            "Check repository revision, index freshness and gaps before code discovery.",
+            "Check revision, freshness and coverage gaps before discovery.",
         ),
         "memory_record" => (
             "Record decision",
-            "Persist a revision-pinned decision fact with confidence, provenance and optional TTL; identical facts replay as duplicates without LLM calls.",
+            "Save revision-pinned decisions with confidence, provenance and TTL; identical facts are idempotent. No LLM calls.",
         ),
         "memory_recall" => (
             "Recall decisions",
-            "Recall non-expired decision facts with bounded deterministic ranking by confidence; no LLM executed.",
+            "Recall non-expired decisions by confidence within limit; deterministic, no LLM calls.",
         ),
         "check_security_gates" => (
             "Check security gates",
-            "Scan working-tree secrets, Cargo.lock dependency hygiene and license allowlist within the repository and evaluate a snapshot-bound, model-free gate with explicit pass, warning, fail or inconclusive semantics.",
+            "Check working-tree secrets, Cargo.lock dependencies and allowed licenses; deterministic snapshot-bound pass, warning, fail or inconclusive gate.",
         ),
         _ => return None,
     })

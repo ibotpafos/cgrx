@@ -82,6 +82,24 @@ pub trait ToolBackend: Send + Sync {
         language: Option<&str>,
         include_body: bool,
     ) -> Result<Value, BackendError>;
+    /// Existing adapters remain compatible for the first page.
+    fn search_graph_page(
+        &mut self,
+        query: &str,
+        scope: Value,
+        limit: u32,
+        offset: u32,
+        language: Option<&str>,
+        include_body: bool,
+    ) -> Result<Value, BackendError> {
+        if offset != 0 {
+            return Err(BackendError::new(
+                "cgrx.search_pagination_unavailable",
+                "this runtime backend does not support search pagination",
+            ));
+        }
+        self.search_graph(query, scope, limit, language, include_body)
+    }
     fn get_outline(&mut self, path: &str, limit: u32) -> Result<Value, BackendError>;
     fn get_architecture(
         &mut self,
@@ -799,6 +817,16 @@ impl Server {
     }
 
     fn search_graph(&mut self, arguments: SearchGraphArguments) -> Result<Value, JsonRpcError> {
+        if arguments.query.trim().is_empty()
+            || !(1..=50).contains(&arguments.limit)
+            || arguments.offset > 1_000_000
+        {
+            return Err(JsonRpcError::typed(
+                -32602,
+                "cgrx.invalid_arguments",
+                "query must be non-empty; limit must be 1..50; offset must be 0..1000000",
+            ));
+        }
         let Some(backend) = &mut self.backend else {
             return Err(JsonRpcError::typed(
                 -32020,
@@ -806,15 +834,26 @@ impl Server {
                 "search_graph requires an indexed runtime backend",
             ));
         };
-        backend
-            .search_graph(
+        let result = backend
+            .search_graph_page(
                 &arguments.query,
                 arguments.scope,
                 arguments.limit,
+                arguments.offset,
                 arguments.language.as_deref(),
                 arguments.include_body,
             )
-            .map_err(backend_error)
+            .map_err(backend_error)?;
+        if let Some(expected) = arguments.expected_snapshot
+            && result.pointer("/page/snapshot_id") != Some(&json!(expected))
+        {
+            return Err(JsonRpcError::typed(
+                -32021,
+                "cgrx.search_snapshot_changed",
+                "the search snapshot changed; restart at offset 0 and use its page.snapshot_id for continuation",
+            ));
+        }
+        Ok(result)
     }
 
     fn ingest_runtime_evidence(
