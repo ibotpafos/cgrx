@@ -872,22 +872,27 @@ mod proof_edge_tests {
                 evidence.span = ByteRange::new(30, 40);
             }
             runtime.stored.arcs = vec![arc, repeated];
-            rebuild_query_index(&mut runtime.stored);
-            let baseline = uncached_definitive_arcs(&runtime.stored, &scope);
-            assert_eq!(baseline.len(), expected * 2, "{case}");
-            assert_eq!(
-                definitive_stored_arcs(&runtime.stored, &scope),
-                baseline,
-                "{case}"
-            );
-            for name in ["implementation", "contract"] {
-                let found = runtime.search_graph(name, &scope, 10).unwrap();
-                for row in found["matches"].as_array().unwrap() {
-                    assert_eq!(
-                        row["callers"].as_u64().unwrap() + row["callees"].as_u64().unwrap(),
-                        expected as u64,
-                        "{case}"
-                    );
+            for indexed in [false, true] {
+                runtime.stored.query_index = Default::default();
+                if indexed {
+                    rebuild_query_index(&mut runtime.stored);
+                }
+                let baseline = uncached_definitive_arcs(&runtime.stored, &scope);
+                assert_eq!(baseline.len(), expected * 2, "{case}, indexed={indexed}");
+                assert_eq!(
+                    definitive_stored_arcs(&runtime.stored, &scope),
+                    baseline,
+                    "{case}, indexed={indexed}"
+                );
+                for name in ["implementation", "contract"] {
+                    let found = runtime.search_graph(name, &scope, 10).unwrap();
+                    for row in found["matches"].as_array().unwrap() {
+                        assert_eq!(
+                            row["callers"].as_u64().unwrap() + row["callees"].as_u64().unwrap(),
+                            expected as u64,
+                            "{case}, indexed={indexed}"
+                        );
+                    }
                 }
             }
         }
@@ -970,12 +975,12 @@ mod proof_edge_tests {
         };
         let mut evaluations = BTreeMap::<String, usize>::new();
         let result = runtime
-            .search_graph_with_matcher("repeated", &scope, 50, None, false, |path, scope| {
+            .search_graph_with_matcher("implementation", &scope, 50, None, false, |path, scope| {
                 *evaluations.entry(path.to_owned()).or_default() += 1;
                 path_in_scope(path, scope)
             })
             .unwrap();
-        assert_eq!(result["total"], 0);
+        assert_eq!(result["total"], 1);
         let expected = BTreeMap::from([
             ("calls.rs".to_owned(), 1),
             ("impl.rs".to_owned(), 1),
@@ -987,6 +992,133 @@ mod proof_edge_tests {
         assert_eq!(result["coverage_gap_count"], 8);
         println!("path evaluations: {evaluations:?}");
         assert_eq!(evaluations, expected);
+    }
+
+    #[test]
+    fn search_page_degrees_preserve_full_graph_counts_and_skip_unrelated_proofs() {
+        let (_repo, _state, mut runtime, mut proof) = refresh_fixture("search-page-degrees");
+        runtime.stored.documents = vec![
+            syntax(1, "page_a", "a.rs", 0, 10),
+            syntax(2, "page_b", "b.rs", 0, 10),
+            syntax(3, "page_c", "c.rs", 0, 10),
+            syntax(4, "page_d", "excluded.rs", 0, 10),
+        ];
+        runtime.stored.coverage = CoverageMetadata::default();
+        proof.source = 1;
+        proof.target = 2;
+        proof.kind = RelationKind::Calls;
+        proof.evidence.as_mut().unwrap().path = "proof.rs".into();
+        proof.evidence.as_mut().unwrap().source_hash = Hash32([7; 32]);
+        runtime
+            .stored
+            .path_hashes
+            .insert("proof.rs".into(), Hash32([7; 32]));
+        runtime
+            .stored
+            .path_hashes
+            .insert("unrelated-proof.rs".into(), Hash32([7; 32]));
+        runtime
+            .stored
+            .path_hashes
+            .insert("excluded-proof.rs".into(), Hash32([7; 32]));
+        let mut repeated = proof.clone();
+        repeated.evidence.as_mut().unwrap().span = ByteRange::new(30, 40);
+        let mut implements = proof.clone();
+        implements.kind = RelationKind::Implements;
+        let mut reverse = proof.clone();
+        reverse.source = 2;
+        reverse.target = 1;
+        let mut third = proof.clone();
+        third.source = 2;
+        third.target = 3;
+        let mut self_loop = proof.clone();
+        self_loop.source = 3;
+        self_loop.target = 3;
+        self_loop.evidence.as_mut().unwrap().path = "unrelated-proof.rs".into();
+        let mut excluded_endpoint = proof.clone();
+        excluded_endpoint.target = 4;
+        let mut excluded_proof = reverse.clone();
+        excluded_proof.source = 3;
+        excluded_proof.evidence.as_mut().unwrap().path = "excluded-proof.rs".into();
+        let mut stale = excluded_proof.clone();
+        stale.evidence.as_mut().unwrap().path = "proof.rs".into();
+        stale.evidence.as_mut().unwrap().source_hash = Hash32([8; 32]);
+        let mut missing = excluded_proof.clone();
+        missing.evidence = None;
+        let mut unselected_kind = excluded_proof.clone();
+        unselected_kind.kind = RelationKind::References;
+        runtime.stored.arcs = vec![
+            proof,
+            repeated,
+            implements,
+            reverse,
+            third,
+            self_loop,
+            excluded_endpoint,
+            excluded_proof,
+            stale,
+            missing,
+            unselected_kind,
+        ];
+        let scope = Scope {
+            include: vec!["**".into()],
+            exclude: vec!["excluded.rs".into(), "excluded-proof.rs".into()],
+            relation_kinds: vec![RelationKind::Calls, RelationKind::Implements],
+            max_depth: 1,
+        };
+        let mut indexed_pages = Vec::new();
+        for indexed in [true, false] {
+            runtime.stored.query_index = Default::default();
+            if indexed {
+                rebuild_query_index(&mut runtime.stored);
+            }
+            let full = runtime.search_graph("page_", &scope, 50).unwrap();
+            assert_eq!(full["total"], 3);
+            for (offset, (callers, callees)) in [(1, 2), (2, 2), (2, 1)].into_iter().enumerate() {
+                let page = runtime
+                    .search_graph_page("page_", &scope, 1, offset, None, false)
+                    .unwrap();
+                assert_eq!(page["matches"][0], full["matches"][offset]);
+                assert_eq!(page["matches"][0]["callers"], callers);
+                assert_eq!(page["matches"][0]["callees"], callees);
+                if indexed {
+                    indexed_pages.push(page);
+                } else {
+                    assert_eq!(page, indexed_pages[offset]);
+                }
+            }
+        }
+        rebuild_query_index(&mut runtime.stored);
+        for (query, offset, has_results) in [
+            ("page_", 0, true),
+            ("absent requested", 0, false),
+            ("page_", 3, false),
+        ] {
+            let mut evaluations = BTreeMap::<String, usize>::new();
+            let found = runtime
+                .search_graph_page_with_matcher(
+                    query,
+                    &scope,
+                    (1, offset),
+                    None,
+                    false,
+                    |path, scope| {
+                        *evaluations.entry(path.into()).or_default() += 1;
+                        path_in_scope(path, scope)
+                    },
+                )
+                .unwrap();
+            assert_eq!(
+                !found["matches"].as_array().unwrap().is_empty(),
+                has_results
+            );
+            assert!(
+                !evaluations.contains_key("unrelated-proof.rs"),
+                "{query}: {evaluations:?}"
+            );
+            assert_eq!(evaluations.contains_key("proof.rs"), has_results);
+            assert!(evaluations.values().all(|count| *count == 1));
+        }
     }
 
     #[test]
