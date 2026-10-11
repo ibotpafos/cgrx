@@ -2,6 +2,7 @@ mod arc_resolution;
 mod architecture;
 mod check_helpers;
 mod config;
+mod containment;
 mod edit_distance;
 mod extraction;
 mod frameworks;
@@ -92,10 +93,11 @@ use serde_json::{Value, json};
 
 // Read the effective dependency policy, not just this crate's feature flag:
 // Cargo may enable an experimental language through another workspace member.
-// Revisions through 123 include historical and experimental caches. Start a new
-// block so old caches cannot acquire a different language policy by matching a number.
+// Revisions through 139 include historical and experimental caches with the old
+// file-anchor containment policy. Use a disjoint block so none of those caches
+// can expose obsolete proofs or acquire a different effective language policy.
 const EXTRACTION_REVISION: u32 =
-    125 + if cgrx_languages::EXPERIMENTAL_PHP_ENABLED {
+    141 + if cgrx_languages::EXPERIMENTAL_PHP_ENABLED {
         2
     } else {
         0
