@@ -117,8 +117,10 @@ python3 scripts/bench_search_fuzzy.py /path/to/baseline/cgrx /path/to/candidate/
 
 The fixture and requests are generated locally without external packages, API
 keys or network calls. Reports describe long queries by recipe, character/byte
-counts and SHA-256. Snapshot and complete-result hashes bind the temporary index
-identity, so their values change between reproduction directories.
+counts and SHA-256. Fixture and graph snapshots can remain content-identical
+across reproductions. Search-result hashes include symbol references and
+continuation IDs bound to the temporary index location, so those hashes vary
+between directories.
 
 This is one paired synthetic experiment against the preceding CGRX release
 binary. It deliberately exercises an unusually long valid identifier and does
