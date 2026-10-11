@@ -1122,6 +1122,185 @@ mod proof_edge_tests {
     }
 
     #[test]
+    fn bounded_fuzzy_search_preserves_lane_priority_distance_order_and_pages() {
+        let (_repo, _state, mut runtime, _) = refresh_fixture("bounded-fuzzy-ranking");
+        runtime.stored.documents = vec![
+            syntax(1, "http_request", "z.rs", 0, 10),
+            syntax(2, "http_request_extra", "y.rs", 0, 10),
+            syntax(3, "pre_http_request", "x.rs", 0, 10),
+            syntax(4, "HTTPRequest", "w.rs", 0, 10),
+            syntax(5, "literalcarrier", "v.rs", 0, 10),
+            syntax(6, "tokenstorage", "u.rs", 0, 10),
+            syntax(7, "http_requesx", "z.rs", 20, 30),
+            syntax(8, "http_requext", "a.rs", 0, 10),
+            syntax(9, "htxp_requesx", "a.rs", 20, 30),
+            syntax(10, "hxxp_requesx", "0.rs", 0, 10),
+            syntax(11, "xxxx_requesx", "0.rs", 20, 30),
+        ];
+        runtime.stored.documents[4].search_text = "http_request".into();
+        runtime.stored.documents[5].search_text = "HTTPRequest".into();
+        runtime.stored.arcs.clear();
+        runtime.stored.coverage = CoverageMetadata::default();
+        rebuild_query_index(&mut runtime.stored);
+        let found = runtime
+            .search_graph_filtered("http_request", &proof_scope(), 50, None, true)
+            .unwrap();
+        let identities: Vec<_> = found["matches"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|row| {
+                (
+                    row["node_id"].as_u64().unwrap(),
+                    row["matched_by"].as_str().unwrap(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            identities,
+            [
+                (1, "symbol"),
+                (2, "symbol"),
+                (3, "symbol"),
+                (4, "symbol_tokens"),
+                (5, "body"),
+                (6, "body_tokens"),
+                (8, "fuzzy"),
+                (7, "fuzzy"),
+                (9, "fuzzy"),
+                (10, "fuzzy"),
+            ]
+        );
+        let page = runtime
+            .search_graph_page("http_request", &proof_scope(), 2, 6, None, true)
+            .unwrap();
+        assert_eq!(
+            page["matches"].as_array().unwrap(),
+            &found["matches"].as_array().unwrap()[6..8]
+        );
+        assert_eq!(page["total"], 10);
+        assert_eq!(page["page"]["next_offset"], 8);
+        let names_only = runtime
+            .search_graph("http_request", &proof_scope(), 50)
+            .unwrap();
+        let names_only_ids: Vec<_> = names_only["matches"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|row| row["node_id"].as_u64().unwrap())
+            .collect();
+        assert_eq!(names_only_ids, [1, 2, 3, 4, 8, 7, 9, 10]);
+    }
+
+    #[test]
+    fn bounded_fuzzy_search_preserves_thresholds_and_query_eligibility() {
+        let (_repo, _state, mut runtime, _) = refresh_fixture("bounded-fuzzy-eligibility");
+        runtime.stored.arcs.clear();
+        runtime.stored.coverage = CoverageMetadata::default();
+        for (query, name, expected) in [
+            ("abcd", "abcx", true),
+            ("abcd", "abxx", false),
+            ("abcd", "abdc", false),
+            ("abcdefgh", "xbcdefgx", true),
+            ("abcdefgh", "xxcdefgx", false),
+            ("abcdefghi", "xxxdefghi", true),
+            ("abcdefghi", "xxxxefghi", false),
+            ("ab_cd", "ab_ce", true),
+            ("ab cd", "abxd", false),
+            ("ab\tcd", "abxd", false),
+            ("ab\u{a0}cd", "abxd", false),
+            ("_", "a", false),
+            (" abcd ", "abcx", true),
+            ("parser", "paresr", true),
+        ] {
+            runtime.stored.documents = vec![syntax(1, name, "main.rs", 0, name.len())];
+            rebuild_query_index(&mut runtime.stored);
+            let found = runtime.search_graph(query, &proof_scope(), 50).unwrap();
+            assert_eq!(
+                found["total"],
+                usize::from(expected),
+                "query={query:?}, name={name:?}"
+            );
+            if expected {
+                assert_eq!(found["matches"][0]["matched_by"], "fuzzy");
+            }
+        }
+    }
+
+    #[test]
+    fn bounded_fuzzy_search_uses_folded_unicode_scalar_distances() {
+        let (_repo, _state, mut runtime, _) = refresh_fixture("bounded-fuzzy-unicode");
+        runtime.stored.arcs.clear();
+        runtime.stored.coverage = CoverageMetadata::default();
+        for (query, name, expected) in [
+            ("ёжик", "ёжих", true),
+            ("ёжик", "яжих", false),
+            ("éabc", "Жabc", true),
+            ("İabc", "İaxz", true),
+            ("İabc", "iaxz", false),
+            ("İabc", "iabc", true),
+            ("istanbul", "İstanbul", true),
+            ("iabc", "İabx", false),
+            ("café", "cafe\u{301}", false),
+        ] {
+            runtime.stored.documents = vec![syntax(1, name, "main.rs", 0, name.len())];
+            rebuild_query_index(&mut runtime.stored);
+            let found = runtime.search_graph(query, &proof_scope(), 50).unwrap();
+            assert_eq!(
+                found["total"],
+                usize::from(expected),
+                "query={query:?}, name={name:?}"
+            );
+            if expected {
+                assert_eq!(found["matches"][0]["matched_by"], "fuzzy");
+            }
+        }
+    }
+
+    #[test]
+    fn bounded_fuzzy_search_keeps_long_hits_and_rejects_long_misses() {
+        let (_repo, _state, mut runtime, _) = refresh_fixture("bounded-fuzzy-long");
+        let query = "a".repeat(16_000);
+        runtime.stored.documents = (1..=4)
+            .map(|distance| {
+                let name = format!("{}{}", "a".repeat(16_000 - distance), "b".repeat(distance));
+                syntax(distance as u64, &name, "long.rs", 4 - distance, 16_000)
+            })
+            .chain(std::iter::once(syntax(
+                5,
+                &"c".repeat(16_000),
+                "long.rs",
+                5,
+                16_000,
+            )))
+            .collect();
+        runtime.stored.arcs.clear();
+        runtime.stored.coverage = CoverageMetadata::default();
+        rebuild_query_index(&mut runtime.stored);
+        let found = runtime.search_graph(&query, &proof_scope(), 50).unwrap();
+        let identities: Vec<_> = found["matches"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|row| {
+                (
+                    row["node_id"].as_u64().unwrap(),
+                    row["matched_by"].as_str().unwrap(),
+                )
+            })
+            .collect();
+        assert_eq!(identities, [(1, "fuzzy"), (2, "fuzzy"), (3, "fuzzy")]);
+        for length in [16_000, 15_996] {
+            assert_eq!(
+                runtime
+                    .search_graph(&"b".repeat(length), &proof_scope(), 50)
+                    .unwrap()["total"],
+                0
+            );
+        }
+    }
+
+    #[test]
     fn rebuilt_arc_carries_exact_call_site_evidence() {
         let documents = vec![
             syntax(1, "caller", "src/main.py", 0, 80),
