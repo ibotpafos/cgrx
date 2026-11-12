@@ -18,7 +18,7 @@ try {
  fs.mkdirSync(path.join(repo,'node_modules','.bin'));
  fs.symlinkSync('../typescript/bin/tsc',path.join(repo,'node_modules','.bin','tsc'));
  fs.mkdirSync(path.join(repo,'.cgrx'));
- const config={version:1,timeout_ms:5000,format:['node','node_modules/prettier/bin/prettier.cjs','--write','{path}'],typecheck:['tsc','--noEmit','--pretty','false'],tests:['node','--test','test.mjs']};
+ const config={version:1,snapshot_max_bytes:268435456,snapshot_max_files:50000,snapshot_timeout_ms:20000,timeout_ms:5000,format:['node','node_modules/prettier/bin/prettier.cjs','--write','{path}'],typecheck:['tsc','--noEmit','--pretty','false'],tests:['node','--test','test.mjs']};
  const configFile=path.join(repo,'.cgrx','quality-checks.json');fs.writeFileSync(configFile,JSON.stringify(config));
  execFileSync('git',['init','-q',repo]);execFileSync('git',['-C',repo,'add','.']);execFileSync('git',['-C',repo,'-c','user.name=Contract','-c','user.email=contract@example.invalid','commit','-qm','fixture']);
  const profile=process.argv[3]??'full';
