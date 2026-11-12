@@ -40,7 +40,7 @@ MODIFIED. Raw output is withheld because scripts may print secrets.
 remain unchanged. Missing configuration/dependencies, invalid config, copy limits,
 timeouts, excessive output, failed typechecks or tests never count as success.
 
-Default limits: 50,000 entries and 256 MiB per copy, 20 seconds per copy, 100–30,000 ms per
+Default limits: 50,000 entries and 256 MiB per copy, 20 seconds per copy, 100–60,000 ms per
 command (default 10 seconds), 128 KiB combined output per command. On Unix each
 command has its own process group; timeout/output limits kill its descendants.
 Kilo/OpenCode connections should allow at least 240 seconds for a full verification.
@@ -99,7 +99,7 @@ this prerequisite failure from a type error or failing test.
 
 ### Declared generated package dependencies
 
-`dependency_roots` may explicitly name at most 16 in-repository `dist` or `build`
+`dependency_roots` may explicitly name at most 16 in-repository `dist`, `build`, `types` or `generated`
 directories needed by installed workspace binaries. They are copied, never shared
 with the working tree, and consume the same snapshot budget. Absolute paths,
 parent traversal, external symlinks and secret/state directories remain forbidden.

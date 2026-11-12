@@ -145,7 +145,12 @@ fn copy_tree(
         let to = dest.join(name);
         let meta = fs::symlink_metadata(&from)?;
         if meta.file_type().is_symlink() {
-            let resolved = from.canonicalize().map_err(|_| bad("dangling_symlink"))?;
+            let resolved = from.canonicalize().map_err(|_| {
+                bad(&format!(
+                    "dangling_symlink: {}",
+                    from.strip_prefix(root).unwrap_or(&from).display()
+                ))
+            })?;
             let relative = resolved.strip_prefix(root).map_err(|_| {
                 bad(&format!(
                     "external_symlink: {}",
@@ -400,7 +405,7 @@ fn check_config(root: &Path) -> io::Result<Config> {
     }
     let c: Config = serde_json::from_slice(&fs::read(p)?).map_err(|_| bad("invalid_config"))?;
     if c.version != 1
-        || !(100..=30000).contains(&c.timeout_ms)
+        || !(100..=60000).contains(&c.timeout_ms)
         || c.snapshot_max_bytes > 8 * 1024 * 1024 * 1024
         || c.snapshot_max_bytes == 0
         || c.snapshot_max_files == 0
@@ -420,7 +425,7 @@ fn check_config(root: &Path) -> io::Result<Config> {
                 .any(|c| !matches!(c, std::path::Component::Normal(_)))
             || !path
                 .file_name()
-                .is_some_and(|n| n == "dist" || n == "build")
+                .is_some_and(|n| n == "dist" || n == "build" || n == "types" || n == "generated")
             || excluded_from_copy(&Path::new("node_modules").join(path))
         {
             return Err(bad("unsafe_dependency_root"));

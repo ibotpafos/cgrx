@@ -405,9 +405,16 @@ fn multi_repo_memory_survives_eviction_restart_and_checks_current_sources() {
         json!({"repo":b,"path":"main.rs",
         "fact":fact,"confidence":800}),
     );
+    assert!(
+        second["result"]["structuredContent"]["record"]["id"].is_string(),
+        "{second}"
+    );
     assert_ne!(second["result"]["structuredContent"]["record"]["id"], id);
     assert!(a.join(".cgrx/memory/agent.mv2").is_file());
-    assert!(b.join(".cgrx/memory/agent.mv2").is_file());
+    assert!(
+        b.join(".cgrx/memory/agent.mv2").is_file(),
+        "second response: {second}"
+    );
     let recalled = m.tool("memory_recall", json!({"repo":a,"query":"parser cache"}));
     assert_eq!(
         recalled["result"]["structuredContent"]["results"][0]["id"],
