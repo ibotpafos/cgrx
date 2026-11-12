@@ -112,4 +112,3 @@ def read(store_path, root, library):
         if failures: raise failures[0]
     finally: store_free(store)
     return {'format_version':bind('format_version',C.c_uint)(), 'api_version':bind('version',C.c_uint)(), 'occurrences':output, 'units':len(units), 'records':len(records)}
-
