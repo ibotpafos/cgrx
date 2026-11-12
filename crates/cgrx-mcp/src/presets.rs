@@ -5,8 +5,8 @@
 //! | Preset    | Tools                                                                                     |
 //! |-----------|-------------------------------------------------------------------------------------------|
 //! | `minimal` | Read/search only: `status`, `search_graph`, `get_outline`, `trace_path`, `find_usages`,   |
-//! |           | `get_code_snippet`, `check_index_coverage`, `check_framework_gates`                           |
-//! | `standard`|`minimal` + `orient`, `expand`, `get_architecture`, `explain_symbol` (default)              |
+//! |           | `get_code_snippet`, `check_index_coverage`, `check_framework_gates`, `memory_recall`           |
+//! | `standard`|`minimal` + `orient`, `expand`, `get_architecture`, `explain_symbol`, memory writes (default) |
 //! | `full`    | All tools including `scan_risks`, `check_change_gates`, `check_repository_gates`,          |
 //! |           | `ingest_runtime_evidence`, `find_similar`, `suggest_refactors`, `explain_symbol`,          |
 //! |           | `detect_dead_code`                                                                        |
@@ -86,7 +86,7 @@ pub fn resolve_response_profile(
 pub enum Toolset {
     /// Read/search tools only.
     Minimal,
-    /// `minimal` + orient/expand/architecture.
+    /// `minimal` + orient/expand/architecture and memory record/update/forget.
     Standard,
     /// All tools.
     Full,
@@ -105,6 +105,7 @@ impl Toolset {
         match self {
             Self::Minimal => &[
                 "status",
+                "memory_recall",
                 "search_graph",
                 "get_outline",
                 "trace_path",
@@ -116,6 +117,7 @@ impl Toolset {
             ],
             Self::Standard => &[
                 "status",
+                "memory_recall",
                 "search_graph",
                 "get_outline",
                 "trace_path",
@@ -123,6 +125,9 @@ impl Toolset {
                 "get_code_snippet",
                 "check_index_coverage",
                 "orient",
+                "memory_record",
+                "memory_update",
+                "memory_forget",
                 "expand",
                 "get_architecture",
                 "check_framework_gates",
@@ -131,6 +136,7 @@ impl Toolset {
             ],
             Self::Full => &[
                 "status",
+                "memory_recall",
                 "search_graph",
                 "get_outline",
                 "trace_path",
@@ -138,6 +144,9 @@ impl Toolset {
                 "get_code_snippet",
                 "check_index_coverage",
                 "orient",
+                "memory_record",
+                "memory_update",
+                "memory_forget",
                 "expand",
                 "get_architecture",
                 "scan_risks",
@@ -146,6 +155,11 @@ impl Toolset {
                 "ingest_runtime_evidence",
                 "find_similar",
                 "suggest_refactors",
+                "list_quality_candidates",
+                "get_candidate_details",
+                "prepare_candidate_patch",
+                "get_quality_index_status",
+                "update_quality_candidate_status",
                 "check_framework_gates",
                 "check_security_gates",
                 "explain_symbol",
@@ -242,7 +256,11 @@ mod tests {
         assert!(names.contains(&"find_usages"));
         assert!(names.contains(&"get_code_snippet"));
         assert!(names.contains(&"check_index_coverage"));
-        assert_eq!(names.len(), 9);
+        assert!(names.contains(&"memory_recall"));
+        for write in ["memory_record", "memory_update", "memory_forget"] {
+            assert!(!names.contains(&write));
+        }
+        assert_eq!(names.len(), 10);
     }
 
     #[test]
@@ -254,7 +272,10 @@ mod tests {
         assert!(names.contains(&"orient"));
         assert!(names.contains(&"expand"));
         assert!(names.contains(&"get_architecture"));
-        assert_eq!(names.len(), 13);
+        for memory in ["memory_record", "memory_update", "memory_forget"] {
+            assert!(names.contains(&memory));
+        }
+        assert_eq!(names.len(), 17);
     }
 
     #[test]
@@ -269,7 +290,7 @@ mod tests {
         assert!(names.contains(&"ingest_runtime_evidence"));
         assert!(names.contains(&"find_similar"));
         assert!(names.contains(&"suggest_refactors"));
-        assert_eq!(names.len(), 20);
+        assert_eq!(names.len(), 29);
     }
 
     #[test]

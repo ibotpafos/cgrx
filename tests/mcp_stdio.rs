@@ -149,7 +149,7 @@ fn unknown_handle_is_typed_error_not_empty_context() {
 }
 
 #[test]
-fn token_efficient_profile_does_not_duplicate_full_orient_report() {
+fn token_efficient_profile_returns_compact_structured_content() {
     let mut server = Server::new(snapshot()).with_response_profile(ResponseProfile::TokenEfficient);
     let response = dispatch(
         &mut server,
@@ -173,7 +173,7 @@ fn token_efficient_profile_does_not_duplicate_full_orient_report() {
             .expect("compact text"),
     )
     .expect("compact JSON");
-    assert!(response["result"].get("structuredContent").is_none());
+    assert_eq!(response["result"]["structuredContent"], visible);
     assert_eq!(visible["budget"], 600);
     assert!(visible.get("rcc").is_none());
     assert!(visible.get("qbec").is_none());
@@ -368,12 +368,23 @@ fn tools_list_documents_the_exact_scope_contract() {
         .find(|tool| tool["name"] == "orient")
         .expect("orient schema");
     assert_eq!(
-        orient["inputSchema"]["properties"]["scope"]["properties"]["relation_kinds"]["items"]["enum"],
+        orient["inputSchema"]["properties"]["scope"]["anyOf"][2]["properties"]["relation_kinds"]["items"]
+            ["enum"],
         json!(["CALLS", "IMPLEMENTS"])
     );
+    assert_eq!(orient["inputSchema"]["required"], json!(["task"]));
     assert_eq!(
-        orient["inputSchema"]["properties"]["scope"]["required"],
-        json!(["include", "exclude", "relation_kinds", "max_depth"])
+        orient["inputSchema"]["properties"]["scope"]["anyOf"][0]["type"],
+        "string"
+    );
+    assert!(
+        orient["inputSchema"]["properties"]["scope"]["anyOf"][2]
+            .get("required")
+            .is_none()
+    );
+    assert_eq!(
+        orient["inputSchema"]["properties"]["mode"]["default"],
+        "BOUNDED"
     );
 
     for (name, relations) in [
@@ -481,6 +492,8 @@ fn initialize_advertises_compact_evidence_workflow() {
     assert!(instructions.len() <= 512);
     assert!(instructions.contains("coverage"));
     assert!(instructions.contains("repo"));
+    assert!(instructions.contains("Recall memory when prior context helps"));
+    assert!(!instructions.contains("mandatory"));
 }
 
 #[test]

@@ -1,5 +1,6 @@
 mod arc_resolution;
 mod architecture;
+mod ast_search;
 mod check_helpers;
 mod config;
 mod containment;
@@ -16,12 +17,15 @@ mod observations;
 mod orient_helpers;
 mod php_resolution;
 mod python_import_resolution;
+pub mod quality;
 mod refactors;
 mod risks;
 mod scan_helpers;
 mod scip_resolution;
 pub mod security;
 mod semantic_rerank;
+mod swift_compiler;
+mod swift_resolution;
 mod target_types;
 #[cfg(test)]
 mod tests;
@@ -84,8 +88,8 @@ use cgrx_core::{ConfidenceClass, ResolverClass};
 use cgrx_languages::ts_imports::TsFileFacts;
 use cgrx_languages::{Span, pack_for_path};
 use cgrx_retrieval::{
-    Candidate, CandidateProvenance, CandidateSet, GraphArc, GraphDocumentRef, RetrievalEngine,
-    ScoreComponents, path_in_scope,
+    Bm25Cache, Candidate, CandidateProvenance, CandidateSet, GraphArc, GraphDocumentRef,
+    RetrievalEngine, ScoreComponents, path_in_scope,
 };
 use cgrx_store::{GenerationReader, GenerationWriter};
 use serde::{Deserialize, Serialize};
@@ -93,16 +97,15 @@ use serde_json::{Value, json};
 
 // Read the effective dependency policy, not just this crate's feature flag:
 // Cargo may enable an experimental language through another workspace member.
-// Revisions through 139 include historical and experimental caches with the old
-// file-anchor containment policy. Use a disjoint block so none of those caches
-// can expose obsolete proofs or acquire a different effective language policy.
+// Revisions through 171 predate default Swift declarations and exact Swift
+// dependencies. The legacy Swift feature is now a no-op: use one disjoint
+// revision block for its default and feature-unified builds so old caches are
+// rebuilt even when HEAD and source bytes are unchanged. Advance the base
+// by 16 for a new policy: PHP/JavaScript offsets must never overlap an older
+// policy family.
 const EXTRACTION_REVISION: u32 =
-    141 + if cgrx_languages::EXPERIMENTAL_PHP_ENABLED {
+    253 + if cgrx_languages::EXPERIMENTAL_PHP_ENABLED {
         2
-    } else {
-        0
-    } + if cgrx_languages::EXPERIMENTAL_SWIFT_ENABLED {
-        4
     } else {
         0
     } + if cgrx_languages::EXPERIMENTAL_JAVASCRIPT_ENABLED {
@@ -118,7 +121,7 @@ const TERMS_MARKER: &[u8] = b"CGRXTERMS1";
 #[allow(dead_code)]
 const GRAPH_FANOUT_LIMIT: usize = 8;
 #[allow(dead_code)]
-const UNTRACKED_SCAN_ENTRY_LIMIT: usize = 64;
+const UNTRACKED_SCAN_ENTRY_LIMIT: usize = 8192;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct IndexReport {
@@ -339,10 +342,13 @@ struct StoredPythonFileFacts {
 }
 
 pub struct Runtime {
+    quality_cancel: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
+    quality_deadline: Option<std::time::Instant>,
     state_root: PathBuf,
     stored: StoredIndex,
     similarity_background: refactors::SimilarityBackground,
     architecture_cache: RwLock<BTreeMap<String, Value>>,
+    bm25_cache: Bm25Cache,
     base_snapshot: RepoSnapshot,
     base_path_hashes: BTreeMap<String, Hash32>,
     changed_paths: BTreeSet<String>,
@@ -351,6 +357,7 @@ pub struct Runtime {
     ts_verified_fingerprints: BTreeMap<String, SourceFingerprint>,
     base_traversal_truncated: bool,
     untracked_scan_cache: Option<UntrackedScanCache>,
+    swift_compiler: swift_compiler::CompilerCache,
 }
 
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -437,6 +444,10 @@ impl Runtime {
     #[must_use]
     pub fn graph_edge_count(&self) -> usize {
         self.stored.arcs.len()
+    }
+
+    pub fn swift_compiler_status(&self) -> Value {
+        self.swift_compiler.status()
     }
 
     pub fn search_graph(
@@ -835,30 +846,45 @@ impl Runtime {
             requires_normalize = true;
         }
         self.refresh_input_bytes = refresh_input_bytes;
+        requires_normalize |= self.swift_compiler.refresh(&root, &self.stored.path_hashes);
         if !requires_normalize {
             return Ok(false);
         }
         self.stored.arcs = rebuild_refreshed_arcs(&self.stored);
+        self.swift_compiler.apply(&mut self.stored);
         normalize_stored(&mut self.stored);
+        self.bm25_cache.clear();
         self.stored.similarity_index = Default::default();
         self.changed_paths = changed_paths(&self.base_path_hashes, &self.stored.path_hashes);
-        self.stored.snapshot = if self.changed_paths.is_empty() {
-            self.base_snapshot.clone()
-        } else {
-            RepoSnapshot {
-                repo_revision: self.base_snapshot.repo_revision.clone(),
-                working_tree_digest: working_tree_digest(
-                    &self.changed_paths,
-                    &self.stored.path_hashes,
-                ),
-                graph_generation: self.base_snapshot.graph_generation,
-            }
-        };
+        self.stored.snapshot =
+            if self.changed_paths.is_empty() && self.swift_compiler.valid_hash.is_none() {
+                self.base_snapshot.clone()
+            } else {
+                RepoSnapshot {
+                    repo_revision: self.base_snapshot.repo_revision.clone(),
+                    working_tree_digest: working_tree_digest(
+                        &self.changed_paths,
+                        &self.stored.path_hashes,
+                    ),
+                    graph_generation: self.base_snapshot.graph_generation,
+                }
+            };
+        if let Some(hash) = self.swift_compiler.valid_hash {
+            let mut digest = blake3::Hasher::new();
+            digest.update(b"cgrx-swift-compiler-v1");
+            digest.update(&self.stored.snapshot.working_tree_digest.0);
+            digest.update(&hash.0);
+            self.stored.snapshot.working_tree_digest = Hash32(*digest.finalize().as_bytes());
+        }
         self.stored.indexed_files = self.stored.path_hashes.len() as u64;
         if let Ok(mut cache) = self.architecture_cache.write() {
             cache.clear();
         }
-        self.schedule_similarity_index_rebuild();
+        // Quality producers use their own bounded pair scan; do not duplicate the
+        // interactive runtime's larger similarity background job on every poll.
+        if self.quality_cancel.is_none() {
+            self.schedule_similarity_index_rebuild();
+        }
         Ok(self.stored.snapshot != previous_snapshot)
     }
 
@@ -944,18 +970,22 @@ impl Runtime {
             stored.similarity_index.clone(),
         );
         Ok(Self {
+            quality_cancel: None,
+            quality_deadline: None,
             state_root: state.to_path_buf(),
             base_snapshot: stored.snapshot.clone(),
             base_path_hashes: stored.path_hashes.clone(),
             stored,
             similarity_background,
             architecture_cache: RwLock::new(BTreeMap::new()),
+            bm25_cache: Bm25Cache::default(),
             changed_paths: BTreeSet::new(),
             refresh_input_bytes: 0,
             source_fingerprints: BTreeMap::new(),
             ts_verified_fingerprints: BTreeMap::new(),
             base_traversal_truncated,
             untracked_scan_cache: None,
+            swift_compiler: Default::default(),
         })
     }
 
@@ -1001,7 +1031,7 @@ impl Runtime {
             })
             .collect::<Vec<_>>();
         let mut candidates = RetrievalEngine::default()
-            .retrieve_scoped_refs(request, &graph_documents, &scoped_arcs)
+            .retrieve_scoped_refs_cached(request, &graph_documents, &scoped_arcs, &self.bm25_cache)
             .map_err(|error| RuntimeError::new("retrieve", error.to_string()))?;
         let exact_symbols = exact_symbol_ids(&request.task, &scoped_documents);
         let intent_evidence = if exact_symbols.is_empty() {

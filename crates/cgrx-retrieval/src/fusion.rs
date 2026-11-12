@@ -1,7 +1,7 @@
 use crate::graph::{
     CandidateProvenance, GraphArc, GraphDocument, GraphDocumentRef, RetrievalDocument, SnapshotView,
 };
-use crate::{bm25, exact, structural};
+use crate::{Bm25Cache, bm25, exact, structural};
 use cgrx_core::{QueryRequest, RelationKind, Scope};
 use cgrx_languages::Span;
 use std::collections::{BTreeMap, BTreeSet};
@@ -120,7 +120,7 @@ impl RetrievalEngine {
             .into_iter()
             .filter(|document| path_in_scope(&document.path, &request.scope))
             .collect();
-        self.retrieve_scoped_with_arcs(request, &documents, view.definitive_arcs())
+        self.retrieve_scoped_with_arcs(request, &documents, view.definitive_arcs(), None)
     }
 
     /// Retrieve from documents and arcs that were already scoped and freshness-validated.
@@ -138,7 +138,7 @@ impl RetrievalEngine {
                 .iter()
                 .all(|document| path_in_scope(&document.path, &request.scope))
         );
-        self.retrieve_scoped_with_arcs(request, documents, arcs.iter())
+        self.retrieve_scoped_with_arcs(request, documents, arcs.iter(), None)
     }
 
     /// Retrieve from borrowed documents and arcs that were already scoped and freshness-validated.
@@ -156,7 +156,27 @@ impl RetrievalEngine {
                 .iter()
                 .all(|document| path_in_scope(document.path(), &request.scope))
         );
-        self.retrieve_scoped_with_arcs(request, documents, arcs.iter())
+        self.retrieve_scoped_with_arcs(request, documents, arcs.iter(), None)
+    }
+
+    /// Reuse document tokens while recomputing BM25 statistics within this scope.
+    ///
+    /// Documents and arcs still require the caller's usual freshness checks.
+    /// The cache additionally fingerprints document text on every request; node
+    /// IDs or Git HEAD alone never authorize reuse after a watched edit.
+    pub fn retrieve_scoped_refs_cached(
+        &self,
+        request: &QueryRequest,
+        documents: &[GraphDocumentRef<'_>],
+        arcs: &[GraphArc],
+        cache: &Bm25Cache,
+    ) -> Result<CandidateSet, RetrievalError> {
+        debug_assert!(
+            documents
+                .iter()
+                .all(|document| path_in_scope(document.path(), &request.scope))
+        );
+        self.retrieve_scoped_with_arcs(request, documents, arcs.iter(), Some(cache))
     }
 
     fn retrieve_scoped_with_arcs<'a, D: RetrievalDocument>(
@@ -164,10 +184,14 @@ impl RetrievalEngine {
         request: &QueryRequest,
         documents: &[D],
         arcs: impl IntoIterator<Item = &'a GraphArc>,
+        cache: Option<&Bm25Cache>,
     ) -> Result<CandidateSet, RetrievalError> {
         let exact_hits =
             exact::rank(&request.task, documents).map_err(RetrievalError::ExactIndex)?;
-        let bm25_hits = bm25::rank(&request.task, documents);
+        let bm25_hits = match cache {
+            Some(cache) => bm25::rank_with_cache(&request.task, documents, Some(cache)),
+            None => bm25::rank(&request.task, documents),
+        };
         let roots: Vec<_> = if exact_hits.is_empty() {
             bm25_hits.iter().take(4).map(|hit| hit.node_id).collect()
         } else {
@@ -543,10 +567,33 @@ mod tests {
         };
         let engine = RetrievalEngine::default().with_hybrid(true);
         let owned = engine.retrieve_scoped(&request, &docs, &[]).unwrap();
-        let borrowed = engine
+        let uncached = engine
             .retrieve_scoped_refs(&request, &borrowed, &[])
             .unwrap();
-        assert_eq!(borrowed, owned);
+        assert_eq!(uncached, owned);
+        let cache = Bm25Cache::default();
+        for hybrid in [false, true] {
+            let engine = engine.with_hybrid(hybrid);
+            for task in ["transformValue", "let return", "process Data", "missing"] {
+                let request = QueryRequest {
+                    task: task.into(),
+                    ..request.clone()
+                };
+                for documents in [&borrowed[..], &borrowed[..2], &borrowed[2..]] {
+                    let baseline = engine
+                        .retrieve_scoped_refs(&request, documents, &[])
+                        .unwrap();
+                    for _ in 0..2 {
+                        assert_eq!(
+                            engine
+                                .retrieve_scoped_refs_cached(&request, documents, &[], &cache)
+                                .unwrap(),
+                            baseline
+                        );
+                    }
+                }
+            }
+        }
     }
 
     #[test]

@@ -38,7 +38,6 @@ use super::git_helpers::{git_bytes, git_text, store_writer_error};
 #[cfg(test)]
 mod proof_edge_tests {
     use super::*;
-    #[cfg(feature = "experimental-swift")]
     #[test]
     fn swift_direct_proof_is_exact_and_never_falls_back_to_name_matching() {
         let source = b"func target() {}\nfunc caller() { target() }\n";
@@ -61,7 +60,7 @@ mod proof_edge_tests {
                 "missing" => call.ts_lexical_target = None,
                 "caller" => call.ts_lexical_target.as_mut().unwrap().caller.start += 1,
                 "target" => call.ts_lexical_target.as_mut().unwrap().target.start += 1,
-                "tag" => call.semantic_tags.retain(|tag| tag != "SWIFT_DIRECT_CALL"),
+                "tag" => call.semantic_tags.retain(|tag| tag != "SWIFT_EXACT_CALL"),
                 "duplicate" => {
                     let target = docs
                         .iter()
@@ -460,6 +459,54 @@ mod proof_edge_tests {
         runtime.stored.arcs.push(preserved.clone());
         rebuild_query_index(&mut runtime.stored);
         (repository, state, runtime, preserved)
+    }
+
+    #[test]
+    fn cached_orientation_matches_streaming_after_edits_deletes_and_restore() {
+        let (repo, _state, mut runtime, _) = refresh_fixture("cached-orientation");
+        let path = repo.path().join("calls.rs");
+        for source in [
+            Some("fn target() { let _ = \"oldneedle\"; }\nfn caller() { target(); }\n"),
+            Some("fn target() { let _ = \"newneedle\"; }\nfn caller() { target(); }\n"),
+            None,
+            Some("fn replacement() { let _ = \"newneedle\"; }\n"),
+        ] {
+            match source {
+                Some(source) => fs::write(&path, source).unwrap(),
+                None => fs::remove_file(&path).unwrap(),
+            }
+            runtime.refresh(repo.path()).unwrap();
+            for include in [vec!["**".to_owned()], vec!["calls.rs".to_owned()]] {
+                for task in ["oldneedle", "newneedle", "caller", "missing"] {
+                    let request = QueryRequest {
+                        task: task.into(),
+                        scope: Scope {
+                            include: include.clone(),
+                            exclude: vec![],
+                            relation_kinds: vec![RelationKind::Calls],
+                            max_depth: 1,
+                        },
+                        mode: Mode::Bounded,
+                        token_budget: 800,
+                    };
+                    runtime.bm25_cache = Bm25Cache::new(0);
+                    let expected = runtime.orient(request.clone()).unwrap();
+                    runtime.bm25_cache = Bm25Cache::default();
+                    for _ in 0..2 {
+                        assert_eq!(runtime.orient(request.clone()).unwrap(), expected);
+                    }
+                }
+            }
+            // Leave populated entries in place across the next watched edit.
+            runtime
+                .orient(QueryRequest {
+                    task: "needle".into(),
+                    scope: proof_scope(),
+                    mode: Mode::Bounded,
+                    token_budget: 800,
+                })
+                .unwrap();
+        }
     }
 
     #[test]
@@ -2197,12 +2244,8 @@ mod compact_storage_tests {
         );
         assert_eq!(
             EXTRACTION_REVISION,
-            141 + if cgrx_languages::EXPERIMENTAL_PHP_ENABLED {
+            253 + if cgrx_languages::EXPERIMENTAL_PHP_ENABLED {
                 2
-            } else {
-                0
-            } + if cgrx_languages::EXPERIMENTAL_SWIFT_ENABLED {
-                4
             } else {
                 0
             } + if cgrx_languages::EXPERIMENTAL_JAVASCRIPT_ENABLED {

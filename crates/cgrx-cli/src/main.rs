@@ -1,5 +1,6 @@
 mod mcp_backend;
 mod multi_repo;
+mod resources;
 mod skill;
 mod visualize;
 
@@ -46,6 +47,9 @@ fn run(args: Vec<String>) -> Result<(), String> {
         "index" => index(&args[1..])?,
         "observe" => observe(&args[1..])?,
         "serve" => serve(&args[1..])?,
+        "__memory-embed" if args.len() == 1 => {
+            cgrx_store::serve_memory_model_worker().map_err(|_| "embedding worker failed")?;
+        }
         "visualize" => visualize::run(&args[1..])?,
         "search" => search(&args[1..])?,
         "orient" => {
@@ -760,8 +764,17 @@ fn serve(args: &[String]) -> Result<(), String> {
         }
         return multi_repo::serve(args);
     }
-    if args.iter().any(|a| a == "--max-repos") {
-        return Err("--max-repos requires --multi-repo".to_owned());
+    if args.iter().any(|a| {
+        matches!(
+            a.as_str(),
+            "--max-repos"
+                | "--idle-seconds"
+                | "--memory-budget-mib"
+                | "--max-active-requests"
+                | "--resource-wait-seconds"
+        )
+    }) {
+        return Err("resource limits require --multi-repo".to_owned());
     }
     // Resolve the active toolset: CGRX_TOOLSET env wins, then --toolset, else standard.
     let toolset = resolve_toolset(
@@ -946,6 +959,7 @@ fn search(args: &[String]) -> Result<(), String> {
         "--offset",
         "--language",
         "--include-body",
+        "--match-mode",
         "--paths",
         "--exclude",
         "--expected-snapshot",
@@ -968,6 +982,20 @@ fn search(args: &[String]) -> Result<(), String> {
         "false" => false,
         _ => return Err("--include-body must be true or false".to_owned()),
     };
+    let match_mode = flag_or(args, "--match-mode", "lexical");
+    if !matches!(match_mode, "lexical" | "ast") {
+        return Err("--match-mode must be lexical or ast".to_owned());
+    }
+    if match_mode == "ast"
+        && (query.len() > 4096
+            || include_body
+            || !matches!(
+                optional_flag(args, "--language"),
+                Some("rust" | "typescript" | "python" | "go")
+            ))
+    {
+        return Err("AST mode requires --language rust, typescript, python, or go and a pattern of at most 4096 bytes; --include-body is a lexical option".to_owned());
+    }
     if let Some(snapshot) = optional_flag(args, "--expected-snapshot") {
         serde_json::from_value::<Hash32>(json!(snapshot))
             .map_err(|_| "--expected-snapshot must be a 64-character hex digest".to_owned())?;
@@ -978,6 +1006,7 @@ fn search(args: &[String]) -> Result<(), String> {
         "offset": offset,
         "language": optional_flag(args, "--language"),
         "include_body": include_body,
+        "match_mode": match_mode,
         "expected_snapshot": optional_flag(args, "--expected-snapshot"),
         "scope": {
             "include": comma_separated_flag(args, "--paths"),

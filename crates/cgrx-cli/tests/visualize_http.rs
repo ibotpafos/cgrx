@@ -560,11 +560,19 @@ fn projects_catalogue_routes_isolated_graphs_and_recovers_after_cache_eviction()
         "only_alpha"
     );
     assert!(request(&server, "GET", "/api/status?project=/tmp", true).starts_with("HTTP/1.1 404"));
-    // An uninitialized repository remains listed, but failure cannot switch the
+    // A broken repository remains listed, but failure cannot switch the
     // current/default graph or make the project chooser unavailable.
     let empty = directory.path().join("empty");
     fs::create_dir(&empty).unwrap();
     git(&empty, &["init", "-q"]);
+    // Valid unborn repositories are supported. Model an actual load failure
+    // with a branch whose commit object is missing instead.
+    let branch = fs::read_to_string(empty.join(".git/HEAD")).unwrap();
+    let branch = empty
+        .join(".git")
+        .join(branch.trim().strip_prefix("ref: ").unwrap());
+    fs::create_dir_all(branch.parent().unwrap()).unwrap();
+    fs::write(branch, format!("{}\n", "f".repeat(40))).unwrap();
     read_json("/api/projects?refresh=1");
     let updated = loop {
         let catalogue = read_json("/api/projects");

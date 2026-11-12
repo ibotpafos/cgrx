@@ -1,6 +1,6 @@
 {
  "schema_version": 2,
- "provenance": "NEXT curated source truth. Original 12 v1 tasks retained unchanged. New selections are manually read direct call/import/type references or explicit unresolved dispatches, not graph-derived answers. Each exact assertion is counted once, not relabeled across categories. Public repositories were independently cloned from each task repository_url into separate read-only fixtures; HEAD plus full-file and inclusive raw-line SHA-256 anchors pin provenance. No source bodies, key values or secrets are copied into this manifest. All public evidence is heldout, and no evidence file crosses splits. Category impact means a source dependency worth reviewing if the target changes, not an executed patch or a bug. UNRESOLVED has no target evidence and never denotes a positive edge. Negative distractors are bounded identifier absence only. The original 210-assertion Python, Go, Java, TypeScript and Rust slice plus 16 appended C/Kotlin assertions contains 226 assertions across seven languages. This is not an exhaustive benchmark claim.",
+ "provenance": "NEXT curated source truth. Original 12 v1 tasks retained unchanged. New selections are manually read direct call/import/type references or explicit unresolved dispatches, not graph-derived answers. Each exact assertion is counted once, not relabeled across categories. Public repositories were independently cloned from each task repository_url into separate read-only fixtures; HEAD plus full-file and inclusive raw-line SHA-256 anchors pin provenance. No source bodies, key values or secrets are copied into this manifest. All public evidence is heldout, and no evidence file crosses splits. Category impact means a source dependency worth reviewing if the target changes, not an executed patch or a bug. UNRESOLVED has no target evidence and never denotes a positive edge. Negative distractors are bounded identifier absence only. The original 210-assertion Python, Go, Java, TypeScript and Rust slice plus 16 appended C/Kotlin assertions contains 226 assertions across seven languages. This is not an exhaustive benchmark claim. Extension: 28 explicitly synthetic TRAIN fixture assertions for C++ (six suffixes) and Swift. Parallel extension cases are parser-contract coverage, NOT independent heldout real-world benchmarks. Their portable repo slot is materialized and all Git/file/span hashes revalidated by validate_cpp_swift_corpus.py.",
  "tasks": [
   {
    "id": "blinker-__init__-import-NamedSignal",
@@ -10209,6 +10209,1210 @@
     "symbol": "BoolDefault",
     "scope": "source",
     "rationale": "Manual read of the complete source span confirms this identifier is absent; this is only a bounded lexical distractor, not a whole-repository or runtime non-call claim."
+   }
+  },
+  {
+   "id": "training-cpp-imports",
+   "repo": "/CGRX_CPP_SWIFT_TRAINING_FIXTURE",
+   "revision": "3c5ab54004fdf37af99bd0972678d83749d8b721",
+   "split": "train",
+   "category": "import",
+   "question": "cpp extension coverage: identify the IMPORTS evidence for Support.",
+   "rationale": "Explicit include of the header declaring Support, or Swift import of the SwiftPM target FixtureSupport. This is module dependency evidence, not a call.",
+   "provenance": {
+    "method": "manual-source-read",
+    "verified_on": "2026-11-12"
+   },
+   "evidence": {
+    "source": {
+     "path": "cpp/Case.cpp",
+     "start_line": 1,
+     "end_line": 1,
+     "symbol": "Support",
+     "sha256": "8cf9bde90f6c3832ac22ca9b5078755eaf079017a4bf46315ba62e880d7c455f",
+     "span_sha256": "bade2b602d2ce479747846d13dca6fecbd17023eb27616c2b5cf7e07f672b9b8"
+    },
+    "site": {
+     "path": "cpp/Case.cpp",
+     "start_line": 1,
+     "end_line": 1,
+     "symbol": "Support",
+     "sha256": "8cf9bde90f6c3832ac22ca9b5078755eaf079017a4bf46315ba62e880d7c455f",
+     "span_sha256": "bade2b602d2ce479747846d13dca6fecbd17023eb27616c2b5cf7e07f672b9b8"
+    },
+    "target": {
+     "path": "cpp/Support.hpp",
+     "start_line": 2,
+     "end_line": 2,
+     "symbol": "Support",
+     "sha256": "0cc4b68f3cb79f6a9bd984a3870b3e6b28a25d0eee38dec1198e617b3b8070d7",
+     "span_sha256": "9b0a5188a3ad2bd758c919f6ca04913325444d3affc29483ea50d09fb3cb0c0f"
+    }
+   },
+   "expected": {
+    "relation": "IMPORTS",
+    "source": "source",
+    "site": "site",
+    "target": "target"
+   }
+  },
+  {
+   "id": "training-cpp-calls",
+   "repo": "/CGRX_CPP_SWIFT_TRAINING_FIXTURE",
+   "revision": "3c5ab54004fdf37af99bd0972678d83749d8b721",
+   "split": "train",
+   "category": "call",
+   "question": "cpp extension coverage: identify the CALLS evidence for callee.",
+   "rationale": "Read the unique same-file free-function declaration and direct invocation.",
+   "provenance": {
+    "method": "manual-source-read",
+    "verified_on": "2026-11-12"
+   },
+   "evidence": {
+    "source": {
+     "path": "cpp/Case.cpp",
+     "start_line": 3,
+     "end_line": 3,
+     "symbol": "callee",
+     "sha256": "8cf9bde90f6c3832ac22ca9b5078755eaf079017a4bf46315ba62e880d7c455f",
+     "span_sha256": "185cd1eb6f09533070dc6e2cb3eac032898d97ba626f75013506795681f88e72"
+    },
+    "site": {
+     "path": "cpp/Case.cpp",
+     "start_line": 3,
+     "end_line": 3,
+     "symbol": "callee",
+     "sha256": "8cf9bde90f6c3832ac22ca9b5078755eaf079017a4bf46315ba62e880d7c455f",
+     "span_sha256": "185cd1eb6f09533070dc6e2cb3eac032898d97ba626f75013506795681f88e72"
+    },
+    "target": {
+     "path": "cpp/Case.cpp",
+     "start_line": 2,
+     "end_line": 2,
+     "symbol": "callee",
+     "sha256": "8cf9bde90f6c3832ac22ca9b5078755eaf079017a4bf46315ba62e880d7c455f",
+     "span_sha256": "ee1fef23c6ee8433c55710d2eb0ab5834b213aff218663d2d49696c3f21876fa"
+    }
+   },
+   "expected": {
+    "relation": "CALLS",
+    "source": "source",
+    "site": "site",
+    "target": "target"
+   }
+  },
+  {
+   "id": "training-cpp-reference",
+   "repo": "/CGRX_CPP_SWIFT_TRAINING_FIXTURE",
+   "revision": "3c5ab54004fdf37af99bd0972678d83749d8b721",
+   "split": "train",
+   "category": "reference",
+   "question": "cpp extension coverage: identify the REFERENCE evidence for Support.",
+   "rationale": "Read the declared type and explicit use in the function signature.",
+   "provenance": {
+    "method": "manual-source-read",
+    "verified_on": "2026-11-12"
+   },
+   "evidence": {
+    "source": {
+     "path": "cpp/Case.cpp",
+     "start_line": 4,
+     "end_line": 4,
+     "symbol": "Support",
+     "sha256": "8cf9bde90f6c3832ac22ca9b5078755eaf079017a4bf46315ba62e880d7c455f",
+     "span_sha256": "1d051a1c65d7c397a1f94d46eb01fbab320e04ecd1492fd3a0ae28c027c25558"
+    },
+    "site": {
+     "path": "cpp/Case.cpp",
+     "start_line": 4,
+     "end_line": 4,
+     "symbol": "Support",
+     "sha256": "8cf9bde90f6c3832ac22ca9b5078755eaf079017a4bf46315ba62e880d7c455f",
+     "span_sha256": "1d051a1c65d7c397a1f94d46eb01fbab320e04ecd1492fd3a0ae28c027c25558"
+    },
+    "target": {
+     "path": "cpp/Support.hpp",
+     "start_line": 2,
+     "end_line": 2,
+     "symbol": "Support",
+     "sha256": "0cc4b68f3cb79f6a9bd984a3870b3e6b28a25d0eee38dec1198e617b3b8070d7",
+     "span_sha256": "9b0a5188a3ad2bd758c919f6ca04913325444d3affc29483ea50d09fb3cb0c0f"
+    }
+   },
+   "expected": {
+    "relation": "REFERENCE",
+    "source": "source",
+    "site": "site",
+    "target": "target"
+   }
+  },
+  {
+   "id": "training-cpp-unresolved",
+   "repo": "/CGRX_CPP_SWIFT_TRAINING_FIXTURE",
+   "revision": "3c5ab54004fdf37af99bd0972678d83749d8b721",
+   "split": "train",
+   "category": "ambiguous",
+   "question": "cpp extension coverage: identify the UNRESOLVED evidence for callback.",
+   "rationale": "The named callback parameter is dynamically provided; no concrete callable target is asserted.",
+   "provenance": {
+    "method": "manual-source-read",
+    "verified_on": "2026-11-12"
+   },
+   "evidence": {
+    "source": {
+     "path": "cpp/Case.cpp",
+     "start_line": 5,
+     "end_line": 5,
+     "symbol": "callback",
+     "sha256": "8cf9bde90f6c3832ac22ca9b5078755eaf079017a4bf46315ba62e880d7c455f",
+     "span_sha256": "9ad3e37f8e48eebec1524e08f2e018136b2ab98aab27b2da50d6f2d3c6935d8c"
+    },
+    "site": {
+     "path": "cpp/Case.cpp",
+     "start_line": 5,
+     "end_line": 5,
+     "symbol": "callback",
+     "sha256": "8cf9bde90f6c3832ac22ca9b5078755eaf079017a4bf46315ba62e880d7c455f",
+     "span_sha256": "9ad3e37f8e48eebec1524e08f2e018136b2ab98aab27b2da50d6f2d3c6935d8c"
+    }
+   },
+   "expected": {
+    "relation": "UNRESOLVED",
+    "source": "source",
+    "site": "site",
+    "target": null
+   }
+  },
+  {
+   "id": "training-cxx-imports",
+   "repo": "/CGRX_CPP_SWIFT_TRAINING_FIXTURE",
+   "revision": "3c5ab54004fdf37af99bd0972678d83749d8b721",
+   "split": "train",
+   "category": "import",
+   "question": "cxx extension coverage: identify the IMPORTS evidence for Support.",
+   "rationale": "Explicit include of the header declaring Support, or Swift import of the SwiftPM target FixtureSupport. This is module dependency evidence, not a call.",
+   "provenance": {
+    "method": "manual-source-read",
+    "verified_on": "2026-11-12"
+   },
+   "evidence": {
+    "source": {
+     "path": "cpp/Case.cxx",
+     "start_line": 1,
+     "end_line": 1,
+     "symbol": "Support",
+     "sha256": "8cf9bde90f6c3832ac22ca9b5078755eaf079017a4bf46315ba62e880d7c455f",
+     "span_sha256": "bade2b602d2ce479747846d13dca6fecbd17023eb27616c2b5cf7e07f672b9b8"
+    },
+    "site": {
+     "path": "cpp/Case.cxx",
+     "start_line": 1,
+     "end_line": 1,
+     "symbol": "Support",
+     "sha256": "8cf9bde90f6c3832ac22ca9b5078755eaf079017a4bf46315ba62e880d7c455f",
+     "span_sha256": "bade2b602d2ce479747846d13dca6fecbd17023eb27616c2b5cf7e07f672b9b8"
+    },
+    "target": {
+     "path": "cpp/Support.hpp",
+     "start_line": 2,
+     "end_line": 2,
+     "symbol": "Support",
+     "sha256": "0cc4b68f3cb79f6a9bd984a3870b3e6b28a25d0eee38dec1198e617b3b8070d7",
+     "span_sha256": "9b0a5188a3ad2bd758c919f6ca04913325444d3affc29483ea50d09fb3cb0c0f"
+    }
+   },
+   "expected": {
+    "relation": "IMPORTS",
+    "source": "source",
+    "site": "site",
+    "target": "target"
+   }
+  },
+  {
+   "id": "training-cxx-calls",
+   "repo": "/CGRX_CPP_SWIFT_TRAINING_FIXTURE",
+   "revision": "3c5ab54004fdf37af99bd0972678d83749d8b721",
+   "split": "train",
+   "category": "call",
+   "question": "cxx extension coverage: identify the CALLS evidence for callee.",
+   "rationale": "Read the unique same-file free-function declaration and direct invocation.",
+   "provenance": {
+    "method": "manual-source-read",
+    "verified_on": "2026-11-12"
+   },
+   "evidence": {
+    "source": {
+     "path": "cpp/Case.cxx",
+     "start_line": 3,
+     "end_line": 3,
+     "symbol": "callee",
+     "sha256": "8cf9bde90f6c3832ac22ca9b5078755eaf079017a4bf46315ba62e880d7c455f",
+     "span_sha256": "185cd1eb6f09533070dc6e2cb3eac032898d97ba626f75013506795681f88e72"
+    },
+    "site": {
+     "path": "cpp/Case.cxx",
+     "start_line": 3,
+     "end_line": 3,
+     "symbol": "callee",
+     "sha256": "8cf9bde90f6c3832ac22ca9b5078755eaf079017a4bf46315ba62e880d7c455f",
+     "span_sha256": "185cd1eb6f09533070dc6e2cb3eac032898d97ba626f75013506795681f88e72"
+    },
+    "target": {
+     "path": "cpp/Case.cxx",
+     "start_line": 2,
+     "end_line": 2,
+     "symbol": "callee",
+     "sha256": "8cf9bde90f6c3832ac22ca9b5078755eaf079017a4bf46315ba62e880d7c455f",
+     "span_sha256": "ee1fef23c6ee8433c55710d2eb0ab5834b213aff218663d2d49696c3f21876fa"
+    }
+   },
+   "expected": {
+    "relation": "CALLS",
+    "source": "source",
+    "site": "site",
+    "target": "target"
+   }
+  },
+  {
+   "id": "training-cxx-reference",
+   "repo": "/CGRX_CPP_SWIFT_TRAINING_FIXTURE",
+   "revision": "3c5ab54004fdf37af99bd0972678d83749d8b721",
+   "split": "train",
+   "category": "reference",
+   "question": "cxx extension coverage: identify the REFERENCE evidence for Support.",
+   "rationale": "Read the declared type and explicit use in the function signature.",
+   "provenance": {
+    "method": "manual-source-read",
+    "verified_on": "2026-11-12"
+   },
+   "evidence": {
+    "source": {
+     "path": "cpp/Case.cxx",
+     "start_line": 4,
+     "end_line": 4,
+     "symbol": "Support",
+     "sha256": "8cf9bde90f6c3832ac22ca9b5078755eaf079017a4bf46315ba62e880d7c455f",
+     "span_sha256": "1d051a1c65d7c397a1f94d46eb01fbab320e04ecd1492fd3a0ae28c027c25558"
+    },
+    "site": {
+     "path": "cpp/Case.cxx",
+     "start_line": 4,
+     "end_line": 4,
+     "symbol": "Support",
+     "sha256": "8cf9bde90f6c3832ac22ca9b5078755eaf079017a4bf46315ba62e880d7c455f",
+     "span_sha256": "1d051a1c65d7c397a1f94d46eb01fbab320e04ecd1492fd3a0ae28c027c25558"
+    },
+    "target": {
+     "path": "cpp/Support.hpp",
+     "start_line": 2,
+     "end_line": 2,
+     "symbol": "Support",
+     "sha256": "0cc4b68f3cb79f6a9bd984a3870b3e6b28a25d0eee38dec1198e617b3b8070d7",
+     "span_sha256": "9b0a5188a3ad2bd758c919f6ca04913325444d3affc29483ea50d09fb3cb0c0f"
+    }
+   },
+   "expected": {
+    "relation": "REFERENCE",
+    "source": "source",
+    "site": "site",
+    "target": "target"
+   }
+  },
+  {
+   "id": "training-cxx-unresolved",
+   "repo": "/CGRX_CPP_SWIFT_TRAINING_FIXTURE",
+   "revision": "3c5ab54004fdf37af99bd0972678d83749d8b721",
+   "split": "train",
+   "category": "ambiguous",
+   "question": "cxx extension coverage: identify the UNRESOLVED evidence for callback.",
+   "rationale": "The named callback parameter is dynamically provided; no concrete callable target is asserted.",
+   "provenance": {
+    "method": "manual-source-read",
+    "verified_on": "2026-11-12"
+   },
+   "evidence": {
+    "source": {
+     "path": "cpp/Case.cxx",
+     "start_line": 5,
+     "end_line": 5,
+     "symbol": "callback",
+     "sha256": "8cf9bde90f6c3832ac22ca9b5078755eaf079017a4bf46315ba62e880d7c455f",
+     "span_sha256": "9ad3e37f8e48eebec1524e08f2e018136b2ab98aab27b2da50d6f2d3c6935d8c"
+    },
+    "site": {
+     "path": "cpp/Case.cxx",
+     "start_line": 5,
+     "end_line": 5,
+     "symbol": "callback",
+     "sha256": "8cf9bde90f6c3832ac22ca9b5078755eaf079017a4bf46315ba62e880d7c455f",
+     "span_sha256": "9ad3e37f8e48eebec1524e08f2e018136b2ab98aab27b2da50d6f2d3c6935d8c"
+    }
+   },
+   "expected": {
+    "relation": "UNRESOLVED",
+    "source": "source",
+    "site": "site",
+    "target": null
+   }
+  },
+  {
+   "id": "training-cc-imports",
+   "repo": "/CGRX_CPP_SWIFT_TRAINING_FIXTURE",
+   "revision": "3c5ab54004fdf37af99bd0972678d83749d8b721",
+   "split": "train",
+   "category": "import",
+   "question": "cc extension coverage: identify the IMPORTS evidence for Support.",
+   "rationale": "Explicit include of the header declaring Support, or Swift import of the SwiftPM target FixtureSupport. This is module dependency evidence, not a call.",
+   "provenance": {
+    "method": "manual-source-read",
+    "verified_on": "2026-11-12"
+   },
+   "evidence": {
+    "source": {
+     "path": "cpp/Case.cc",
+     "start_line": 1,
+     "end_line": 1,
+     "symbol": "Support",
+     "sha256": "8cf9bde90f6c3832ac22ca9b5078755eaf079017a4bf46315ba62e880d7c455f",
+     "span_sha256": "bade2b602d2ce479747846d13dca6fecbd17023eb27616c2b5cf7e07f672b9b8"
+    },
+    "site": {
+     "path": "cpp/Case.cc",
+     "start_line": 1,
+     "end_line": 1,
+     "symbol": "Support",
+     "sha256": "8cf9bde90f6c3832ac22ca9b5078755eaf079017a4bf46315ba62e880d7c455f",
+     "span_sha256": "bade2b602d2ce479747846d13dca6fecbd17023eb27616c2b5cf7e07f672b9b8"
+    },
+    "target": {
+     "path": "cpp/Support.hpp",
+     "start_line": 2,
+     "end_line": 2,
+     "symbol": "Support",
+     "sha256": "0cc4b68f3cb79f6a9bd984a3870b3e6b28a25d0eee38dec1198e617b3b8070d7",
+     "span_sha256": "9b0a5188a3ad2bd758c919f6ca04913325444d3affc29483ea50d09fb3cb0c0f"
+    }
+   },
+   "expected": {
+    "relation": "IMPORTS",
+    "source": "source",
+    "site": "site",
+    "target": "target"
+   }
+  },
+  {
+   "id": "training-cc-calls",
+   "repo": "/CGRX_CPP_SWIFT_TRAINING_FIXTURE",
+   "revision": "3c5ab54004fdf37af99bd0972678d83749d8b721",
+   "split": "train",
+   "category": "call",
+   "question": "cc extension coverage: identify the CALLS evidence for callee.",
+   "rationale": "Read the unique same-file free-function declaration and direct invocation.",
+   "provenance": {
+    "method": "manual-source-read",
+    "verified_on": "2026-11-12"
+   },
+   "evidence": {
+    "source": {
+     "path": "cpp/Case.cc",
+     "start_line": 3,
+     "end_line": 3,
+     "symbol": "callee",
+     "sha256": "8cf9bde90f6c3832ac22ca9b5078755eaf079017a4bf46315ba62e880d7c455f",
+     "span_sha256": "185cd1eb6f09533070dc6e2cb3eac032898d97ba626f75013506795681f88e72"
+    },
+    "site": {
+     "path": "cpp/Case.cc",
+     "start_line": 3,
+     "end_line": 3,
+     "symbol": "callee",
+     "sha256": "8cf9bde90f6c3832ac22ca9b5078755eaf079017a4bf46315ba62e880d7c455f",
+     "span_sha256": "185cd1eb6f09533070dc6e2cb3eac032898d97ba626f75013506795681f88e72"
+    },
+    "target": {
+     "path": "cpp/Case.cc",
+     "start_line": 2,
+     "end_line": 2,
+     "symbol": "callee",
+     "sha256": "8cf9bde90f6c3832ac22ca9b5078755eaf079017a4bf46315ba62e880d7c455f",
+     "span_sha256": "ee1fef23c6ee8433c55710d2eb0ab5834b213aff218663d2d49696c3f21876fa"
+    }
+   },
+   "expected": {
+    "relation": "CALLS",
+    "source": "source",
+    "site": "site",
+    "target": "target"
+   }
+  },
+  {
+   "id": "training-cc-reference",
+   "repo": "/CGRX_CPP_SWIFT_TRAINING_FIXTURE",
+   "revision": "3c5ab54004fdf37af99bd0972678d83749d8b721",
+   "split": "train",
+   "category": "reference",
+   "question": "cc extension coverage: identify the REFERENCE evidence for Support.",
+   "rationale": "Read the declared type and explicit use in the function signature.",
+   "provenance": {
+    "method": "manual-source-read",
+    "verified_on": "2026-11-12"
+   },
+   "evidence": {
+    "source": {
+     "path": "cpp/Case.cc",
+     "start_line": 4,
+     "end_line": 4,
+     "symbol": "Support",
+     "sha256": "8cf9bde90f6c3832ac22ca9b5078755eaf079017a4bf46315ba62e880d7c455f",
+     "span_sha256": "1d051a1c65d7c397a1f94d46eb01fbab320e04ecd1492fd3a0ae28c027c25558"
+    },
+    "site": {
+     "path": "cpp/Case.cc",
+     "start_line": 4,
+     "end_line": 4,
+     "symbol": "Support",
+     "sha256": "8cf9bde90f6c3832ac22ca9b5078755eaf079017a4bf46315ba62e880d7c455f",
+     "span_sha256": "1d051a1c65d7c397a1f94d46eb01fbab320e04ecd1492fd3a0ae28c027c25558"
+    },
+    "target": {
+     "path": "cpp/Support.hpp",
+     "start_line": 2,
+     "end_line": 2,
+     "symbol": "Support",
+     "sha256": "0cc4b68f3cb79f6a9bd984a3870b3e6b28a25d0eee38dec1198e617b3b8070d7",
+     "span_sha256": "9b0a5188a3ad2bd758c919f6ca04913325444d3affc29483ea50d09fb3cb0c0f"
+    }
+   },
+   "expected": {
+    "relation": "REFERENCE",
+    "source": "source",
+    "site": "site",
+    "target": "target"
+   }
+  },
+  {
+   "id": "training-cc-unresolved",
+   "repo": "/CGRX_CPP_SWIFT_TRAINING_FIXTURE",
+   "revision": "3c5ab54004fdf37af99bd0972678d83749d8b721",
+   "split": "train",
+   "category": "ambiguous",
+   "question": "cc extension coverage: identify the UNRESOLVED evidence for callback.",
+   "rationale": "The named callback parameter is dynamically provided; no concrete callable target is asserted.",
+   "provenance": {
+    "method": "manual-source-read",
+    "verified_on": "2026-11-12"
+   },
+   "evidence": {
+    "source": {
+     "path": "cpp/Case.cc",
+     "start_line": 5,
+     "end_line": 5,
+     "symbol": "callback",
+     "sha256": "8cf9bde90f6c3832ac22ca9b5078755eaf079017a4bf46315ba62e880d7c455f",
+     "span_sha256": "9ad3e37f8e48eebec1524e08f2e018136b2ab98aab27b2da50d6f2d3c6935d8c"
+    },
+    "site": {
+     "path": "cpp/Case.cc",
+     "start_line": 5,
+     "end_line": 5,
+     "symbol": "callback",
+     "sha256": "8cf9bde90f6c3832ac22ca9b5078755eaf079017a4bf46315ba62e880d7c455f",
+     "span_sha256": "9ad3e37f8e48eebec1524e08f2e018136b2ab98aab27b2da50d6f2d3c6935d8c"
+    }
+   },
+   "expected": {
+    "relation": "UNRESOLVED",
+    "source": "source",
+    "site": "site",
+    "target": null
+   }
+  },
+  {
+   "id": "training-hpp-imports",
+   "repo": "/CGRX_CPP_SWIFT_TRAINING_FIXTURE",
+   "revision": "3c5ab54004fdf37af99bd0972678d83749d8b721",
+   "split": "train",
+   "category": "import",
+   "question": "hpp extension coverage: identify the IMPORTS evidence for Support.",
+   "rationale": "Explicit include of the header declaring Support, or Swift import of the SwiftPM target FixtureSupport. This is module dependency evidence, not a call.",
+   "provenance": {
+    "method": "manual-source-read",
+    "verified_on": "2026-11-12"
+   },
+   "evidence": {
+    "source": {
+     "path": "cpp/Case.hpp",
+     "start_line": 1,
+     "end_line": 1,
+     "symbol": "Support",
+     "sha256": "8cf9bde90f6c3832ac22ca9b5078755eaf079017a4bf46315ba62e880d7c455f",
+     "span_sha256": "bade2b602d2ce479747846d13dca6fecbd17023eb27616c2b5cf7e07f672b9b8"
+    },
+    "site": {
+     "path": "cpp/Case.hpp",
+     "start_line": 1,
+     "end_line": 1,
+     "symbol": "Support",
+     "sha256": "8cf9bde90f6c3832ac22ca9b5078755eaf079017a4bf46315ba62e880d7c455f",
+     "span_sha256": "bade2b602d2ce479747846d13dca6fecbd17023eb27616c2b5cf7e07f672b9b8"
+    },
+    "target": {
+     "path": "cpp/Support.hpp",
+     "start_line": 2,
+     "end_line": 2,
+     "symbol": "Support",
+     "sha256": "0cc4b68f3cb79f6a9bd984a3870b3e6b28a25d0eee38dec1198e617b3b8070d7",
+     "span_sha256": "9b0a5188a3ad2bd758c919f6ca04913325444d3affc29483ea50d09fb3cb0c0f"
+    }
+   },
+   "expected": {
+    "relation": "IMPORTS",
+    "source": "source",
+    "site": "site",
+    "target": "target"
+   }
+  },
+  {
+   "id": "training-hpp-calls",
+   "repo": "/CGRX_CPP_SWIFT_TRAINING_FIXTURE",
+   "revision": "3c5ab54004fdf37af99bd0972678d83749d8b721",
+   "split": "train",
+   "category": "call",
+   "question": "hpp extension coverage: identify the CALLS evidence for callee.",
+   "rationale": "Read the unique same-file free-function declaration and direct invocation.",
+   "provenance": {
+    "method": "manual-source-read",
+    "verified_on": "2026-11-12"
+   },
+   "evidence": {
+    "source": {
+     "path": "cpp/Case.hpp",
+     "start_line": 3,
+     "end_line": 3,
+     "symbol": "callee",
+     "sha256": "8cf9bde90f6c3832ac22ca9b5078755eaf079017a4bf46315ba62e880d7c455f",
+     "span_sha256": "185cd1eb6f09533070dc6e2cb3eac032898d97ba626f75013506795681f88e72"
+    },
+    "site": {
+     "path": "cpp/Case.hpp",
+     "start_line": 3,
+     "end_line": 3,
+     "symbol": "callee",
+     "sha256": "8cf9bde90f6c3832ac22ca9b5078755eaf079017a4bf46315ba62e880d7c455f",
+     "span_sha256": "185cd1eb6f09533070dc6e2cb3eac032898d97ba626f75013506795681f88e72"
+    },
+    "target": {
+     "path": "cpp/Case.hpp",
+     "start_line": 2,
+     "end_line": 2,
+     "symbol": "callee",
+     "sha256": "8cf9bde90f6c3832ac22ca9b5078755eaf079017a4bf46315ba62e880d7c455f",
+     "span_sha256": "ee1fef23c6ee8433c55710d2eb0ab5834b213aff218663d2d49696c3f21876fa"
+    }
+   },
+   "expected": {
+    "relation": "CALLS",
+    "source": "source",
+    "site": "site",
+    "target": "target"
+   }
+  },
+  {
+   "id": "training-hpp-reference",
+   "repo": "/CGRX_CPP_SWIFT_TRAINING_FIXTURE",
+   "revision": "3c5ab54004fdf37af99bd0972678d83749d8b721",
+   "split": "train",
+   "category": "reference",
+   "question": "hpp extension coverage: identify the REFERENCE evidence for Support.",
+   "rationale": "Read the declared type and explicit use in the function signature.",
+   "provenance": {
+    "method": "manual-source-read",
+    "verified_on": "2026-11-12"
+   },
+   "evidence": {
+    "source": {
+     "path": "cpp/Case.hpp",
+     "start_line": 4,
+     "end_line": 4,
+     "symbol": "Support",
+     "sha256": "8cf9bde90f6c3832ac22ca9b5078755eaf079017a4bf46315ba62e880d7c455f",
+     "span_sha256": "1d051a1c65d7c397a1f94d46eb01fbab320e04ecd1492fd3a0ae28c027c25558"
+    },
+    "site": {
+     "path": "cpp/Case.hpp",
+     "start_line": 4,
+     "end_line": 4,
+     "symbol": "Support",
+     "sha256": "8cf9bde90f6c3832ac22ca9b5078755eaf079017a4bf46315ba62e880d7c455f",
+     "span_sha256": "1d051a1c65d7c397a1f94d46eb01fbab320e04ecd1492fd3a0ae28c027c25558"
+    },
+    "target": {
+     "path": "cpp/Support.hpp",
+     "start_line": 2,
+     "end_line": 2,
+     "symbol": "Support",
+     "sha256": "0cc4b68f3cb79f6a9bd984a3870b3e6b28a25d0eee38dec1198e617b3b8070d7",
+     "span_sha256": "9b0a5188a3ad2bd758c919f6ca04913325444d3affc29483ea50d09fb3cb0c0f"
+    }
+   },
+   "expected": {
+    "relation": "REFERENCE",
+    "source": "source",
+    "site": "site",
+    "target": "target"
+   }
+  },
+  {
+   "id": "training-hpp-unresolved",
+   "repo": "/CGRX_CPP_SWIFT_TRAINING_FIXTURE",
+   "revision": "3c5ab54004fdf37af99bd0972678d83749d8b721",
+   "split": "train",
+   "category": "ambiguous",
+   "question": "hpp extension coverage: identify the UNRESOLVED evidence for callback.",
+   "rationale": "The named callback parameter is dynamically provided; no concrete callable target is asserted.",
+   "provenance": {
+    "method": "manual-source-read",
+    "verified_on": "2026-11-12"
+   },
+   "evidence": {
+    "source": {
+     "path": "cpp/Case.hpp",
+     "start_line": 5,
+     "end_line": 5,
+     "symbol": "callback",
+     "sha256": "8cf9bde90f6c3832ac22ca9b5078755eaf079017a4bf46315ba62e880d7c455f",
+     "span_sha256": "9ad3e37f8e48eebec1524e08f2e018136b2ab98aab27b2da50d6f2d3c6935d8c"
+    },
+    "site": {
+     "path": "cpp/Case.hpp",
+     "start_line": 5,
+     "end_line": 5,
+     "symbol": "callback",
+     "sha256": "8cf9bde90f6c3832ac22ca9b5078755eaf079017a4bf46315ba62e880d7c455f",
+     "span_sha256": "9ad3e37f8e48eebec1524e08f2e018136b2ab98aab27b2da50d6f2d3c6935d8c"
+    }
+   },
+   "expected": {
+    "relation": "UNRESOLVED",
+    "source": "source",
+    "site": "site",
+    "target": null
+   }
+  },
+  {
+   "id": "training-hxx-imports",
+   "repo": "/CGRX_CPP_SWIFT_TRAINING_FIXTURE",
+   "revision": "3c5ab54004fdf37af99bd0972678d83749d8b721",
+   "split": "train",
+   "category": "import",
+   "question": "hxx extension coverage: identify the IMPORTS evidence for Support.",
+   "rationale": "Explicit include of the header declaring Support, or Swift import of the SwiftPM target FixtureSupport. This is module dependency evidence, not a call.",
+   "provenance": {
+    "method": "manual-source-read",
+    "verified_on": "2026-11-12"
+   },
+   "evidence": {
+    "source": {
+     "path": "cpp/Case.hxx",
+     "start_line": 1,
+     "end_line": 1,
+     "symbol": "Support",
+     "sha256": "8cf9bde90f6c3832ac22ca9b5078755eaf079017a4bf46315ba62e880d7c455f",
+     "span_sha256": "bade2b602d2ce479747846d13dca6fecbd17023eb27616c2b5cf7e07f672b9b8"
+    },
+    "site": {
+     "path": "cpp/Case.hxx",
+     "start_line": 1,
+     "end_line": 1,
+     "symbol": "Support",
+     "sha256": "8cf9bde90f6c3832ac22ca9b5078755eaf079017a4bf46315ba62e880d7c455f",
+     "span_sha256": "bade2b602d2ce479747846d13dca6fecbd17023eb27616c2b5cf7e07f672b9b8"
+    },
+    "target": {
+     "path": "cpp/Support.hpp",
+     "start_line": 2,
+     "end_line": 2,
+     "symbol": "Support",
+     "sha256": "0cc4b68f3cb79f6a9bd984a3870b3e6b28a25d0eee38dec1198e617b3b8070d7",
+     "span_sha256": "9b0a5188a3ad2bd758c919f6ca04913325444d3affc29483ea50d09fb3cb0c0f"
+    }
+   },
+   "expected": {
+    "relation": "IMPORTS",
+    "source": "source",
+    "site": "site",
+    "target": "target"
+   }
+  },
+  {
+   "id": "training-hxx-calls",
+   "repo": "/CGRX_CPP_SWIFT_TRAINING_FIXTURE",
+   "revision": "3c5ab54004fdf37af99bd0972678d83749d8b721",
+   "split": "train",
+   "category": "call",
+   "question": "hxx extension coverage: identify the CALLS evidence for callee.",
+   "rationale": "Read the unique same-file free-function declaration and direct invocation.",
+   "provenance": {
+    "method": "manual-source-read",
+    "verified_on": "2026-11-12"
+   },
+   "evidence": {
+    "source": {
+     "path": "cpp/Case.hxx",
+     "start_line": 3,
+     "end_line": 3,
+     "symbol": "callee",
+     "sha256": "8cf9bde90f6c3832ac22ca9b5078755eaf079017a4bf46315ba62e880d7c455f",
+     "span_sha256": "185cd1eb6f09533070dc6e2cb3eac032898d97ba626f75013506795681f88e72"
+    },
+    "site": {
+     "path": "cpp/Case.hxx",
+     "start_line": 3,
+     "end_line": 3,
+     "symbol": "callee",
+     "sha256": "8cf9bde90f6c3832ac22ca9b5078755eaf079017a4bf46315ba62e880d7c455f",
+     "span_sha256": "185cd1eb6f09533070dc6e2cb3eac032898d97ba626f75013506795681f88e72"
+    },
+    "target": {
+     "path": "cpp/Case.hxx",
+     "start_line": 2,
+     "end_line": 2,
+     "symbol": "callee",
+     "sha256": "8cf9bde90f6c3832ac22ca9b5078755eaf079017a4bf46315ba62e880d7c455f",
+     "span_sha256": "ee1fef23c6ee8433c55710d2eb0ab5834b213aff218663d2d49696c3f21876fa"
+    }
+   },
+   "expected": {
+    "relation": "CALLS",
+    "source": "source",
+    "site": "site",
+    "target": "target"
+   }
+  },
+  {
+   "id": "training-hxx-reference",
+   "repo": "/CGRX_CPP_SWIFT_TRAINING_FIXTURE",
+   "revision": "3c5ab54004fdf37af99bd0972678d83749d8b721",
+   "split": "train",
+   "category": "reference",
+   "question": "hxx extension coverage: identify the REFERENCE evidence for Support.",
+   "rationale": "Read the declared type and explicit use in the function signature.",
+   "provenance": {
+    "method": "manual-source-read",
+    "verified_on": "2026-11-12"
+   },
+   "evidence": {
+    "source": {
+     "path": "cpp/Case.hxx",
+     "start_line": 4,
+     "end_line": 4,
+     "symbol": "Support",
+     "sha256": "8cf9bde90f6c3832ac22ca9b5078755eaf079017a4bf46315ba62e880d7c455f",
+     "span_sha256": "1d051a1c65d7c397a1f94d46eb01fbab320e04ecd1492fd3a0ae28c027c25558"
+    },
+    "site": {
+     "path": "cpp/Case.hxx",
+     "start_line": 4,
+     "end_line": 4,
+     "symbol": "Support",
+     "sha256": "8cf9bde90f6c3832ac22ca9b5078755eaf079017a4bf46315ba62e880d7c455f",
+     "span_sha256": "1d051a1c65d7c397a1f94d46eb01fbab320e04ecd1492fd3a0ae28c027c25558"
+    },
+    "target": {
+     "path": "cpp/Support.hpp",
+     "start_line": 2,
+     "end_line": 2,
+     "symbol": "Support",
+     "sha256": "0cc4b68f3cb79f6a9bd984a3870b3e6b28a25d0eee38dec1198e617b3b8070d7",
+     "span_sha256": "9b0a5188a3ad2bd758c919f6ca04913325444d3affc29483ea50d09fb3cb0c0f"
+    }
+   },
+   "expected": {
+    "relation": "REFERENCE",
+    "source": "source",
+    "site": "site",
+    "target": "target"
+   }
+  },
+  {
+   "id": "training-hxx-unresolved",
+   "repo": "/CGRX_CPP_SWIFT_TRAINING_FIXTURE",
+   "revision": "3c5ab54004fdf37af99bd0972678d83749d8b721",
+   "split": "train",
+   "category": "ambiguous",
+   "question": "hxx extension coverage: identify the UNRESOLVED evidence for callback.",
+   "rationale": "The named callback parameter is dynamically provided; no concrete callable target is asserted.",
+   "provenance": {
+    "method": "manual-source-read",
+    "verified_on": "2026-11-12"
+   },
+   "evidence": {
+    "source": {
+     "path": "cpp/Case.hxx",
+     "start_line": 5,
+     "end_line": 5,
+     "symbol": "callback",
+     "sha256": "8cf9bde90f6c3832ac22ca9b5078755eaf079017a4bf46315ba62e880d7c455f",
+     "span_sha256": "9ad3e37f8e48eebec1524e08f2e018136b2ab98aab27b2da50d6f2d3c6935d8c"
+    },
+    "site": {
+     "path": "cpp/Case.hxx",
+     "start_line": 5,
+     "end_line": 5,
+     "symbol": "callback",
+     "sha256": "8cf9bde90f6c3832ac22ca9b5078755eaf079017a4bf46315ba62e880d7c455f",
+     "span_sha256": "9ad3e37f8e48eebec1524e08f2e018136b2ab98aab27b2da50d6f2d3c6935d8c"
+    }
+   },
+   "expected": {
+    "relation": "UNRESOLVED",
+    "source": "source",
+    "site": "site",
+    "target": null
+   }
+  },
+  {
+   "id": "training-hh-imports",
+   "repo": "/CGRX_CPP_SWIFT_TRAINING_FIXTURE",
+   "revision": "3c5ab54004fdf37af99bd0972678d83749d8b721",
+   "split": "train",
+   "category": "import",
+   "question": "hh extension coverage: identify the IMPORTS evidence for Support.",
+   "rationale": "Explicit include of the header declaring Support, or Swift import of the SwiftPM target FixtureSupport. This is module dependency evidence, not a call.",
+   "provenance": {
+    "method": "manual-source-read",
+    "verified_on": "2026-11-12"
+   },
+   "evidence": {
+    "source": {
+     "path": "cpp/Case.hh",
+     "start_line": 1,
+     "end_line": 1,
+     "symbol": "Support",
+     "sha256": "8cf9bde90f6c3832ac22ca9b5078755eaf079017a4bf46315ba62e880d7c455f",
+     "span_sha256": "bade2b602d2ce479747846d13dca6fecbd17023eb27616c2b5cf7e07f672b9b8"
+    },
+    "site": {
+     "path": "cpp/Case.hh",
+     "start_line": 1,
+     "end_line": 1,
+     "symbol": "Support",
+     "sha256": "8cf9bde90f6c3832ac22ca9b5078755eaf079017a4bf46315ba62e880d7c455f",
+     "span_sha256": "bade2b602d2ce479747846d13dca6fecbd17023eb27616c2b5cf7e07f672b9b8"
+    },
+    "target": {
+     "path": "cpp/Support.hpp",
+     "start_line": 2,
+     "end_line": 2,
+     "symbol": "Support",
+     "sha256": "0cc4b68f3cb79f6a9bd984a3870b3e6b28a25d0eee38dec1198e617b3b8070d7",
+     "span_sha256": "9b0a5188a3ad2bd758c919f6ca04913325444d3affc29483ea50d09fb3cb0c0f"
+    }
+   },
+   "expected": {
+    "relation": "IMPORTS",
+    "source": "source",
+    "site": "site",
+    "target": "target"
+   }
+  },
+  {
+   "id": "training-hh-calls",
+   "repo": "/CGRX_CPP_SWIFT_TRAINING_FIXTURE",
+   "revision": "3c5ab54004fdf37af99bd0972678d83749d8b721",
+   "split": "train",
+   "category": "call",
+   "question": "hh extension coverage: identify the CALLS evidence for callee.",
+   "rationale": "Read the unique same-file free-function declaration and direct invocation.",
+   "provenance": {
+    "method": "manual-source-read",
+    "verified_on": "2026-11-12"
+   },
+   "evidence": {
+    "source": {
+     "path": "cpp/Case.hh",
+     "start_line": 3,
+     "end_line": 3,
+     "symbol": "callee",
+     "sha256": "8cf9bde90f6c3832ac22ca9b5078755eaf079017a4bf46315ba62e880d7c455f",
+     "span_sha256": "185cd1eb6f09533070dc6e2cb3eac032898d97ba626f75013506795681f88e72"
+    },
+    "site": {
+     "path": "cpp/Case.hh",
+     "start_line": 3,
+     "end_line": 3,
+     "symbol": "callee",
+     "sha256": "8cf9bde90f6c3832ac22ca9b5078755eaf079017a4bf46315ba62e880d7c455f",
+     "span_sha256": "185cd1eb6f09533070dc6e2cb3eac032898d97ba626f75013506795681f88e72"
+    },
+    "target": {
+     "path": "cpp/Case.hh",
+     "start_line": 2,
+     "end_line": 2,
+     "symbol": "callee",
+     "sha256": "8cf9bde90f6c3832ac22ca9b5078755eaf079017a4bf46315ba62e880d7c455f",
+     "span_sha256": "ee1fef23c6ee8433c55710d2eb0ab5834b213aff218663d2d49696c3f21876fa"
+    }
+   },
+   "expected": {
+    "relation": "CALLS",
+    "source": "source",
+    "site": "site",
+    "target": "target"
+   }
+  },
+  {
+   "id": "training-hh-reference",
+   "repo": "/CGRX_CPP_SWIFT_TRAINING_FIXTURE",
+   "revision": "3c5ab54004fdf37af99bd0972678d83749d8b721",
+   "split": "train",
+   "category": "reference",
+   "question": "hh extension coverage: identify the REFERENCE evidence for Support.",
+   "rationale": "Read the declared type and explicit use in the function signature.",
+   "provenance": {
+    "method": "manual-source-read",
+    "verified_on": "2026-11-12"
+   },
+   "evidence": {
+    "source": {
+     "path": "cpp/Case.hh",
+     "start_line": 4,
+     "end_line": 4,
+     "symbol": "Support",
+     "sha256": "8cf9bde90f6c3832ac22ca9b5078755eaf079017a4bf46315ba62e880d7c455f",
+     "span_sha256": "1d051a1c65d7c397a1f94d46eb01fbab320e04ecd1492fd3a0ae28c027c25558"
+    },
+    "site": {
+     "path": "cpp/Case.hh",
+     "start_line": 4,
+     "end_line": 4,
+     "symbol": "Support",
+     "sha256": "8cf9bde90f6c3832ac22ca9b5078755eaf079017a4bf46315ba62e880d7c455f",
+     "span_sha256": "1d051a1c65d7c397a1f94d46eb01fbab320e04ecd1492fd3a0ae28c027c25558"
+    },
+    "target": {
+     "path": "cpp/Support.hpp",
+     "start_line": 2,
+     "end_line": 2,
+     "symbol": "Support",
+     "sha256": "0cc4b68f3cb79f6a9bd984a3870b3e6b28a25d0eee38dec1198e617b3b8070d7",
+     "span_sha256": "9b0a5188a3ad2bd758c919f6ca04913325444d3affc29483ea50d09fb3cb0c0f"
+    }
+   },
+   "expected": {
+    "relation": "REFERENCE",
+    "source": "source",
+    "site": "site",
+    "target": "target"
+   }
+  },
+  {
+   "id": "training-hh-unresolved",
+   "repo": "/CGRX_CPP_SWIFT_TRAINING_FIXTURE",
+   "revision": "3c5ab54004fdf37af99bd0972678d83749d8b721",
+   "split": "train",
+   "category": "ambiguous",
+   "question": "hh extension coverage: identify the UNRESOLVED evidence for callback.",
+   "rationale": "The named callback parameter is dynamically provided; no concrete callable target is asserted.",
+   "provenance": {
+    "method": "manual-source-read",
+    "verified_on": "2026-11-12"
+   },
+   "evidence": {
+    "source": {
+     "path": "cpp/Case.hh",
+     "start_line": 5,
+     "end_line": 5,
+     "symbol": "callback",
+     "sha256": "8cf9bde90f6c3832ac22ca9b5078755eaf079017a4bf46315ba62e880d7c455f",
+     "span_sha256": "9ad3e37f8e48eebec1524e08f2e018136b2ab98aab27b2da50d6f2d3c6935d8c"
+    },
+    "site": {
+     "path": "cpp/Case.hh",
+     "start_line": 5,
+     "end_line": 5,
+     "symbol": "callback",
+     "sha256": "8cf9bde90f6c3832ac22ca9b5078755eaf079017a4bf46315ba62e880d7c455f",
+     "span_sha256": "9ad3e37f8e48eebec1524e08f2e018136b2ab98aab27b2da50d6f2d3c6935d8c"
+    }
+   },
+   "expected": {
+    "relation": "UNRESOLVED",
+    "source": "source",
+    "site": "site",
+    "target": null
+   }
+  },
+  {
+   "id": "training-swift-imports",
+   "repo": "/CGRX_CPP_SWIFT_TRAINING_FIXTURE",
+   "revision": "3c5ab54004fdf37af99bd0972678d83749d8b721",
+   "split": "train",
+   "category": "import",
+   "question": "swift extension coverage: identify the IMPORTS evidence for FixtureSupport.",
+   "rationale": "Explicit include of the header declaring Support, or Swift import of the SwiftPM target FixtureSupport. This is module dependency evidence, not a call.",
+   "provenance": {
+    "method": "manual-source-read",
+    "verified_on": "2026-11-12"
+   },
+   "evidence": {
+    "source": {
+     "path": "Sources/Corpus/Case.swift",
+     "start_line": 1,
+     "end_line": 1,
+     "symbol": "FixtureSupport",
+     "sha256": "4606f0ca3219f74c3fc255938bc652a453afa7367a7d9df1b1e65fb3bf0079eb",
+     "span_sha256": "43d9f7d492b7042a48f7021f3133bbf131385a276e28b5b628ea92dcca9fdbe6"
+    },
+    "site": {
+     "path": "Sources/Corpus/Case.swift",
+     "start_line": 1,
+     "end_line": 1,
+     "symbol": "FixtureSupport",
+     "sha256": "4606f0ca3219f74c3fc255938bc652a453afa7367a7d9df1b1e65fb3bf0079eb",
+     "span_sha256": "43d9f7d492b7042a48f7021f3133bbf131385a276e28b5b628ea92dcca9fdbe6"
+    },
+    "target": {
+     "path": "Package.swift",
+     "start_line": 4,
+     "end_line": 4,
+     "symbol": "FixtureSupport",
+     "sha256": "dbfa034709f37ec1a4e86e5947f98f20a4dd0c1b87155790024d2775fade8d27",
+     "span_sha256": "2a0d591061dca79796c73186238e701771e441ce8d827afb9ca925b5f024f5d8"
+    }
+   },
+   "expected": {
+    "relation": "IMPORTS",
+    "source": "source",
+    "site": "site",
+    "target": "target"
+   }
+  },
+  {
+   "id": "training-swift-calls",
+   "repo": "/CGRX_CPP_SWIFT_TRAINING_FIXTURE",
+   "revision": "3c5ab54004fdf37af99bd0972678d83749d8b721",
+   "split": "train",
+   "category": "call",
+   "question": "swift extension coverage: identify the CALLS evidence for leaf.",
+   "rationale": "Read the unique same-file free-function declaration and direct invocation.",
+   "provenance": {
+    "method": "manual-source-read",
+    "verified_on": "2026-11-12"
+   },
+   "evidence": {
+    "source": {
+     "path": "Sources/Corpus/Case.swift",
+     "start_line": 4,
+     "end_line": 4,
+     "symbol": "leaf",
+     "sha256": "4606f0ca3219f74c3fc255938bc652a453afa7367a7d9df1b1e65fb3bf0079eb",
+     "span_sha256": "f447918782b382a7db92c86b7ed863e9a1d2fb9dda2cd2291e673222afe445a1"
+    },
+    "site": {
+     "path": "Sources/Corpus/Case.swift",
+     "start_line": 4,
+     "end_line": 4,
+     "symbol": "leaf",
+     "sha256": "4606f0ca3219f74c3fc255938bc652a453afa7367a7d9df1b1e65fb3bf0079eb",
+     "span_sha256": "f447918782b382a7db92c86b7ed863e9a1d2fb9dda2cd2291e673222afe445a1"
+    },
+    "target": {
+     "path": "Sources/Corpus/Case.swift",
+     "start_line": 3,
+     "end_line": 3,
+     "symbol": "leaf",
+     "sha256": "4606f0ca3219f74c3fc255938bc652a453afa7367a7d9df1b1e65fb3bf0079eb",
+     "span_sha256": "1329526737ba3ea1ff764e1f54bf6c7c8d2cea9a32184847da63dfd7420825df"
+    }
+   },
+   "expected": {
+    "relation": "CALLS",
+    "source": "source",
+    "site": "site",
+    "target": "target"
+   }
+  },
+  {
+   "id": "training-swift-reference",
+   "repo": "/CGRX_CPP_SWIFT_TRAINING_FIXTURE",
+   "revision": "3c5ab54004fdf37af99bd0972678d83749d8b721",
+   "split": "train",
+   "category": "reference",
+   "question": "swift extension coverage: identify the REFERENCE evidence for Payload.",
+   "rationale": "Read the declared type and explicit use in the function signature.",
+   "provenance": {
+    "method": "manual-source-read",
+    "verified_on": "2026-11-12"
+   },
+   "evidence": {
+    "source": {
+     "path": "Sources/Corpus/Case.swift",
+     "start_line": 5,
+     "end_line": 5,
+     "symbol": "Payload",
+     "sha256": "4606f0ca3219f74c3fc255938bc652a453afa7367a7d9df1b1e65fb3bf0079eb",
+     "span_sha256": "52db5a47fbd6bd21321c746c8bbb1a4436907969943ae41af09f996cd33eff15"
+    },
+    "site": {
+     "path": "Sources/Corpus/Case.swift",
+     "start_line": 5,
+     "end_line": 5,
+     "symbol": "Payload",
+     "sha256": "4606f0ca3219f74c3fc255938bc652a453afa7367a7d9df1b1e65fb3bf0079eb",
+     "span_sha256": "52db5a47fbd6bd21321c746c8bbb1a4436907969943ae41af09f996cd33eff15"
+    },
+    "target": {
+     "path": "Sources/Corpus/Case.swift",
+     "start_line": 2,
+     "end_line": 2,
+     "symbol": "Payload",
+     "sha256": "4606f0ca3219f74c3fc255938bc652a453afa7367a7d9df1b1e65fb3bf0079eb",
+     "span_sha256": "759d9dd9eaf92dc59a6acf0a6fe5b5ca602a58d02df28162c3d6c1d54e4552b9"
+    }
+   },
+   "expected": {
+    "relation": "REFERENCE",
+    "source": "source",
+    "site": "site",
+    "target": "target"
+   }
+  },
+  {
+   "id": "training-swift-unresolved",
+   "repo": "/CGRX_CPP_SWIFT_TRAINING_FIXTURE",
+   "revision": "3c5ab54004fdf37af99bd0972678d83749d8b721",
+   "split": "train",
+   "category": "ambiguous",
+   "question": "swift extension coverage: identify the UNRESOLVED evidence for callback.",
+   "rationale": "The named callback parameter is dynamically provided; no concrete callable target is asserted.",
+   "provenance": {
+    "method": "manual-source-read",
+    "verified_on": "2026-11-12"
+   },
+   "evidence": {
+    "source": {
+     "path": "Sources/Corpus/Case.swift",
+     "start_line": 6,
+     "end_line": 6,
+     "symbol": "callback",
+     "sha256": "4606f0ca3219f74c3fc255938bc652a453afa7367a7d9df1b1e65fb3bf0079eb",
+     "span_sha256": "dd431af5dff7c2ef0a3a32a82866343b91863ef7454b71939fa91b7ae729eb93"
+    },
+    "site": {
+     "path": "Sources/Corpus/Case.swift",
+     "start_line": 6,
+     "end_line": 6,
+     "symbol": "callback",
+     "sha256": "4606f0ca3219f74c3fc255938bc652a453afa7367a7d9df1b1e65fb3bf0079eb",
+     "span_sha256": "dd431af5dff7c2ef0a3a32a82866343b91863ef7454b71939fa91b7ae729eb93"
+    }
+   },
+   "expected": {
+    "relation": "UNRESOLVED",
+    "source": "source",
+    "site": "site",
+    "target": null
    }
   }
  ]

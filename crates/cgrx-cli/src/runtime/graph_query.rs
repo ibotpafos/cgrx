@@ -9,6 +9,7 @@ use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use cgrx_core::{Hash32, RelationKind, Scope, SymbolSelector, canonical_hash};
 use cgrx_languages::pack_for_path;
 use cgrx_retrieval::{contains_identifier_tokens, identifier_tokens};
+use cgrx_store::{MemoryCodeCandidate, MemoryCodeLink, MemoryCodeRange};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -17,7 +18,19 @@ use super::{RuntimeError, coverage_gap_count, path_in_scope};
 
 const MAX_SEARCH_OFFSET: usize = 1_000_000;
 
-fn search_continuation(
+fn document_language(document: &super::StoredDocument) -> Option<&'static str> {
+    if document
+        .semantic_tags
+        .iter()
+        .any(|tag| tag == "CPP_LANGUAGE")
+    {
+        Some("cpp")
+    } else {
+        pack_for_path(Path::new(&document.path)).map(|pack| pack.id())
+    }
+}
+
+pub(super) fn search_continuation(
     offset: usize,
     returned: usize,
     total: usize,
@@ -54,6 +67,85 @@ fn parse_symbol_reference(reference: &str) -> Option<Hash32> {
 }
 
 impl super::Runtime {
+    pub(super) fn search_snapshot_id(&self) -> Result<Hash32, RuntimeError> {
+        canonical_hash(&(
+            "cgrx.search.snapshot.v1",
+            self.state_root.as_os_str().as_encoded_bytes(),
+            &self.stored.snapshot,
+            self.stored.extraction_revision,
+        ))
+        .map_err(|error| RuntimeError::new("cgrx.search_snapshot", error.to_string()))
+    }
+
+    /// Find current definitions with the exact saved name without claiming link continuity.
+    pub fn memory_code_candidates(
+        &self,
+        path: &str,
+        link: &MemoryCodeLink,
+        limit: usize,
+    ) -> (Vec<MemoryCodeCandidate>, bool) {
+        let mut matches = matching_symbol_documents(&self.stored, &link.symbol, None);
+        matches.retain(|document| {
+            document.qualified_name == link.symbol
+                && self.stored.path_hashes.contains_key(&document.path)
+                && super::scan_helpers::syntax_document(&self.stored, document.node_id).is_some()
+        });
+        matches.sort_by_key(|document| {
+            (
+                document.path != path,
+                document.path.as_str(),
+                document.span_start,
+                document.node_id,
+            )
+        });
+        let truncated = matches.len() > limit;
+        let candidates = matches
+            .into_iter()
+            .take(limit)
+            .map(|document| MemoryCodeCandidate {
+                path: document.path.clone(),
+                symbol: document.qualified_name.clone(),
+                symbol_ref: self.symbol_reference(document),
+                definition_span: MemoryCodeRange {
+                    start: document.span_start,
+                    end: document.span_end,
+                },
+                match_kind: if document.path == path {
+                    "same_path"
+                } else {
+                    "other_path"
+                },
+            })
+            .collect();
+        (candidates, truncated)
+    }
+
+    /// Reissue a selector only for the exact unchanged syntax definition.
+    pub fn memory_symbol_ref(&self, path: &str, link: &MemoryCodeLink) -> Option<String> {
+        let source_hash = Hash32::deserialize(serde::de::value::StrDeserializer::<
+            serde::de::value::Error,
+        >::new(&link.source_hash))
+        .ok()?;
+        if self.stored.path_hashes.get(path) != Some(&source_hash) {
+            return None;
+        }
+        let mut matches = self.stored.documents.iter().filter(|document| {
+            document.provenance == "SYNTAX"
+                && document.path == path
+                && document.qualified_name == link.symbol
+                && document.span_start == link.definition_span.start
+                && document.span_end == link.definition_span.end
+                && document.body_start == link.body_span.start
+                && document.body_end == link.body_span.end
+                && super::scan_helpers::syntax_document(&self.stored, document.node_id).is_some()
+        });
+        let document = matches.next()?;
+        if matches.next().is_some() {
+            return None;
+        }
+        Some(self.symbol_reference(document))
+    }
+
     pub(super) fn symbol_reference(&self, document: &super::StoredDocument) -> String {
         format!(
             "cgrxs2.{}",
@@ -136,9 +228,18 @@ impl super::Runtime {
                 "path must be relative and non-empty; limit must be between 1 and 500",
             ));
         }
-        let language = pack_for_path(Path::new(path))
-            .map(|pack| pack.id())
-            .ok_or_else(|| RuntimeError::new("cgrx.unsupported_path", path.to_owned()))?;
+        let language = if self.stored.documents.iter().any(|document| {
+            document.path == path
+                && document
+                    .semantic_tags
+                    .iter()
+                    .any(|tag| tag == "CPP_LANGUAGE")
+        }) {
+            Some("cpp")
+        } else {
+            pack_for_path(Path::new(path)).map(|pack| pack.id())
+        }
+        .ok_or_else(|| RuntimeError::new("cgrx.unsupported_path", path.to_owned()))?;
         if !self.stored.path_hashes.contains_key(path) {
             return Err(RuntimeError::new(
                 "cgrx.path_not_indexed",
@@ -277,10 +378,7 @@ impl super::Runtime {
             .syntax_documents(&self.stored)
             .into_iter()
             .filter(|document| {
-                language.is_none_or(|language| {
-                    pack_for_path(Path::new(&document.path))
-                        .is_some_and(|pack| pack.id() == language)
-                })
+                language.is_none_or(|language| document_language(document) == Some(language))
             })
             .filter_map(|document| {
                 let name = document.qualified_name.to_lowercase();
@@ -365,13 +463,7 @@ impl super::Runtime {
             .collect();
         let next_offset = search_continuation(offset, rows.len(), total)?;
         let has_more = next_offset.is_some();
-        let snapshot_id = canonical_hash(&(
-            "cgrx.search.snapshot.v1",
-            self.state_root.as_os_str().as_encoded_bytes(),
-            &self.stored.snapshot,
-            self.stored.extraction_revision,
-        ))
-        .map_err(|error| RuntimeError::new("cgrx.search_snapshot", error.to_string()))?;
+        let snapshot_id = self.search_snapshot_id()?;
         Ok(json!({
             "snapshot":self.stored.snapshot,
             "query":query,
@@ -419,9 +511,8 @@ impl super::Runtime {
             .syntax_documents(&self.stored)
             .into_iter()
             .filter(|document| {
-                language.is_none_or(|lang| {
-                    pack_for_path(Path::new(&document.path)).is_some_and(|pack| pack.id() == lang)
-                }) && !incoming.contains_key(&document.node_id)
+                language.is_none_or(|lang| document_language(document) == Some(lang))
+                    && !incoming.contains_key(&document.node_id)
             })
             .map(|document| {
                 let outgoing = arcs

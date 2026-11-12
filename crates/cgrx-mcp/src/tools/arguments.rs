@@ -1,4 +1,5 @@
-use cgrx_core::{EvidenceSelector, Hash32, Mode, Scope};
+use cgrx_core::{EvidenceSelector, Hash32, Mode, RelationKind, Scope};
+use cgrx_store::{MemoryKind, MemorySourceKind};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -18,8 +19,75 @@ pub(super) struct OrientArguments {
     pub(super) budget: Option<u32>,
     #[serde(default)]
     pub(super) budget_preset: Option<BudgetPreset>,
+    #[serde(default = "default_orient_mode")]
     pub(super) mode: Mode,
+    #[serde(
+        default = "default_orient_scope",
+        deserialize_with = "deserialize_orient_scope"
+    )]
     pub(super) scope: Scope,
+}
+
+const fn default_orient_mode() -> Mode {
+    Mode::Bounded
+}
+
+#[derive(Deserialize)]
+#[serde(default, deny_unknown_fields)]
+struct OrientScopeFields {
+    include: Vec<String>,
+    exclude: Vec<String>,
+    relation_kinds: Vec<RelationKind>,
+    max_depth: u8,
+}
+
+impl Default for OrientScopeFields {
+    fn default() -> Self {
+        Self {
+            include: vec!["**".to_owned()],
+            exclude: Vec::new(),
+            relation_kinds: vec![RelationKind::Calls],
+            max_depth: 1,
+        }
+    }
+}
+
+impl From<OrientScopeFields> for Scope {
+    fn from(value: OrientScopeFields) -> Self {
+        Self {
+            include: value.include,
+            exclude: value.exclude,
+            relation_kinds: value.relation_kinds,
+            max_depth: value.max_depth,
+        }
+    }
+}
+
+fn default_orient_scope() -> Scope {
+    OrientScopeFields::default().into()
+}
+
+fn deserialize_orient_scope<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Scope, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Input {
+        Path(String),
+        Paths(Vec<String>),
+        Fields(OrientScopeFields),
+    }
+    Ok(match Input::deserialize(deserializer)? {
+        Input::Fields(fields) => fields.into(),
+        Input::Path(path) => Scope {
+            include: vec![path],
+            ..default_orient_scope()
+        },
+        Input::Paths(paths) => Scope {
+            include: paths,
+            ..default_orient_scope()
+        },
+    })
 }
 
 #[derive(Clone, Copy, Deserialize)]
@@ -42,13 +110,6 @@ impl BudgetPreset {
 
 impl OrientArguments {
     pub(super) fn resolved_budget(&self) -> Result<u32, JsonRpcError> {
-        if self.budget.is_some() && self.budget_preset.is_some() {
-            return Err(JsonRpcError::typed(
-                -32602,
-                "cgrx.invalid_arguments",
-                "use budget or budget_preset, not both",
-            ));
-        }
         let budget = self
             .budget
             .or_else(|| self.budget_preset.map(BudgetPreset::tokens))
@@ -104,6 +165,14 @@ pub(super) struct ExpandArguments {
     pub(super) budget: u32,
 }
 
+#[derive(Default, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(super) enum SearchMatchMode {
+    #[default]
+    Lexical,
+    Ast,
+}
+
 #[derive(Deserialize)]
 pub(super) struct SearchGraphArguments {
     pub(super) query: String,
@@ -119,6 +188,8 @@ pub(super) struct SearchGraphArguments {
     pub(super) language: Option<String>,
     #[serde(default)]
     pub(super) include_body: bool,
+    #[serde(default)]
+    pub(super) match_mode: SearchMatchMode,
 }
 
 #[derive(Deserialize)]
@@ -264,7 +335,10 @@ fn default_dead_code_limit() -> u32 {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(super) struct CheckIndexCoverageArguments {
+    #[serde(default, rename = "repo")]
+    pub(super) _repo: Option<String>,
     #[serde(default)]
     pub(super) paths: Vec<String>,
     #[serde(default)]
@@ -351,23 +425,45 @@ pub(super) struct MemorySpanArguments {
 pub(super) struct MemoryRecordArguments {
     pub(super) fact: String,
     pub(super) confidence: u16,
-    pub(super) repo: String,
+    #[serde(default)]
+    pub(super) repo: Option<String>,
     #[serde(default)]
     pub(super) rev: Option<String>,
-    pub(super) path: String,
+    #[serde(default)]
+    pub(super) path: Option<String>,
     #[serde(default)]
     pub(super) span: Option<MemorySpanArguments>,
+    #[serde(default)]
+    pub(super) symbol: Option<String>,
+    #[serde(default)]
+    pub(super) symbol_ref: Option<String>,
     #[serde(default)]
     pub(super) valid_until_unix_nanos: Option<u64>,
     #[serde(default)]
     pub(super) privacy_tag: Option<String>,
+    #[serde(default)]
+    pub(super) memory_kind: MemoryKind,
+    #[serde(default)]
+    pub(super) source_kind: MemorySourceKind,
+    #[serde(default)]
+    pub(super) source_ref: Option<String>,
+    #[serde(default)]
+    pub(super) task_id: Option<String>,
+    #[serde(default)]
+    pub(super) event_id: Option<String>,
 }
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct MemoryRecallArguments {
     #[serde(default)]
+    pub(super) include_code: bool,
+    #[serde(default)]
     pub(super) query: Option<String>,
+    #[serde(default)]
+    pub(super) path: Option<String>,
+    #[serde(default)]
+    pub(super) symbol: Option<String>,
     #[serde(default)]
     pub(super) min_confidence: Option<u16>,
     #[serde(default)]
@@ -376,4 +472,38 @@ pub(super) struct MemoryRecallArguments {
     pub(super) revision: Option<String>,
     #[serde(default)]
     pub(super) limit: Option<usize>,
+    #[serde(default)]
+    pub(super) repo: Option<String>,
+    #[serde(default)]
+    pub(super) memory_kind: Option<MemoryKind>,
+    #[serde(default)]
+    pub(super) task_id: Option<String>,
+    #[serde(default)]
+    pub(super) include_stale: bool,
+    #[serde(default)]
+    pub(super) id: Option<String>,
+    #[serde(default)]
+    pub(super) include_history: bool,
+    #[serde(default, alias = "token_budget")]
+    pub(super) budget: Option<u32>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct MemoryUpdateArguments {
+    pub(super) id: String,
+    pub(super) expected_version: u32,
+    pub(super) reason: String,
+    pub(super) record: MemoryRecordArguments,
+    #[serde(default)]
+    pub(super) repo: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct MemoryForgetArguments {
+    pub(super) id: String,
+    pub(super) expected_version: u32,
+    #[serde(default)]
+    pub(super) repo: Option<String>,
 }

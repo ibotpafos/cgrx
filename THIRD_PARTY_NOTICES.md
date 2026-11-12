@@ -39,8 +39,29 @@ Dependencies are pinned in Cargo.lock and downloaded during source installation.
 licenses. Binary distributions include available dependency license/notice files
 in the licenses directory. Tree-sitter grammars retain their upstream authorship.
 
+The code-discovery runtime additionally uses ast-grep-core 0.45.2 (MIT) for
+read-only structural patterns, Rayon 1.12.0 (MIT OR Apache-2.0) for extraction
+scheduling, and petgraph 0.8.3 (MIT OR Apache-2.0) for iterative package SCCs.
+Upstreams: [ast-grep](https://github.com/ast-grep/ast-grep),
+[Rayon](https://github.com/rayon-rs/rayon), and
+[petgraph](https://github.com/petgraph/petgraph).
+Retained notices: [ast-grep MIT](licenses/ast-grep-0.45.2-MIT.txt),
+[Rayon MIT](licenses/rayon-1.12.0-LICENSE-MIT.txt),
+[Rayon Apache](licenses/rayon-1.12.0-LICENSE-APACHE.txt),
+[petgraph MIT](licenses/petgraph-0.8.3-LICENSE-MIT.txt), and
+[petgraph Apache](licenses/petgraph-0.8.3-LICENSE-APACHE.txt).
+
 ## D3 force layout
 
 The symbol/file atlas bundles `d3-force` 3.0.0 and its d3-quadtree,
 d3-dispatch and d3-timer dependencies. Upstream: https://github.com/d3/d3-force.
 Their ISC license notices are retained in [licenses/d3-ISC.txt](licenses/d3-ISC.txt).
+
+## ast-grep-core
+
+Syntax-only review hints use ast-grep-core 0.45.2 (MIT).
+Upstream: https://github.com/ast-grep/ast-grep .
+
+## similar
+
+Review-only patches use similar 2.7.0 (Apache-2.0), https://github.com/mitsuhiko/similar .

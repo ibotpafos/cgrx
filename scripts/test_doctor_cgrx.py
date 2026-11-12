@@ -7,6 +7,7 @@ import sys
 import tempfile
 import textwrap
 import signal
+import shlex
 import time
 import unittest
 
@@ -74,7 +75,7 @@ class DoctorCgrxTests(unittest.TestCase):
         path.chmod(0o755)
         return path
 
-    def run_doctor(self, executable, reference=None, launcher=None, metadata=None, timeout=None):
+    def run_doctor(self, executable, reference=None, launcher=None, metadata=None, timeout=None, response_profile=None):
         command = [
             sys.executable,
             str(DOCTOR),
@@ -92,6 +93,8 @@ class DoctorCgrxTests(unittest.TestCase):
             command.extend(["--metadata", str(metadata)])
         environment = os.environ.copy()
         environment["CGRX_DOCTOR_SECRET_SENTINEL"] = "DO_NOT_PRINT_THIS"
+        if response_profile is not None:
+            environment["CGRX_RESPONSE_PROFILE"] = response_profile
         result = subprocess.run(command, text=True, capture_output=True, env=environment, timeout=8)
         self.assertNotIn("DO_NOT_PRINT_THIS", result.stdout + result.stderr)
         return result
@@ -128,6 +131,20 @@ class DoctorCgrxTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         report = json.loads(result.stdout)
         self.assertIn("binary_hash_mismatch", [item["code"] for item in report["drift"]])
+
+    def test_compact_user_profile_does_not_hide_full_snapshot_from_probe(self):
+        binary = self.fake_binary()
+        binary.write_text(binary.read_text().replace("import sys", "import sys\nimport os").replace(
+            '"structuredContent":structured',
+            '"structuredContent":structured if os.environ.get("CGRX_RESPONSE_PROFILE") == "full" else {}',
+        ))
+        for profile in ["token-efficient", "invalid-profile"]:
+            with self.subTest(profile=profile):
+                result = self.run_doctor(binary, response_profile=profile)
+                report = json.loads(result.stdout)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertTrue(report["jsonrpc"]["status"]["ok"])
+                self.assertEqual(report["drift"], [])
 
     def test_generation_collision_failure_is_reported_without_being_downgraded(self):
         binary = self.fake_binary(
@@ -204,11 +221,39 @@ class DoctorCgrxTests(unittest.TestCase):
             self.assertFalse(summary['status']['ok'])
             self.assertNotIn('DO_NOT_PRINT_THIS',json.dumps(summary))
 
+    def test_compiled_server_build_id_must_match_receipt(self):
+        import doctor_cgrx as doctor
+        expected='a'*32
+        for reported in [expected, 'b'*32, None]:
+            with self.subTest(reported=reported):
+                raw={'process':{'exit_status':0},'generation_collision':False,'responses':{
+                    1:{'result':{'protocolVersion':doctor.PROTOCOL_VERSION,'serverInfo':{'name':'cgrx','version':'9.8.7'},'capabilities':{}}},
+                    2:{'result':{'structuredContent':{'repo':'/repo','freshness':'WATCHED','snapshot':{'repo_revision':'c'*40,'graph_generation':7},
+                        'server':{'name':'cgrx','version':'9.8.7','pid':123,'build_id':reported}}}}}}
+                drift=[]
+                summary=doctor.summarize_rpc(raw,drift,'/repo','c'*40,expected)
+                self.assertEqual(summary['status']['server_build_matches'],reported==expected)
+                self.assertEqual('server_build_mismatch' in [d['code'] for d in drift],reported!=expected)
+
+    def test_bad_server_identity_is_redacted(self):
+        import doctor_cgrx as doctor
+        for identity in [{'name':'DO_NOT_PRINT_THIS'},
+                         {'name':'cgrx','version':'9.8.7','pid':True,'build_id':'a'*32},
+                         {'name':'cgrx','version':'9.8.7','pid':123,'build_id':'DO_NOT_PRINT_THIS'}]:
+            raw={'process':{'exit_status':0},'generation_collision':False,'responses':{
+                1:{'result':{'protocolVersion':doctor.PROTOCOL_VERSION,'serverInfo':{'name':'cgrx','version':'9.8.7'},'capabilities':{}}},
+                2:{'result':{'structuredContent':{'server':identity}}}}}
+            drift=[]
+            summary=doctor.summarize_rpc(raw,drift)
+            self.assertIsNone(summary['status']['server'])
+            self.assertNotIn('DO_NOT_PRINT_THIS',json.dumps(summary))
+            self.assertIn('server_identity_invalid',[d['code'] for d in drift])
+
     def test_timeout_kills_launcher_descendants(self):
         # Owned mock child only. Never signal a pre-existing process.
         import doctor_cgrx as doctor
         pidfile=self.root/'child.pid';launcher=self.root/'hung'
-        launcher.write_text('#!/bin/sh\n/bin/sleep 30 &\necho $! > '+str(pidfile)+'\nwait\n')
+        launcher.write_text('#!/bin/sh\n/bin/sleep 30 &\necho $! > '+shlex.quote(str(pidfile))+'\nwait\n')
         launcher.chmod(0o755)
         try:
             result=doctor.probe_version(str(launcher),.5)

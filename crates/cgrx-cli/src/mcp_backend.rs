@@ -17,6 +17,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 pub(super) struct RuntimeMcpBackend {
+    _quality_worker: Option<cgrx_cli::QualityWorker>,
     risk_baseline: Option<cgrx_cli::RiskBaseline>,
     runtime: Runtime,
     watch_root: Option<PathBuf>,
@@ -25,12 +26,14 @@ pub(super) struct RuntimeMcpBackend {
     imported_scip_hash: Option<Hash32>,
     observed_scip: Option<(ScipFileStamp, Hash32)>,
     expansions: BTreeMap<String, ExpansionState>,
+    expansion_order: VecDeque<String>,
     orient_preparations: BTreeMap<Hash32, Arc<OrientPreparation>>,
     orient_preparation_order: VecDeque<Hash32>,
     next_handle_cursor: u64,
 }
 
 const ORIENT_PREPARATION_CACHE_LIMIT: usize = 8;
+const EXPANSION_CACHE_LIMIT: usize = 32;
 
 #[derive(Clone, Copy, Eq, PartialEq)]
 struct ScipFileStamp {
@@ -87,7 +90,11 @@ fn usize_argument(value: u32, name: &str) -> Result<usize, BackendError> {
 
 impl RuntimeMcpBackend {
     pub(super) fn new(runtime: Runtime, watch_root: Option<PathBuf>) -> Self {
+        let quality_worker = watch_root
+            .as_ref()
+            .map(|root| runtime.start_quality_worker(root, None));
         Self {
+            _quality_worker: quality_worker,
             runtime,
             watch_root,
             managed_state: None,
@@ -95,6 +102,7 @@ impl RuntimeMcpBackend {
             imported_scip_hash: None,
             observed_scip: None,
             expansions: BTreeMap::new(),
+            expansion_order: VecDeque::new(),
             orient_preparations: BTreeMap::new(),
             orient_preparation_order: VecDeque::new(),
             next_handle_cursor: 0,
@@ -113,7 +121,9 @@ impl RuntimeMcpBackend {
         scip_index: Option<PathBuf>,
     ) -> Self {
         let imported_scip_hash = runtime.scip_input_hash();
+        let quality_worker = runtime.start_quality_worker(&root, scip_index.clone());
         Self {
+            _quality_worker: Some(quality_worker),
             runtime,
             watch_root: Some(root),
             managed_state: Some(state),
@@ -121,6 +131,7 @@ impl RuntimeMcpBackend {
             imported_scip_hash,
             observed_scip: None,
             expansions: BTreeMap::new(),
+            expansion_order: VecDeque::new(),
             orient_preparations: BTreeMap::new(),
             orient_preparation_order: VecDeque::new(),
             next_handle_cursor: 0,
@@ -129,6 +140,15 @@ impl RuntimeMcpBackend {
     }
 
     fn refresh(&mut self) -> Result<(), BackendError> {
+        let _quality_graph_guard = if self.watch_root.is_some() {
+            Some(
+                self.runtime
+                    .quality_graph_guard()
+                    .map_err(|e| BackendError::new(e.code(), e.to_string()))?,
+            )
+        } else {
+            None
+        };
         let current_scip_hash = self.current_scip_hash()?;
         let scip_changed =
             current_scip_hash.is_some() && current_scip_hash != self.imported_scip_hash;
@@ -170,6 +190,7 @@ impl RuntimeMcpBackend {
         }
         if changed {
             self.expansions.clear();
+            self.expansion_order.clear();
             self.orient_preparations.clear();
             self.orient_preparation_order.clear();
         }
@@ -249,6 +270,20 @@ impl RuntimeMcpBackend {
             .ok_or_else(|| BackendError::new("cgrx.handle", "handle cursor exhausted"))?;
         revision_bound_handle(self.runtime.snapshot(), query_hash, cursor)
             .map_err(|error| BackendError::new("cgrx.handle", error.to_string()))
+    }
+
+    fn remember_expansion(&mut self, handle: String, state: ExpansionState) {
+        // Each continuation can pin a complete source preparation. Bound the
+        // number independently of the ordinary preparation LRU; old handles
+        // expire with the existing typed handle_not_found behavior.
+        while self.expansions.len() >= EXPANSION_CACHE_LIMIT {
+            let Some(oldest) = self.expansion_order.pop_front() else {
+                break;
+            };
+            self.expansions.remove(&oldest);
+        }
+        self.expansion_order.push_back(handle.clone());
+        self.expansions.insert(handle, state);
     }
 }
 
@@ -333,6 +368,7 @@ impl ToolBackend for RuntimeMcpBackend {
         _mode: &str,
         limit: usize,
         runs: Option<Value>,
+        base: Option<&str>,
     ) -> Result<Value, BackendError> {
         self.refresh()?;
         let (Some(state), Some(root)) = (&self.managed_state, &self.watch_root) else {
@@ -341,12 +377,29 @@ impl ToolBackend for RuntimeMcpBackend {
                 "risk scan requires serve --root or --multi-repo",
             ));
         };
-        let cache_hit = self.risk_baseline.is_some();
-        if self.risk_baseline.is_none() {
+        let revision = match base {
+            None | Some("HEAD") => self.runtime.snapshot().repo_revision.clone(),
+            Some(base) => Runtime::resolve_commit(root, base).map_err(runtime_backend_error)?,
+        };
+        let cache_hit = self
+            .risk_baseline
+            .as_ref()
+            .is_some_and(|baseline| baseline.revision() == revision);
+        if !cache_hit && revision == self.runtime.snapshot().repo_revision {
+            // Another MCP process may have published a different extraction
+            // policy to this shared HEAD cache since this backend opened it.
+            let runtime = super::open_managed_runtime(root, state)
+                .map_err(|detail| BackendError::new("cgrx.risk_scan_unavailable", detail))?;
+            if runtime.snapshot().repo_revision != self.runtime.snapshot().repo_revision {
+                return Err(BackendError::new(
+                    "revision_changed",
+                    "repository HEAD changed while preparing risk baseline; retry",
+                ));
+            }
+            self.risk_baseline = Some(runtime.risk_baseline());
+        } else if !cache_hit {
             self.risk_baseline = Some(
-                Runtime::open(state)
-                    .map_err(|e| BackendError::new(e.code(), e.to_string()))?
-                    .risk_baseline(),
+                Runtime::risk_baseline_at_commit(root, &revision).map_err(runtime_backend_error)?,
             );
         }
         let baseline = self.risk_baseline.as_ref().expect("baseline loaded");
@@ -392,7 +445,7 @@ impl ToolBackend for RuntimeMcpBackend {
             Vec::new()
         } else {
             let handle = self.issue_handle(&query)?;
-            self.expansions.insert(
+            self.remember_expansion(
                 handle.clone(),
                 ExpansionState {
                     request: query,
@@ -456,9 +509,10 @@ impl ToolBackend for RuntimeMcpBackend {
         let has_more = has_budget_exclusions(&report);
         let cumulative_budget = state.request.token_budget;
         self.expansions.remove(handle);
+        self.expansion_order.retain(|key| key != handle);
         let next_handles = if has_more {
             let next_handle = self.issue_handle(&state.request)?;
-            self.expansions.insert(next_handle.clone(), state);
+            self.remember_expansion(next_handle.clone(), state);
             vec![next_handle]
         } else {
             Vec::new()
@@ -513,6 +567,35 @@ impl ToolBackend for RuntimeMcpBackend {
         let limit = usize_argument(limit, "limit")?;
         self.runtime
             .get_outline(path, limit)
+            .map_err(runtime_backend_error)
+    }
+
+    fn search_ast_graph_page(
+        &mut self,
+        query: &str,
+        scope: Value,
+        page: (u32, u32),
+        language: &str,
+    ) -> Result<Value, BackendError> {
+        self.refresh()?;
+        let root = self.watch_root.as_deref().ok_or_else(|| {
+            BackendError::new(
+                "cgrx.ast_search_unavailable",
+                "structural search requires a managed source repository",
+            )
+        })?;
+        let scope = graph_scope(&scope)?;
+        self.runtime
+            .search_ast_graph_page(
+                root,
+                query,
+                &scope,
+                (
+                    usize_argument(page.0, "limit")?,
+                    usize_argument(page.1, "offset")?,
+                ),
+                language,
+            )
             .map_err(runtime_backend_error)
     }
 
@@ -600,6 +683,16 @@ impl ToolBackend for RuntimeMcpBackend {
             .map_err(runtime_backend_error)
     }
 
+    fn quality_tool(&mut self, operation: &str, arguments: Value) -> Result<Value, BackendError> {
+        self.refresh()?;
+        let root = self.watch_root.as_ref().ok_or_else(|| {
+            BackendError::new("cgrx.quality_unavailable", "managed repository required")
+        })?;
+        self.runtime
+            .quality_tool(root, operation, arguments)
+            .map_err(|e| BackendError::new(e.code(), e.to_string()))
+    }
+
     fn suggest_refactors(
         &mut self,
         scope: Value,
@@ -636,6 +729,19 @@ impl ToolBackend for RuntimeMcpBackend {
         self.runtime
             .get_code_snippet_selected(selector)
             .map_err(runtime_backend_error)
+    }
+
+    fn memory_symbol_ref(&self, path: &str, link: &cgrx_store::MemoryCodeLink) -> Option<String> {
+        self.runtime.memory_symbol_ref(path, link)
+    }
+
+    fn memory_code_candidates(
+        &self,
+        path: &str,
+        link: &cgrx_store::MemoryCodeLink,
+        limit: usize,
+    ) -> (Vec<cgrx_store::MemoryCodeCandidate>, bool) {
+        self.runtime.memory_code_candidates(path, link, limit)
     }
 
     fn trace_path_selected(
@@ -680,8 +786,7 @@ impl ToolBackend for RuntimeMcpBackend {
         limit: u32,
     ) -> Result<Value, BackendError> {
         self.refresh()?;
-        let scope = serde_json::from_value(scope)
-            .map_err(|e| BackendError::new("cgrx.invalid_scope", e.to_string()))?;
+        let scope = graph_scope(&scope)?;
         self.runtime
             .explain_symbol(symbol, path, &scope, depth, limit as usize)
             .map_err(runtime_backend_error)
@@ -694,8 +799,7 @@ impl ToolBackend for RuntimeMcpBackend {
         limit: u32,
     ) -> Result<Value, BackendError> {
         self.refresh()?;
-        let scope = serde_json::from_value(scope)
-            .map_err(|e| BackendError::new("cgrx.invalid_scope", e.to_string()))?;
+        let scope = graph_scope(&scope)?;
         self.runtime
             .detect_dead_code(&scope, language, limit as usize)
             .map_err(runtime_backend_error)
@@ -841,6 +945,7 @@ impl ToolBackend for RuntimeMcpBackend {
                 "edges":self.runtime.graph_edge_count()
             },
             "similarity_index":self.runtime.similarity_index_status(),
+            "swift_compiler":self.runtime.swift_compiler_status(),
             "freshness":if self.watch_root.is_some() { "WATCHED" } else { "PINNED" },
             "changed_paths":self.runtime.changed_paths(),
             "coverage":bounded_coverage,

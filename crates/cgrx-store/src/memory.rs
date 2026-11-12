@@ -1,18 +1,13 @@
-//! Durable decision memory: agent-recorded facts pinned to repository state.
-//!
-//! A decision record captures `{fact, confidence 0..=1000, provenance, valid_until,
-//! privacy_tag}` and persists it under `.cgrx/memory/decisions/<id>.json`, next to
-//! the runtime observation store. Record identity is a deterministic content hash,
-//! so re-recording the same fact is idempotent. Expired records are excluded from
-//! recall and removed by TTL pruning.
+//! Compatibility API for durable decisions, backed by the typed Memvid store.
+//! Legacy JSON envelopes are validated and migrated on the first memory operation.
 
-use std::fs::{self, File, OpenOptions};
-use std::io::{self, Write};
+use std::fs::{self, File};
+use std::io;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::generation::acquire_writer_lock;
+use crate::agent_memory::AgentMemoryQuery;
 
 pub const MEMORY_SCHEMA_VERSION: u32 = 1;
 pub const MAX_CONFIDENCE: u16 = 1000;
@@ -80,7 +75,7 @@ pub struct MemoryRecordInput {
 /// Bounded, deterministic recall query.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct MemoryRecallQuery {
-    /// Case-insensitive substring filter over `fact`; [`None`] matches everything.
+    /// BM25 and, when enabled, multilingual semantic search; [`None`] browses all records.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub query: Option<String>,
     #[serde(default)]
@@ -125,153 +120,84 @@ pub struct MemoryPruneReport {
 
 #[derive(Clone, Debug)]
 pub struct MemoryStore {
-    root: PathBuf,
+    pub(crate) root: PathBuf,
+    pub(crate) embeddings: bool,
 }
 
 impl MemoryStore {
+    /// Multilingual local embeddings are enabled by default and loaded lazily.
+    /// Set CGRX_MEMORY_EMBEDDINGS=off for offline lexical-only operation.
     pub fn open(root: impl AsRef<Path>) -> io::Result<Self> {
-        let root = root.as_ref().to_path_buf();
-        fs::create_dir_all(root.join(".cgrx/memory/decisions"))?;
-        sync_dir(&root.join(".cgrx/memory"))?;
-        Ok(Self { root })
+        let embeddings = match std::env::var("CGRX_MEMORY_EMBEDDINGS").as_deref() {
+            Ok("off" | "false" | "0") => false,
+            Ok("on" | "true" | "1") | Err(_) => true,
+            _ => return Err(invalid_input("CGRX_MEMORY_EMBEDDINGS must be on or off")),
+        };
+        Self::open_mode(root.as_ref(), embeddings)
     }
 
-    /// Persist a decision; identical content replays deterministically as a duplicate.
-    pub fn record(
-        &self,
-        input: &MemoryRecordInput,
-        now_unix_nanos: u64,
-    ) -> io::Result<RecordPublication> {
-        let normalized = normalize_input(input, now_unix_nanos)?;
-        let _lock = acquire_writer_lock(&self.root)?;
+    /// Explicit lexical mode for disconnected installations and deterministic tests.
+    pub fn open_lexical(root: impl AsRef<Path>) -> io::Result<Self> {
+        Self::open_mode(root.as_ref(), false)
+    }
+
+    fn open_mode(root: &Path, embeddings: bool) -> io::Result<Self> {
+        fs::create_dir_all(root.join(".cgrx/memory/decisions"))?;
+        let root = root.canonicalize()?;
+        sync_dir(&root.join(".cgrx/memory"))?;
+        Ok(Self { root, embeddings })
+    }
+
+    pub fn record(&self, input: &MemoryRecordInput, now: u64) -> io::Result<RecordPublication> {
+        let normalized = normalize_input(input, now)?;
         let id = record_id(&normalized)?;
-        let path = self.decision_path(&id);
-        if path.exists() {
-            let stored = read_record(&path)?;
-            if stored.record
-                == normalized_record(&normalized, &id, stored.record.recorded_unix_nanos)
-            {
-                let record = stored.record;
-                return Ok(RecordPublication {
-                    id,
-                    duplicate: true,
-                    record,
-                });
-            }
-            return Err(invalid_data("decision record identity collision"));
-        }
-        let record = normalized_record(&normalized, &id, now_unix_nanos);
-        let envelope = RecordEnvelope {
-            schema_version: MEMORY_SCHEMA_VERSION,
-            content_hash: fingerprint(&record)?,
-            record: record.clone(),
-        };
-        let bytes =
-            serde_json::to_vec(&envelope).map_err(|error| invalid_data(error.to_string()))?;
-        write_atomic_new(&path, &bytes)?;
+        let publication = self.publish_legacy(normalized_record(&normalized, &id, now))?;
         Ok(RecordPublication {
-            id,
-            duplicate: false,
-            record,
+            id: publication.record.decision.id.clone(),
+            duplicate: publication.duplicate,
+            record: publication.record.decision,
         })
     }
 
-    /// Deterministic recall: non-expired matches ordered by confidence desc, id asc.
     pub fn recall(&self, query: &MemoryRecallQuery) -> io::Result<(Vec<DecisionRecord>, bool)> {
-        let needle = query.query.as_deref().map(str::to_lowercase);
-        let mut matches = Vec::new();
-        for path in sorted_files(&self.decisions_dir())? {
-            let envelope = read_record(&path)?;
-            let record = envelope.record;
-            if record.expired(query.now_unix_nanos) {
-                continue;
-            }
-            if record.confidence < query.min_confidence {
-                continue;
-            }
-            if query
-                .privacy_tag
-                .as_ref()
-                .is_some_and(|tag| tag != &record.privacy_tag)
-            {
-                continue;
-            }
-            if query
-                .revision
-                .as_ref()
-                .is_some_and(|rev| rev != &record.provenance.rev)
-            {
-                continue;
-            }
-            if needle
-                .as_ref()
-                .is_some_and(|needle| !record.fact.to_lowercase().contains(needle.as_str()))
-            {
-                continue;
-            }
-            matches.push(record);
-        }
-        matches.sort_by(|left, right| {
-            right
-                .confidence
-                .cmp(&left.confidence)
-                .then_with(|| left.id.cmp(&right.id))
-        });
-        let truncated = matches.len() > query.limit;
-        matches.truncate(query.limit);
-        Ok((matches, truncated))
+        let result = self.agent_recall(&AgentMemoryQuery {
+            recall: query.clone(),
+            memory_kind: None,
+            task_id: None,
+            path: None,
+            symbol: None,
+            include_stale: true,
+            id: None,
+            include_history: false,
+        })?;
+        Ok((
+            result
+                .results
+                .into_iter()
+                .map(|h| h.record.decision)
+                .collect(),
+            result.truncated,
+        ))
     }
 
-    pub fn status(&self, now_unix_nanos: u64) -> io::Result<MemoryStatus> {
-        let mut status = MemoryStatus::default();
-        for path in sorted_files(&self.decisions_dir())? {
-            let record = read_record(&path)?.record;
-            status.decisions += 1;
-            if record.expired(now_unix_nanos) {
-                status.expired += 1;
-            }
-            status.bytes = status.bytes.saturating_add(fs::metadata(&path)?.len());
-        }
-        Ok(status)
+    pub fn status(&self, now: u64) -> io::Result<MemoryStatus> {
+        let records = self.all_agent_records()?;
+        Ok(MemoryStatus {
+            decisions: records.len(),
+            expired: records.iter().filter(|r| r.decision.expired(now)).count(),
+            bytes: fs::metadata(self.agent_path())?.len(),
+        })
     }
 
-    /// Remove records expired at `now_unix_nanos`.
-    pub fn prune_expired(
-        &self,
-        now_unix_nanos: u64,
-        dry_run: bool,
-    ) -> io::Result<MemoryPruneReport> {
-        let _lock = acquire_writer_lock(&self.root)?;
-        let mut report = MemoryPruneReport {
-            dry_run,
-            ..MemoryPruneReport::default()
-        };
-        for path in sorted_files(&self.decisions_dir())? {
-            let record = read_record(&path)?.record;
-            if !record.expired(now_unix_nanos) {
-                report.retained += 1;
-                continue;
-            }
-            report.removed += 1;
-            report.bytes_reclaimed = report
-                .bytes_reclaimed
-                .saturating_add(fs::metadata(&path)?.len());
-            if !dry_run {
-                fs::remove_file(&path)?;
-            }
-        }
-        if !dry_run {
-            sync_dir(&self.decisions_dir())?;
-        }
-        Ok(report)
+    pub fn prune_expired(&self, now: u64, dry_run: bool) -> io::Result<MemoryPruneReport> {
+        self.prune_agent_records(now, dry_run)
     }
 
-    fn decisions_dir(&self) -> PathBuf {
-        self.root.join(".cgrx/memory/decisions")
-    }
-
-    fn decision_path(&self, id: &str) -> PathBuf {
-        self.decisions_dir().join(format!("{id}.json"))
+    pub(crate) fn legacy_records(&self) -> io::Result<Vec<(PathBuf, DecisionRecord)>> {
+        sorted_files(&self.root.join(".cgrx/memory/decisions"))?
+            .into_iter()
+            .map(|path| Ok((path.clone(), read_record(&path)?.record)))
+            .collect()
     }
 }
 
@@ -366,7 +292,7 @@ fn record_id(normalized: &NormalizedInput) -> io::Result<String> {
 
 /// blake3 over JSON bytes. `canonical_hash` is unsuitable here: it rejects
 /// absolute paths, while provenance repos are absolute worktree roots.
-fn fingerprint(value: &impl Serialize) -> io::Result<String> {
+pub(crate) fn fingerprint(value: &impl Serialize) -> io::Result<String> {
     let bytes = serde_json::to_vec(value).map_err(|error| invalid_data(error.to_string()))?;
     Ok(blake3::hash(&bytes).to_hex().to_string()[..32].to_owned())
 }
@@ -394,27 +320,15 @@ fn sorted_files(directory: &Path) -> io::Result<Vec<PathBuf>> {
     Ok(paths)
 }
 
-fn write_atomic_new(path: &Path, bytes: &[u8]) -> io::Result<()> {
-    let temporary = path.with_extension(format!("tmp-{}", std::process::id()));
-    let mut file = OpenOptions::new()
-        .create_new(true)
-        .write(true)
-        .open(&temporary)?;
-    file.write_all(bytes)?;
-    file.sync_all()?;
-    fs::rename(&temporary, path)?;
-    sync_dir(path.parent().expect("decision file has parent"))
-}
-
 fn sync_dir(path: &Path) -> io::Result<()> {
     File::open(path)?.sync_all()
 }
 
-fn invalid_input(detail: impl Into<String>) -> io::Error {
+pub(crate) fn invalid_input(detail: impl Into<String>) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidInput, detail.into())
 }
 
-fn invalid_data(detail: impl Into<String>) -> io::Error {
+pub(crate) fn invalid_data(detail: impl Into<String>) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, detail.into())
 }
 
@@ -448,7 +362,7 @@ mod tests {
             std::process::id(),
             now_nanos()
         ));
-        let store = MemoryStore::open(&dir).expect("open memory store");
+        let store = MemoryStore::open_lexical(&dir).expect("open memory store");
         (store, dir)
     }
 
@@ -607,18 +521,24 @@ mod tests {
     }
 
     #[test]
-    fn tampered_record_is_rejected_on_read() {
+    fn tampered_legacy_record_is_rejected_on_migration() {
         let (store, dir) = store();
         let now = now_nanos();
-        let publication = store.record(&input("honest"), now).expect("record");
+        let normalized = normalize_input(&input("honest"), now).unwrap();
+        let id = record_id(&normalized).unwrap();
+        let record = normalized_record(&normalized, &id, now);
+        let mut envelope = RecordEnvelope {
+            schema_version: MEMORY_SCHEMA_VERSION,
+            content_hash: fingerprint(&record).unwrap(),
+            record,
+        };
+        envelope.record.fact = "dishonest".to_owned();
         let path = dir
             .join(".cgrx/memory/decisions")
-            .join(format!("{}.json", publication.id));
-        let mut envelope: RecordEnvelope =
-            serde_json::from_slice(&fs::read(&path).expect("read")).expect("parse");
-        envelope.record.fact = "dishonest".to_owned();
-        fs::write(&path, serde_json::to_vec(&envelope).expect("serialize")).expect("tamper");
+            .join(format!("{id}.json"));
+        fs::write(&path, serde_json::to_vec(&envelope).unwrap()).unwrap();
         assert!(store.status(now).is_err());
+        assert!(path.exists(), "a failed migration preserves its source");
         cleanup(&dir);
     }
 }

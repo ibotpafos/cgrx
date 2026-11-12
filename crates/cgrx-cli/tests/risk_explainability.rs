@@ -17,6 +17,7 @@ fn unsupported_worktree_changes_are_explicit_risk_gaps() {
     let mut fixture = Fixture::with_files(&[
         ("main.rs", BASE),
         ("dsp.cpp", "int process() { return 1; }\n"),
+        ("legacy.rb", "def process; 1; end\n"),
         ("view.swift", "func render() -> Int { 1 }\n"),
     ]);
     fs::write(
@@ -30,28 +31,20 @@ fn unsupported_worktree_changes_are_explicit_risk_gaps() {
     )
     .unwrap();
     fixture.runtime.refresh(&fixture.root).unwrap();
+    fs::write(fixture.root.join("legacy.rb"), "def process; 2; end\n").unwrap();
 
     let result = fixture.scan(10);
-    // Swift is indexed only in the opt-in slice; C++ stays an explicit gap.
-    if cfg!(feature = "experimental-swift") {
-        assert_eq!(result["changed_path_count"], 1);
-        assert_eq!(result["unindexed_changed_path_count"], 1);
-        assert_eq!(result["unindexed_changed_paths"], json!(["dsp.cpp"]));
-    } else {
-        assert_eq!(result["changed_path_count"], 0);
-        assert_eq!(result["unindexed_changed_path_count"], 2);
-        assert_eq!(
-            result["unindexed_changed_paths"],
-            json!(["dsp.cpp", "view.swift"])
-        );
-    }
+    // C++ and Swift are indexed; Ruby remains an explicit coverage gap.
+    assert_eq!(result["changed_path_count"], 2);
+    assert_eq!(result["unindexed_changed_path_count"], 1);
+    assert_eq!(result["unindexed_changed_paths"], json!(["legacy.rb"]));
     assert_eq!(result["partial"], true);
     assert!(
         result["coverage_gaps"]
             .as_array()
             .unwrap()
             .iter()
-            .any(|gap| gap["path"] == "dsp.cpp" && gap["code"] == "UNINDEXED_CHANGED_PATH")
+            .any(|gap| gap["path"] == "legacy.rb" && gap["code"] == "UNINDEXED_CHANGED_PATH")
     );
 
     fs::write(
@@ -65,6 +58,7 @@ fn unsupported_worktree_changes_are_explicit_risk_gaps() {
     )
     .unwrap();
     fixture.runtime.refresh(&fixture.root).unwrap();
+    fs::write(fixture.root.join("legacy.rb"), "def process; 1; end\n").unwrap();
     let restored = fixture.scan(10);
     assert_eq!(restored["unindexed_changed_path_count"], 0);
     assert_eq!(restored["unindexed_changed_paths"], json!([]));

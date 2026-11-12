@@ -22,7 +22,7 @@ pub(super) fn model_visible_result(tool: &str, structured: &Value) -> Value {
         "check_framework_gates" => compact_framework_gates(structured),
         "check_security_gates" => compact_security_gates(structured),
         "status" => compact_status(structured),
-        "memory_record" => compact_memory_record(structured),
+        "memory_record" | "memory_update" => compact_memory_record(structured),
         "memory_recall" => compact_memory_recall(structured),
         _ => structured.clone(),
     }
@@ -351,6 +351,9 @@ pub(super) fn compact_risks(value: &Value) -> Value {
     json!({
         "at":snapshot_tag(value.get("snapshot")),
         "base":value.get("base_revision"),
+        "changed_paths":value.get("changed_paths"),
+        "changed_path_count":value.get("changed_path_count"),
+        "limitations":value.get("limitations"),
         "finding_cols":["rule","path","line","caller","removed_path","removed_symbol"],
         "findings":findings,
         "impact_cols":["caller_path","caller","target_path","target","line"],
@@ -361,6 +364,7 @@ pub(super) fn compact_risks(value: &Value) -> Value {
             "discovery":value.pointer("/verification_plan/test_discovery"),
             "complete_suite":value.pointer("/verification_plan/complete_test_suite"),
             "execution_status":value.pointer("/verification_plan/execution_status"),
+            "test_run_input":value.pointer("/verification_plan/test_run_input"),
             "truncated":value.pointer("/verification_plan/truncated")
         },
         "change_plan":{
@@ -447,6 +451,7 @@ pub(super) fn compact_expand(value: &Value) -> Value {
 }
 
 pub(super) fn compact_search(value: &Value) -> Value {
+    let include_ast = value.get("algorithm").and_then(Value::as_str) == Some("ast_grep_v1");
     let include_refs = value
         .get("matches")
         .and_then(Value::as_array)
@@ -474,6 +479,9 @@ pub(super) fn compact_search(value: &Value) -> Value {
                 row.push(item.get("symbol_ref").cloned().unwrap_or(Value::Null));
             }
             row.push(item.get("matched_by").cloned().unwrap_or(Value::Null));
+            if include_ast {
+                row.push(item.get("ast_matches").cloned().unwrap_or(Value::Null));
+            }
             json!(row)
         })
         .collect();
@@ -497,6 +505,15 @@ pub(super) fn compact_search(value: &Value) -> Value {
         .as_array_mut()
         .expect("column array")
         .push(json!("matched_by"));
+    if include_ast {
+        compact["cols"]
+            .as_array_mut()
+            .expect("column array")
+            .push(json!("ast_matches"));
+        for field in ["algorithm", "language", "ast_scan"] {
+            compact[field] = value.get(field).cloned().unwrap_or(Value::Null);
+        }
+    }
     insert_more_when_true(&mut compact, value.get("truncated"));
     compact
 }
@@ -948,7 +965,8 @@ pub(super) fn compact_refactors(value: &Value) -> Value {
                 recommended.and_then(|strategy| strategy.get("policy")),
                 recommended.and_then(|strategy| strategy.pointer("/counterfactual/score")),
                 recommended.and_then(|strategy| strategy.pointer("/counterfactual/reasons")),
-                recommended.and_then(|strategy| strategy.get("strategy_id"))
+                recommended.and_then(|strategy| strategy.get("strategy_id")),
+                candidate.get("quality_checks")
             ])
         })
         .collect::<Vec<_>>();
@@ -956,7 +974,7 @@ pub(super) fn compact_refactors(value: &Value) -> Value {
         "at":snapshot_tag(value.get("snapshot")),
         "status":value.get("status"),
         "paths":paths,
-        "cols":["left","right","language","score","shared_callees","projection_id","recommended_policy","counterfactual_score","reason_codes","strategy_id"],
+        "cols":["left","right","language","score","shared_callees","projection_id","recommended_policy","counterfactual_score","reason_codes","strategy_id","quality_checks"],
         "rows":rows,
         "n":value.get("total"),
         "gaps":value.get("coverage_gap_count")
@@ -1002,7 +1020,9 @@ pub(super) fn compact_status(value: &Value) -> Value {
     json!({
         "at": snapshot_tag(snapshot),
         "freshness": value.get("freshness"),
+        "server": value.get("server"),
         "graph": value.get("graph"),
+        "swift_compiler": value.get("swift_compiler"),
         "changed": value.get("changed_paths"),
         "gaps_n": value.get("coverage_gap_count"),
         "gap_kinds": value.get("coverage_summary"),
@@ -1228,9 +1248,142 @@ pub(super) fn compact_memory_record(value: &Value) -> Value {
     json!({
         "at": snapshot_tag(value.get("snapshot")),
         "id": value.pointer("/record/id"),
+        "version": value.pointer("/record/version"),
+        "memory_kind": value.pointer("/record/memory_kind"),
+        "privacy_tag": value.pointer("/record/privacy_tag"),
+        "source_hash": value.pointer("/record/source_hash"),
+        "valid_until_unix_nanos": value.pointer("/record/valid_until_unix_nanos"),
+        "code_link": value.pointer("/record/code_link"),
+        "backend": value.get("backend"),
         "duplicate": value.get("duplicate"),
         "llm_used": false,
     })
+}
+
+fn memory_recall_tokens(value: &Value, tokenizer: &Tokenizer) -> serde_json::Result<u32> {
+    Ok(tokenizer
+        .count(&serde_json::to_string(value)?)
+        .max(tokenizer.count(&serde_json::to_string(&compact_memory_recall(value))?)))
+}
+
+/// Preserve the largest ranked prefix of complete assertions before clipping code.
+pub(super) fn bound_memory_recall(
+    value: &mut Value,
+    budget: u32,
+    tokenizer: &Tokenizer,
+) -> serde_json::Result<()> {
+    if memory_recall_tokens(value, tokenizer)? <= budget {
+        return Ok(());
+    }
+    let original_count = value["results"].as_array().expect("memory results").len();
+    value["truncated"] = json!(true);
+    let mut required = value.clone();
+    for row in required["results"].as_array_mut().expect("memory results") {
+        row.as_object_mut().expect("memory row").remove("code");
+    }
+    // An empty budget-limited response must not look like empty project memory.
+    // Compute a usable budget for the first complete assertion, without optional code.
+    let mut first = required.clone();
+    first["results"]
+        .as_array_mut()
+        .expect("memory results")
+        .truncate(1);
+    first["budget_omitted"] = json!(original_count.saturating_sub(1));
+    first["minimum_budget"] = json!(0);
+    let mut minimum_budget = memory_recall_tokens(&first, tokenizer)?;
+    loop {
+        first["minimum_budget"] = json!(minimum_budget);
+        let measured = memory_recall_tokens(&first, tokenizer)?;
+        if measured <= minimum_budget {
+            break;
+        }
+        minimum_budget = measured;
+    }
+    if memory_recall_tokens(&required, tokenizer)? > budget {
+        // Determine the affordable rows without repeatedly tokenizing their source.
+        let rows = required["results"]
+            .as_array()
+            .expect("memory results")
+            .clone();
+        let (mut low, mut high) = (0, rows.len());
+        while low < high {
+            let mid = (low + high).div_ceil(2);
+            required["results"] = json!(&rows[..mid]);
+            if memory_recall_tokens(&required, tokenizer)? <= budget {
+                low = mid;
+            } else {
+                high = mid - 1;
+            }
+        }
+        value["results"]
+            .as_array_mut()
+            .expect("memory results")
+            .truncate(low);
+    }
+    note_budget_omissions(value, original_count, minimum_budget);
+    while memory_recall_tokens(value, tokenizer)? > budget {
+        let rows = value["results"].as_array_mut().expect("memory results");
+        if rows.is_empty() {
+            break;
+        }
+        if !rows.iter_mut().rev().any(trim_memory_code_context) {
+            rows.pop();
+            note_budget_omissions(value, original_count, minimum_budget);
+        }
+    }
+    Ok(())
+}
+
+fn note_budget_omissions(value: &mut Value, original_count: usize, minimum_budget: u32) {
+    let omitted = original_count - value["results"].as_array().expect("memory results").len();
+    if omitted > 0 {
+        value["budget_omitted"] = json!(omitted);
+        value["minimum_budget"] = json!(minimum_budget);
+    }
+}
+
+/// Reduce optional navigation context before dropping any memory assertion.
+fn trim_memory_code_context(row: &mut Value) -> bool {
+    let Some(code) = row.get_mut("code").and_then(Value::as_object_mut) else {
+        return false;
+    };
+    if let Some(candidates) = code.get_mut("candidates").and_then(Value::as_array_mut)
+        && !candidates.is_empty()
+    {
+        candidates.pop();
+        code.insert("candidates_truncated".to_owned(), json!(true));
+        code.insert("truncated".to_owned(), json!(true));
+        return true;
+    }
+    if let Some(source) = code.get("source").and_then(Value::as_str) {
+        let chars = source.chars().count();
+        if chars > 64 {
+            let end = source
+                .char_indices()
+                .nth(chars / 2)
+                .expect("half of source")
+                .0;
+            // Keep complete lines when possible, and never split a UTF-8 character.
+            let end = source[..end].rfind('\n').map_or(end, |i| i + 1);
+            let prefix = source[..end].to_owned();
+            if let Some(start) = code
+                .get("span")
+                .and_then(|span| span["start_line"].as_u64())
+            {
+                code.get_mut("span").expect("code span")["end_line"] =
+                    json!(start + prefix.split_inclusive('\n').count() as u64 - 1);
+            }
+            code.insert("source".to_owned(), json!(prefix));
+        } else {
+            code.remove("source");
+            code.remove("span");
+            code.insert("status".to_owned(), json!("budget_omitted"));
+        }
+        code.insert("truncated".to_owned(), json!(true));
+        return true;
+    }
+    row.as_object_mut().expect("memory row").remove("code");
+    true
 }
 
 pub(super) fn compact_memory_recall(value: &Value) -> Value {
@@ -1240,15 +1393,50 @@ pub(super) fn compact_memory_recall(value: &Value) -> Value {
         .into_iter()
         .flatten()
         .take(50)
-        .map(|item| json!([item.get("id"), item.get("confidence"), item.get("fact")]))
+        .map(|item| {
+            json!([
+                item.get("id"),
+                item.get("version"),
+                item.get("memory_kind"),
+                item.get("confidence"),
+                item.get("fact"),
+                item.get("source_kind"),
+                item.get("provenance"),
+                item.get("source_ref"),
+                item.get("freshness"),
+                item.get("task_id"),
+                item.get("event_id"),
+                item.get("recorded_unix_nanos"),
+                item.get("updated_unix_nanos"),
+                item.get("valid_until_unix_nanos"),
+                item.get("update_reason"),
+                item.get("score"),
+                item.get("code_link"),
+                item.get("code"),
+                item.get("privacy_tag"),
+                item.get("source_hash")
+            ])
+        })
         .collect();
-    json!({
+    let mut compact = json!({
         "at": snapshot_tag(value.get("snapshot")),
-        "cols": ["id", "confidence", "fact"],
+        "cols": ["id", "version", "memory_kind", "confidence", "fact", "source_kind",
+            "provenance", "source_ref", "freshness", "task_id", "event_id",
+            "recorded_unix_nanos", "updated_unix_nanos", "valid_until_unix_nanos", "update_reason", "score", "code_link", "code",
+            "privacy_tag", "source_hash"],
         "rows": rows,
+        "backend": value.get("backend"),
+        "search_mode": value.get("search_mode"),
+        "embedding_model": value.get("embedding_model"),
         "truncated": value.get("truncated"),
         "llm_used": false,
-    })
+    });
+    for field in ["budget_omitted", "minimum_budget"] {
+        if let Some(value) = value.get(field) {
+            compact[field] = value.clone();
+        }
+    }
+    compact
 }
 
 #[cfg(test)]

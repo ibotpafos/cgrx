@@ -28,6 +28,23 @@ structural lane, so acronym queries are interpreted consistently. Orientation
 still uses its existing ranking fusion and budgeted context; search does not
 claim semantic understanding or compiler completeness.
 
+Resident orientation reuses BM25 document terms in a repository-local cache.
+Each request fingerprints the complete name, path and search text before reuse;
+working-tree edits therefore cannot reuse terms solely because a node ID or
+Git revision stayed the same. Document frequency and average length are computed
+within the selected scope on every query, preserving scores, query repetitions
+and deterministic ties. The runtime releases cached terms after a changed
+snapshot. The cache has a 64 MiB estimated allocation budget and a 256 KiB
+per-document budget; full or oversized entries use the streaming scorer. These
+are cache accounting limits, not process RSS limits. No extra index or model is
+required, and source freshness and graph evidence checks remain authoritative.
+
+Run the synthetic retrieval benchmark with
+`cargo run --release -p cgrx-retrieval --example bm25_cache_benchmark`.
+It compares cold and warm cached retrieval against the streaming pipeline,
+including exact-name and RRF fusion, and asserts complete candidate/score parity.
+It excludes repository refresh, context packing and MCP transport.
+
 ## MCP
 
 First page:
@@ -41,6 +58,42 @@ Keep the returned `page.snapshot_id`. For the next page, pass that ID as
 scope, language, body option and limit unchanged. A changed snapshot returns
 `cgrx.search_snapshot_changed`; restart at offset zero and rediscover symbols.
 The guard protects source identity, not changes to the query arguments.
+
+## Structural patterns
+
+`search_graph` also accepts `match_mode: "ast"` with an explicit `language`
+(`rust`, `typescript`, `python`, or `go`). TypeScript includes TSX. This mode
+uses ast-grep-core 0.45.2 with the same Tree-sitter 0.26 parsers as the index:
+
+```json
+{"repo":"/absolute/path/to/repository","query":"fetch($ARG)","match_mode":"ast","language":"typescript","scope":"src/**","limit":20}
+```
+
+`$ARG` captures one syntax node, `$$$ARGS` captures an argument list, and
+repeated metavariables must match the same syntax. Comments and string contents
+do not qualify as calls. Results are indexed definitions containing the
+pattern, with `matched_by: "ast"`, their existing `symbol_ref`, and
+`ast_matches` containing exact source byte spans, the file `source_hash`, and
+an occurrence truncation flag. Syntax matches do not prove callee identity;
+use the graph's evidence and coverage for that question.
+
+Structural requests recheck source hashes independently of the preceding
+refresh. Changed or missing source returns `cgrx.ast_source_changed`.
+Symlinks outside the permitted file policy cannot provide matches. Invalid
+patterns return `cgrx.invalid_ast_pattern`; lexical search remains the default.
+`include_body` is a lexical option and is rejected in AST mode.
+
+Requests accept patterns of at most 4096 UTF-8 bytes and scan at most 4096
+indexed definitions. Source reads are capped at 64 MiB (16 MiB per file),
+definition parsing at 16 MiB, and stored occurrences at eight per definition.
+`ast_scan.partial` and `skipped_definitions` expose skipped definitions,
+including non-UTF-8 source and limits; `ast_matches.truncated` exposes further
+occurrences. The total counts matching definitions within the scanned subset.
+Narrow the scope when scanning is partial. Definitions are paginated with the
+same snapshot guard as lexical search; keep query, mode, language and scope
+unchanged between pages. Full and compact responses retain all AST evidence
+and scanning limits. Static state-only servers lack current source and return
+`cgrx.ast_search_unavailable`.
 
 Each page contains `total`, `matches`, `truncated` and `page` metadata. Limits
 range from 1 to 50 and offsets from 0 to 1,000,000. Compact MCP responses keep
@@ -59,6 +112,7 @@ further continuation.
 cgrx search --root /path/to/repo --query 'http request' --language rust --limit 20
 cgrx search --root /path/to/repo --query 'cache expiry' --include-body true --paths 'src/**' --exclude 'src/generated/**'
 cgrx search --root /path/to/repo --query 'http request' --language rust --limit 20 --offset 20 --expected-snapshot SNAPSHOT_ID_FROM_FIRST_PAGE
+cgrx search --root /path/to/repo --query 'fetch($$$ARGS)' --match-mode ast --language typescript --paths 'src/**'
 ```
 
 `--paths` and `--exclude` accept comma-separated repository-relative scope
@@ -79,13 +133,15 @@ Tools reviewed for potential reuse:
 | Tool | Useful capability | License | Decision for this update |
 | --- | --- | --- | --- |
 | [Tantivy](https://github.com/quickwit-oss/tantivy) | Rust full-text index and BM25 | MIT | Keep existing native retrieval; a new index is unnecessary for the measured gap |
-| [ast-grep](https://github.com/ast-grep/ast-grep) | Structural source search and rewrites | MIT | Future apply workflows require separate snapshot and ambiguity validation |
+| [ast-grep](https://github.com/ast-grep/ast-grep) | Structural source search and rewrites | MIT | Adopt ast-grep-core 0.45.2 for read-only, source-bound pattern search; rewriting remains separate |
+| [Rayon](https://github.com/rayon-rs/rayon) | Dynamic parallel task scheduling | MIT OR Apache-2.0 | Adopt 1.12.0 for a shared extraction pool capped at 16 workers, with deterministic facts and failure order |
+| [petgraph](https://github.com/petgraph/petgraph) | Graph algorithms | MIT OR Apache-2.0 | Adopt 0.8.3 iterative SCC analysis over the existing proven package projection |
 | [SCIP](https://github.com/scip-code/scip) | Compiler-produced navigation evidence | Apache-2.0 | Already supported by CGRX; continue using source-bound proofs |
 | [Trace MCP](https://github.com/nikolai-vysotskyi/trace-mcp) | Agent code intelligence and search workflow reference | MIT | Compare documented behavior; no source copied or fork introduced |
 
-No new dependency or third-party source is bundled by this update. License
-information is linked to each repository and applies to the reviewed tools,
-not an adoption claim.
+The adopted libraries are pinned in Cargo.lock. Their license notices and
+dependency inventory are retained in the repository. Graph storage, lexical
+ranking and memory retain their existing contracts.
 
 ## Reproducing the experiment
 

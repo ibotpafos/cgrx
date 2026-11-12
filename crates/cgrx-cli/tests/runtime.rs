@@ -1118,7 +1118,7 @@ fn refresh_bounds_large_untracked_artifact_trees_and_reports_the_gap() {
     let mut runtime = Runtime::open(state.path()).expect("open runtime");
 
     let artifacts = repository.path().join("a-transactions");
-    for index in 0..300 {
+    for index in 0..5000 {
         let directory = artifacts.join(format!("copy-{index:03}"));
         fs::create_dir_all(&directory).expect("create artifact directory");
         fs::write(
@@ -1136,7 +1136,7 @@ fn refresh_bounds_large_untracked_artifact_trees_and_reports_the_gap() {
     assert!(runtime.refresh(repository.path()).expect("refresh root"));
     assert!(runtime.coverage().traversal_truncated);
     assert!(runtime.changed_paths().contains(&"z-direct.rs".to_owned()));
-    assert!(runtime.changed_paths().len() <= 65);
+    assert!(runtime.changed_paths().len() <= 8193);
 }
 
 #[test]

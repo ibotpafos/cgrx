@@ -231,7 +231,6 @@ fn graph_view_covers_every_supported_source_extension() {
     }
 }
 
-#[cfg(feature = "experimental-swift")]
 #[test]
 fn swift_graph_survives_reopen_and_drops_stale_edges_on_refresh_and_delete() {
     let repository = TestDirectory::new("swift-evidence-repository");

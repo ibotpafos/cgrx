@@ -156,11 +156,13 @@ struct SimilarityBackgroundShared {
 
 pub(super) struct SimilarityBackground {
     shared: Arc<SimilarityBackgroundShared>,
+    worker: Mutex<Option<thread::JoinHandle<()>>>,
 }
 
 impl SimilarityBackground {
     pub(super) fn ready(snapshot: RepoSnapshot, index: SimilarityIndex) -> Self {
         Self {
+            worker: Mutex::new(None),
             shared: Arc::new(SimilarityBackgroundShared {
                 epoch: AtomicU64::new(0),
                 queue: Mutex::new(SimilarityQueue::default()),
@@ -266,12 +268,20 @@ impl SimilarityBackground {
                     }
                 }
             });
-        if spawn.is_err() {
-            queue.running = false;
-            queue.pending = None;
-            let mut state = self.write_state();
-            state.building = false;
-            state.spawn_failed = true;
+        match spawn {
+            Ok(worker) => {
+                *self
+                    .worker
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(worker);
+            }
+            Err(_) => {
+                queue.running = false;
+                queue.pending = None;
+                let mut state = self.write_state();
+                state.building = false;
+                state.spawn_failed = true;
+            }
         }
     }
 }
@@ -284,6 +294,17 @@ impl Drop for SimilarityBackground {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .pending = None;
+        // No queue/state lock is held while joining. Otherwise dropping an
+        // idle runtime could leave its cancelled worker's source copy alive
+        // past the allocator purge (or deadlock the worker at its next poll).
+        if let Some(worker) = self
+            .worker
+            .get_mut()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take()
+        {
+            let _ = worker.join();
+        }
     }
 }
 
@@ -1465,6 +1486,14 @@ impl Runtime {
                 partial = true;
                 gaps.insert("REFACTOR_EVIDENCE_BUDGET");
             }
+            value["quality_checks"] = json!({
+                "scope": "candidate_snippets_only",
+                "offset_basis": "snippet_relative_bytes",
+                "input_basis": "indexed_search_text",
+                "left": cgrx_languages::check_quality(&candidate.language, &candidate.left.search_text),
+                "right": cgrx_languages::check_quality(&candidate.language, &candidate.right.search_text),
+                "limitations": "Syntax hints only: calls may be shadowed; unwrap/expect are not necessarily bugs. No taint or whole-repository analysis."
+            });
             value["runtime_profile"] =
                 runtime_profile(&candidate, observations.as_ref(), &definitive);
             values.push(value);

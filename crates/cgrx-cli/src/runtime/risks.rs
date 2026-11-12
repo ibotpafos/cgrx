@@ -54,6 +54,7 @@ impl CoverageGapIndex {
 
 pub struct RiskBaseline {
     snapshot: RepoSnapshot,
+    path_hashes: BTreeMap<String, Hash32>,
     symbols: BTreeMap<u64, RiskSymbol>,
     edges: Vec<StoredArc>,
     coverage: CoverageMetadata,
@@ -68,24 +69,27 @@ struct RiskSymbol {
     body_hash: Hash32,
 }
 
-impl Runtime {
-    /// Retain only bounded proven relation metadata, not a second full index.
+impl RiskBaseline {
     #[must_use]
-    pub fn risk_baseline(&self) -> RiskBaseline {
+    pub fn revision(&self) -> &str {
+        &self.snapshot.repo_revision
+    }
+
+    fn from_stored(stored: &StoredIndex) -> Self {
         let config = RuntimeConfig::default();
         let scope = all_scope();
-        let edges = definitive_stored_arcs(&self.stored, &scope);
+        let edges = definitive_stored_arcs(stored, &scope);
         let partial =
-            self.stored.documents.len() > config.max_documents || edges.len() > config.max_edges;
+            stored.documents.len() > config.max_documents || edges.len() > config.max_edges;
         let partial_reason = if partial {
             Some("SCAN_BUDGET_EXCEEDED".to_owned())
         } else {
             None
         };
         RiskBaseline {
-            snapshot: self.stored.snapshot.clone(),
-            symbols: self
-                .stored
+            snapshot: stored.snapshot.clone(),
+            path_hashes: stored.path_hashes.clone(),
+            symbols: stored
                 .documents
                 .iter()
                 .take(config.max_documents)
@@ -103,10 +107,35 @@ impl Runtime {
                 })
                 .collect(),
             edges: edges.into_iter().take(config.max_edges).cloned().collect(),
-            coverage: self.stored.coverage.clone(),
+            coverage: stored.coverage.clone(),
             partial,
             partial_reason,
         }
+    }
+}
+
+impl Runtime {
+    /// Retain only bounded proven relation metadata and source identities,
+    /// not a second full index.
+    #[must_use]
+    pub fn risk_baseline(&self) -> RiskBaseline {
+        RiskBaseline::from_stored(&self.stored)
+    }
+
+    /// Resolve a commit expression without checking out or modifying Git state.
+    pub fn resolve_commit(root: &Path, revision: &str) -> Result<String, RuntimeError> {
+        git_helpers::resolve_commit(root, revision)
+    }
+
+    /// Build an isolated syntax baseline from the pinned commit's blobs.
+    /// Current compiler artifacts cannot attest historical source content.
+    pub fn risk_baseline_at_commit(
+        root: &Path,
+        revision: &str,
+    ) -> Result<RiskBaseline, RuntimeError> {
+        let revision = Self::resolve_commit(root, revision)?;
+        let stored = index_helpers::committed_index(root, &revision)?;
+        Ok(RiskBaseline::from_stored(&stored))
     }
 
     pub fn scan_risks(
@@ -134,12 +163,7 @@ impl Runtime {
                 "limit must be 1..50",
             ));
         }
-        if baseline.snapshot.repo_revision != self.base_snapshot.repo_revision {
-            return Err(RuntimeError::new(
-                "cgrx.stale_snapshot",
-                "risk baseline differs from current HEAD; retry after refresh",
-            ));
-        }
+        let changed = changed_paths(&baseline.path_hashes, &self.stored.path_hashes);
         let config = RuntimeConfig::default();
         let mut partial_reason: Option<String> = baseline.partial_reason.clone();
         let mut gaps = BTreeSet::<(String, String)>::new();
@@ -161,18 +185,47 @@ impl Runtime {
                 "--",
             ],
         )?;
-        let (revision, worktree_paths) = refresh_status(&status)?;
+        let (revision, mut worktree_paths) = refresh_status(&status)?;
         if revision != self.base_snapshot.repo_revision {
             return Err(RuntimeError::new(
                 "revision_changed",
                 "watched HEAD changed; retry after refresh",
             ));
         }
+        if baseline.revision() != self.base_snapshot.repo_revision {
+            // HEAD-relative status also lists edits that undo a committed
+            // change back to the historical base. Only keep its untracked
+            // entries; tracked paths must come from the selected-base diff.
+            worktree_paths = status
+                .split(|byte| *byte == 0)
+                .filter_map(|record| record.strip_prefix(b"? "))
+                .map(|path| String::from_utf8_lossy(path).into_owned())
+                .collect();
+            let paths = git_bytes(
+                root,
+                &[
+                    "diff",
+                    "--no-ext-diff",
+                    "--no-textconv",
+                    "--name-only",
+                    "-z",
+                    "--no-renames",
+                    baseline.revision(),
+                    "--",
+                ],
+            )?;
+            worktree_paths.extend(
+                paths
+                    .split(|byte| *byte == 0)
+                    .filter(|path| !path.is_empty())
+                    .map(|path| String::from_utf8_lossy(path).into_owned()),
+            );
+        }
         let unindexed_changed_paths: Vec<_> = worktree_paths
-            .difference(&self.changed_paths)
+            .difference(&changed)
             .filter(|path| {
                 !self.stored.path_hashes.contains_key(*path)
-                    && !self.base_path_hashes.contains_key(*path)
+                    && !baseline.path_hashes.contains_key(*path)
             })
             .cloned()
             .collect();
@@ -190,6 +243,13 @@ impl Runtime {
         }
         if partial {
             gaps.insert((".".to_owned(), "SCAN_BUDGET_EXCEEDED".to_owned()));
+        }
+        if baseline.snapshot.repo_revision == super::git_helpers::UNBORN_REVISION {
+            partial = true;
+            if !budget_exceeded && !baseline.partial {
+                partial_reason = Some("NO_COMMITTED_BASELINE".to_owned());
+            }
+            gaps.insert((".".to_owned(), "NO_COMMITTED_BASELINE".to_owned()));
         }
         if baseline.coverage.traversal_truncated || self.stored.coverage.traversal_truncated {
             partial = true;
@@ -241,12 +301,12 @@ impl Runtime {
                     .map(|p| (p.path.as_str(), p.span.start, p.span.end))
             })
             .collect();
-        for path in &self.changed_paths {
+        for path in &changed {
             for reason in current_gap_index.reasons(path) {
                 gaps.insert((path.clone(), reason.to_owned()));
             }
             if !self.stored.path_hashes.contains_key(path)
-                && !self.base_path_hashes.contains_key(path)
+                && !baseline.path_hashes.contains_key(path)
             {
                 gaps.insert((path.clone(), "UNINDEXED_CHANGED_PATH".to_owned()));
             }
@@ -269,9 +329,7 @@ impl Runtime {
             ) else {
                 continue;
             };
-            if !self.changed_paths.contains(&caller.path)
-                && !self.changed_paths.contains(&target.path)
-            {
+            if !changed.contains(&caller.path) && !changed.contains(&target.path) {
                 continue;
             }
             inspected += 1;
@@ -430,10 +488,19 @@ impl Runtime {
         partial |= !gaps.is_empty();
         verification_plan["partial"] = json!(partial);
         verification_plan["review_findings"] = json!((0..findings.len()).collect::<Vec<_>>());
-        verification_plan["review_changed_paths"] = json!(!self.changed_paths.is_empty());
+        verification_plan["review_changed_paths"] = json!(!changed.is_empty());
         verification_plan["review_unindexed_changed_paths"] =
             json!(!unindexed_changed_paths.is_empty());
         let gap_count = gaps.len();
+        let baseline_limitation = if baseline.snapshot.repo_revision
+            == super::git_helpers::UNBORN_REVISION
+        {
+            "Compares working tree with an empty base before the first commit."
+        } else if baseline.revision() != self.base_snapshot.repo_revision {
+            "Compares the current working tree, including committed and uncommitted changes, with base_revision; the historical baseline uses syntax evidence, without current compiler artifacts."
+        } else {
+            "Compares the current working tree with HEAD."
+        };
         let gap_rows = gaps
             .iter()
             .take(20)
@@ -445,12 +512,12 @@ impl Runtime {
             findings: &findings,
             impacts: &impacts,
             verification_plan: &verification_plan,
-            changed_paths: &self.changed_paths,
+            changed_paths: &changed,
             gaps: &gap_rows,
             partial,
         });
         Ok(
-            json!({"snapshot":self.snapshot(),"base_revision":baseline.snapshot.repo_revision,"mode":"changes","findings":findings,"impacts":impacts,"verification_plan":verification_plan,"change_plan":change_plan,"partial":partial,"partial_reason":partial_reason,"coverage_gaps":gap_rows,"coverage_gap_count":gap_count,"coverage_gaps_truncated":gap_count>20,"inspected_base_edges":inspected,"changed_paths":self.changed_paths.iter().take(20).collect::<Vec<_>>(),"changed_path_count":self.changed_paths.len(),"unindexed_changed_paths":unindexed_changed_paths.iter().take(20).collect::<Vec<_>>(),"unindexed_changed_path_count":unindexed_changed_paths.len(),"evidence_bytes":EVIDENCE_BYTES-evidence.bytes_left,"limitations":["Candidates, not confirmed bugs; no whole-program absence proof.","Unindexed worktree paths are live Git observations, not snapshot-bound graph evidence; inspect them directly.","Compares working tree with HEAD; no historical commit-range scan.","Cycles, architecture rules and data-flow bugs are not covered by this first slice."]}),
+            json!({"snapshot":self.snapshot(),"base_revision":baseline.snapshot.repo_revision,"mode":"changes","findings":findings,"impacts":impacts,"verification_plan":verification_plan,"change_plan":change_plan,"partial":partial,"partial_reason":partial_reason,"coverage_gaps":gap_rows,"coverage_gap_count":gap_count,"coverage_gaps_truncated":gap_count>20,"inspected_base_edges":inspected,"changed_paths":changed.iter().take(20).collect::<Vec<_>>(),"changed_path_count":changed.len(),"unindexed_changed_paths":unindexed_changed_paths.iter().take(20).collect::<Vec<_>>(),"unindexed_changed_path_count":unindexed_changed_paths.len(),"evidence_bytes":EVIDENCE_BYTES-evidence.bytes_left,"limitations":["Candidates, not confirmed bugs; no whole-program absence proof.","Unindexed worktree paths are live Git observations, not snapshot-bound graph evidence; inspect them directly.",baseline_limitation,"Cycles, architecture rules and data-flow bugs are not covered by this first slice."]}),
         )
     }
 }

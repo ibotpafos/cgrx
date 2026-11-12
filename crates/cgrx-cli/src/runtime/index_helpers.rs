@@ -13,7 +13,9 @@ use cgrx_cgcr::CoverageMetadata;
 
 use super::arc_resolution::{go_module_name, rebuild_arcs_with_cargo};
 use super::extraction::extract_sources_parallel;
-use super::git_helpers::{GitBlobBatch, parse_committed_tree};
+use super::git_helpers::{
+    GitBlobBatch, UNBORN_REVISION, managed_base_revision, parse_committed_tree,
+};
 use super::git_helpers::{git_bytes, git_text, store_writer_error};
 use super::helpers::generation_id_with_semantic;
 use super::refactors::rebuild_similarity_index;
@@ -35,7 +37,18 @@ pub(super) fn index_source(
     let root = root
         .canonicalize()
         .map_err(|error| RuntimeError::new("root", error.to_string()))?;
-    let revision = git_text(&root, &["rev-parse", "HEAD"])?;
+    let revision = if committed_head {
+        managed_base_revision(&root)?
+    } else {
+        git_text(&root, &["rev-parse", "HEAD"])?
+    };
+    let unborn = revision == UNBORN_REVISION;
+    if unborn && scip_index.is_some() {
+        return Err(RuntimeError::new(
+            "cgrx.scip_unavailable",
+            "compiler evidence requires a committed base revision",
+        ));
+    }
     let status = if committed_head {
         Vec::new()
     } else {
@@ -50,21 +63,6 @@ pub(super) fn index_source(
             "runtime indexing requires committed HEAD content",
         ));
     }
-    let committed_objects = if committed_head {
-        parse_committed_tree(&git_bytes(&root, &["ls-tree", "-r", "-z", "HEAD", "--"])?)?
-    } else {
-        BTreeMap::new()
-    };
-    let mut paths: Vec<_> = if committed_head {
-        committed_objects.keys().cloned().collect()
-    } else {
-        git_bytes(&root, &["ls-files", "-z"])?
-            .split(|byte| *byte == 0)
-            .filter(|value| !value.is_empty())
-            .map(|value| String::from_utf8_lossy(value).into_owned())
-            .collect()
-    };
-    paths.sort();
     let working_tree_digest =
         Hash32(*blake3::hash(if committed_head { &[] } else { &status }).as_bytes());
     let scip_bytes = scip_index
@@ -93,14 +91,94 @@ pub(super) fn index_source(
     if let Some(report) = open_current_report(state, &snapshot) {
         return Ok(report);
     }
+    let mut stored = build_source_index(
+        &root,
+        snapshot.clone(),
+        committed_head,
+        scip_bytes.as_deref(),
+        scip_input_hash,
+    )?;
+    rebuild_similarity_index(&mut stored);
+    let nodes = serde_json::to_vec(&stored)
+        .map_err(|error| RuntimeError::new("serialize", error.to_string()))?;
+    let segments: [(&str, &[u8]); 3] = [
+        (NODES_SEGMENT, &nodes),
+        (EDGES_SEGMENT, b"[]"),
+        (TERMS_SEGMENT, TERMS_MARKER),
+    ];
+    match GenerationWriter::begin(state, snapshot.clone()) {
+        Ok(mut writer) => {
+            for (name, bytes) in segments {
+                writer
+                    .write_segment(name, bytes)
+                    .map_err(|error| RuntimeError::new("store_write", error.to_string()))?;
+            }
+            writer
+                .validate()
+                .map_err(|error| RuntimeError::new("store_validate", error.to_string()))?;
+            writer
+                .publish()
+                .map_err(|error| RuntimeError::new("store_publish", error.to_string()))?;
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+            GenerationWriter::reactivate(state, &snapshot, &segments)
+                .map_err(|error| store_writer_error("store_reactivate", error))?;
+        }
+        Err(error) => return Err(store_writer_error("store_begin", error)),
+    }
+    Ok(IndexReport {
+        snapshot,
+        index_input_bytes: stored.index_input_bytes,
+        indexed_files: stored.indexed_files,
+        scip_edges: stored.scip_edges,
+    })
+}
+
+/// Build an isolated historical graph from immutable Git blobs. This neither
+/// checks out files nor publishes to the live HEAD index or project memory.
+pub(super) fn committed_index(root: &Path, revision: &str) -> Result<StoredIndex, RuntimeError> {
+    let snapshot = RepoSnapshot {
+        repo_revision: revision.to_owned(),
+        working_tree_digest: Hash32(*blake3::hash(&[]).as_bytes()),
+        graph_generation: generation_id_with_semantic(revision, None),
+    };
+    let mut stored = build_source_index(root, snapshot, true, None, None)?;
+    super::scan_helpers::normalize_stored(&mut stored);
+    Ok(stored)
+}
+
+fn build_source_index(
+    root: &Path,
+    snapshot: RepoSnapshot,
+    committed_head: bool,
+    scip_bytes: Option<&[u8]>,
+    scip_input_hash: Option<Hash32>,
+) -> Result<StoredIndex, RuntimeError> {
+    let revision = &snapshot.repo_revision;
+    let unborn = revision == UNBORN_REVISION;
+    let committed_objects = if committed_head && !unborn {
+        parse_committed_tree(&git_bytes(root, &["ls-tree", "-r", "-z", revision, "--"])?)?
+    } else {
+        BTreeMap::new()
+    };
+    let mut paths: Vec<_> = if committed_head {
+        committed_objects.keys().cloned().collect()
+    } else {
+        git_bytes(root, &["ls-files", "-z"])?
+            .split(|byte| *byte == 0)
+            .filter(|value| !value.is_empty())
+            .map(|value| String::from_utf8_lossy(value).into_owned())
+            .collect()
+    };
+    paths.sort();
     let mut documents = Vec::new();
     let mut path_hashes = BTreeMap::new();
     let mut parser_error_ranges = Vec::new();
     let mut dynamic_dispatch = Vec::new();
     let mut excluded_paths = Vec::new();
     let mut index_input_bytes = 0_u64;
-    let mut blob_batch = committed_head
-        .then(|| GitBlobBatch::spawn(&root))
+    let mut blob_batch = (committed_head && !unborn)
+        .then(|| GitBlobBatch::spawn(root))
         .transpose()?;
     let mut sources = Vec::new();
     let mut go_modules = BTreeMap::new();
@@ -213,7 +291,7 @@ pub(super) fn index_source(
     }
     if !committed_head {
         let (_, invalid_ts_sources) = scan_ts_inventory(
-            &root,
+            root,
             &mut path_hashes,
             &mut ts_files,
             &mut ts_resolution_configs,
@@ -242,7 +320,7 @@ pub(super) fn index_source(
         &ts_files,
         &ts_resolution_configs,
     );
-    let scip_edges = if let Some(bytes) = scip_bytes.as_deref() {
+    let scip_edges = if let Some(bytes) = scip_bytes {
         let imported = super::scip_resolution::resolve(bytes, &sources, &documents, &path_hashes)?;
         let count = imported.len() as u64;
         arcs.extend(imported);
@@ -291,38 +369,5 @@ pub(super) fn index_source(
         },
     };
     refresh_proof_gaps(&mut stored);
-    rebuild_similarity_index(&mut stored);
-    let nodes = serde_json::to_vec(&stored)
-        .map_err(|error| RuntimeError::new("serialize", error.to_string()))?;
-    let segments: [(&str, &[u8]); 3] = [
-        (NODES_SEGMENT, &nodes),
-        (EDGES_SEGMENT, b"[]"),
-        (TERMS_SEGMENT, TERMS_MARKER),
-    ];
-    match GenerationWriter::begin(state, snapshot.clone()) {
-        Ok(mut writer) => {
-            for (name, bytes) in segments {
-                writer
-                    .write_segment(name, bytes)
-                    .map_err(|error| RuntimeError::new("store_write", error.to_string()))?;
-            }
-            writer
-                .validate()
-                .map_err(|error| RuntimeError::new("store_validate", error.to_string()))?;
-            writer
-                .publish()
-                .map_err(|error| RuntimeError::new("store_publish", error.to_string()))?;
-        }
-        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
-            GenerationWriter::reactivate(state, &snapshot, &segments)
-                .map_err(|error| store_writer_error("store_reactivate", error))?;
-        }
-        Err(error) => return Err(store_writer_error("store_begin", error)),
-    }
-    Ok(IndexReport {
-        snapshot,
-        index_input_bytes,
-        indexed_files,
-        scip_edges,
-    })
+    Ok(stored)
 }

@@ -227,6 +227,42 @@ fn without_runs_plan_stays_not_run() {
 }
 
 #[test]
+fn chat_file_level_and_command_only_summaries_keep_scan_unverified() {
+    let mut f = Fixture::new();
+    f.change();
+    let (plain, fresh) = f.fresh_run(TestOutcome::Passed);
+    let run: TestRunRecord = serde_json::from_value(json!({
+        "runner_command":"cargo test",
+        "results":[{"path":"main.rs","status":"passed"}]
+    }))
+    .unwrap();
+    let command_only: TestRunRecord =
+        serde_json::from_value(json!({"runner_command":"cargo test"})).unwrap();
+    let result = f.scan_with(&[run, command_only]);
+    assert_eq!(result["findings"], plain["findings"]);
+    assert_eq!(result["verification_plan"]["execution_status"], "not_run");
+    assert_eq!(
+        result["verification_plan"]["test_run_input"]["incomplete_runs"],
+        2
+    );
+    assert_eq!(
+        result["verification_plan"]["test_run_input"]["incomplete_results"],
+        1
+    );
+    assert!(
+        result["verification_plan"]["related_tests"][0]
+            .get("execution")
+            .is_none()
+    );
+
+    // Even an otherwise exact claim needs its runner provenance.
+    let mut missing_runner = fresh;
+    missing_runner.runner_command.clear();
+    let result = f.scan_with(&[missing_runner]);
+    assert_eq!(result["verification_plan"]["execution_status"], "not_run");
+}
+
+#[test]
 fn run_record_round_trips_through_json() {
     let mut f = Fixture::new();
     f.change();

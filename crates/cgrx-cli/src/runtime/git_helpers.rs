@@ -14,6 +14,72 @@ use serde_json::{Value, json};
 
 use super::{RuntimeError, path_in_scope};
 
+pub(super) const UNBORN_REVISION: &str = "unborn";
+
+/// Resolve once before indexing; subsequent operations use only the pinned OID.
+pub(super) fn resolve_commit(root: &Path, revision: &str) -> Result<String, RuntimeError> {
+    if revision.is_empty()
+        || revision.len() > 1024
+        || revision.trim() != revision
+        || revision.starts_with('-')
+        || revision.chars().any(char::is_control)
+    {
+        return Err(RuntimeError::new(
+            "cgrx.invalid_arguments",
+            "base must be a non-empty Git commit revision without surrounding whitespace, controls or a leading dash (at most 1024 bytes)",
+        ));
+    }
+    let peeled = format!("{revision}^{{commit}}");
+    let oid = git_text(
+        root,
+        &["rev-parse", "--verify", "--end-of-options", &peeled],
+    )
+    .map_err(|_| {
+        RuntimeError::new(
+            "cgrx.invalid_base",
+            "base must resolve to a single existing commit in this repository",
+        )
+    })?;
+    if !matches!(oid.len(), 40 | 64) || !oid.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err(RuntimeError::new(
+            "cgrx.invalid_base",
+            "Git did not return a full commit OID for base",
+        ));
+    }
+    Ok(oid)
+}
+
+/// Resolve an actual commit, or Git's explicit initial-branch state. Other
+/// failures (including missing/corrupt commit objects) are never empty repos.
+pub(super) fn managed_base_revision(root: &Path) -> Result<String, RuntimeError> {
+    match git_text(root, &["rev-parse", "--verify", "HEAD^{commit}"]) {
+        Ok(revision) => Ok(revision),
+        Err(error) => {
+            let status = git_bytes(
+                root,
+                &[
+                    "status",
+                    "--porcelain=v2",
+                    "--branch",
+                    "--no-ahead-behind",
+                    "-z",
+                    "--untracked-files=no",
+                    "--no-renames",
+                    "--",
+                ],
+            )?;
+            let (revision, _) = refresh_status(&status)?;
+            if revision == UNBORN_REVISION {
+                // A detached/malformed HEAD must not be treated as an unborn branch.
+                git_bytes(root, &["symbolic-ref", "--quiet", "HEAD"])?;
+                Ok(revision)
+            } else {
+                Err(error)
+            }
+        }
+    }
+}
+
 pub(super) fn git_bytes(root: &Path, args: &[&str]) -> Result<Vec<u8>, RuntimeError> {
     let output = Command::new(crate::git_executable())
         .env("GIT_OPTIONAL_LOCKS", "0")
@@ -166,7 +232,11 @@ pub(super) fn refresh_status(bytes: &[u8]) -> Result<(String, BTreeSet<String>),
     while cursor < records.len() {
         let record = records[cursor];
         if let Some(value) = record.strip_prefix(b"# branch.oid ") {
-            revision = Some(String::from_utf8_lossy(value).into_owned());
+            revision = Some(if value == b"(initial)" {
+                UNBORN_REVISION.to_owned()
+            } else {
+                String::from_utf8_lossy(value).into_owned()
+            });
         } else if record.starts_with(b"1 ") {
             if let Some(path) = record.splitn(9, |byte| *byte == b' ').nth(8) {
                 paths.insert(String::from_utf8_lossy(path).into_owned());

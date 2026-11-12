@@ -1,7 +1,8 @@
-//! Narrow, deterministic C, Go, Java, Kotlin, TypeScript, Python, and Rust extraction packs.
+//! Deterministic C, C++, Go, Java, Kotlin, Swift, TypeScript, Python, and Rust packs.
 
 mod c;
 mod call_targets;
+mod cpp;
 mod go;
 mod java;
 pub mod javascript;
@@ -9,12 +10,11 @@ mod kotlin;
 mod pack;
 mod python;
 mod rust;
+mod swift;
 mod typescript;
 
 // These prototypes have not met the production evidence contract. Keep them
 // buildable and testable without exposing unvalidated relationships at runtime.
-#[cfg(test)]
-mod cpp;
 #[cfg(test)]
 mod csharp;
 #[cfg(test)]
@@ -25,20 +25,20 @@ mod php;
 mod ruby;
 #[cfg(test)]
 mod scala;
-#[cfg(any(test, feature = "experimental-swift"))]
-mod swift;
 
 pub use pack::{
     Edge, ExtractError, Extraction, LanguagePack, Provenance, RelationKind, RepoPath, Span, Symbol,
-    Unresolved, UnresolvedKind, pack_for_path,
+    Unresolved, UnresolvedKind, pack_for_path, pack_for_source,
 };
 
 /// Effective registry policy, including Cargo dependency feature unification.
 pub const EXPERIMENTAL_PHP_ENABLED: bool = cfg!(feature = "experimental-php");
-pub const EXPERIMENTAL_SWIFT_ENABLED: bool = cfg!(feature = "experimental-swift");
+// Compatibility policy name: Swift is part of the default registry. The old
+// experimental-swift feature remains accepted but no longer changes coverage.
+pub const EXPERIMENTAL_SWIFT_ENABLED: bool = true;
 pub const EXPERIMENTAL_JAVASCRIPT_ENABLED: bool = cfg!(feature = "experimental-javascript");
 
-pub use call_targets::call_target_spans;
+pub use call_targets::{SwiftCompilerSites, call_target_spans, swift_compiler_sites};
 pub use go::{GoCallableKind, GoCallableType, go_callable_type};
 pub use python::{PythonFileFacts, PythonImportBinding};
 pub use rust::RustFileFacts;
@@ -65,14 +65,12 @@ mod experimental_tests {
 
     #[test]
     fn experimental_grammars_follow_the_explicit_build_policy() {
-        let packs: [&dyn LanguagePack; 7] = [
-            &cpp::CPP_PACK,
+        let packs: [&dyn LanguagePack; 5] = [
             &csharp::CSHARP_PACK,
             &elixir::ELIXIR_PACK,
             &php::PHP_PACK,
             &ruby::RUBY_PACK,
             &scala::SCALA_PACK,
-            &swift::SWIFT_PACK,
         ];
         for pack in packs {
             assert!(!pack.id().is_empty());
@@ -80,14 +78,25 @@ mod experimental_tests {
                 let path = format!("example.{extension}");
                 assert_eq!(
                     pack_for_path(Path::new(&path)).is_some(),
-                    (pack.id() == "php" && EXPERIMENTAL_PHP_ENABLED)
-                        || (pack.id() == "swift" && EXPERIMENTAL_SWIFT_ENABLED),
+                    pack.id() == "php" && EXPERIMENTAL_PHP_ENABLED,
                     "{path}"
                 );
                 // Parser initialization is not evidence of semantic support.
                 pack.extract(Path::new(&path), b"").unwrap();
             }
         }
+    }
+
+    #[test]
+    fn swift_registry_is_enabled_without_an_experimental_feature() {
+        assert_eq!(
+            pack_for_path(Path::new("Sources/App.swift")).is_some(),
+            EXPERIMENTAL_SWIFT_ENABLED
+        );
+        assert_eq!(
+            pack_for_path(Path::new("Sources/App.swift")).unwrap().id(),
+            "swift"
+        );
     }
 
     #[test]
@@ -211,7 +220,15 @@ void LiveCleanEngine::prepare(double sampleRate) noexcept { reset(); }
             .collect();
         assert_eq!(
             names,
-            ["Clip", "clampUnit", "prepare", "samples", "supportedRate"]
+            [
+                "Clip",
+                "clampUnit",
+                "clarity::clean",
+                "daw",
+                "prepare",
+                "samples",
+                "supportedRate"
+            ]
         );
         for symbol in &extraction.symbols {
             assert_eq!(
@@ -228,3 +245,6 @@ void LiveCleanEngine::prepare(double sampleRate) noexcept { reset(); }
         );
     }
 }
+
+mod quality;
+pub use quality::{HardcodeSite, QualityCheck, QualityFinding, check_quality, hardcode_sites};
