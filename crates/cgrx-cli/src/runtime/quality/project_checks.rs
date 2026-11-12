@@ -13,6 +13,8 @@ use std::{
 #[serde(deny_unknown_fields)]
 struct Config {
     version: u8,
+    #[serde(default)]
+    dependency_roots: Vec<PathBuf>,
     format: Vec<String>,
     typecheck: Vec<String>,
     tests: Vec<String>,
@@ -95,8 +97,16 @@ struct Budget {
     max_bytes: u64,
     max_files: usize,
     timeout_ms: u64,
+    dependency_roots: Vec<PathBuf>,
 }
 impl Budget {
+    fn excluded(&self, path: &Path) -> bool {
+        if self.dependency_roots.iter().any(|r| path.starts_with(r)) {
+            excluded_from_copy(&Path::new("node_modules").join(path))
+        } else {
+            excluded_from_copy(path)
+        }
+    }
     fn new(c: &Config) -> Self {
         Self {
             files: 0,
@@ -105,6 +115,7 @@ impl Budget {
             max_bytes: c.snapshot_max_bytes,
             max_files: c.snapshot_max_files,
             timeout_ms: c.snapshot_timeout_ms,
+            dependency_roots: c.dependency_roots.clone(),
         }
     }
 }
@@ -119,7 +130,7 @@ fn copy_tree(
     for e in fs::read_dir(source)? {
         let e = e?;
         let name = e.file_name();
-        if excluded_from_copy(
+        if b.excluded(
             e.path()
                 .strip_prefix(root)
                 .map_err(|_| bad("invalid_copy_root"))?,
@@ -141,7 +152,7 @@ fn copy_tree(
                     from.strip_prefix(root).unwrap_or(&from).display()
                 ))
             })?;
-            if excluded_from_copy(relative) {
+            if b.excluded(relative) {
                 return Err(bad("excluded_symlink_target"));
             }
             #[cfg(unix)]
@@ -229,6 +240,16 @@ fn copy_snapshot(root: &Path, dest: &Path, b: &mut Budget) -> io::Result<()> {
         if relative.file_name().is_some_and(|s| s == "package.json") {
             dependencies.insert(relative.parent().unwrap().join("node_modules"));
         }
+    }
+    // Explicit generated dependencies are independent copies, never shared links.
+    for dependency in b.dependency_roots.clone() {
+        let source = root.join(&dependency);
+        if !source.canonicalize()?.starts_with(root)
+            || fs::symlink_metadata(&source)?.file_type().is_symlink()
+        {
+            return Err(bad("unsafe_dependency_root"));
+        }
+        copy_tree(&source, &dest.join(dependency), root, dest, b)?;
     }
     for dependency in dependencies {
         let source = root.join(&dependency);
@@ -387,6 +408,23 @@ fn check_config(root: &Path) -> io::Result<Config> {
         || !(100..=120000).contains(&c.snapshot_timeout_ms)
     {
         return Err(bad("invalid_version_or_timeout"));
+    }
+    if c.dependency_roots.len() > 16 {
+        return Err(bad("too_many_dependency_roots"));
+    }
+    for path in &c.dependency_roots {
+        if path.is_absolute()
+            || path.as_os_str().len() > 512
+            || path
+                .components()
+                .any(|c| !matches!(c, std::path::Component::Normal(_)))
+            || !path
+                .file_name()
+                .is_some_and(|n| n == "dist" || n == "build")
+            || excluded_from_copy(&Path::new("node_modules").join(path))
+        {
+            return Err(bad("unsafe_dependency_root"));
+        }
     }
     for argv in [&c.format, &c.typecheck, &c.tests] {
         if argv.is_empty()
@@ -559,6 +597,48 @@ mod tests {
         assert_eq!(fs::read_to_string(source.0.join(dep)).unwrap(), "original");
     }
     #[test]
+    fn declared_build_dependency_is_copied_and_rebased() {
+        let src = super::super::verification::temporary().unwrap();
+        let dst = super::super::verification::temporary().unwrap();
+        assert!(
+            Command::new("git")
+                .args(["init", "-q"])
+                .current_dir(&src.0)
+                .status()
+                .unwrap()
+                .success()
+        );
+        fs::write(src.0.join(".gitignore"), "node_modules\ndist\n").unwrap();
+        fs::create_dir_all(src.0.join("service/dist")).unwrap();
+        fs::write(src.0.join("service/dist/main.js"), "original").unwrap();
+        fs::create_dir_all(src.0.join("node_modules/.bin")).unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(
+            "../../service/dist/main.js",
+            src.0.join("node_modules/.bin/service"),
+        )
+        .unwrap();
+        let c:Config=serde_json::from_value(json!({"version":1,"dependency_roots":["service/dist"],"format":["node"],"typecheck":["node"],"tests":["node"]})).unwrap();
+        copy_snapshot(&src.0, &dst.0, &mut Budget::new(&c)).unwrap();
+        assert_eq!(
+            fs::read_to_string(dst.0.join("service/dist/main.js")).unwrap(),
+            "original"
+        );
+        #[cfg(unix)]
+        assert!(
+            dst.0
+                .join("node_modules/.bin/service")
+                .canonicalize()
+                .unwrap()
+                .starts_with(&dst.0)
+        );
+        fs::write(dst.0.join("service/dist/main.js"), "changed").unwrap();
+        assert_eq!(
+            fs::read_to_string(src.0.join("service/dist/main.js")).unwrap(),
+            "original"
+        );
+    }
+    #[test]
     fn command_timeout_and_output_limit_are_not_success() {
         let dir = super::super::verification::temporary().unwrap();
         let args = vec![
@@ -598,6 +678,7 @@ mod tests {
                 max_bytes: default_snapshot_bytes(),
                 max_files: default_snapshot_files(),
                 timeout_ms: default_snapshot_timeout(),
+                dependency_roots: vec![],
             },
         );
         #[cfg(unix)]
@@ -617,7 +698,7 @@ mod tests {
 fn timeout_kills_spawned_descendants() {
     let dir = super::verification::temporary().unwrap();
     let argv=vec!["node".to_owned(),"-e".to_owned(),"const {spawn}=require('node:child_process');const fs=require('node:fs');const child=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'});fs.writeFileSync('child.pid',String(child.pid));setInterval(()=>{},1000);".to_owned()];
-    let result = run(&dir.0, &dir.0, "descendant", &argv, "a.ts", 300);
+    let result = run(&dir.0, &dir.0, "descendant", &argv, "a.ts", 3000);
     assert_eq!(result["status"], "timeout");
     let pid = fs::read_to_string(dir.0.join("child.pid")).unwrap();
     let alive = || {

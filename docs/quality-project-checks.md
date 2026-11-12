@@ -96,3 +96,12 @@ pointing to an excluded dist/build tree blocks snapshot creation. Repair the
 installed dependency graph outside verification, or supply self-contained local
 tools; do not weaken the gate or mark these checks passed. Stage details distinguish
 this prerequisite failure from a type error or failing test.
+
+### Declared generated package dependencies
+
+`dependency_roots` may explicitly name at most 16 in-repository `dist` or `build`
+directories needed by installed workspace binaries. They are copied, never shared
+with the working tree, and consume the same snapshot budget. Absolute paths,
+parent traversal, external symlinks and secret/state directories remain forbidden.
+This does not skip typechecks/tests or turn an incomplete snapshot into a pass.
+For example: `"dependency_roots": ["services/example-mcp/dist"]`.

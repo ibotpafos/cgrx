@@ -63,7 +63,7 @@ jobs:
           file "$binary" | grep -E 'arm64|aarch64'
           version=$(tr -d '\r\n' < RELEASE_VERSION)
           asset="cgrx-$version-aarch64-apple-darwin.tar.gz"
-          tar -czf "$asset" -C target/aarch64-apple-darwin/release cgrx
+          COPYFILE_DISABLE=1 tar -czf "$asset" -C target/aarch64-apple-darwin/release cgrx
           shasum -a 256 "$asset" > SHA256SUMS
           tar -tzf "$asset" | grep -Fx cgrx
           test -s SHA256SUMS
@@ -148,6 +148,8 @@ jobs:
         run: rustup toolchain install 1.89.0 --profile minimal --target aarch64-apple-darwin
 
       - name: Build Apple Silicon release
+        env:
+          CGRX_BUILD_ID: ${{ github.event.workflow_run.head_sha }}
         if: steps.meta.outputs.changed == 'true' && steps.existing.outputs.skip != 'true'
         shell: bash
         run: |
@@ -167,7 +169,7 @@ jobs:
         run: |
           set -euo pipefail
           asset="cgrx-$VERSION-aarch64-apple-darwin.tar.gz"
-          tar -czf "$asset" -C target/aarch64-apple-darwin/release cgrx
+          COPYFILE_DISABLE=1 tar -czf "$asset" -C target/aarch64-apple-darwin/release cgrx
           shasum -a 256 "$asset" > SHA256SUMS
           tar -tzf "$asset" | grep -Fx cgrx
           test -s SHA256SUMS
