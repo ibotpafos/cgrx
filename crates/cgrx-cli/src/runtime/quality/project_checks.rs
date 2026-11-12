@@ -45,26 +45,17 @@ fn bad(message: &str) -> io::Error {
 fn excluded(name: &str) -> bool {
     matches!(
         name,
-        "local"
-            | "evidence"
-            | "WORKSPACE.local.md"
-            | ".kilo"
-            | ".pt"
-            | ".agent"
-            | ".git"
+        ".git"
             | ".cgrx"
-            | "target"
-            | ".worktrees"
-            | ".next"
-            | ".cache"
-            | "coverage"
-            | "dist"
-            | "build"
             | ".ssh"
             | ".aws"
             | ".npmrc"
             | ".yarnrc.yml"
             | ".netrc"
+            | ".kilo"
+            | ".pt"
+            | ".agent"
+            | ".worktrees"
     ) || name == ".env"
         || name.starts_with(".env.")
         || name.ends_with(".pem")
@@ -73,17 +64,21 @@ fn excluded(name: &str) -> bool {
 }
 fn excluded_from_copy(path: &Path) -> bool {
     let mut dependency = false;
-    for component in path.components() {
+    for (depth, component) in path.components().enumerate() {
         let name = component.as_os_str().to_string_lossy();
         if name == "node_modules" {
             dependency = true;
         }
-        if excluded(&name)
-            && !(dependency
-                && matches!(
-                    name.as_ref(),
-                    "dist" | "build" | "target" | "coverage" | ".cache" | ".next"
-                ))
+        if excluded(&name) {
+            return true;
+        }
+        if depth == 0 && matches!(name.as_ref(), "local" | "evidence" | "WORKSPACE.local.md") {
+            return true;
+        }
+        if !dependency
+            && (matches!(name.as_ref(), ".next" | ".cache")
+                || (depth == 0
+                    && matches!(name.as_ref(), "target" | "dist" | "build" | "coverage")))
         {
             return true;
         }
@@ -273,7 +268,12 @@ fn hashes(root: &Path) -> io::Result<BTreeMap<PathBuf, String>> {
         for e in fs::read_dir(path)? {
             let e = e?;
             let name = e.file_name();
-            if excluded(&name.to_string_lossy()) || name == "node_modules" {
+            if excluded_from_copy(
+                e.path()
+                    .strip_prefix(root)
+                    .map_err(|_| bad("unsafe_hash_path"))?,
+            ) || name == "node_modules"
+            {
                 continue;
             }
             let p = e.path();
@@ -426,6 +426,12 @@ fn check_config(root: &Path) -> io::Result<Config> {
             || !path
                 .file_name()
                 .is_some_and(|n| n == "dist" || n == "build" || n == "types" || n == "generated")
+            || path.components().next().is_some_and(|c| {
+                matches!(
+                    c.as_os_str().to_str(),
+                    Some("local" | "evidence" | "WORKSPACE.local.md")
+                )
+            })
             || excluded_from_copy(&Path::new("node_modules").join(path))
         {
             return Err(bad("unsafe_dependency_root"));
@@ -571,6 +577,15 @@ mod tests {
             "node_modules/example/build/index.js"
         )));
         assert!(excluded_from_copy(Path::new("dist/index.js")));
+        assert!(!excluded_from_copy(Path::new(
+            "clients/web/src/app/api/coverage/route.ts"
+        )));
+        assert!(!excluded_from_copy(Path::new(
+            "packages/lib/src/build/index.ts"
+        )));
+        assert!(!excluded_from_copy(Path::new(
+            "node_modules/example/local/index.js"
+        )));
         assert!(excluded_from_copy(Path::new("node_modules/example/.env")));
     }
     #[test]
@@ -597,6 +612,13 @@ mod tests {
         copy_snapshot(&source.0, &target.0, &mut Budget::new(&c)).unwrap();
         assert!(!target.0.join("ignored.txt").exists());
         assert!(target.0.join("a.ts").exists());
+        fs::create_dir_all(target.0.join("src/coverage")).unwrap();
+        fs::write(target.0.join("src/coverage/route.ts"), "export const a=1;").unwrap();
+        assert!(
+            hashes(&target.0)
+                .unwrap()
+                .contains_key(Path::new("src/coverage/route.ts"))
+        );
         let dep = Path::new("node_modules/pkg/dist/index.js");
         fs::write(target.0.join(dep), "changed").unwrap();
         assert_eq!(fs::read_to_string(source.0.join(dep)).unwrap(), "original");
