@@ -88,7 +88,7 @@ comparable on that axis.
 | Security audit gate | ✅ `check_security_gates` model-free secret/dependency/license gate with explicit verdict and coverage-gap honesty (`docs/security-gates.md`) | ⚠️ CodeQL detects secrets via queries (different scope: vulnerability finding vs. CI gate) | ❌ different scope | ⚠️ No equivalent security gate described |
 | Deterministic, model-free (`llm_used=false`) | ✅ All planners report `llm_used=false` | ✅ Static analysis, no LLM | ❌ Cody is LLM-backed | ❌ Optional AI paths use Ollama/OpenAI |
 | Revision-pinned snapshots | ✅ Graph bound to revision/working-tree digest | ✅ Analysis bound to a commit/checkout | ✅ Indexed at a commit | ✅ Pinned SHAs in benchmark |
-| Language breadth | ⚠️ 7 validated packs today (Rust, Go, Java, TS/TSX, Python, C, Kotlin); JavaScript, PHP and Swift require opt-in builds and remain outside the default contract | ✅ Very broad language support | ✅ Very broad (SCIP/LSIF) | ✅ Larger symbol-only surface documented |
+| Language breadth | ⚠️ 9 source graph packs (Rust, Go, Java, TS/TSX, Python, C, C++, Kotlin, Swift); proof depth varies by language; JavaScript and PHP still require opt-in builds | ✅ Very broad language support | ✅ Very broad (SCIP/LSIF) | ✅ Larger symbol-only surface documented |
 
 **Reading the table honestly.** CGRX wins on the agent-facing, evidence-honest,
 model-free axes: token-budgeted context, first-class coverage gaps,

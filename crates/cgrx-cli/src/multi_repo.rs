@@ -1,6 +1,7 @@
 //! One MCP namespace with explicit, isolated local-worktree routing.
 use super::{managed_state_path, open_managed_runtime};
 use crate::mcp_backend::RuntimeMcpBackend;
+use crate::resources::{self, Limits};
 use cgrx_capsule::Tokenizer;
 use cgrx_core::{Hash32, RepoSnapshot};
 use cgrx_mcp::{
@@ -10,12 +11,13 @@ use cgrx_mcp::{
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 use std::fs::{self, OpenOptions};
-use std::io::{self, BufRead, Write};
+use std::io::{self, BufRead, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use std::sync::mpsc::{self, RecvTimeoutError};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-const TOOLS: [&str; 17] = [
+const TOOLS: [&str; 28] = [
     "scan_risks",
     "check_change_gates",
     "check_repository_gates",
@@ -23,12 +25,23 @@ const TOOLS: [&str; 17] = [
     "orient",
     "expand",
     "status",
+    "memory_record",
+    "memory_recall",
+    "memory_update",
+    "memory_forget",
+    "check_framework_gates",
+    "check_security_gates",
     "search_graph",
     "get_outline",
     "get_architecture",
     "trace_path",
     "find_usages",
     "suggest_refactors",
+    "list_quality_candidates",
+    "get_candidate_details",
+    "prepare_candidate_patch",
+    "get_quality_index_status",
+    "update_quality_candidate_status",
     "get_code_snippet",
     "check_index_coverage",
     "explain_symbol",
@@ -40,6 +53,7 @@ struct Entry {
     repo_id: String,
     incarnation: String,
     accessed: u64,
+    last_used: Instant,
 }
 
 struct Router {
@@ -49,10 +63,15 @@ struct Router {
     response_profile: ResponseProfile,
     clock: u64,
     nonce: String,
+    limits: Limits,
+    reclaimed: u64,
+    model_releases: u64,
+    response_repo: Option<String>,
 }
 
 pub(super) fn serve(args: &[String]) -> Result<(), String> {
-    let mut max_repos = 4;
+    let mut max_repos = 1;
+    let mut limits = Limits::default();
     let mut response_profile_arg = None;
     let mut i = 0;
     while i < args.len() {
@@ -60,7 +79,9 @@ pub(super) fn serve(args: &[String]) -> Result<(), String> {
             "--multi-repo" => {}
             "--max-repos" => {
                 i += 1;
-                max_repos = args.get(i).and_then(|s| s.parse::<usize>().ok())
+                max_repos = args
+                    .get(i)
+                    .and_then(|s| s.parse::<usize>().ok())
                     .filter(|n| (1..=16).contains(n))
                     .ok_or("--max-repos requires an integer from 1 to 16")?;
             }
@@ -72,7 +93,43 @@ pub(super) fn serve(args: &[String]) -> Result<(), String> {
                         .as_str(),
                 );
             }
-            _ => return Err("multi-repo accepts only --multi-repo, --max-repos, and --response-profile; root/state/watch-root are mutually exclusive".to_owned()),
+            "--idle-seconds" | "--resource-wait-seconds" => {
+                let option = &args[i];
+                i += 1;
+                let seconds = args.get(i).and_then(|s| s.parse::<f64>().ok())
+                    .filter(|s| s.is_finite() && *s >= if option == "--idle-seconds" { 0.01 } else { 0.0 } && *s <= 86400.0)
+                    .ok_or("resource timeout must be finite and nonnegative; idle must be at least0.01 seconds")?;
+                let value = Duration::from_secs_f64(seconds);
+                if option == "--idle-seconds" {
+                    limits.idle = value;
+                } else {
+                    limits.wait = value;
+                }
+            }
+            "--memory-budget-mib" => {
+                i += 1;
+                limits.memory_bytes = args
+                    .get(i)
+                    .and_then(|s| s.parse::<u64>().ok())
+                    .filter(|n| (1..=65536).contains(n))
+                    .ok_or("--memory-budget-mib requires1..65536")?
+                    * 1024
+                    * 1024;
+            }
+            "--max-active-requests" => {
+                i += 1;
+                limits.active = args
+                    .get(i)
+                    .and_then(|s| s.parse::<usize>().ok())
+                    .filter(|n| (1..=16).contains(n))
+                    .ok_or("--max-active-requests requires1..16")?;
+            }
+            _ => {
+                return Err(
+                    "unsupported multi-repo option; root/state/watch-root are mutually exclusive"
+                        .to_owned(),
+                );
+            }
         }
         i += 1;
     }
@@ -81,10 +138,49 @@ pub(super) fn serve(args: &[String]) -> Result<(), String> {
         response_profile_arg,
     );
     let mut router = Router::new(max_repos, response_profile);
-    let stdin = io::stdin();
+    router.limits = limits;
+    cgrx_store::configure_memory_model_worker(std::env::current_exe().map_err(|e| e.to_string())?)
+        .map_err(|e| e.to_string())?;
+    // A bounded reader permits maintenance while the client keeps stdin open.
+    // Only this dispatcher accesses Router: maintenance cannot interrupt a call.
+    let (send, receive) = mpsc::sync_channel(1);
+    std::thread::spawn(move || {
+        let stdin = io::stdin();
+        let mut input = stdin.lock();
+        loop {
+            let mut line = Vec::new();
+            let result = (&mut input)
+                .take(16 * 1024 * 1024 + 1)
+                .read_until(b'\n', &mut line);
+            let frame = match result {
+                Ok(0) => return,
+                Ok(_) if line.len() > 16 * 1024 * 1024 => Err("MCP frame exceeds16MiB".to_owned()),
+                Ok(_) => String::from_utf8(line).map_err(|_| "MCP frame must be UTF-8".to_owned()),
+                Err(error) => Err(error.to_string()),
+            };
+            let failed = frame.is_err();
+            if send.send(frame).is_err() || failed {
+                return;
+            }
+        }
+    });
     let mut stdout = io::stdout().lock();
-    for line in stdin.lock().lines() {
-        let line = line.map_err(|e| e.to_string())?;
+    loop {
+        router.reap_idle();
+        let timeout = router
+            .entries
+            .values()
+            .map(|entry| router.limits.idle.saturating_sub(entry.last_used.elapsed()))
+            .min();
+        let frame = match timeout {
+            Some(timeout) => receive.recv_timeout(timeout),
+            None => receive.recv().map_err(|_| RecvTimeoutError::Disconnected),
+        };
+        let line = match frame {
+            Ok(line) => line?,
+            Err(RecvTimeoutError::Timeout) => continue,
+            Err(RecvTimeoutError::Disconnected) => break,
+        };
         if line.trim().is_empty() {
             continue;
         }
@@ -92,6 +188,7 @@ pub(super) fn serve(args: &[String]) -> Result<(), String> {
         if !response.is_empty() {
             writeln!(stdout, "{response}").map_err(|e| e.to_string())?;
             stdout.flush().map_err(|e| e.to_string())?;
+            router.complete_response();
         }
     }
     Ok(())
@@ -118,16 +215,74 @@ impl Router {
                     .unwrap_or_default()
                     .as_nanos()
             ),
+            limits: Limits::default(),
+            reclaimed: 0,
+            model_releases: 0,
+            response_repo: None,
+        }
+    }
+
+    fn complete_response(&mut self) {
+        if let Some(repo) = self.response_repo.take()
+            && let Some(entry) = self
+                .entries
+                .values_mut()
+                .find(|entry| entry.repo_id == repo)
+        {
+            // Includes execution, response decoration and a slow stdout reader.
+            entry.last_used = Instant::now();
+        }
+    }
+
+    fn reap_idle(&mut self) {
+        let before = self.entries.len();
+        self.entries
+            .retain(|_, entry| entry.last_used.elapsed() < self.limits.idle);
+        if self.entries.len() < before {
+            self.reclaimed += (before - self.entries.len()) as u64;
+            if self.entries.is_empty() {
+                self.model_releases += u64::from(cgrx_store::release_memory_model());
+            }
+            resources::relieve();
+        }
+    }
+
+    fn reclaim_over_budget(&mut self) {
+        if resources::footprint().is_none_or(|bytes| bytes <= self.limits.memory_bytes) {
+            return;
+        }
+        self.model_releases += u64::from(cgrx_store::release_memory_model());
+        resources::relieve();
+        while resources::footprint().is_some_and(|bytes| bytes > self.limits.memory_bytes) {
+            let Some(oldest) = self
+                .entries
+                .iter()
+                .min_by_key(|(_, e)| e.accessed)
+                .map(|(p, _)| p.clone())
+            else {
+                break;
+            };
+            self.entries.remove(&oldest);
+            self.reclaimed += 1;
+            resources::relieve();
         }
     }
 
     fn dispatch(&mut self, line: &str) -> String {
         let started = Instant::now();
+        self.response_repo = None;
         let Ok(request) = serde_json::from_str::<JsonRpcRequest>(line) else {
             return self.transport.dispatch_line(line);
         };
         if request.id.is_none() || request.jsonrpc != "2.0" {
             return self.transport.dispatch_line(line);
+        }
+        if request.method == "ping" {
+            return serde_json::to_string(&JsonRpcResponse::success(
+                request.id.unwrap(),
+                json!({}),
+            ))
+            .expect("ping response");
         }
         if request.method == "tools/list" {
             let mut schema: Value =
@@ -138,10 +293,10 @@ impl Router {
                 if s.get("required").is_none() {
                     s["required"] = json!([]);
                 }
-                s["required"]
-                    .as_array_mut()
-                    .expect("required array")
-                    .push(json!("repo"));
+                let required = s["required"].as_array_mut().unwrap();
+                if !required.contains(&json!("repo")) {
+                    required.push(json!("repo"));
+                }
             }
             return serde_json::to_string(&JsonRpcResponse::success(
                 request.id.unwrap(),
@@ -156,11 +311,71 @@ impl Router {
         let mut repo_id = None;
         let mut cache = "none";
         let id = request.id.clone().unwrap();
-        let result = self.call(request, &mut repo_id, &mut cache);
-        let value = result.unwrap_or_else(|e| {
+        // Reject invalid memory input without loading a graph, queuing behind
+        // inference work, or starting any repository mutation.
+        let validation = cgrx_mcp::validate_memory_arguments(&name, &request.params["arguments"]);
+        let permit = validation
+            .as_ref()
+            .ok()
+            .map(|_| resources::acquire(&self.limits));
+        let result = validation.and_then(|_| {
+            permit
+                .as_ref()
+                .expect("validated request")
+                .as_ref()
+                .map_err(|failure| {
+                    let mut error = if failure.kind() == io::ErrorKind::WouldBlock {
+                        JsonRpcError::typed(
+                            -32020,
+                            "cgrx.resource_busy",
+                            "active request budget exhausted; request was not started",
+                        )
+                    } else {
+                        JsonRpcError::typed(
+                            -32020,
+                            "cgrx.resource_unavailable",
+                            "resource admission unavailable; request was not started",
+                        )
+                    };
+                    if let Some(data) = error.data.as_mut() {
+                        data["request_started"] = json!(false);
+                    }
+                    error
+                })
+                .and_then(|_| self.call(request, &mut repo_id, &mut cache))
+        });
+        let mut value = result.unwrap_or_else(|e| {
             serde_json::to_value(JsonRpcResponse::error(id, e)).expect("error response")
         });
+        // Reuse one inference child throughout a tool call, including memory
+        // backfill batches; reap it only after durable-write verification.
+        self.model_releases += u64::from(cgrx_store::release_memory_model());
+        self.reclaim_over_budget();
+        if name == "status"
+            && let Some(result) = value.get_mut("result")
+        {
+            let control = json!({"idle_seconds":self.limits.idle.as_secs_f64(),"memory_budget_bytes":self.limits.memory_bytes,
+                "max_active_requests":self.limits.active,"max_repos":self.max_repos,"retained_repos":self.entries.len(),
+                "reclaimed_repos":self.reclaimed,"model_releases":self.model_releases,"process_footprint_bytes":resources::footprint(),
+                "embedding_lifetime":"request-scoped native worker",
+                "memory_budget_kind":"post-request soft retention; active allocations are not interrupted"});
+            if let Some(structured) = result.get_mut("structuredContent") {
+                structured["resource_control"] = control.clone();
+            }
+            if let Some(content) = result["content"].as_array_mut() {
+                for item in content {
+                    if item["type"] == "text"
+                        && let Some(text) = item["text"].as_str()
+                        && let Ok(mut compact) = serde_json::from_str::<Value>(text)
+                    {
+                        compact["resource_control"] = control.clone();
+                        item["text"] = json!(compact.to_string());
+                    }
+                }
+            }
+        }
         let text = value.to_string();
+        self.response_repo = repo_id.clone();
         record_usage(
             &name,
             repo_id.as_deref(),
@@ -170,6 +385,7 @@ impl Router {
             line.len(),
             text.len(),
         );
+        drop(permit);
         text
     }
 
@@ -248,6 +464,8 @@ impl Router {
                     .map(|(p, _)| p.clone())
                     .expect("nonempty cache");
                 self.entries.remove(&oldest);
+                self.reclaimed += 1;
+                resources::relieve();
                 *cache = "eviction";
             }
             self.entries.insert(
@@ -268,6 +486,7 @@ impl Router {
                     repo_id: identity,
                     incarnation: format!("{}-{}", self.nonce, self.clock),
                     accessed: self.clock,
+                    last_used: Instant::now(),
                 },
             );
         } else {
@@ -291,6 +510,9 @@ impl Router {
             // Only public continuation fields are rewritten, never sealed RCC/QBEC data.
             if let Some(structured) = result.get_mut("structuredContent") {
                 decorate(structured, &root, entry);
+                if structured.get("payload_tokens").is_some() {
+                    refresh_payload_tokens(structured);
+                }
             }
             if let Some(content) = result["content"].as_array_mut() {
                 for item in content {
@@ -306,6 +528,14 @@ impl Router {
             }
         }
         Ok(response)
+    }
+}
+
+impl Drop for Router {
+    fn drop(&mut self) {
+        self.entries.clear();
+        cgrx_store::release_memory_model();
+        resources::relieve();
     }
 }
 

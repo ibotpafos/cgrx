@@ -272,7 +272,6 @@ fn refreshed_containment_matches_cold_index_and_drops_a_child_moved_to_top_level
 
 fn effective_legacy_revision() -> u32 {
     125 + u32::from(cgrx_languages::EXPERIMENTAL_PHP_ENABLED) * 2
-        + u32::from(cgrx_languages::EXPERIMENTAL_SWIFT_ENABLED) * 4
         + u32::from(cgrx_languages::EXPERIMENTAL_JAVASCRIPT_ENABLED) * 8
 }
 
@@ -290,7 +289,7 @@ fn legacy_false_proven_containment_fails_static_open_and_managed_cli_reindexes()
     let fresh = GenerationReader::open_current(&fixture.state).unwrap();
     let mut legacy = stored(&fresh);
     let old_policy = effective_legacy_revision();
-    assert_eq!(legacy["extraction_revision"], old_policy + 16);
+    assert_eq!(legacy["extraction_revision"], old_policy + 128);
     let alpha = symbol(&legacy, "alpha").clone();
     let beta = symbol(&legacy, "beta").clone();
     legacy["arcs"] = json!([{
@@ -357,7 +356,7 @@ fn legacy_false_proven_containment_fails_static_open_and_managed_cli_reindexes()
         );
         let current = GenerationReader::open_current(&managed).unwrap();
         assert_eq!(current.snapshot(), fresh.snapshot());
-        assert_eq!(stored(&current)["extraction_revision"], old_policy + 16);
+        assert_eq!(stored(&current)["extraction_revision"], old_policy + 128);
         let runtime = Runtime::open(&managed).unwrap();
         assert_eq!(trace(&runtime, "alpha")["total"], 0);
         assert_no_proof(&runtime, "alpha", "beta");

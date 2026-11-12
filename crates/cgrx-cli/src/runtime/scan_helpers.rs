@@ -4,7 +4,7 @@
 //! source collection, watch scan paths, index normalization, and qualified call
 //! gap refreshing.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
@@ -23,7 +23,8 @@ use super::{
 };
 
 #[allow(dead_code)]
-const UNTRACKED_SCAN_ENTRY_LIMIT: usize = 64;
+const UNTRACKED_SCAN_ENTRY_LIMIT: usize = 8192;
+const UNTRACKED_OPEN_DIRECTORY_LIMIT: usize = 32;
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(super) struct QueryIndex {
@@ -153,11 +154,26 @@ pub(super) fn expand_untracked_directories(
     root: &Path,
     discovered: BTreeSet<String>,
 ) -> Result<UntrackedScanCache, RuntimeError> {
+    expand_untracked_with_budget(root, discovered, UNTRACKED_SCAN_ENTRY_LIMIT)
+}
+
+enum UntrackedScanWork {
+    Directory(PathBuf),
+    Entries(fs::ReadDir),
+}
+
+fn expand_untracked_with_budget(
+    root: &Path,
+    discovered: BTreeSet<String>,
+    mut remaining: usize,
+) -> Result<UntrackedScanCache, RuntimeError> {
     let mut expanded = BTreeSet::new();
     let mut watched_metadata = BTreeMap::new();
     watch_scan_path(root, Path::new(".gitignore"), &mut watched_metadata)?;
     let mut ignored = GitIgnoreMatcher::spawn(root)?;
-    let mut remaining = UNTRACKED_SCAN_ENTRY_LIMIT;
+    let mut pending = VecDeque::new();
+    let mut deferred = VecDeque::new();
+    let mut open_directories = 0;
     let mut truncated = false;
     for relative in &discovered {
         let absolute = root.join(relative);
@@ -166,56 +182,49 @@ pub(super) fn expand_untracked_directories(
             continue;
         }
         if absolute.is_dir() {
-            if remaining == 0 {
-                truncated = true;
-                continue;
-            }
-            truncated |= collect_untracked_sources(
-                root,
-                &absolute,
-                &mut ignored,
-                &mut remaining,
-                &mut watched_metadata,
-                &mut expanded,
-            )?;
+            pending.push_back(UntrackedScanWork::Directory(absolute));
         } else {
             expanded.insert(relative.clone());
         }
     }
-    ignored.finish()?;
-    Ok(UntrackedScanCache {
-        discovered,
-        expanded,
-        watched_metadata,
-        truncated,
-    })
-}
-
-pub(super) fn collect_untracked_sources(
-    root: &Path,
-    directory: &Path,
-    ignored: &mut GitIgnoreMatcher,
-    remaining: &mut usize,
-    watched_metadata: &mut BTreeMap<String, SourceFingerprint>,
-    paths: &mut BTreeSet<String>,
-) -> Result<bool, RuntimeError> {
-    let relative_directory = directory
-        .strip_prefix(root)
-        .map_err(|error| RuntimeError::new("path", error.to_string()))?;
-    watch_scan_path(root, relative_directory, watched_metadata)?;
-    if directory.join(".git").exists() {
-        return Ok(false);
-    }
-    let mut entries = fs::read_dir(directory)
-        .map_err(|error| RuntimeError::new("source_read", error.to_string()))?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|error| RuntimeError::new("source_read", error.to_string()))?;
-    entries.sort_by_key(|entry| entry.file_name());
-    for entry in entries {
-        let Some(next_remaining) = remaining.checked_sub(1) else {
-            return Ok(true);
+    // Share the same hard entry budget across directories. A generated tree
+    // must not consume it before sibling source directories get a turn.
+    while let Some(work) = pending.pop_front() {
+        if remaining == 0 {
+            truncated = true;
+            break;
+        }
+        let mut entries = match work {
+            UntrackedScanWork::Directory(directory) => {
+                if open_directories == UNTRACKED_OPEN_DIRECTORY_LIMIT {
+                    deferred.push_back(directory);
+                    continue;
+                }
+                if let Some(entries) =
+                    open_untracked_directory(root, &directory, &mut watched_metadata)?
+                {
+                    open_directories += 1;
+                    pending.push_back(UntrackedScanWork::Entries(entries));
+                } else if let Some(directory) = deferred.pop_front() {
+                    pending.push_front(UntrackedScanWork::Directory(directory));
+                }
+                continue;
+            }
+            UntrackedScanWork::Entries(entries) => entries,
         };
-        *remaining = next_remaining;
+        let Some(entry) = entries.next() else {
+            drop(entries);
+            open_directories -= 1;
+            if let Some(directory) = deferred.pop_front() {
+                pending.push_front(UntrackedScanWork::Directory(directory));
+            }
+            continue;
+        };
+        remaining -= 1;
+        // Keep enumeration lazy: materializing/sorting the full directory
+        // would bypass the budget before a single entry had been charged.
+        pending.push_back(UntrackedScanWork::Entries(entries));
+        let entry = entry.map_err(|error| RuntimeError::new("source_read", error.to_string()))?;
         let file_type = entry
             .file_type()
             .map_err(|error| RuntimeError::new("source_read", error.to_string()))?;
@@ -231,31 +240,175 @@ pub(super) fn collect_untracked_sources(
             .ok_or_else(|| RuntimeError::new("path", "source path is not UTF-8"))?
             .replace('\\', "/");
         if entry.file_name() == ".gitignore" {
-            watch_scan_path(root, relative, watched_metadata)?;
+            watch_scan_path(root, relative, &mut watched_metadata)?;
         }
         if ignored.is_ignored(&portable)? {
             continue;
         }
         if file_type.is_dir() {
-            if collect_untracked_sources(root, &path, ignored, remaining, watched_metadata, paths)?
-            {
-                return Ok(true);
-            }
-            continue;
-        }
-        if !file_type.is_file() {
-            continue;
-        }
-        if pack_for_path(relative).is_none()
-            && relative
-                .file_name()
-                .is_none_or(|name| name != "go.mod" && name != "Cargo.toml")
+            pending.push_back(UntrackedScanWork::Directory(path));
+        } else if file_type.is_file()
+            && (pack_for_path(relative).is_some()
+                || relative
+                    .file_name()
+                    .is_some_and(|name| name == "go.mod" || name == "Cargo.toml"))
         {
-            continue;
+            expanded.insert(portable);
         }
-        paths.insert(portable);
     }
-    Ok(false)
+    ignored.finish()?;
+    Ok(UntrackedScanCache {
+        discovered,
+        expanded,
+        watched_metadata,
+        truncated,
+    })
+}
+
+fn open_untracked_directory(
+    root: &Path,
+    directory: &Path,
+    watched_metadata: &mut BTreeMap<String, SourceFingerprint>,
+) -> Result<Option<fs::ReadDir>, RuntimeError> {
+    let relative_directory = directory
+        .strip_prefix(root)
+        .map_err(|error| RuntimeError::new("path", error.to_string()))?;
+    watch_scan_path(root, relative_directory, watched_metadata)?;
+    if directory.join(".git").exists() {
+        return Ok(None);
+    }
+    // The bounded prefix follows filesystem order; the final set stays sorted.
+    fs::read_dir(directory)
+        .map(Some)
+        .map_err(|error| RuntimeError::new("source_read", error.to_string()))
+}
+
+#[cfg(test)]
+mod untracked_scan_tests {
+    use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+    struct Fixture(PathBuf);
+    impl Fixture {
+        fn new() -> Self {
+            let nonce = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos();
+            let root = std::env::temp_dir().join(format!(
+                "cgrx-untracked-{}-{nonce}-{}",
+                std::process::id(),
+                SEQUENCE.fetch_add(1, Ordering::Relaxed)
+            ));
+            fs::create_dir(&root).unwrap();
+            assert!(
+                Command::new("git")
+                    .args(["init", "-q"])
+                    .current_dir(&root)
+                    .status()
+                    .unwrap()
+                    .success()
+            );
+            Self(root)
+        }
+    }
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn generated_entries_cannot_starve_sibling_sources_within_the_same_budget() {
+        let f = Fixture::new();
+        fs::create_dir(f.0.join("artifacts")).unwrap();
+        fs::create_dir(f.0.join("src")).unwrap();
+        for index in 0..20 {
+            fs::write(f.0.join(format!("artifacts/{index:02}.json")), "{}").unwrap();
+        }
+        fs::write(f.0.join("src/main.cpp"), "void target() {}\n").unwrap();
+        let discovered = BTreeSet::from(["artifacts/".to_owned(), "src/".to_owned()]);
+        let small = expand_untracked_with_budget(&f.0, discovered.clone(), 3).unwrap();
+        assert_eq!(small.expanded, BTreeSet::from(["src/main.cpp".to_owned()]));
+        assert!(
+            small.truncated,
+            "unvisited artifacts remain explicitly partial"
+        );
+        assert!(small.is_valid(&f.0, &discovered));
+        let complete = expand_untracked_with_budget(&f.0, discovered, 64).unwrap();
+        assert_eq!(complete.expanded, small.expanded);
+        assert!(!complete.truncated);
+    }
+
+    #[test]
+    fn more_directories_than_open_limit_are_deferred_without_losing_sources() {
+        let f = Fixture::new();
+        let mut discovered = BTreeSet::new();
+        let mut expected = BTreeSet::new();
+        for index in 0..UNTRACKED_OPEN_DIRECTORY_LIMIT * 3 {
+            let directory = format!("dir-{index:03}");
+            fs::create_dir(f.0.join(&directory)).unwrap();
+            let source = format!("{directory}/main.cpp");
+            fs::write(f.0.join(&source), "void target() {}\n").unwrap();
+            discovered.insert(format!("{directory}/"));
+            expected.insert(source);
+        }
+        let scanned = expand_untracked_with_budget(&f.0, discovered, 512).unwrap();
+        assert_eq!(scanned.expanded, expected);
+        assert!(
+            !scanned.truncated,
+            "the handle cap must defer rather than omit directories"
+        );
+    }
+
+    #[test]
+    fn skipped_nested_repositories_cannot_strand_deferred_sources() {
+        let f = Fixture::new();
+        let mut discovered = BTreeSet::new();
+        for index in 0..UNTRACKED_OPEN_DIRECTORY_LIMIT {
+            let directory = format!("a-empty-{index:03}");
+            fs::create_dir(f.0.join(&directory)).unwrap();
+            discovered.insert(format!("{directory}/"));
+        }
+        for index in 0..UNTRACKED_OPEN_DIRECTORY_LIMIT * 3 {
+            let directory = format!("b-nested-{index:03}");
+            fs::create_dir_all(f.0.join(&directory).join(".git")).unwrap();
+            discovered.insert(format!("{directory}/"));
+        }
+        fs::create_dir(f.0.join("z-src")).unwrap();
+        fs::write(f.0.join("z-src/main.cpp"), "void target() {}\n").unwrap();
+        discovered.insert("z-src/".to_owned());
+        let scanned = expand_untracked_with_budget(&f.0, discovered, 512).unwrap();
+        assert_eq!(
+            scanned.expanded,
+            BTreeSet::from(["z-src/main.cpp".to_owned()])
+        );
+        assert!(!scanned.truncated);
+    }
+
+    #[test]
+    fn fair_scan_preserves_ignore_symlink_and_nested_repository_boundaries() {
+        let f = Fixture::new();
+        fs::create_dir(f.0.join("src")).unwrap();
+        fs::write(f.0.join("src/main.cpp"), "void target() {}\n").unwrap();
+        fs::write(f.0.join("src/ignored.cpp"), "void ignored() {}\n").unwrap();
+        fs::write(f.0.join(".gitignore"), "src/ignored.cpp\n").unwrap();
+        fs::create_dir_all(f.0.join("src/nested/.git")).unwrap();
+        fs::write(f.0.join("src/nested/child.cpp"), "void child() {}\n").unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink("main.cpp", f.0.join("src/alias.cpp")).unwrap();
+        let scanned =
+            expand_untracked_with_budget(&f.0, BTreeSet::from(["src/".to_owned()]), 64).unwrap();
+        assert_eq!(
+            scanned.expanded,
+            BTreeSet::from(["src/main.cpp".to_owned()])
+        );
+        assert!(!scanned.truncated);
+        fs::write(f.0.join(".gitignore"), "src/main.cpp\n").unwrap();
+        assert!(!scanned.is_valid(&f.0, &scanned.discovered));
+    }
 }
 
 pub(super) fn watch_scan_path(

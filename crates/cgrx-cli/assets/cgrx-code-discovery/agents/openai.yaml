@@ -1,7 +1,7 @@
 interface:
   display_name: "CGRX Code Discovery"
-  short_description: "Verify code changes with the CGRX graph"
-  default_prompt: "Use $cgrx-code-discovery to investigate this code task with bounded graph evidence."
+  short_description: "Investigate code and retain useful project context"
+  default_prompt: "Use $cgrx-code-discovery to investigate this code task with bounded graph evidence and relevant project memory."
 
 dependencies:
   tools:

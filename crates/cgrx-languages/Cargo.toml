@@ -7,6 +7,7 @@ rust-version.workspace = true
 repository.workspace = true
 
 [dependencies]
+ast-grep-core = "=0.45.2"
 serde.workspace = true
 blake3.workspace = true
 tree-sitter = "0.26.13"
@@ -33,7 +34,7 @@ path = "../../tests/determinism.rs"
 [features]
 # Validation-only opt-in; never enabled by a default or release build.
 experimental-php = []
-# Opt-in validation slice; default registry still requires the full language corpus.
+# Backward-compatible no-op: Swift is part of the default registry.
 experimental-swift = []
 # Separate evidence policy until the JavaScript held-out contract is reviewed.
 experimental-javascript = ["dep:tree-sitter-javascript"]

@@ -1,8 +1,10 @@
 mod arguments;
+mod memory_validation;
 mod response;
 mod schema;
 
 use arguments::*;
+pub use memory_validation::validate_memory_arguments;
 use response::*;
 use schema::model_visible_schema;
 pub use schema::model_visible_schema_json;
@@ -14,7 +16,11 @@ use cgrx_core::{
     CapsuleStatus, EvidenceSelector, Hash32, QueryRequest, RepoSnapshot, SymbolSelector,
     canonical_hash,
 };
-use cgrx_store::{MAX_CONFIDENCE, MemoryRecallQuery, MemoryRecordInput, MemorySpan, MemoryStore};
+use cgrx_store::{
+    AgentMemoryInput, AgentMemoryQuery, MAX_CONFIDENCE, MemoryCapacityExceeded,
+    MemoryCodeCandidate, MemoryCodeLink, MemoryCodeRange, MemoryRecallQuery, MemoryRecordInput,
+    MemorySourceKind, MemorySpan, MemoryStore, MemoryWriteUncertain,
+};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::fs::{self, OpenOptions};
@@ -47,6 +53,13 @@ struct MetricsLog {
 }
 
 pub trait ToolBackend: Send + Sync {
+    fn quality_tool(&mut self, _operation: &str, _arguments: Value) -> Result<Value, BackendError> {
+        Err(BackendError::new(
+            "cgrx.quality_unavailable",
+            "quality tools require a managed repository backend",
+        ))
+    }
+
     fn ingest_runtime_evidence(
         &mut self,
         _input_path: &str,
@@ -64,6 +77,7 @@ pub trait ToolBackend: Send + Sync {
         _mode: &str,
         _limit: usize,
         _runs: Option<Value>,
+        _base: Option<&str>,
     ) -> Result<Value, BackendError> {
         Err(BackendError::new(
             "cgrx.risk_scan_unavailable",
@@ -101,6 +115,18 @@ pub trait ToolBackend: Send + Sync {
         self.search_graph(query, scope, limit, language, include_body)
     }
     fn get_outline(&mut self, path: &str, limit: u32) -> Result<Value, BackendError>;
+    fn search_ast_graph_page(
+        &mut self,
+        _query: &str,
+        _scope: Value,
+        _page: (u32, u32),
+        _language: &str,
+    ) -> Result<Value, BackendError> {
+        Err(BackendError::new(
+            "cgrx.ast_search_unavailable",
+            "structural search requires a managed source repository",
+        ))
+    }
     fn get_architecture(
         &mut self,
         scope: Value,
@@ -180,6 +206,19 @@ pub trait ToolBackend: Send + Sync {
     }
     fn get_code_snippet(&mut self, symbol: &str, path: Option<&str>)
     -> Result<Value, BackendError>;
+    /// Resolve a persistent code link within the already-refreshed snapshot.
+    fn memory_symbol_ref(&self, _path: &str, _link: &MemoryCodeLink) -> Option<String> {
+        None
+    }
+    /// Navigation hints for a stale link; these never validate or replace the assertion.
+    fn memory_code_candidates(
+        &self,
+        _path: &str,
+        _link: &MemoryCodeLink,
+        _limit: usize,
+    ) -> (Vec<MemoryCodeCandidate>, bool) {
+        (Vec::new(), false)
+    }
     fn get_code_snippet_selected(
         &mut self,
         selector: SymbolSelector<'_>,
@@ -530,11 +569,18 @@ impl Server {
                 "capabilities": {"tools": {"listChanged": false}},
                 "serverInfo": {"name": "cgrx", "version": env!("CARGO_PKG_VERSION")},
                 "instructions": format!(
-                    "Use status first for revision and freshness. Multi-repo calls require repo: absolute Git worktree root. Use orient with a narrow scope, expand its handle, then read material snippets. Discover symbols before tracing calls; copy symbol_ref for exact selection and rediscover after snapshot changes. Check coverage and read source for gaps. Empty results do not prove absence. Handles belong to one repo/session. Active toolset: {}; response profile: {}.",
+                    "Use status first when using CGRX; pass repo: absolute Git root. Recall memory when prior context helps; save useful verified outcomes. Memory is worktree-local. Facts: <=4000 characters; details in source_ref. Updates replace all fields, including task_id. Use orient narrowly; handles are repo/session-bound. Copy symbol_ref; rediscover after changes. Check coverage and source for gaps; empty results prove no absence. Toolset: {}; response profile: {}.",
                     self.toolset.label(), self.response_profile.label()
                 )
             })),
-            "tools/list" => Ok(json!({"tools": model_visible_schema()})),
+            "tools/list" => {
+                let mut schema = model_visible_schema();
+                schema
+                    .as_array_mut()
+                    .unwrap()
+                    .retain(|tool| self.toolset.allows(tool["name"].as_str().unwrap()));
+                Ok(json!({"tools": schema}))
+            }
             "tools/call" => self.call_tool(request.params),
             _ => Err(JsonRpcError::typed(
                 -32601,
@@ -562,6 +608,14 @@ impl Server {
                 ),
             ));
         }
+        validate_memory_arguments(&call.name, &call.arguments)?;
+        if call.name.starts_with("memory_")
+            && let Some(backend) = &mut self.backend
+        {
+            // Memory records must use today's managed snapshot, not the server's startup revision.
+            backend.status(json!([])).map_err(backend_error)?;
+            self.snapshot = backend.snapshot().clone();
+        }
         let structured = match call.name.as_str() {
             "scan_risks" => {
                 #[derive(Deserialize)]
@@ -573,6 +627,8 @@ impl Server {
                     limit: Option<usize>,
                     #[serde(default)]
                     runs: Option<Value>,
+                    #[serde(default)]
+                    base: Option<String>,
                 }
                 let args: Args = from_value(call.arguments)?;
                 let mode = args.mode.as_deref().unwrap_or("changes");
@@ -584,6 +640,19 @@ impl Server {
                         "mode must be changes; limit must be 1..50",
                     ));
                 }
+                if args.base.as_deref().is_some_and(|base| {
+                    base.is_empty()
+                        || base.len() > 1024
+                        || base.trim() != base
+                        || base.starts_with('-')
+                        || base.chars().any(char::is_control)
+                }) {
+                    return Err(JsonRpcError::typed(
+                        -32602,
+                        "cgrx.invalid_arguments",
+                        "base must be a Git commit revision (OID, tag, branch or HEAD~N), at most 1024 bytes without surrounding whitespace, controls or a leading dash",
+                    ));
+                }
                 self.backend
                     .as_mut()
                     .ok_or_else(|| {
@@ -593,7 +662,7 @@ impl Server {
                             "managed repository required",
                         )
                     })?
-                    .scan_risks(mode, limit, args.runs)
+                    .scan_risks(mode, limit, args.runs, args.base.as_deref())
                     .map_err(backend_error)?
             }
             "check_change_gates" => {
@@ -646,7 +715,7 @@ impl Server {
                             "managed repository required",
                         )
                     })?
-                    .scan_risks("changes", limit, args.runs)
+                    .scan_risks("changes", limit, args.runs, None)
                     .map_err(backend_error)?;
                 evaluate_change_gates(
                     &scan,
@@ -734,6 +803,22 @@ impl Server {
             "get_architecture" => self.get_architecture(from_value(call.arguments)?)?,
             "trace_path" => self.trace_path(from_value(call.arguments)?)?,
             "find_usages" => self.find_usages(from_value(call.arguments)?)?,
+            "list_quality_candidates"
+            | "get_candidate_details"
+            | "prepare_candidate_patch"
+            | "get_quality_index_status"
+            | "update_quality_candidate_status" => self
+                .backend
+                .as_mut()
+                .ok_or_else(|| {
+                    JsonRpcError::typed(
+                        -32020,
+                        "cgrx.quality_unavailable",
+                        "managed repository required",
+                    )
+                })?
+                .quality_tool(&call.name, call.arguments)
+                .map_err(backend_error)?,
             "suggest_refactors" => self.suggest_refactors(from_value(call.arguments)?)?,
             "get_code_snippet" => self.get_code_snippet(from_value(call.arguments)?)?,
             "explain_symbol" => self.explain_symbol(from_value(call.arguments)?)?,
@@ -745,6 +830,8 @@ impl Server {
             "status" => self.status(from_value(call.arguments)?)?,
             "memory_record" => self.memory_record(from_value(call.arguments)?)?,
             "memory_recall" => self.memory_recall(from_value(call.arguments)?)?,
+            "memory_update" => self.memory_update(from_value(call.arguments)?)?,
+            "memory_forget" => self.memory_forget(from_value(call.arguments)?)?,
             _ => {
                 return Err(JsonRpcError::typed(
                     -32602,
@@ -758,13 +845,24 @@ impl Server {
             "content": [{"type": "text", "text": serde_json::to_string(&visible).expect("tool result serializes")}],
             "isError": false
         });
-        if self.response_profile == ResponseProfile::Full {
-            result["structuredContent"] = structured;
-        }
+        // outputSchema is advertised in every profile. Strict MCP clients require
+        // structuredContent on successful calls; compact is a shape, not text-only transport.
+        result["structuredContent"] = if self.response_profile == ResponseProfile::Full {
+            structured
+        } else {
+            visible
+        };
         Ok(result)
     }
 
     fn orient(&mut self, arguments: OrientArguments) -> Result<Value, JsonRpcError> {
+        if arguments.task.trim().is_empty() {
+            return Err(JsonRpcError::typed(
+                -32602,
+                "cgrx.invalid_arguments",
+                "task must be non-empty",
+            ));
+        }
         let budget = arguments.resolved_budget()?;
         let query = QueryRequest {
             task: arguments.task,
@@ -827,6 +925,20 @@ impl Server {
                 "query must be non-empty; limit must be 1..50; offset must be 0..1000000",
             ));
         }
+        if matches!(arguments.match_mode, SearchMatchMode::Ast)
+            && (arguments.query.len() > 4096
+                || arguments.include_body
+                || !matches!(
+                    arguments.language.as_deref(),
+                    Some("rust" | "typescript" | "python" | "go")
+                ))
+        {
+            return Err(JsonRpcError::typed(
+                -32602,
+                "cgrx.invalid_arguments",
+                "AST mode requires language rust, typescript, python, or go and a pattern of at most 4096 bytes; include_body is a lexical option",
+            ));
+        }
         let Some(backend) = &mut self.backend else {
             return Err(JsonRpcError::typed(
                 -32020,
@@ -834,16 +946,26 @@ impl Server {
                 "search_graph requires an indexed runtime backend",
             ));
         };
-        let result = backend
-            .search_graph_page(
+        let result = match arguments.match_mode {
+            SearchMatchMode::Lexical => backend.search_graph_page(
                 &arguments.query,
                 arguments.scope,
                 arguments.limit,
                 arguments.offset,
                 arguments.language.as_deref(),
                 arguments.include_body,
-            )
-            .map_err(backend_error)?;
+            ),
+            SearchMatchMode::Ast => backend.search_ast_graph_page(
+                &arguments.query,
+                arguments.scope,
+                (arguments.limit, arguments.offset),
+                arguments
+                    .language
+                    .as_deref()
+                    .expect("validated AST language"),
+            ),
+        }
+        .map_err(backend_error)?;
         if let Some(expected) = arguments.expected_snapshot
             && result.pointer("/page/snapshot_id") != Some(&json!(expected))
         {
@@ -919,6 +1041,11 @@ impl Server {
                 "trace_path requires an indexed runtime backend",
             ));
         };
+        let direction = match arguments.direction.as_str() {
+            "incoming" => "callers",
+            "outgoing" => "callees",
+            canonical => canonical,
+        };
         backend
             .trace_path_selected(
                 SymbolSelector {
@@ -926,7 +1053,7 @@ impl Server {
                     path: arguments.path.as_deref(),
                     symbol_ref: arguments.symbol_ref.as_deref(),
                 },
-                &arguments.direction,
+                direction,
                 arguments.depth,
                 arguments.scope,
                 arguments.limit,
@@ -1167,25 +1294,42 @@ impl Server {
                 "paths_or_scope is required",
             ));
         }
-        if let Some(backend) = &mut self.backend {
-            return backend
+        let mut value = if let Some(backend) = &mut self.backend {
+            backend
                 .status(arguments.paths_or_scope)
-                .map_err(backend_error);
-        }
-        Ok(json!({
-            "snapshot": self.snapshot,
-            "freshness": "PINNED",
-            "coverage_gaps": [{"code":"INDEX_ADAPTER_NOT_CONNECTED","scope":arguments.paths_or_scope}]
-        }))
+                .map_err(backend_error)?
+        } else {
+            json!({
+                "snapshot": self.snapshot,
+                "freshness": "PINNED",
+                "coverage_gaps": [{"code":"INDEX_ADAPTER_NOT_CONNECTED","scope":arguments.paths_or_scope}]
+            })
+        };
+        // This identifies the running program, even after its on-disk path is replaced.
+        // Normal unstamped builds explicitly report no build identifier.
+        let build_id = option_env!("CGRX_BUILD_ID")
+            .filter(|id| id.len() == 32 && id.bytes().all(|byte| byte.is_ascii_hexdigit()));
+        value
+            .as_object_mut()
+            .ok_or_else(|| internal_error("status must be an object"))?
+            .insert(
+                "server".to_owned(),
+                json!({
+                    "name":"cgrx", "version":env!("CARGO_PKG_VERSION"),
+                    "pid":std::process::id(), "build_id":build_id,
+                }),
+            );
+        Ok(value)
     }
 
-    fn memory_record(&mut self, arguments: MemoryRecordArguments) -> Result<Value, JsonRpcError> {
-        let Some(store) = &self.memory else {
-            return Err(JsonRpcError::typed(
-                -32020,
-                "cgrx.memory_unavailable",
-                "memory_record requires a managed repository backend",
-            ));
+    fn memory_input(
+        &mut self,
+        mut arguments: MemoryRecordArguments,
+    ) -> Result<AgentMemoryInput, JsonRpcError> {
+        let repo = {
+            let store = self.memory_store()?;
+            validate_memory_repo(store, arguments.repo.as_deref())?;
+            store.root().to_string_lossy().into_owned()
         };
         let rev = arguments
             .rev
@@ -1197,65 +1341,242 @@ impl Server {
                 "provenance rev must equal the pinned snapshot revision",
             ));
         }
-        let input = MemoryRecordInput {
-            fact: arguments.fact,
-            confidence: arguments.confidence,
-            provenance: cgrx_store::MemoryProvenance {
-                repo: arguments.repo,
-                rev,
-                path: arguments.path,
-                span: arguments.span.map(|span| MemorySpan {
+        if arguments.symbol_ref.is_some() && arguments.symbol.is_none() {
+            return Err(JsonRpcError::typed(
+                -32602,
+                "cgrx.invalid_arguments",
+                "symbol_ref requires symbol",
+            ));
+        }
+        let code_link = if let Some(symbol) = arguments.symbol.as_deref() {
+            if arguments.source_kind != MemorySourceKind::Code {
+                return Err(JsonRpcError::typed(
+                    -32602,
+                    "cgrx.invalid_arguments",
+                    "symbol is only valid for code sources",
+                ));
+            }
+            let backend = self.backend.as_mut().ok_or_else(|| {
+                JsonRpcError::typed(
+                    -32020,
+                    "cgrx.symbol_binding_unavailable",
+                    "symbol binding requires an indexed repository backend",
+                )
+            })?;
+            let snippet = backend
+                .get_code_snippet_selected(SymbolSelector {
+                    symbol,
+                    path: arguments.path.as_deref(),
+                    symbol_ref: arguments.symbol_ref.as_deref(),
+                })
+                .map_err(backend_error)?;
+            if snippet.get("snapshot")
+                != Some(&serde_json::to_value(&self.snapshot).map_err(internal_error)?)
+            {
+                return Err(JsonRpcError::typed(
+                    -32020,
+                    "cgrx.stale_snapshot",
+                    "source changed during symbol selection; rediscover it",
+                ));
+            }
+            let field = |name: &str| {
+                snippet.get(name).and_then(Value::as_str).ok_or_else(|| {
+                    JsonRpcError::typed(
+                        -32020,
+                        "cgrx.symbol_binding_unavailable",
+                        format!("selected symbol lacks {name}"),
+                    )
+                })
+            };
+            let provenance = cgrx_store::MemoryProvenance {
+                repo: repo.clone(),
+                rev: rev.clone(),
+                path: field("path")?.to_owned(),
+                span: arguments.span.as_ref().map(|span| MemorySpan {
                     start_line: span.start_line,
                     end_line: span.end_line,
                 }),
-            },
-            valid_until_unix_nanos: arguments.valid_until_unix_nanos,
-            privacy_tag: arguments.privacy_tag,
+            };
+            let range = |name: &str| {
+                serde_json::from_value::<MemoryCodeRange>(snippet[name].clone())
+                    .map_err(internal_error)
+            };
+            let (link, span) = self
+                .memory_store()?
+                .bind_code(
+                    &provenance,
+                    MemoryCodeLink {
+                        symbol: field("symbol")?.to_owned(),
+                        definition_span: range("definition_span")?,
+                        body_span: range("body_span")?,
+                        source_hash: field("source_hash")?.to_owned(),
+                    },
+                    field("source")?,
+                )
+                .map_err(memory_error)?;
+            arguments.path = Some(provenance.path);
+            arguments.span = Some(MemorySpanArguments {
+                start_line: span.start_line,
+                end_line: span.end_line,
+            });
+            Some(link)
+        } else {
+            None
         };
-        let now = now_unix_nanos();
-        let publication = store.record(&input, now).map_err(memory_error)?;
-        Ok(json!({
-            "snapshot": self.snapshot,
-            "record": publication.record,
-            "duplicate": publication.duplicate,
-            "llm_used": false,
-        }))
+        Ok(AgentMemoryInput {
+            decision: MemoryRecordInput {
+                fact: arguments.fact,
+                confidence: arguments.confidence,
+                provenance: cgrx_store::MemoryProvenance {
+                    repo,
+                    rev,
+                    path: arguments.path.unwrap_or_default(),
+                    span: arguments.span.map(|span| MemorySpan {
+                        start_line: span.start_line,
+                        end_line: span.end_line,
+                    }),
+                },
+                valid_until_unix_nanos: arguments.valid_until_unix_nanos,
+                privacy_tag: arguments.privacy_tag,
+            },
+            memory_kind: arguments.memory_kind,
+            source_kind: arguments.source_kind,
+            source_ref: arguments.source_ref,
+            task_id: arguments.task_id,
+            event_id: arguments.event_id,
+            code_link,
+        })
+    }
+
+    fn memory_store(&self) -> Result<&MemoryStore, JsonRpcError> {
+        self.memory.as_ref().ok_or_else(|| {
+            JsonRpcError::typed(
+                -32020,
+                "cgrx.memory_unavailable",
+                "memory requires a managed repository backend",
+            )
+        })
+    }
+
+    fn memory_record(&mut self, arguments: MemoryRecordArguments) -> Result<Value, JsonRpcError> {
+        let input = self.memory_input(arguments)?;
+        let publication = self
+            .memory_store()?
+            .agent_record(&input, now_unix_nanos())
+            .map_err(memory_error)?;
+        Ok(
+            json!({"snapshot": self.snapshot, "record": publication.record,
+            "duplicate": publication.duplicate, "backend": "memvid", "llm_used": false}),
+        )
+    }
+
+    fn memory_update(&mut self, arguments: MemoryUpdateArguments) -> Result<Value, JsonRpcError> {
+        validate_memory_repo(self.memory_store()?, arguments.repo.as_deref())?;
+        let input = self.memory_input(arguments.record)?;
+        let publication = self
+            .memory_store()?
+            .agent_update(
+                &arguments.id,
+                arguments.expected_version,
+                &input,
+                &arguments.reason,
+                now_unix_nanos(),
+            )
+            .map_err(memory_error)?;
+        Ok(
+            json!({"snapshot": self.snapshot, "record": publication.record,
+            "duplicate": false, "backend": "memvid", "llm_used": false}),
+        )
+    }
+
+    fn memory_forget(&mut self, arguments: MemoryForgetArguments) -> Result<Value, JsonRpcError> {
+        let store = self.memory_store()?;
+        validate_memory_repo(store, arguments.repo.as_deref())?;
+        let removed = store
+            .agent_forget(&arguments.id, arguments.expected_version)
+            .map_err(memory_error)?;
+        Ok(json!({"snapshot": self.snapshot, "id": arguments.id,
+            "removed_versions": removed, "deleted": true, "backend": "memvid", "llm_used": false}))
     }
 
     fn memory_recall(&mut self, arguments: MemoryRecallArguments) -> Result<Value, JsonRpcError> {
         let limit = arguments.limit.unwrap_or(20);
         let min_confidence = arguments.min_confidence.unwrap_or(0);
-        if !(1..=50).contains(&limit) || min_confidence > MAX_CONFIDENCE {
+        let budget = arguments.budget.unwrap_or(2048);
+        if !(1..=50).contains(&limit)
+            || min_confidence > MAX_CONFIDENCE
+            || !(256..=16000).contains(&budget)
+        {
             return Err(JsonRpcError::typed(
                 -32602,
                 "cgrx.invalid_arguments",
-                "limit must be 1..50; min_confidence must be 0..1000",
+                "limit must be 1..50; min_confidence 0..1000; budget 256..16000",
             ));
         }
-        let Some(store) = &self.memory else {
-            return Err(JsonRpcError::typed(
-                -32020,
-                "cgrx.memory_unavailable",
-                "memory_recall requires a managed repository backend",
-            ));
-        };
-        let (results, truncated) = store
-            .recall(&MemoryRecallQuery {
-                query: arguments.query,
-                min_confidence,
-                privacy_tag: arguments.privacy_tag,
-                revision: arguments.revision,
-                limit,
-                now_unix_nanos: now_unix_nanos(),
+        let store = self.memory_store()?;
+        validate_memory_repo(store, arguments.repo.as_deref())?;
+        let mut recalled = store
+            .agent_recall(&AgentMemoryQuery {
+                recall: MemoryRecallQuery {
+                    query: arguments.query,
+                    min_confidence,
+                    privacy_tag: arguments.privacy_tag,
+                    revision: arguments.revision,
+                    limit,
+                    now_unix_nanos: now_unix_nanos(),
+                },
+                memory_kind: arguments.memory_kind,
+                task_id: arguments.task_id,
+                path: arguments.path,
+                symbol: arguments.symbol,
+                include_stale: arguments.include_stale,
+                id: arguments.id,
+                include_history: arguments.include_history,
             })
             .map_err(memory_error)?;
-        Ok(json!({
-            "snapshot": self.snapshot,
-            "results": results,
-            "truncated": truncated,
-            "llm_used": false,
-        }))
+        if arguments.include_code {
+            for hit in &mut recalled.results {
+                let mut excerpt = store.agent_code_excerpt(&hit.record);
+                if let Some(link) = &hit.record.code_link
+                    && let Some(backend) = &self.backend
+                {
+                    if excerpt.status == "available" {
+                        excerpt.symbol_ref = backend.memory_symbol_ref(&excerpt.path, link);
+                    } else if excerpt.status == "needs_review" {
+                        (excerpt.candidates, excerpt.candidates_truncated) =
+                            backend.memory_code_candidates(&excerpt.path, link, 5);
+                    }
+                }
+                hit.code = Some(excerpt);
+            }
+        }
+        let mut value = json!({"snapshot": self.snapshot, "results": recalled.results,
+            "truncated": recalled.truncated, "search_mode": recalled.search_mode,
+            "embedding_model": recalled.embedding_model, "backend": "memvid", "llm_used": false});
+        let tokenizer = Tokenizer::o200k_base().map_err(internal_error)?;
+        bound_memory_recall(&mut value, budget, &tokenizer).map_err(internal_error)?;
+        Ok(value)
     }
+}
+
+fn validate_memory_repo(store: &MemoryStore, repo: Option<&str>) -> Result<(), JsonRpcError> {
+    if let Some(repo) = repo {
+        let root = Path::new(repo).canonicalize().map_err(|_| {
+            JsonRpcError::typed(
+                -32602,
+                "cgrx.invalid_repository",
+                "memory repo does not exist",
+            )
+        })?;
+        if root != store.root() {
+            return Err(JsonRpcError::typed(
+                -32602,
+                "cgrx.invalid_repository",
+                "memory repo must equal the managed repository root",
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn from_value<T: for<'de> Deserialize<'de>>(value: Value) -> Result<T, JsonRpcError> {
@@ -1277,9 +1598,48 @@ fn backend_error(error: BackendError) -> JsonRpcError {
 }
 
 fn memory_error(error: std::io::Error) -> JsonRpcError {
+    if let Some(capacity) = error
+        .get_ref()
+        .and_then(|error| error.downcast_ref::<MemoryCapacityExceeded>())
+    {
+        let mut response = JsonRpcError::typed(
+            -32020,
+            "cgrx.memory_capacity_exhausted",
+            capacity.to_string(),
+        );
+        let data = response.data.as_mut().expect("typed error data");
+        data["current"] = json!(capacity.current);
+        data["limit"] = json!(capacity.limit);
+        data["required"] = json!(capacity.required);
+        data["mutation_applied"] = json!(false);
+        return response;
+    }
+    if let Some(uncertain) = error
+        .get_ref()
+        .and_then(|error| error.downcast_ref::<MemoryWriteUncertain>())
+    {
+        let mut response =
+            JsonRpcError::typed(-32020, "cgrx.memory_write_uncertain", uncertain.to_string());
+        let data = response.data.as_mut().expect("typed error data");
+        data["id"] = json!(uncertain.id);
+        data["operation"] = json!(uncertain.operation);
+        data["expected_version"] = json!(uncertain.expected_version);
+        data["backend_class"] = json!(uncertain.backend_class());
+        data["io_kind"] = json!(format!("{:?}", uncertain.cause.kind()));
+        return response;
+    }
     match error.kind() {
         std::io::ErrorKind::InvalidInput => {
             JsonRpcError::typed(-32602, "cgrx.invalid_arguments", error.to_string())
+        }
+        std::io::ErrorKind::NotFound => {
+            JsonRpcError::typed(-32004, "cgrx.memory_not_found", error.to_string())
+        }
+        std::io::ErrorKind::AlreadyExists => {
+            JsonRpcError::typed(-32020, "cgrx.memory_conflict", error.to_string())
+        }
+        std::io::ErrorKind::WouldBlock => {
+            JsonRpcError::typed(-32020, "cgrx.store_busy", "memory store is busy; retry")
         }
         _ => internal_error(error),
     }

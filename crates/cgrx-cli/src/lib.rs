@@ -22,3 +22,5 @@ pub use runtime::{
 pub fn git_executable() -> std::ffi::OsString {
     std::env::var_os("CGRX_GIT").unwrap_or_else(|| "git".into())
 }
+
+pub use runtime::quality::QualityWorker;

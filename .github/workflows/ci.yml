@@ -76,7 +76,21 @@ jobs:
           name: cgrx-${{ matrix.os }}
           path: target/release
       - run: chmod +x target/release/cgrx
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 26
+          cache: npm
+          cache-dependency-path: scripts/mcp-contract/package-lock.json
+      - name: Install pinned MCP contract client
+        run: npm ci --prefix scripts/mcp-contract --ignore-scripts --no-audit --no-fund
+      - name: Validate every MCP tool in full and token-efficient profiles
+        run: |
+          node scripts/mcp-contract/run.mjs target/release/cgrx
+          node scripts/mcp-contract/project-checks.mjs target/release/cgrx full
+          node scripts/mcp-contract/project-checks.mjs target/release/cgrx token-efficient
       - run: python3 scripts/smoke_mcp.py target/release/cgrx
+      - name: Native MCP resource lifecycle and 24-session regression
+        run: CGRX_TEST_BINARY=target/release/cgrx python3 -m unittest discover -s scripts -p test_mcp_resources.py
       - run: python3 scripts/smoke_scopes.py target/release/cgrx
       - name: Validate code discovery and complete compact search pages
         run: python3 scripts/eval_search_discovery.py target/release/cgrx

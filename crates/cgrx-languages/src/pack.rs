@@ -50,6 +50,11 @@ pub enum Provenance {
         caller: Span,
         target: Span,
     },
+    /// Proven same-file Swift call or type dependency; both spans are Symbol.span.
+    SwiftExact {
+        owner: Span,
+        target: Span,
+    },
     /// Direct own method across plain same-module inherent impls; exact spans.
     RustSelf {
         owner: Span,
@@ -187,6 +192,8 @@ pub struct Extraction {
     /// Const arrows are discoverable but never eligible for name-only resolution.
     pub lexical_arrows: Vec<Span>,
     pub swift_free_functions: Vec<Span>,
+    /// Unresolved type syntax is a reference gap, never an invocation.
+    pub swift_type_references: Vec<Span>,
     pub symbols: Vec<Symbol>,
     pub edges: Vec<Edge>,
     pub parser_error_ranges: Vec<Span>,
@@ -349,6 +356,10 @@ impl Extraction {
                 update(&mut hasher, b"swift_direct_caller", "", caller);
                 update(&mut hasher, b"swift_direct_target", "", target);
             }
+            if let Provenance::SwiftExact { owner, target } = edge.provenance {
+                update(&mut hasher, b"swift_exact_owner", "", owner);
+                update(&mut hasher, b"swift_exact_target", "", target);
+            }
             if let Provenance::TsLexical { target, caller } = edge.provenance {
                 update(&mut hasher, b"ts_lexical_target", "", target);
                 update(&mut hasher, b"ts_lexical_caller", "", caller);
@@ -397,6 +408,9 @@ impl Extraction {
         }
         for span in &self.swift_free_functions {
             update(&mut hasher, b"swift_free_function", "", *span);
+        }
+        for span in &self.swift_type_references {
+            update(&mut hasher, b"swift_type_reference", "", *span);
         }
         for span in &self.parser_error_ranges {
             update(&mut hasher, b"parser_error", "", *span);
@@ -481,6 +495,8 @@ pub(crate) fn normalize_extraction(extraction: &mut Extraction) {
     extraction.lexical_arrows.dedup();
     extraction.swift_free_functions.sort();
     extraction.swift_free_functions.dedup();
+    extraction.swift_type_references.sort();
+    extraction.swift_type_references.dedup();
     extraction.symbols.sort();
     extraction.symbols.dedup();
     extraction.edges.sort();
@@ -568,12 +584,14 @@ pub fn pack_for_path(path: &RepoPath) -> Option<&'static dyn LanguagePack> {
     let extension = path.extension()?.to_str()?;
     let pack = [
         &crate::c::C_PACK as &dyn LanguagePack,
+        &crate::cpp::CPP_PACK,
         &crate::typescript::TYPESCRIPT as &dyn LanguagePack,
         &crate::go::GO,
         &crate::java::JAVA,
         &crate::kotlin::KOTLIN,
         &crate::python::PYTHON,
         &crate::rust::RUST,
+        &crate::swift::SWIFT_PACK,
     ]
     .into_iter()
     .find(|pack| pack.extensions().contains(&extension));
@@ -581,10 +599,6 @@ pub fn pack_for_path(path: &RepoPath) -> Option<&'static dyn LanguagePack> {
     #[cfg(feature = "experimental-php")]
     if pack.is_none() && crate::php::PHP_PACK.extensions().contains(&extension) {
         return Some(&crate::php::PHP_PACK);
-    }
-    #[cfg(feature = "experimental-swift")]
-    if pack.is_none() && crate::swift::SWIFT_PACK.extensions().contains(&extension) {
-        return Some(&crate::swift::SWIFT_PACK);
     }
     #[cfg(feature = "experimental-javascript")]
     if pack.is_none()
@@ -595,4 +609,82 @@ pub fn pack_for_path(path: &RepoPath) -> Option<&'static dyn LanguagePack> {
         return Some(&crate::javascript::JAVASCRIPT);
     }
     pack
+}
+
+/// Select the dialect of ambiguous `.h` files from syntax, preserving valid C.
+/// C++ constructs and fewer parser errors are required before changing dialect.
+pub fn pack_for_source(path: &RepoPath, source: &[u8]) -> Option<&'static dyn LanguagePack> {
+    let pack = pack_for_path(path)?;
+    if path.extension().and_then(|ext| ext.to_str()) != Some("h") {
+        return Some(pack);
+    }
+    let mut parser = Parser::new();
+    parser.set_language(&crate::c::C_PACK.language()).ok()?;
+    let c_tree = parser.parse(source, None)?;
+    parser.set_language(&crate::cpp::CPP_PACK.language()).ok()?;
+    let cpp_tree = parser.parse(source, None)?;
+    let mut stack = vec![cpp_tree.root_node()];
+    let mut cpp_syntax = false;
+    let mut cpp_keyword = false;
+    while let Some(node) = stack.pop() {
+        cpp_keyword |= matches!(
+            node.kind(),
+            "constexpr"
+                | "consteval"
+                | "constinit"
+                | "decltype"
+                | "noexcept"
+                | "template"
+                | "namespace"
+                | "class"
+                | "using"
+                | "typename"
+                | "nullptr"
+                | "requires"
+                | "concept"
+        );
+        cpp_syntax |= matches!(
+            node.kind(),
+            "class_specifier"
+                | "namespace_definition"
+                | "template_declaration"
+                | "access_specifier"
+                | "reference_declarator"
+                | "rvalue_reference_declarator"
+                | "qualified_identifier"
+                | "alias_declaration"
+                | "using_declaration"
+                | "linkage_specification"
+                | "enum_specifier"
+                | "trailing_return_type"
+        );
+        let mut cursor = node.walk();
+        stack.extend(node.children(&mut cursor));
+    }
+    // C's permissive typedef-name syntax can also parse `constexpr int f()`.
+    // Require actual C++ keyword tokens in a valid C++ tree, not text matches
+    // in comments or strings, before overriding an otherwise valid C parse.
+    if !cpp_tree.root_node().has_error() && cpp_keyword {
+        return Some(&crate::cpp::CPP_PACK);
+    }
+    if (!cpp_tree.root_node().has_error() || cpp_syntax)
+        && error_weight(cpp_tree.root_node()) < error_weight(c_tree.root_node())
+    {
+        Some(&crate::cpp::CPP_PACK)
+    } else {
+        Some(pack)
+    }
+}
+
+fn error_weight(root: Node<'_>) -> usize {
+    let mut total = 0usize;
+    let mut stack = vec![root];
+    while let Some(node) = stack.pop() {
+        if node.is_error() || node.is_missing() {
+            total = total.saturating_add(node.end_byte().saturating_sub(node.start_byte()).max(1));
+        }
+        let mut cursor = node.walk();
+        stack.extend(node.named_children(&mut cursor));
+    }
+    total
 }

@@ -334,6 +334,7 @@ pub(super) fn rebuild_arcs_with_cargo(
             ts_files,
         ));
     }
+    arcs.extend(super::swift_resolution::rebuild(documents, path_hashes));
     for call in documents.iter().filter(|document| {
         document.provenance == "CALLS"
             && !php_resolution::is_php_path(&document.path)

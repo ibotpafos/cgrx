@@ -1369,45 +1369,35 @@ fn strongly_connected_components(
     nodes: &BTreeSet<String>,
     adjacency: &BTreeMap<String, BTreeSet<String>>,
 ) -> Vec<Vec<String>> {
-    fn visit(
-        node: &str,
-        adjacency: &BTreeMap<String, BTreeSet<String>>,
-        visited: &mut BTreeSet<String>,
-        order: &mut Vec<String>,
-    ) {
-        if !visited.insert(node.to_owned()) {
-            return;
-        }
-        for next in adjacency.get(node).into_iter().flatten() {
-            visit(next, adjacency, visited, order);
-        }
-        order.push(node.to_owned());
-    }
-    let mut order = Vec::new();
-    let mut visited = BTreeSet::new();
+    // Preserve the evidence projection; only the graph algorithm changes.
+    // Kosaraju in petgraph is iterative, including both DFS passes.
+    let mut graph = petgraph::graph::DiGraph::<&str, ()>::new();
+    let mut indices = BTreeMap::new();
     for node in nodes {
-        visit(node, adjacency, &mut visited, &mut order);
+        indices.insert(node.as_str(), graph.add_node(node.as_str()));
     }
-    let mut reverse = BTreeMap::<String, BTreeSet<String>>::new();
     for (source, targets) in adjacency {
-        for target in targets {
-            reverse
-                .entry(target.clone())
-                .or_default()
-                .insert(source.clone());
-        }
-    }
-    visited.clear();
-    let mut components = Vec::new();
-    for node in order.into_iter().rev() {
-        if visited.contains(&node) {
+        let Some(&source_index) = indices.get(source.as_str()) else {
             continue;
+        };
+        for target in targets {
+            if let Some(&target_index) = indices.get(target.as_str()) {
+                graph.add_edge(source_index, target_index, ());
+            }
         }
-        let mut component = Vec::new();
-        collect_component(&node, &reverse, &mut visited, &mut component);
-        component.sort();
-        components.push(component);
     }
+    let mut components = petgraph::algo::kosaraju_scc(&graph)
+        .into_iter()
+        .map(|component| {
+            let mut names = component
+                .into_iter()
+                .map(|index| graph[index].to_owned())
+                .collect::<Vec<_>>();
+            names.sort();
+            names
+        })
+        .collect::<Vec<_>>();
+    components.sort();
     components
 }
 
@@ -1559,17 +1549,65 @@ fn detect_semantic_communities<T: Ord + Clone>(
     }
 }
 
-fn collect_component(
-    node: &str,
-    adjacency: &BTreeMap<String, BTreeSet<String>>,
-    visited: &mut BTreeSet<String>,
-    component: &mut Vec<String>,
-) {
-    if !visited.insert(node.to_owned()) {
-        return;
+#[cfg(test)]
+mod graph_algorithm_tests {
+    use super::*;
+
+    #[test]
+    fn components_preserve_cycles_self_loops_and_isolated_nodes() {
+        let nodes = ["a", "b", "c", "d", "e", "isolated"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        let adjacency = [
+            ("a", vec!["b"]),
+            ("b", vec!["a", "c"]),
+            ("c", vec!["d"]),
+            ("d", vec!["c"]),
+            ("e", vec!["e"]),
+        ]
+        .into_iter()
+        .map(|(source, targets)| {
+            (
+                source.to_owned(),
+                targets.into_iter().map(str::to_owned).collect(),
+            )
+        })
+        .collect();
+        assert_eq!(
+            strongly_connected_components(&nodes, &adjacency),
+            vec![vec!["a", "b"], vec!["c", "d"], vec!["e"], vec!["isolated"]]
+        );
     }
-    component.push(node.to_owned());
-    for next in adjacency.get(node).into_iter().flatten() {
-        collect_component(next, adjacency, visited, component);
+
+    #[test]
+    fn deep_dependency_chain_and_cycle_fit_a_small_thread_stack() {
+        std::thread::Builder::new()
+            .stack_size(64 * 1024)
+            .spawn(|| {
+                let names = (0..30_000)
+                    .map(|index| format!("package_{index:05}"))
+                    .collect::<Vec<_>>();
+                let nodes = names.iter().cloned().collect();
+                let mut adjacency = names
+                    .windows(2)
+                    .map(|pair| (pair[0].clone(), [pair[1].clone()].into_iter().collect()))
+                    .collect::<BTreeMap<_, _>>();
+                assert_eq!(
+                    strongly_connected_components(&nodes, &adjacency).len(),
+                    names.len()
+                );
+                adjacency.insert(
+                    names.last().unwrap().clone(),
+                    [names[0].clone()].into_iter().collect(),
+                );
+                assert_eq!(
+                    strongly_connected_components(&nodes, &adjacency),
+                    vec![names]
+                );
+            })
+            .unwrap()
+            .join()
+            .unwrap();
     }
 }

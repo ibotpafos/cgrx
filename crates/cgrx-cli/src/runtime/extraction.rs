@@ -5,13 +5,16 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
+use std::sync::OnceLock;
+
+use rayon::prelude::*;
 
 use cgrx_capsule::{ContextWindow, slice_source};
 use cgrx_core::{ByteRange, Hash32};
 use cgrx_languages::ts_imports::{SiteBinding, TsFileFacts};
 use cgrx_languages::{
     Provenance as LanguageProvenance, RelationKind as LanguageRelation, Span, UnresolvedKind,
-    pack_for_path,
+    pack_for_source,
 };
 
 use super::RuntimeError;
@@ -48,39 +51,41 @@ pub(super) fn extract_sources_parallel(
     if sources.is_empty() {
         return Ok(Vec::new());
     }
-    let workers = std::thread::available_parallelism()
-        .map_or(1, usize::from)
-        .min(16)
-        .min(sources.len());
-    let chunk_size = sources.len().div_ceil(workers);
-    let chunks = std::thread::scope(|scope| {
-        let handles: Vec<_> = sources
-            .chunks(chunk_size)
-            .map(|chunk| {
-                scope.spawn(move || {
-                    chunk
-                        .iter()
-                        .map(|(relative, source)| {
-                            Ok(ExtractedSource {
-                                relative: relative.clone(),
-                                hash: Hash32(*blake3::hash(source).as_bytes()),
-                                extracted: extract_path(relative, source)?,
-                            })
-                        })
-                        .collect::<Result<Vec<_>, RuntimeError>>()
+    // One bounded pool is shared across repositories; uneven files can be
+    // stolen by idle workers without spawning a new pool for each refresh.
+    static POOL: OnceLock<Result<rayon::ThreadPool, String>> = OnceLock::new();
+    let pool = POOL
+        .get_or_init(|| {
+            rayon::ThreadPoolBuilder::new()
+                .num_threads(
+                    std::thread::available_parallelism()
+                        .map_or(1, usize::from)
+                        .min(16),
+                )
+                .thread_name(|index| format!("cgrx-extract-{index}"))
+                .build()
+                .map_err(|error| error.to_string())
+        })
+        .as_ref()
+        .map_err(|error| RuntimeError::new("extract_worker", error.clone()))?;
+    let results = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        pool.install(|| {
+            sources
+                .par_iter()
+                .map(|(relative, source)| {
+                    Ok(ExtractedSource {
+                        relative: relative.clone(),
+                        hash: Hash32(*blake3::hash(source).as_bytes()),
+                        extracted: extract_path(relative, source)?,
+                    })
                 })
-            })
-            .collect();
-        handles
-            .into_iter()
-            .map(|handle| {
-                handle.join().map_err(|_| {
-                    RuntimeError::new("extract_worker", "source extraction worker panicked")
-                })?
-            })
-            .collect::<Result<Vec<_>, RuntimeError>>()
-    })?;
-    let mut extracted: Vec<_> = chunks.into_iter().flatten().collect();
+                // Collect in input order before propagating errors, so worker
+                // scheduling cannot change which failed file is reported.
+                .collect::<Vec<Result<ExtractedSource, RuntimeError>>>()
+        })
+    }))
+    .map_err(|_| RuntimeError::new("extract_worker", "source extraction worker panicked"))?;
+    let mut extracted = results.into_iter().collect::<Result<Vec<_>, _>>()?;
     extracted.sort_by(|left, right| left.relative.cmp(&right.relative));
     Ok(extracted)
 }
@@ -231,13 +236,14 @@ fn apply_ts_call_facts(
 
 fn append_unresolved_documents(
     relative: &str,
-    relative_path: &Path,
     source: &[u8],
     symbols: &[cgrx_languages::Symbol],
     unresolved: &[cgrx_languages::Unresolved],
     ts_receiver_spans: &BTreeSet<[usize; 2]>,
+    swift_type_spans: &BTreeSet<Span>,
     documents: &mut Vec<StoredDocument>,
 ) {
+    let relative_path = Path::new(relative);
     let mut unresolved_by_span = BTreeMap::<(usize, usize), Vec<UnresolvedKind>>::new();
     for candidate in unresolved {
         if ts_receiver_spans.contains(&[candidate.span.start, candidate.span.end]) {
@@ -278,7 +284,11 @@ fn append_unresolved_documents(
                     text,
                     search_text: String::new(),
                     span,
-                    provenance: "CALLS",
+                    provenance: if swift_type_spans.contains(&span) {
+                        "REFERENCES"
+                    } else {
+                        "CALLS"
+                    },
                     semantic_tags,
                 },
             ));
@@ -356,7 +366,7 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
             ..TsFileFacts::default()
         });
     }
-    let pack = pack_for_path(relative_path)
+    let pack = pack_for_source(relative_path, source)
         .ok_or_else(|| RuntimeError::new("unsupported_path", relative.to_owned()))?;
     let extraction = pack
         .extract(relative_path, source)
@@ -368,6 +378,7 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
         .map(str::to_owned);
     let lexical_arrows: BTreeSet<_> = extraction.lexical_arrows.into_iter().collect();
     let swift_free_functions: BTreeSet<_> = extraction.swift_free_functions.into_iter().collect();
+    let swift_type_spans: BTreeSet<_> = extraction.swift_type_references.into_iter().collect();
     let symbols = extraction.symbols;
     let edges = extraction.edges;
     let rust_parameter_source_hash = edges
@@ -424,7 +435,15 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
                 String::from_utf8_lossy(bytes).into_owned()
             });
         let semantic_fingerprint = body_fingerprint(&symbol.name, &search_text);
-        let semantic_tags = if lexical_arrows.contains(&symbol.span) {
+        let semantic_tags = if pack.id() == "cpp" {
+            vec!["CPP_LANGUAGE".to_owned()]
+        } else if pack.id() == "swift" {
+            let mut tags = vec!["SWIFT_DECLARATION".to_owned()];
+            if swift_free_functions.contains(&symbol.span) {
+                tags.push("SWIFT_FREE_FUNCTION".to_owned());
+            }
+            tags
+        } else if lexical_arrows.contains(&symbol.span) {
             vec!["TS_LEXICAL_ARROW".to_owned()]
         } else if swift_free_functions.contains(&symbol.span) {
             vec!["SWIFT_FREE_FUNCTION".to_owned()]
@@ -501,12 +520,21 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
         };
         let semantic_tags = if php_type_target.is_some() {
             vec!["REFERENCES".to_owned(), "PHP_TYPE_REFERENCE".to_owned()]
+        } else if matches!(edge.provenance, LanguageProvenance::SwiftExact { .. }) {
+            vec!["REFERENCES".to_owned(), "SWIFT_EXACT_REFERENCE".to_owned()]
         } else {
             vec!["REFERENCES".to_owned()]
         };
         let identity = format!("reference:{text}");
         documents.push(StoredDocument {
             php_type_target,
+            ts_lexical_target: match edge.provenance {
+                LanguageProvenance::SwiftExact { owner, target } => Some(TsLexicalTarget {
+                    caller: ByteRange::new(owner.start, owner.end),
+                    target: ByteRange::new(target.start, target.end),
+                }),
+                _ => None,
+            },
             ..plain_document(
                 relative,
                 DocumentSeed {
@@ -558,6 +586,7 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
             | LanguageProvenance::RustParameter { .. }
             | LanguageProvenance::RustModule { .. }
             | LanguageProvenance::SwiftDirect { .. }
+            | LanguageProvenance::SwiftExact { .. }
             | LanguageProvenance::RustConstructor { .. } => None,
         };
         let is_go_receiver = go_receiver_target.is_some();
@@ -681,6 +710,10 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
                 _ => None,
             },
             ts_lexical_target: match edge.provenance {
+                LanguageProvenance::SwiftExact { owner, target } => Some(TsLexicalTarget {
+                    caller: ByteRange::new(owner.start, owner.end),
+                    target: ByteRange::new(target.start, target.end),
+                }),
                 LanguageProvenance::SwiftDirect { caller, target }
                 | LanguageProvenance::TsLexical { target, caller } => Some(TsLexicalTarget {
                     target: ByteRange::new(target.start, target.end),
@@ -766,6 +799,8 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
                 vec!["EXACT_CALL".to_owned(), "RUST_MODULE_CALL".to_owned()]
             } else if matches!(edge.provenance, LanguageProvenance::SwiftDirect { .. }) {
                 vec!["EXACT_CALL".to_owned(), "SWIFT_DIRECT_CALL".to_owned()]
+            } else if matches!(edge.provenance, LanguageProvenance::SwiftExact { .. }) {
+                vec!["EXACT_CALL".to_owned(), "SWIFT_EXACT_CALL".to_owned()]
             } else if matches!(edge.provenance, LanguageProvenance::RustSelf { .. }) {
                 vec!["EXACT_CALL".to_owned(), "RUST_SELF_CALL".to_owned()]
             } else if matches!(edge.provenance, LanguageProvenance::RustParameter { .. }) {
@@ -938,11 +973,11 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
     let ts_receiver_spans = apply_ts_call_facts(relative, source, ts_file.as_ref(), &mut documents);
     append_unresolved_documents(
         relative,
-        relative_path,
         source,
         &symbols,
         &unresolved,
         &ts_receiver_spans,
+        &swift_type_spans,
         &mut documents,
     );
     append_implements_documents(relative, relative_path, source, &mut documents);
@@ -1033,5 +1068,90 @@ mod tests {
         assert!(!document.go_import_explicit_alias);
         assert!(document.go_package.is_none());
         assert!(document.semantic_fingerprint.is_none());
+    }
+}
+
+#[cfg(test)]
+mod scheduling_tests {
+    use super::*;
+    use serde_json::{Value, json};
+
+    fn observe(value: ExtractedSource) -> Value {
+        json!({"path":value.relative,"hash":value.hash,"documents":value.extracted.documents,
+            "rust":value.extracted.rust_file,"python":value.extracted.python_file,"ts":value.extracted.ts_file,
+            "parser_errors":value.extracted.parser_error_ranges,"dynamic":value.extracted.dynamic_dispatch,
+            "references":value.extracted.reference_arcs})
+    }
+
+    #[test]
+    fn concurrent_uneven_extraction_preserves_serial_facts_hashes_and_order() {
+        let sources = (0..48)
+            .rev()
+            .map(|index| {
+                let padding = "padding ".repeat((index % 11) * 1000);
+                match index % 3 {
+                    0 => (
+                        format!("src/f_{index:02}.rs"),
+                        format!("fn f_{index}() {{ /* {padding} */ let text = \"Привет\"; }}")
+                            .into_bytes(),
+                    ),
+                    1 => (
+                        format!("src/f_{index:02}.py"),
+                        format!("def f_{index}():\n    # {padding}\n    return helper()\n")
+                            .into_bytes(),
+                    ),
+                    _ => (
+                        format!("src/f_{index:02}.ts"),
+                        format!(
+                            "export function f_{index}() {{ /* {padding} */ return helper(); }}"
+                        )
+                        .into_bytes(),
+                    ),
+                }
+            })
+            .collect::<Vec<_>>();
+        let mut expected = sources
+            .iter()
+            .map(|(relative, source)| {
+                observe(ExtractedSource {
+                    relative: relative.clone(),
+                    hash: Hash32(*blake3::hash(source).as_bytes()),
+                    extracted: extract_path(relative, source).unwrap(),
+                })
+            })
+            .collect::<Vec<_>>();
+        expected.sort_by(|a, b| a["path"].as_str().cmp(&b["path"].as_str()));
+        std::thread::scope(|scope| {
+            let first = scope.spawn(|| {
+                extract_sources_parallel(&sources)
+                    .unwrap()
+                    .into_iter()
+                    .map(observe)
+                    .collect::<Vec<_>>()
+            });
+            let second = scope.spawn(|| {
+                extract_sources_parallel(&sources)
+                    .unwrap()
+                    .into_iter()
+                    .map(observe)
+                    .collect::<Vec<_>>()
+            });
+            assert_eq!(first.join().unwrap(), expected);
+            assert_eq!(second.join().unwrap(), expected);
+        });
+        assert!(extract_sources_parallel(&[]).unwrap().is_empty());
+    }
+
+    #[test]
+    fn parallel_failures_report_the_first_input_deterministically() {
+        let sources = vec![
+            ("first.unsupported".to_owned(), vec![]),
+            ("second.unsupported".to_owned(), vec![]),
+        ];
+        for _ in 0..8 {
+            let error = extract_sources_parallel(&sources).err().unwrap();
+            assert_eq!(error.code(), "unsupported_path");
+            assert_eq!(error.detail, "first.unsupported");
+        }
     }
 }

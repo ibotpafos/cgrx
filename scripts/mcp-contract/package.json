@@ -1,0 +1,1 @@
+{"name":"cgrx-mcp-contract","private":true,"type":"module","version":"1.0.0","scripts":{"test":"node run.mjs"},"dependencies":{"@modelcontextprotocol/sdk":"1.25.2"},"devDependencies":{"prettier":"3.10.0","typescript":"5.9.3"}}

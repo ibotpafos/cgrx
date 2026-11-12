@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "timeout_ms": 30000,
+  "snapshot_max_bytes": 8589934592,
+  "snapshot_max_files": 500000,
+  "snapshot_timeout_ms": 120000,
+  "format": [
+    "node",
+    "scripts/cgrx-quality-check.mjs",
+    "format",
+    "{path}"
+  ],
+  "typecheck": [
+    "node",
+    "scripts/cgrx-quality-check.mjs",
+    "typecheck",
+    "{path}"
+  ],
+  "tests": [
+    "node",
+    "scripts/cgrx-quality-check.mjs",
+    "tests",
+    "{path}"
+  ]
+}

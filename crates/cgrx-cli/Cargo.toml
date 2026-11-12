@@ -12,6 +12,7 @@ name = "cgrx"
 path = "src/main.rs"
 
 [dependencies]
+similar = "=2.7.0"
 toml = { version = "=1.1.6", default-features = false, features = ["parse", "serde"] }
 cgrx-capsule.workspace = true
 cgrx-core.workspace = true
@@ -22,7 +23,11 @@ cgrx-retrieval.workspace = true
 cgrx-store.workspace = true
 cgrx-metrics.workspace = true
 blake3.workspace = true
+sha2 = "=0.10.9"
 base64 = "=0.22.1"
+ast-grep-core = "=0.45.2"
+petgraph = { version = "=0.8.3", default-features = false, features = ["std"] }
+rayon = "=1.12.0"
 levenshtein = "1.0.5"
 serde.workspace = true
 serde_json.workspace = true
@@ -41,5 +46,6 @@ path = "../../tests/multi_repo.rs"
 [features]
 # Validation-only opt-in; never enabled by a default or release build.
 experimental-php = ["cgrx-languages/experimental-php"]
+# Backward-compatible alias; Swift is enabled in every build.
 experimental-swift = ["cgrx-languages/experimental-swift"]
 experimental-javascript = ["cgrx-languages/experimental-javascript"]

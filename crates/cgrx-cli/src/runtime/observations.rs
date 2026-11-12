@@ -704,6 +704,9 @@ impl Runtime {
     pub(super) fn load_current_observations(
         &self,
     ) -> Result<Option<cgrx_store::ObservationSnapshot>, RuntimeError> {
+        if self.stored.snapshot.repo_revision == super::git_helpers::UNBORN_REVISION {
+            return Ok(None);
+        }
         let snapshot = ObservationStore::open(&self.state_root)
             .and_then(|store| store.load(&self.stored.snapshot.repo_revision))
             .map_err(|error| RuntimeError::new("cgrx.runtime_evidence_store", error.to_string()))?;

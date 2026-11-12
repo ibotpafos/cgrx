@@ -181,6 +181,26 @@ fn invalid_search_flags_fail_before_opening_a_repository() {
         vec!["--query", "foo", "--limit", "0"],
         vec!["--query", "foo", "--offset", "1000001"],
         vec!["--query", "foo", "--include-body", "yes"],
+        vec!["--query", "foo", "--match-mode", "unknown"],
+        vec!["--query", "foo", "--match-mode", "ast"],
+        vec![
+            "--query",
+            "foo",
+            "--match-mode",
+            "ast",
+            "--language",
+            "java",
+        ],
+        vec![
+            "--query",
+            "foo",
+            "--match-mode",
+            "ast",
+            "--language",
+            "rust",
+            "--include-body",
+            "true",
+        ],
         vec!["--query", "foo", "--expected-snapshot", "invalid"],
         vec!["--query", "foo", "--query", "bar"],
         vec!["--query", "foo", "--unexpected", "value"],
@@ -195,4 +215,68 @@ fn invalid_search_flags_fail_before_opening_a_repository() {
         assert!(output.stdout.is_empty());
         assert!(!String::from_utf8_lossy(&output.stderr).contains("No such file"));
     }
+}
+
+#[test]
+fn structural_search_uses_the_managed_graph_and_guards_continuation() {
+    let fixture = Fixture::new();
+    let first = search(
+        &fixture.0,
+        &[
+            "--query",
+            "HTTPRequest()",
+            "--match-mode",
+            "ast",
+            "--language",
+            "rust",
+        ],
+    );
+    assert_eq!(first["total"], 1);
+    assert_eq!(first["matches"][0]["symbol"], "HTTPRequestExtra");
+    assert_eq!(first["matches"][0]["matched_by"], "ast");
+    assert!(first["matches"][0]["symbol_ref"].is_string());
+    let bytes = fs::read(fixture.0.join("src/main.rs")).unwrap();
+    let span = &first["matches"][0]["ast_matches"]["spans"][0];
+    assert_eq!(
+        &bytes[span["start"].as_u64().unwrap() as usize..span["end"].as_u64().unwrap() as usize],
+        b"HTTPRequest()"
+    );
+    fs::write(
+        fixture.0.join("src/main.rs"),
+        "fn HTTPRequest() {}\nfn changed() { HTTPRequest(); HTTPRequest(); }\n",
+    )
+    .unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_cgrx"))
+        .args(["search", "--root"])
+        .arg(&fixture.0)
+        .args([
+            "--query",
+            "HTTPRequest()",
+            "--match-mode",
+            "ast",
+            "--language",
+            "rust",
+            "--expected-snapshot",
+            first["page"]["snapshot_id"].as_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("restart"));
+    let refreshed = search(
+        &fixture.0,
+        &[
+            "--query",
+            "HTTPRequest()",
+            "--match-mode",
+            "ast",
+            "--language",
+            "rust",
+        ],
+    );
+    assert_eq!(refreshed["matches"][0]["symbol"], "changed");
+    assert_ne!(
+        first["page"]["snapshot_id"],
+        refreshed["page"]["snapshot_id"]
+    );
 }

@@ -36,8 +36,17 @@ fn openai_tool_contract() {
         assert!(tool["title"].as_str().is_some_and(|s| !s.is_empty()));
         assert!(tool["description"].as_str().is_some_and(|s| s.len() > 20));
         assert_eq!(tool["annotations"]["readOnlyHint"], false);
-        assert_eq!(tool["annotations"]["destructiveHint"], false);
-        assert_eq!(tool["annotations"]["openWorldHint"], false);
+        assert_eq!(
+            tool["annotations"]["destructiveHint"],
+            matches!(
+                tool["name"].as_str(),
+                Some("memory_forget" | "prepare_candidate_patch")
+            )
+        );
+        assert_eq!(
+            tool["annotations"]["openWorldHint"],
+            tool["name"] == "prepare_candidate_patch"
+        );
         assert_eq!(tool["outputSchema"]["type"], "object");
     }
     let scope = bounded_scope_schema();
@@ -109,8 +118,10 @@ fn openai_tool_contract() {
         ("check_framework_gates", "Check framework gates"),
         ("expand", "Expand context"),
         ("status", "Check index status"),
-        ("memory_record", "Record decision"),
-        ("memory_recall", "Recall decisions"),
+        ("memory_record", "Record agent memory"),
+        ("memory_recall", "Recall agent memory"),
+        ("memory_update", "Update agent memory"),
+        ("memory_forget", "Forget agent memory"),
         ("check_security_gates", "Check security gates"),
     ] {
         let tool = tools
@@ -506,7 +517,8 @@ fn compact_refactors_reports_exact_payload_tokens() {
             "recommended_policy",
             "counterfactual_score",
             "reason_codes",
-            "strategy_id"
+            "strategy_id",
+            "quality_checks"
         ])
     );
     assert_eq!(compact["status"], "hypothetical");
@@ -638,6 +650,81 @@ fn memory_snapshot(revision: &str) -> RepoSnapshot {
     }
 }
 
+#[test]
+fn orient_accepts_minimal_partial_and_path_scopes_with_bounded_defaults() {
+    let mut server = Server::new(memory_snapshot("chat-fixture"));
+    for (scope, include) in [
+        (None, json!(["**"])),
+        (Some(json!("src/**")), json!(["src/**"])),
+        (
+            Some(json!(["src/**", "tests/**"])),
+            json!(["src/**", "tests/**"]),
+        ),
+        (Some(json!({"include":["src/**"]})), json!(["src/**"])),
+    ] {
+        let mut arguments =
+            json!({"task":"Inspect parser calls", "budget":1200,"budget_preset":"quick"});
+        if let Some(scope) = scope {
+            arguments["scope"] = scope;
+        }
+        let response: Value = serde_json::from_str(
+            &server.dispatch_line(
+                &json!({
+                    "jsonrpc":"2.0","id":1,"method":"tools/call",
+                    "params":{"name":"orient","arguments":arguments}
+                })
+                .to_string(),
+            ),
+        )
+        .unwrap();
+        assert!(response.get("error").is_none(), "{response}");
+        let result = &response["result"]["structuredContent"];
+        assert_eq!(result["budget"], 1200);
+        assert_eq!(result["rcc"]["scope"]["include"], include);
+        assert_eq!(result["rcc"]["scope"]["relation_kinds"], json!(["CALLS"]));
+        assert_eq!(result["rcc"]["scope"]["max_depth"], 1);
+    }
+    for arguments in [
+        json!({"task":" "}),
+        json!({"task":"Inspect parser", "budget":0}),
+    ] {
+        let response: Value = serde_json::from_str(
+            &server.dispatch_line(
+                &json!({
+                    "jsonrpc":"2.0","id":1,"method":"tools/call",
+                    "params":{"name":"orient","arguments":arguments}
+                })
+                .to_string(),
+            ),
+        )
+        .unwrap();
+        assert_eq!(response["error"]["data"]["code"], "cgrx.invalid_arguments");
+    }
+}
+
+#[test]
+fn status_distinguishes_running_server_identity_from_repository_snapshot() {
+    let mut server = Server::new(memory_snapshot("repo-revision"));
+    let full = server
+        .status(from_value(json!({"paths_or_scope":["src"]})).unwrap())
+        .unwrap();
+    assert_eq!(full["snapshot"]["repo_revision"], "repo-revision");
+    assert_eq!(full["server"]["name"], "cgrx");
+    assert_eq!(full["server"]["version"], env!("CARGO_PKG_VERSION"));
+    assert_eq!(full["server"]["pid"], std::process::id());
+    assert!(full["server"].get("build_id").is_some());
+    let compact = model_visible_result("status", &full);
+    assert_eq!(compact["server"], full["server"]);
+    assert_eq!(compact["freshness"], full["freshness"]);
+    assert_eq!(compact["at"], "repo-revisio@3");
+    server.snapshot = memory_snapshot("another-revision");
+    let next = server
+        .status(from_value(json!({"paths_or_scope":["src"]})).unwrap())
+        .unwrap();
+    assert_eq!(next["server"], full["server"]);
+    assert_ne!(next["snapshot"], full["snapshot"]);
+}
+
 fn memory_server(revision: &str) -> (Server, PathBuf) {
     static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -650,7 +737,9 @@ fn memory_server(revision: &str) -> (Server, PathBuf) {
             .as_nanos()
     ));
     let mut server = Server::new(memory_snapshot(revision));
-    server.set_memory_store(MemoryStore::open(&dir).expect("open memory store"));
+    fs::create_dir_all(dir.join("src")).unwrap();
+    fs::write(dir.join("src/lib.rs"), "one\ntwo\nthree\nfour\nfive\n").unwrap();
+    server.set_memory_store(MemoryStore::open_lexical(&dir).expect("open memory store"));
     (server, dir)
 }
 
@@ -658,7 +747,6 @@ fn record_arguments(fact: &str, confidence: u16) -> Value {
     json!({
         "fact": fact,
         "confidence": confidence,
-        "repo": "/repo",
         "path": "src/lib.rs",
         "span": {"start_line": 1, "end_line": 5},
     })
@@ -705,8 +793,107 @@ fn memory_record_pins_revision_and_recalls_deterministically() {
 
     let compact = model_visible_result("memory_recall", &recalled);
     assert_eq!(compact["llm_used"], false);
-    assert_eq!(compact["cols"], json!(["id", "confidence", "fact"]));
+    assert!(
+        compact["cols"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("freshness"))
+    );
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn compact_memory_metadata_preserves_update_context_and_history() {
+    let (mut server, dir) = memory_server("rev-compact-metadata");
+    let mut arguments = record_arguments("Keep parser context", 850);
+    arguments["privacy_tag"] = json!("maintenance/команда");
+    let recorded = server
+        .memory_record(from_value(arguments).unwrap())
+        .unwrap();
+    let record = &recorded["record"];
+    let acknowledgement = model_visible_result("memory_record", &recorded);
+    for key in ["privacy_tag", "source_hash"] {
+        assert_eq!(
+            acknowledgement.get(key),
+            record.get(key),
+            "write metadata {key}"
+        );
+    }
+    let recalled = server
+        .memory_recall(from_value(json!({"id":record["id"], "budget":4000})).unwrap())
+        .unwrap();
+    let compact = model_visible_result("memory_recall", &recalled);
+    let decode = |value: &Value, index: usize| {
+        Value::Object(
+            value["cols"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .zip(value["rows"][index].as_array().unwrap())
+                .map(|(key, item)| (key.as_str().unwrap().to_owned(), item.clone()))
+                .collect(),
+        )
+    };
+    let hit = decode(&compact, 0);
+    for (key, expected) in record.as_object().unwrap() {
+        assert_eq!(hit.get(key), Some(expected), "recall metadata {key}");
+    }
+    let replaced = server.memory_update(from_value(json!({
+        "id":hit["id"], "expected_version":hit["version"], "reason":"Verified parser context",
+        "record":{"fact":"Keep verified parser context", "confidence":hit["confidence"],
+            "memory_kind":hit["memory_kind"], "source_kind":hit["source_kind"],
+            "privacy_tag":hit["privacy_tag"], "path":hit["provenance"]["path"],
+            "span":hit["provenance"]["span"]}
+    })).unwrap()).unwrap();
+    let acknowledgement = model_visible_result("memory_update", &replaced);
+    assert_eq!(acknowledgement["version"], 2);
+    assert_eq!(acknowledgement["privacy_tag"], record["privacy_tag"]);
+    assert_eq!(acknowledgement["source_hash"], record["source_hash"]);
+    let history = server.memory_recall(from_value(json!({
+        "id":record["id"], "include_history":true, "privacy_tag":hit["privacy_tag"], "budget":4000
+    })).unwrap()).unwrap();
+    let compact = model_visible_result("memory_recall", &history);
+    assert_eq!(compact["rows"].as_array().unwrap().len(), 2);
+    for index in 0..2 {
+        let hit = decode(&compact, index);
+        assert_eq!(hit["privacy_tag"], record["privacy_tag"]);
+        assert_eq!(hit["source_hash"], record["source_hash"]);
+        assert_eq!(hit["version"], 2 - index);
+    }
+    fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn compact_memory_metadata_keeps_unverified_source_hash_explicitly_null() {
+    let (mut server, dir) = memory_server("rev-compact-unverified");
+    let recorded = server
+        .memory_record(
+            from_value(json!({
+                "fact":"User prefers the local workflow", "confidence":850,
+                "source_kind":"user", "source_ref":"explicit fixture preference",
+                "privacy_tag":"team/preferences"
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+    let acknowledgement = model_visible_result("memory_record", &recorded);
+    assert_eq!(acknowledgement.get("source_hash"), Some(&Value::Null));
+    assert_eq!(acknowledgement["privacy_tag"], "team/preferences");
+    let recalled = server.memory_recall(from_value(json!({
+        "id":acknowledgement["id"], "privacy_tag":acknowledgement["privacy_tag"], "budget":4000
+    })).unwrap()).unwrap();
+    let compact = model_visible_result("memory_recall", &recalled);
+    let cols = compact["cols"].as_array().unwrap();
+    let row = compact["rows"][0].as_array().unwrap();
+    for key in ["privacy_tag", "source_hash", "source_ref", "source_kind"] {
+        let column = cols
+            .iter()
+            .position(|name| name == key)
+            .expect("metadata column");
+        assert_eq!(row[column], recorded["record"][key]);
+    }
+    assert_eq!(recalled["results"][0]["freshness"], "unverified");
+    fs::remove_dir_all(dir).unwrap();
 }
 
 #[test]
@@ -746,6 +933,333 @@ fn memory_tools_require_an_attached_store() {
             .memory_recall(from_value(json!({})).unwrap())
             .is_err()
     );
+}
+
+fn memory_rpc(server: &mut Server, name: &str, arguments: Value) -> Value {
+    serde_json::from_str(
+        &server.dispatch_line(
+            &json!({
+                "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                "params": {"name": name, "arguments": arguments},
+            })
+            .to_string(),
+        ),
+    )
+    .unwrap()
+}
+
+#[test]
+fn memory_rpc_updates_history_forgets_and_checks_versions() {
+    let (server, dir) = memory_server("rev-current");
+    let mut server = server.with_response_profile(ResponseProfile::Full);
+    let recorded = memory_rpc(
+        &mut server,
+        "memory_record",
+        record_arguments("old choice", 700),
+    );
+    let id = recorded["result"]["structuredContent"]["record"]["id"]
+        .as_str()
+        .unwrap();
+    let update = json!({"id":id, "expected_version":1, "reason":"new fixture result",
+        "record": record_arguments("new choice", 900)});
+    let replaced = memory_rpc(&mut server, "memory_update", update.clone());
+    assert_eq!(
+        replaced["result"]["structuredContent"]["record"]["version"], 2,
+        "{replaced}"
+    );
+    let conflict = memory_rpc(&mut server, "memory_update", update);
+    assert_eq!(conflict["error"]["data"]["code"], "cgrx.memory_conflict");
+    let history = memory_rpc(
+        &mut server,
+        "memory_recall",
+        json!({"id":id, "include_history":true}),
+    );
+    assert_eq!(
+        history["result"]["structuredContent"]["results"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    let forgotten = memory_rpc(
+        &mut server,
+        "memory_forget",
+        json!({"id":id,"expected_version":2}),
+    );
+    assert_eq!(
+        forgotten["result"]["structuredContent"]["removed_versions"],
+        2
+    );
+    let recalled = memory_rpc(&mut server, "memory_recall", json!({"query":"choice"}));
+    assert!(
+        recalled["result"]["structuredContent"]["results"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[test]
+fn memory_profiles_advertise_only_callable_tools() {
+    let (server, dir) = memory_server("rev-profiles");
+    let mut server = server.with_toolset(Toolset::Standard);
+    let listed: Value = serde_json::from_str(
+        &server.dispatch_line(r#"{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}"#),
+    )
+    .unwrap();
+    let names: Vec<_> = listed["result"]["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["name"].as_str().unwrap())
+        .collect();
+    for name in [
+        "memory_record",
+        "memory_recall",
+        "memory_update",
+        "memory_forget",
+    ] {
+        assert!(names.contains(&name), "missing {name}");
+        assert!(Toolset::Standard.allows(name));
+    }
+    server = server.with_toolset(Toolset::Minimal);
+    let denied = memory_rpc(
+        &mut server,
+        "memory_record",
+        record_arguments("denied", 500),
+    );
+    assert_eq!(denied["error"]["data"]["code"], "cgrx.tool_not_found");
+    assert!(
+        memory_rpc(&mut server, "memory_recall", json!({}))
+            .get("result")
+            .is_some()
+    );
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[test]
+fn memory_response_budget_and_usage_logs_keep_content_bounded_and_private() {
+    let (server, dir) = memory_server("rev-budget");
+    let mut server = server.with_response_profile(ResponseProfile::Full);
+    let usage = dir.join("usage.jsonl");
+    let metrics = dir.join("metrics.jsonl");
+    server.enable_usage_log(&usage, "test", "memory-session");
+    server.enable_metrics_log(&metrics);
+    let fact = "private-memory-text ".repeat(150);
+    let stored = memory_rpc(&mut server, "memory_record", record_arguments(&fact, 500));
+    assert!(stored.get("result").is_some(), "{stored}");
+    let response = memory_rpc(&mut server, "memory_recall", json!({"budget":256}));
+    let recalled = &response["result"]["structuredContent"];
+    assert_eq!(recalled["truncated"], true);
+    assert_eq!(recalled["budget_omitted"], 1);
+    let minimum = recalled["minimum_budget"].as_u64().unwrap();
+    assert!(minimum > 256 && minimum <= 16000);
+    assert_eq!(compact_memory_recall(recalled)["budget_omitted"], 1);
+    let id = stored["result"]["structuredContent"]["record"]["id"].clone();
+    let retry = memory_rpc(
+        &mut server,
+        "memory_recall",
+        json!({"id":id,"budget":minimum}),
+    );
+    assert_eq!(
+        retry["result"]["structuredContent"]["results"][0]["fact"],
+        fact.trim()
+    );
+    let tokenizer = Tokenizer::o200k_base().unwrap();
+    assert!(tokenizer.count(&recalled.to_string()) <= 256);
+    assert!(tokenizer.count(&compact_memory_recall(recalled).to_string()) <= 256);
+    let mut foreign = record_arguments("foreign", 500);
+    foreign["repo"] = json!("/not-the-managed-repository");
+    assert_eq!(
+        memory_rpc(&mut server, "memory_record", foreign)["error"]["data"]["code"],
+        "cgrx.invalid_repository"
+    );
+    memory_rpc(
+        &mut server,
+        "memory_recall",
+        json!({"query":"private-query-marker"}),
+    );
+    for path in [usage, metrics] {
+        let contents = fs::read_to_string(path).unwrap();
+        assert!(contents.contains("memory_record"));
+        assert!(contents.contains("memory_recall"));
+        for private in [
+            "private-memory-text",
+            "private-query-marker",
+            "src/main.rs",
+            "/not-the-managed-repository",
+        ] {
+            assert!(
+                !contents.contains(private),
+                "memory content leaked into logs"
+            );
+        }
+    }
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[test]
+fn memory_code_budget_keeps_fact_provenance_and_valid_unicode_excerpt() {
+    let (mut server, dir) = memory_server("rev-code-budget");
+    let source = format!(
+        "fn process() {{\n{}    finish();\n}}\n",
+        (0..35)
+            .map(|i| format!(
+                "    // Проверка маршрута и входных данных {i} 🦀 abcdefghijklmnopqrstuvwxyz\n"
+            ))
+            .collect::<String>()
+    );
+    fs::write(dir.join("src/lib.rs"), &source).unwrap();
+    let record = server
+        .memory_record(
+            from_value(json!({"fact":"Process incoming data", "confidence":900, "privacy_tag":"team/память",
+            "path":"src/lib.rs", "span":{"start_line":1,"end_line":38}}))
+            .unwrap(),
+        )
+        .unwrap()["record"]
+        .clone();
+    let tokenizer = Tokenizer::o200k_base().unwrap();
+    for budget in [512, 700, 1024] {
+        let recalled = server
+            .memory_recall(
+                from_value(json!({"id":record["id"],"include_code":true,"budget":budget})).unwrap(),
+            )
+            .unwrap();
+        assert_eq!(
+            recalled["results"].as_array().unwrap().len(),
+            1,
+            "{recalled}"
+        );
+        let hit = &recalled["results"][0];
+        for key in [
+            "id",
+            "version",
+            "fact",
+            "confidence",
+            "provenance",
+            "source_hash",
+            "privacy_tag",
+        ] {
+            assert_eq!(hit[key], record[key], "record field {key} was altered");
+        }
+        assert_eq!(recalled["truncated"], true);
+        if let Some(code) = hit.get("code") {
+            assert_eq!(code["truncated"], true);
+            if let Some(fragment) = code["source"].as_str() {
+                assert!(source.starts_with(fragment));
+                assert_eq!(code["status"], "available");
+                assert_eq!(code["span"]["start_line"], 1);
+                assert_eq!(
+                    code["span"]["end_line"],
+                    fragment.split_inclusive('\n').count()
+                );
+            } else {
+                assert_eq!(code["status"], "budget_omitted");
+                assert!(code.get("span").is_none());
+            }
+        }
+        assert!(tokenizer.count(&recalled.to_string()) <= budget);
+        let compact = compact_memory_recall(&recalled);
+        for key in ["privacy_tag", "source_hash"] {
+            let column = compact["cols"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .position(|name| name == key)
+                .expect("metadata column");
+            assert_eq!(compact["rows"][0][column], record[key]);
+        }
+        assert!(tokenizer.count(&compact.to_string()) <= budget);
+    }
+    let full = server
+        .memory_recall(
+            from_value(json!({"id":record["id"],"include_code":true,"budget":4000})).unwrap(),
+        )
+        .unwrap();
+    assert_eq!(full["truncated"], false);
+    assert_eq!(full["results"][0]["code"]["source"], source);
+    server
+        .memory_record(
+            from_value(
+                json!({"fact":"Preserve the next checkpoint", "confidence":800,
+        "path":"src/lib.rs", "span":{"start_line":1,"end_line":38}}),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    let facts = server
+        .memory_recall(from_value(json!({"budget":16000})).unwrap())
+        .unwrap();
+    let budget = tokenizer
+        .count(&facts.to_string())
+        .max(tokenizer.count(&compact_memory_recall(&facts).to_string()))
+        + 16;
+    let with_code = server
+        .memory_recall(from_value(json!({"include_code":true,"budget":budget})).unwrap())
+        .unwrap();
+    assert_eq!(with_code["results"].as_array().unwrap().len(), 2);
+    for (actual, expected) in with_code["results"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .zip(facts["results"].as_array().unwrap())
+    {
+        assert_eq!(actual["id"], expected["id"]);
+        assert_eq!(actual["fact"], expected["fact"]);
+        assert_eq!(actual["provenance"], expected["provenance"]);
+    }
+    assert!(tokenizer.count(&with_code.to_string()) <= budget);
+    assert!(tokenizer.count(&compact_memory_recall(&with_code).to_string()) <= budget);
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[test]
+fn uncertain_memory_write_exposes_reconciliation_context_without_private_cause_or_logs() {
+    let (mut server, dir) = memory_server("rev-uncertain");
+    let usage = dir.join("usage.jsonl");
+    let metrics = dir.join("metrics.jsonl");
+    server.enable_usage_log(&usage, "test", "uncertain-session");
+    server.enable_metrics_log(&metrics);
+    let id = "0123456789abcdef0123456789abcdef";
+    let error = memory_error(std::io::Error::other(MemoryWriteUncertain {
+        id: id.to_owned(),
+        operation: "update",
+        expected_version: Some(7),
+        cause: std::io::Error::other("private fact /private/source.rs private-selector"),
+    }));
+    assert_eq!(error.code, -32020);
+    let encoded = serde_json::to_string(&error).unwrap();
+    let data = error.data.unwrap();
+    assert_eq!(data["code"], "cgrx.memory_write_uncertain");
+    assert_eq!(data["id"], id);
+    assert_eq!(data["operation"], "update");
+    assert_eq!(data["expected_version"], 7);
+    assert_eq!(data["backend_class"], "other");
+    assert!(!encoded.contains("private fact") && !encoded.contains("/private/source.rs"));
+    server.record_usage("memory_update", false, 1, 100, encoded.len(), None);
+    server.record_metrics("memory_update", false, 1, encoded.len());
+    for log in [usage, metrics] {
+        let contents = fs::read_to_string(log).unwrap();
+        assert!(contents.contains("memory_update"));
+        for private in [id, "private fact", "/private/source.rs", "private-selector"] {
+            assert!(!contents.contains(private));
+        }
+    }
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[test]
+fn exhausted_capacity_is_distinct_from_an_uncertain_mutation() {
+    let error = memory_error(std::io::Error::other(MemoryCapacityExceeded {
+        current: 52_677_802,
+        limit: 52_428_800,
+        required: 657,
+    }));
+    let data = error.data.unwrap();
+    assert_eq!(data["code"], "cgrx.memory_capacity_exhausted");
+    assert_eq!(data["limit"], 52_428_800);
+    assert_eq!(data["mutation_applied"], false);
 }
 
 // ---- Quality-gate verdict + would_block coverage (private functions) ----
@@ -906,4 +1420,62 @@ fn repository_gate_partial_and_coverage_gap_keep_inconclusive_under_threshold() 
     let warn_only = json!({"partial": false, "packages": [{"fan_out": 1}]});
     let error_policy = evaluate_repository_gates(&warn_only, "error", [0, 0, 0, 0, 0]);
     assert_eq!(error_policy["would_block"], false);
+}
+
+#[test]
+fn structural_search_compact_preserves_all_spans_hashes_and_scan_limits() {
+    let hash = "a".repeat(64);
+    let evidence = json!({"source_hash":hash,"spans":[{"start":24,"end":38}],"truncated":true});
+    let scan =
+        json!({"definitions":9,"searched_definitions":4,"skipped_definitions":5,"partial":true});
+    let full = json!({"algorithm":"ast_grep_v1","language":"rust","query":"fetch($ARG)","matches":[
+        {"symbol":"run","path":"src/main.rs","symbol_ref":"current-reference","span":{"start":3,"end":6},"callers":0,"callees":1,"matched_by":"ast","ast_matches":evidence}],
+        "total":1,"ast_scan":scan,"page":{"snapshot_id":hash,"offset":0,"limit":20,"next_offset":null,"has_more":false},"llm_used":false});
+    let compact = compact_search(&full);
+    assert_eq!(compact["cols"][8], "ast_matches");
+    assert_eq!(compact["rows"][0][8], evidence);
+    assert_eq!(compact["cols"][6], "symbol_ref");
+    assert_eq!(compact["cols"][7], "matched_by");
+    assert_eq!(compact["ast_scan"], scan);
+    assert_eq!(compact["page"], full["page"]);
+    let mut empty = full;
+    empty["matches"] = json!([]);
+    empty["total"] = json!(0);
+    let compact = compact_search(&empty);
+    assert_eq!(compact["algorithm"], "ast_grep_v1");
+    assert_eq!(compact["cols"][7], "ast_matches");
+    assert_eq!(compact["ast_scan"]["partial"], true);
+}
+
+#[test]
+fn structural_search_requires_explicit_language_and_preserves_default_search() {
+    let tools = model_visible_schema();
+    let search = tools
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|tool| tool["name"] == "search_graph")
+        .unwrap();
+    assert_eq!(
+        search["inputSchema"]["properties"]["match_mode"]["enum"],
+        json!(["lexical", "ast"])
+    );
+    let legacy: SearchGraphArguments = from_value(json!({"query":"http request"})).unwrap();
+    assert!(matches!(legacy.match_mode, SearchMatchMode::Lexical));
+    let mut server = Server::new(RepoSnapshot {
+        repo_revision: "test".into(),
+        working_tree_digest: Hash32([0; 32]),
+        graph_generation: 1,
+    });
+    for arguments in [
+        json!({"query":"fetch($ARG)","match_mode":"ast"}),
+        json!({"query":"fetch($ARG)","match_mode":"ast","language":"java"}),
+        json!({"query":"fetch($ARG)","match_mode":"ast","language":"rust","include_body":true}),
+        json!({"query":"a".repeat(4097),"match_mode":"ast","language":"rust"}),
+        json!({"query":"fetch($ARG)","match_mode":"unknown"}),
+    ] {
+        let response: Value = serde_json::from_str(&server.dispatch_line(&json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"search_graph","arguments":arguments}}).to_string())).unwrap();
+        assert_eq!(response["error"]["code"], -32602);
+        assert_eq!(response["error"]["data"]["code"], "cgrx.invalid_arguments");
+    }
 }
