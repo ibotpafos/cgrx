@@ -15,6 +15,9 @@ let owner=path.dirname(file);while(owner!==root&&!fs.existsSync(path.join(owner,
 const pkg=JSON.parse(fs.readFileSync(path.join(owner,'package.json'),'utf8'));const scripts=pkg.scripts??{};
 let name;if(stage==='typecheck')name=['typecheck','check-types','typecheck:web'].find(s=>scripts[s]);else if(stage==='tests')name=scripts.test?'test':undefined;else throw Error('Unknown stage');
 if(!name)throw Error('No real '+stage+' command in owning workspace: '+path.relative(root,owner));
-const script=scripts[name];if(/(?:deploy|migrat|seed|playwright|watch|db:push|db:generate)/i.test(script))throw Error('Configured command is not an isolated non-watching check; explicit project-specific adapter required');
+const script=scripts[name];
+if(stage==='typecheck' && /^(?:bun x|bunx) tsc --noEmit$/.test(script.trim()))run('node',[path.join(root,'node_modules/typescript/bin/tsc'),'--noEmit'],owner);
+if(/(?:\bbunx\b|\bbun x\b|\bnpx\b|\bnpm (?:install|ci|exec)\b|\bbun install\b)/i.test(script))throw Error('Dependency installer/runner forbidden inside verification');
+if(/(?:deploy|migrat|seed|playwright|watch|db:push|db:generate)/i.test(script))throw Error('Configured command is not an isolated non-watching check; explicit project-specific adapter required');
 const workspaceEnv={...process.env,PATH:[path.join(owner,'node_modules/.bin'),path.join(root,'node_modules/.bin'),process.env.PATH].join(path.delimiter)};
 const r=spawnSync('npm',['run',name],{cwd:owner,env:workspaceEnv,stdio:'inherit'});if(r.error)throw r.error;process.exit(r.status??1);
