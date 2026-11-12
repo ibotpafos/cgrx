@@ -82,3 +82,17 @@ project_checks_passed, all six stages passed, stable sources and the current
 source-hash precondition. Syntax-only/blocked/unavailable/timeout/failure never
 authorizes application. Unsupported changes need equivalent isolated checks and
 review, not a fabricated candidate. Never bypass a baseline failure silently.
+
+### Repository bootstrap (outside verification copies)
+
+For this Rust/TypeScript repository, install the declared web dependencies with
+`npm ci --ignore-scripts` and the pinned formatter/contract tooling with
+`npm ci --prefix scripts/mcp-contract --ignore-scripts`. Neither command is run
+by the verifier. Other projects may provide Prettier through their existing
+node_modules or a dedicated local tools/cgrx-quality package.
+
+A preexisting broken dependency link, external tool symlink, or workspace binary
+pointing to an excluded dist/build tree blocks snapshot creation. Repair the
+installed dependency graph outside verification, or supply self-contained local
+tools; do not weaken the gate or mark these checks passed. Stage details distinguish
+this prerequisite failure from a type error or failing test.
