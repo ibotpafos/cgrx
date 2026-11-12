@@ -135,9 +135,12 @@ fn copy_tree(
         let meta = fs::symlink_metadata(&from)?;
         if meta.file_type().is_symlink() {
             let resolved = from.canonicalize().map_err(|_| bad("dangling_symlink"))?;
-            let relative = resolved
-                .strip_prefix(root)
-                .map_err(|_| bad("external_symlink"))?;
+            let relative = resolved.strip_prefix(root).map_err(|_| {
+                bad(&format!(
+                    "external_symlink: {}",
+                    from.strip_prefix(root).unwrap_or(&from).display()
+                ))
+            })?;
             if excluded_from_copy(relative) {
                 return Err(bad("excluded_symlink_target"));
             }
@@ -210,7 +213,7 @@ fn copy_snapshot(root: &Path, dest: &Path, b: &mut Budget) -> io::Result<()> {
             let resolved = source.canonicalize()?;
             let mapped = resolved
                 .strip_prefix(root)
-                .map_err(|_| bad("external_symlink"))?;
+                .map_err(|_| bad(&format!("external_symlink: {}", relative.display())))?;
             if excluded_from_copy(mapped) {
                 return Err(bad("excluded_symlink_target"));
             }
@@ -508,7 +511,7 @@ pub(super) fn verify(root: &Path, path: &str, before: &str, after: &str, diff: &
     match work() {
         Ok(v) => v,
         Err(e) => {
-            json!({"status":"blocked","reason":if e.kind()==io::ErrorKind::NotFound{"config_or_dependency_missing"}else{"snapshot_config_or_io_error"},"diff_applied":false,"source_modified":false,"security_sandbox":false,"format":{"status":"not_run"},"typecheck":{"status":"not_run"},"tests":{"status":"not_run"}})
+            json!({"status":"blocked","reason":if e.kind()==io::ErrorKind::NotFound{"config_or_dependency_missing"}else{"snapshot_config_or_io_error"},"detail":e.to_string().chars().take(200).collect::<String>(),"diff_applied":false,"source_modified":false,"security_sandbox":false,"format":{"status":"not_run"},"typecheck":{"status":"not_run"},"tests":{"status":"not_run"}})
         }
     }
 }
