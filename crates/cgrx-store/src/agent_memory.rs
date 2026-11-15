@@ -1130,7 +1130,7 @@ impl MemoryStore {
         pending: Option<&PendingAgentWrite<'_>>,
         mut open: impl FnMut(&Path) -> memvid_core::Result<Memvid>,
     ) -> io::Result<bool> {
-        for attempt in 0..3 {
+        for attempt in 0..20 {
             let snapshot = self.copy_agent_memory()?;
             let outcome = (|| {
                 let mut memory = open(&snapshot.0).map_err(memvid_backend_error)?;
@@ -1166,7 +1166,7 @@ impl MemoryStore {
                     return Ok(true);
                 }
                 Err(error) => {
-                    if error.kind() != io::ErrorKind::WouldBlock || attempt == 2 {
+                    if error.kind() != io::ErrorKind::WouldBlock || attempt == 19 {
                         return Err(error);
                     }
                     std::thread::sleep(std::time::Duration::from_millis(10 * (attempt + 1)));
@@ -3453,6 +3453,33 @@ mod tests {
     }
 
     #[test]
+    fn journal_recovery_waits_past_brief_tantivy_contention() {
+        let f = Fixture::new();
+        let first = f
+            .store
+            .agent_record(&f.input("Preserved original"), NOW)
+            .unwrap()
+            .record;
+        let _lock = acquire_writer_lock(&f.root).unwrap();
+        let mut attempts = 0;
+        assert!(
+            f.store
+                .recover_agent_journal(Some(&PendingAgentWrite::Record(&first)), |path| {
+                    attempts += 1;
+                    if attempts <= 3 {
+                        Err(MemvidError::Tantivy {
+                            reason: "Failed to acquire Lockfile: LockBusy. test".to_owned(),
+                        })
+                    } else {
+                        Memvid::open(path)
+                    }
+                })
+                .unwrap()
+        );
+        assert_eq!(attempts, 4);
+    }
+
+    #[test]
     fn commit_recovery_never_claims_a_different_record_or_hides_corruption() {
         let f = Fixture::new();
         let first = f
@@ -3532,7 +3559,7 @@ mod tests {
                 })
                 .unwrap_err();
             assert_eq!(error.kind(), io::ErrorKind::WouldBlock);
-            assert_eq!(attempts, 3, "recovery attempts must be bounded");
+            assert_eq!(attempts, 20, "recovery attempts must be bounded");
             assert_eq!(fs::read(f.store.agent_path()).unwrap(), original_bytes);
             assert!(
                 !fs::read_dir(f.root.join(".cgrx/memory"))
