@@ -3,6 +3,7 @@
 //! These functions handle TS config parsing, module resolution,
 //! inventory scanning, path validation, and source fingerprinting.
 
+use std::borrow::{Borrow, Cow};
 #[cfg(test)]
 use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet};
@@ -30,6 +31,25 @@ thread_local! {
 
 // ExtractedPath and ExtractedSource are defined in extraction.rs
 
+// Retain every candidate path, including stale/invalid competitors. Only a
+// current valid file can support a proof. Borrow its immutable facts instead of
+// cloning the whole declaration ledger on every graph reconstruction.
+pub(super) fn ts_current_inventory<'a>(
+    files: &'a BTreeMap<String, StoredTsFileFacts>,
+    hashes: &BTreeMap<String, Hash32>,
+) -> BTreeMap<String, Cow<'a, TsFileFacts>> {
+    files
+        .iter()
+        .map(|(path, stored)| {
+            let mut facts = Cow::Borrowed(&stored.facts);
+            if stored.facts.valid && hashes.get(path) != Some(&stored.source_hash) {
+                facts.to_mut().valid = false;
+            }
+            (path.clone(), facts)
+        })
+        .collect()
+}
+
 pub(super) fn is_ts_resolution_config(path: &Path) -> bool {
     path.file_name()
         .and_then(|name| name.to_str())
@@ -41,8 +61,30 @@ pub(super) fn is_ts_inventory_path(path: &Path) -> bool {
         || path.file_name().and_then(|name| name.to_str()) == Some("package.json")
         || matches!(
             path.extension().and_then(|extension| extension.to_str()),
-            Some("js" | "jsx" | "json")
+            Some("js" | "jsx" | "json" | "mjs" | "cjs")
         )
+}
+
+pub(super) fn inventory_facts(relative: &str, source: &[u8]) -> TsFileFacts {
+    let mut facts = TsFileFacts::default();
+    if cgrx_languages::EXPERIMENTAL_JAVASCRIPT_ENABLED
+        && Path::new(relative)
+            .file_name()
+            .and_then(|name| name.to_str())
+            == Some("package.json")
+    {
+        use cgrx_languages::javascript::PackageKind;
+        facts.javascript_package = Some(match serde_json::from_slice::<Value>(source) {
+            Ok(Value::Object(package)) => match package.get("type") {
+                None => PackageKind::Automatic,
+                Some(Value::String(kind)) if kind == "module" => PackageKind::Esm,
+                Some(Value::String(kind)) if kind == "commonjs" => PackageKind::CommonJs,
+                _ => PackageKind::Unsupported,
+            },
+            _ => PackageKind::Unsupported,
+        });
+    }
+    facts
 }
 
 pub(super) fn ts_resolution_config_supported(source: &[u8]) -> bool {
@@ -92,15 +134,37 @@ pub(super) fn ts_module_specifiers(facts: &TsFileFacts) -> BTreeSet<&str> {
                 None
             }
         }))
+        .chain(
+            facts
+                .declaration_facts
+                .iter()
+                .flat_map(|facts| facts.imports.iter().map(|i| i.module.as_str())),
+        )
+        .chain(facts.declaration_facts.iter().flat_map(|facts| {
+            facts.exports.values().flatten().filter_map(|export| {
+                if let cgrx_languages::ts_declarations::Export::From { module, .. } = export {
+                    Some(module.as_str())
+                } else {
+                    None
+                }
+            })
+        }))
+        .chain(facts.declaration_facts.iter().flat_map(|facts| {
+            facts
+                .augmentations
+                .iter()
+                .filter_map(|a| a.module.as_deref())
+        }))
         .collect()
 }
 
-pub(super) fn ts_config_modules(
-    files: &BTreeMap<String, StoredTsFileFacts>,
+pub(super) fn ts_config_modules<F: Borrow<StoredTsFileFacts>>(
+    files: &BTreeMap<String, F>,
     configs: &BTreeMap<String, TsResolutionConfig>,
 ) -> BTreeMap<(String, String), String> {
     let mut modules = BTreeMap::new();
     for (path, stored) in files {
+        let stored = stored.borrow();
         for module in ts_module_specifiers(&stored.facts) {
             if let Some(mapped) = ts_config::mapped(path, module, configs) {
                 modules.insert((path.clone(), module.to_owned()), mapped);
@@ -110,22 +174,32 @@ pub(super) fn ts_config_modules(
     modules
 }
 
-pub(super) fn ts_inventory_candidates(
-    ts_files: &BTreeMap<String, StoredTsFileFacts>,
+pub(super) fn ts_inventory_candidates<F: Borrow<StoredTsFileFacts>>(
+    ts_files: &BTreeMap<String, F>,
 ) -> BTreeSet<String> {
     #[cfg(test)]
     INVENTORY_BUILDS.with(|count| count.set(count.get() + 1));
     let mut paths = BTreeSet::new();
     for (caller, stored) in ts_files.iter().filter(|(path, _)| {
-        path.ends_with(".ts") && !path.ends_with(".d.ts") || path.ends_with(".tsx")
+        path.ends_with(".ts") && !path.ends_with(".d.ts")
+            || path.ends_with(".tsx")
+            || (cgrx_languages::EXPERIMENTAL_JAVASCRIPT_ENABLED
+                && matches!(
+                    Path::new(path).extension().and_then(|s| s.to_str()),
+                    Some("js" | "mjs" | "cjs")
+                ))
     }) {
+        let stored = stored.borrow();
         paths.insert(caller.clone());
         let mut directory: Vec<_> = caller.split('/').collect();
         directory.pop();
         let mut ancestor = directory.clone();
         loop {
             let prefix = ancestor.join("/");
-            for name in ["tsconfig.json", "jsconfig.json"] {
+            for name in ["tsconfig.json", "jsconfig.json"]
+                .into_iter()
+                .chain(stored.facts.javascript.is_some().then_some("package.json"))
+            {
                 paths.insert(if prefix.is_empty() {
                     name.to_owned()
                 } else {
@@ -143,6 +217,15 @@ pub(super) fn ts_inventory_candidates(
                 caller, module,
             ));
         }
+        if let Some(facts) = &stored.facts.javascript {
+            for import in &facts.imports {
+                paths.extend(cgrx_languages::javascript::module_candidates(
+                    caller,
+                    &import.module,
+                    import.kind,
+                ));
+            }
+        }
     }
     paths
 }
@@ -154,11 +237,7 @@ pub(super) fn ts_paths_portable_for(
 ) -> bool {
     let dependency_files: BTreeMap<_, _> = dependencies
         .iter()
-        .filter_map(|path| {
-            ts_files
-                .get(path)
-                .map(|facts| (path.clone(), facts.clone()))
-        })
+        .filter_map(|path| ts_files.get(path).map(|facts| (path.clone(), facts)))
         .collect();
     let mut expected = ts_inventory_candidates(&dependency_files);
     for ((from, _), mapped) in ts_config_modules(&dependency_files, configs) {
@@ -325,7 +404,7 @@ pub(super) fn scan_ts_inventory_cached(
         };
         // Files discovered only through the filesystem (including ignored and
         // post-status races) are presence blockers, never traversable proof.
-        let facts = TsFileFacts::default();
+        let facts = inventory_facts(&relative, &source);
         let hash = Hash32(*blake3::hash(&source).as_bytes());
         let current = ts_files.get(&relative);
         if current.map(|stored| stored.source_hash) != Some(hash) {
@@ -419,6 +498,7 @@ pub(super) fn ts_path_is_plain(root: &Path, relative: &Path, cache: &mut TsDirec
 pub(super) fn remove_path(stored: &mut StoredIndex, path: &str) {
     stored.path_hashes.remove(path);
     stored.rust_files.remove(path);
+    stored.python_files.remove(path);
     stored.ts_files.remove(path);
     stored.ts_resolution_configs.remove(path);
     stored.coverage.stale_paths.retain(|stale| stale != path);

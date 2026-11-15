@@ -16,6 +16,8 @@ import re
 import subprocess
 import sys
 
+from validate_ledger import RELATION_KINDS, RULE_KEYS, fixture_hashes
+
 
 def fail(message):
     print(f"Invalid: {message}", file=sys.stderr)
@@ -34,7 +36,14 @@ def main() -> int:
     parser.add_argument("--repo", required=True, help="absolute canonical Git worktree root")
     parser.add_argument("--revision", required=True, help="40-hex HEAD the evidence was read from")
     parser.add_argument("--kind", required=True, choices=("false_positive", "false_negative"))
-    parser.add_argument("--rule-key", required=True, help="entry of the frozen RULE_KEYS table")
+    parser.add_argument("--rule-key", required=True, choices=RULE_KEYS,
+                        help="entry of the frozen RULE_KEYS table")
+    parser.add_argument("--relation-kind", choices=RELATION_KINDS, default="CALLS",
+                        help="relationship being checked (default: CALLS)")
+    parser.add_argument("--cgrx-version", default="v0.1.0-alpha.7",
+                        help="observed engine version; legacy default: v0.1.0-alpha.7")
+    parser.add_argument("--extraction-revision", type=int, default=28,
+                        help="observed engine extraction revision; legacy default: 28")
     parser.add_argument("--caller", required=True, help="CALLER_SYMBOL:repo/relative/path.ext")
     parser.add_argument("--target", required=True, help="TARGET_SYMBOL:repo/relative/path.ext")
     parser.add_argument("--reported-from", required=True, help="opaque origin ref, no raw logs")
@@ -43,6 +52,9 @@ def main() -> int:
                         help="evidence lives in fixtures/mistake-ledger/<fixture>")
     parser.add_argument("--fixture", default="", help="fixture directory name (synthetic only)")
     args = parser.parse_args()
+
+    if not args.cgrx_version.strip() or args.extraction_revision <= 0:
+        fail('invalid observed engine provenance')
 
     repo = args.repo
     if not (Path(repo).is_absolute() and str(Path(repo).resolve()) == repo):
@@ -70,6 +82,8 @@ def main() -> int:
         if str(full.resolve()) != str(full):
             fail('symlink evidence forbidden')
         blob = git(repo, 'show', '%s:%s' % (args.revision, path))
+        if not full.is_file() or full.read_bytes() != blob:
+            fail('evidence differs from committed blob')
         refs[role] = {"symbol": symbol, "path": path,
                       "sha256": hashlib.sha256(blob).hexdigest()}
 
@@ -80,16 +94,48 @@ def main() -> int:
         "caller": {"symbol": refs["caller"]["symbol"], "path": refs["caller"]["path"]},
         "target": {"symbol": refs["target"]["symbol"], "path": refs["target"]["path"]},
         "reported_from": args.reported_from,
-        "cgrx_version": "v0.1.0-alpha.7",
-        "extraction_revision": 28,
+        "cgrx_version": args.cgrx_version,
+        "extraction_revision": args.extraction_revision,
         "date": datetime.date.today().isoformat(),
     }
+    if args.relation_kind != "CALLS":
+        case["relation_kind"] = args.relation_kind
     if args.synthetic:
         if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]*', args.fixture or ''):
             fail('invalid fixture name')
         case["repo_kind"] = "synthetic"
         case["fixture"] = args.fixture
-        case["fixture_sha256"] = {}
+        prefix = Path('fixtures') / 'mistake-ledger' / args.fixture
+        for role in ('caller', 'target'):
+            try:
+                relative = Path(refs[role]['path']).relative_to(prefix)
+            except ValueError:
+                fail(role + ' must be inside the named synthetic fixture')
+            case[role]['path'] = relative.as_posix()
+        recorded = {}
+        paths = git(repo, 'ls-tree', '-r', '--name-only', '-z', args.revision,
+                    '--', prefix.as_posix()).decode().split('\0')
+        for path in paths:
+            if not path:
+                continue
+            relative = Path(path).relative_to(prefix)
+            full = Path(repo) / path
+            if str(full.resolve()) != str(full):
+                fail('symlink evidence forbidden')
+            blob = git(repo, 'show', '%s:%s' % (args.revision, path))
+            if not full.is_file() or full.read_bytes() != blob:
+                fail('fixture differs from committed evidence')
+            recorded[relative.as_posix()] = hashlib.sha256(blob).hexdigest()
+        if not recorded or any(case[role]['path'] not in recorded for role in ('caller', 'target')):
+            fail('synthetic fixture needs committed caller/target files')
+        directory = Path(repo) / prefix
+        try:
+            actual = fixture_hashes(directory)
+        except ValueError as exc:
+            fail(str(exc))
+        if actual != recorded:
+            fail('fixture contains files outside its committed evidence')
+        case["fixture_sha256"] = recorded
     else:
         case["repo_kind"] = "public_clone"
         case["repo"] = repo

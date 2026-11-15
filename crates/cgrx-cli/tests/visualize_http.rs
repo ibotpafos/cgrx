@@ -95,9 +95,16 @@ fn start_server() -> (TestDirectory, Server) {
         &["merge", "-q", "--no-ff", "feature", "-m", "merge feature"],
     );
 
+    let server = launch_server(repository.path(), repository.path());
+    (repository, server)
+}
+
+fn launch_server(root: &Path, projects_dir: &Path) -> Server {
     let mut child = Command::new(env!("CARGO_BIN_EXE_cgrx"))
         .args(["visualize", "--root"])
-        .arg(repository.path())
+        .arg(root)
+        .arg("--projects-dir")
+        .arg(projects_dir)
         .args(["--port", "0", "--no-open"])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -110,22 +117,32 @@ fn start_server() -> (TestDirectory, Server) {
         .trim()
         .strip_prefix("visualizer_url=")
         .expect("structured startup URL");
-    let (origin, token) = url
-        .split_once("/#token=")
-        .expect("capability token remains in URL fragment");
+    let (origin, token) = url.split_once("/#token=").expect("capability URL fragment");
     assert!(origin.starts_with("http://127.0.0.1:"), "{origin}");
     assert_eq!(token.len(), 64);
-    (
-        repository,
-        Server {
-            child,
-            address: origin.trim_start_matches("http://").to_owned(),
-            token: token.to_owned(),
-        },
-    )
+    Server {
+        child,
+        address: origin.trim_start_matches("http://").to_owned(),
+        token: token.to_owned(),
+    }
 }
 
 fn request(server: &Server, method: &str, path: &str, authorized: bool) -> String {
+    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    loop {
+        let response = request_once(server, method, path, authorized);
+        if !response.starts_with("HTTP/1.1 202") {
+            return response;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "timed out: {path}: {response}"
+        );
+        std::thread::sleep(Duration::from_millis(25));
+    }
+}
+
+fn request_once(server: &Server, method: &str, path: &str, authorized: bool) -> String {
     let mut stream = TcpStream::connect(&server.address).expect("connect visualizer");
     stream
         .set_read_timeout(Some(Duration::from_secs(3)))
@@ -142,8 +159,34 @@ fn request(server: &Server, method: &str, path: &str, authorized: bool) -> Strin
     )
     .expect("write request");
     let mut response = String::new();
-    stream.read_to_string(&mut response).expect("read response");
+    stream
+        .read_to_string(&mut response)
+        .unwrap_or_else(|error| panic!("{method} {path}: {error}"));
     response
+}
+
+#[test]
+fn disconnected_client_does_not_stop_project_server() {
+    let (_repository, server) = start_server();
+    let mut stream = TcpStream::connect(&server.address).expect("connect visualizer");
+    stream
+        .set_read_timeout(Some(Duration::from_secs(3)))
+        .unwrap();
+    write!(
+        stream,
+        "GET /assets/app.js HTTP/1.1\r\nHost: {}\r\n\r\n",
+        server.address
+    )
+    .unwrap();
+    let mut prefix = [0; 64];
+    stream.read_exact(&mut prefix).expect("response started");
+    // The peer may already have closed after sending the response prefix.
+    let _ = stream.shutdown(Shutdown::Both);
+    drop(stream);
+    let catalogue = request(&server, "GET", "/api/projects", true);
+    assert!(catalogue.starts_with("HTTP/1.1 200"), "{catalogue}");
+    let status = request(&server, "GET", "/api/status", true);
+    assert!(status.starts_with("HTTP/1.1 200"), "{status}");
 }
 
 #[test]
@@ -170,6 +213,7 @@ fn starts_on_loopback_and_requires_capability() {
 fn read_only_api_routes_share_the_current_snapshot() {
     let (_repository, server) = start_server();
     let paths = [
+        "/api/repository-graph?node_limit=5000&edge_limit=30000",
         "/api/runtime-status",
         "/api/search?q=selected&scope=**&limit=8",
         "/api/graph?symbol=selected&path=main.rs&direction=both&depth=1&node_limit=80&edge_limit=160",
@@ -395,6 +439,7 @@ fn serves_embedded_assets_with_security_headers() {
         ("/", "text/html", "id=\"root\""),
         ("/assets/styles.css", "text/css", "--surface"),
         ("/assets/layout.js", "text/javascript", "layoutGraph"),
+        ("/assets/layout-worker.js", "text/javascript", "postMessage"),
         (
             "/assets/state.js",
             "text/javascript",
@@ -427,5 +472,238 @@ fn serves_embedded_assets_with_security_headers() {
             "{path}: {response}"
         );
         assert!(response.contains(marker), "{path}: {response}");
+    }
+}
+
+#[test]
+fn repository_graph_route_is_bounded_and_capability_protected() {
+    let (_repository, server) = start_server();
+    assert!(request(&server, "GET", "/api/repository-graph", false).starts_with("HTTP/1.1 401"));
+    for query in [
+        "node_limit=0",
+        "node_limit=20001",
+        "edge_limit=120001",
+        "edge_limit=oops",
+    ] {
+        assert!(
+            request(
+                &server,
+                "GET",
+                &format!("/api/repository-graph?{query}"),
+                true
+            )
+            .starts_with("HTTP/1.1 400")
+        );
+    }
+}
+
+#[test]
+fn projects_catalogue_routes_isolated_graphs_and_recovers_after_cache_eviction() {
+    let directory = TestDirectory::new("project-catalogue");
+    for name in ["alpha", "beta", "gamma", "delta", "epsilon", ".hidden"] {
+        let root = directory.path().join(name);
+        fs::create_dir(&root).unwrap();
+        git(&root, &["init", "-q"]);
+        git(&root, &["config", "user.email", "test@example.invalid"]);
+        git(&root, &["config", "user.name", "CGRX Test"]);
+        fs::write(
+            root.join("main.rs"),
+            format!("fn only_{}() {{}}\n", name.trim_start_matches('.')),
+        )
+        .unwrap();
+        git(&root, &["add", "."]);
+        git(&root, &["commit", "-qm", name]);
+    }
+    fs::create_dir(directory.path().join("not-a-repo")).unwrap();
+    let server = launch_server(&directory.path().join("alpha"), directory.path());
+    assert!(request(&server, "GET", "/api/projects", false).starts_with("HTTP/1.1 401"));
+    let read_json = |path: &str| -> serde_json::Value {
+        let response = request(&server, "GET", path, true);
+        assert!(response.starts_with("HTTP/1.1 200"), "{response}");
+        serde_json::from_str(response.split_once("\r\n\r\n").unwrap().1).unwrap()
+    };
+    let catalogue = loop {
+        let catalogue = read_json("/api/projects");
+        if catalogue["discovering"] == false {
+            break catalogue;
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    };
+    let projects = catalogue["projects"].as_array().unwrap();
+    assert_eq!(projects.len(), 5);
+    assert!(
+        projects
+            .iter()
+            .all(|p| !p["name"].as_str().unwrap().starts_with('.'))
+    );
+    assert!(
+        projects
+            .iter()
+            .filter(|p| p["name"] != "alpha")
+            .all(|p| p["indexed"] == false)
+    );
+    for project in projects {
+        let id = project["id"].as_str().unwrap();
+        let graph = read_json(&format!("/api/repository-graph?project={id}"));
+        let expected = format!("only_{}", project["name"].as_str().unwrap());
+        assert_eq!(graph["nodes"].as_array().unwrap().len(), 1);
+        assert_eq!(graph["nodes"][0]["symbol"], expected);
+        assert_eq!(
+            read_json(&format!("/api/status?project={id}"))["repo"],
+            project["path"]
+        );
+    }
+    // Alpha was evicted by the bounded cache. A request without a project still
+    // selects the launch repository, independent of the last browser request.
+    assert_eq!(
+        read_json("/api/repository-graph")["nodes"][0]["symbol"],
+        "only_alpha"
+    );
+    assert!(request(&server, "GET", "/api/status?project=/tmp", true).starts_with("HTTP/1.1 404"));
+    // A broken repository remains listed, but failure cannot switch the
+    // current/default graph or make the project chooser unavailable.
+    let empty = directory.path().join("empty");
+    fs::create_dir(&empty).unwrap();
+    git(&empty, &["init", "-q"]);
+    // Valid unborn repositories are supported. Model an actual load failure
+    // with a branch whose commit object is missing instead.
+    let branch = fs::read_to_string(empty.join(".git/HEAD")).unwrap();
+    let branch = empty
+        .join(".git")
+        .join(branch.trim().strip_prefix("ref: ").unwrap());
+    fs::create_dir_all(branch.parent().unwrap()).unwrap();
+    fs::write(branch, format!("{}\n", "f".repeat(40))).unwrap();
+    read_json("/api/projects?refresh=1");
+    let updated = loop {
+        let catalogue = read_json("/api/projects");
+        if catalogue["discovering"] == false {
+            break catalogue;
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    };
+    let empty_id = updated["projects"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|p| p["name"] == "empty")
+        .unwrap()["id"]
+        .as_str()
+        .unwrap();
+    assert!(
+        request(
+            &server,
+            "GET",
+            &format!("/api/status?project={empty_id}"),
+            true
+        )
+        .starts_with("HTTP/1.1 503")
+    );
+    assert_eq!(
+        read_json("/api/projects")["projects"]
+            .as_array()
+            .unwrap()
+            .len(),
+        6
+    );
+    assert_eq!(
+        read_json("/api/repository-graph")["nodes"][0]["symbol"],
+        "only_alpha"
+    );
+}
+
+#[test]
+fn incomplete_client_does_not_block_assets_catalogue_or_project_status() {
+    let (_repository, server) = start_server();
+    let mut slow = TcpStream::connect(&server.address).unwrap();
+    write!(slow, "GET / HTTP/1.1\r\nHost: localhost\r\n").unwrap();
+    for path in ["/assets/styles.css", "/api/projects", "/api/project-status"] {
+        let start = std::time::Instant::now();
+        let response = request_once(&server, "GET", path, true);
+        assert!(response.starts_with("HTTP/1.1 200"), "{path}: {response}");
+        // Loose CI timeout; the separate machine report enforces the 200ms p95 SLO.
+        assert!(
+            start.elapsed() < Duration::from_secs(1),
+            "{path} blocked behind an incomplete request"
+        );
+    }
+}
+
+#[test]
+fn edge_evidence_requires_exact_project_snapshot() {
+    let (_repository, server) = start_server();
+    let graph = request(&server, "GET", "/api/repository-graph?format=compact", true);
+    let graph: serde_json::Value =
+        serde_json::from_str(graph.split_once("\r\n\r\n").unwrap().1).unwrap();
+    let edge = &graph["edges"][0];
+    let source = &graph["nodes"][edge[0].as_u64().unwrap() as usize][0];
+    let target = &graph["nodes"][edge[1].as_u64().unwrap() as usize][0];
+    let encode = |s: &str| s.bytes().map(|b| format!("%{b:02X}")).collect::<String>();
+    let path = format!(
+        "/api/edge-evidence?source={}&target={}&relation={}&snapshot={}",
+        source.as_str().unwrap(),
+        target.as_str().unwrap(),
+        edge[2].as_str().unwrap(),
+        encode(&graph["snapshot"].to_string())
+    );
+    let evidence = request(&server, "GET", &path, true);
+    assert!(evidence.starts_with("HTTP/1.1 200"), "{evidence}");
+    let stale = request(
+        &server,
+        "GET",
+        "/api/edge-evidence?source=1&target=2&relation=CALLS&snapshot=%7B%7D",
+        true,
+    );
+    assert!(stale.starts_with("HTTP/1.1 409"), "{stale}");
+    assert!(request(&server, "GET", &path, false).starts_with("HTTP/1.1 401"));
+}
+
+#[test]
+fn queued_projects_status_is_read_only_and_runtime_limit_survives_twenty_switches() {
+    let directory = TestDirectory::new("bounded-projects");
+    for i in 0..6 {
+        let root = directory.path().join(format!("p{i}"));
+        fs::create_dir(&root).unwrap();
+        git(&root, &["init", "-q"]);
+        git(&root, &["config", "user.email", "test@example.invalid"]);
+        git(&root, &["config", "user.name", "Test"]);
+        fs::write(root.join("a.rs"), format!("fn project_{i}() {{}}\n")).unwrap();
+        git(&root, &["add", "."]);
+        git(&root, &["commit", "-qm", "fixture"]);
+    }
+    let server = launch_server(&directory.path().join("p0"), directory.path());
+    let json = |path: &str| -> serde_json::Value {
+        let r = request(&server, "GET", path, true);
+        assert!(r.starts_with("HTTP/1.1 200"), "{r}");
+        serde_json::from_str(r.split_once("\r\n\r\n").unwrap().1).unwrap()
+    };
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    let catalogue = loop {
+        let c = json("/api/projects");
+        if c["discovering"] == false {
+            break c;
+        }
+        assert!(std::time::Instant::now() < deadline);
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    let projects = catalogue["projects"].as_array().unwrap();
+    for p in projects.iter().skip(1) {
+        let status = json(&format!(
+            "/api/project-status?project={}",
+            p["id"].as_str().unwrap()
+        ));
+        assert_eq!(status["state"], "queued");
+        assert_eq!(status["resources"]["open_runtimes"], 1);
+    }
+    for i in 0..20 {
+        let p = &projects[i % projects.len()];
+        let id = p["id"].as_str().unwrap();
+        let graph = json(&format!("/api/repository-graph?project={id}"));
+        assert_eq!(
+            graph["nodes"][0]["symbol"],
+            format!("project_{}", i % projects.len())
+        );
+        let status = json(&format!("/api/project-status?project={id}"));
+        assert!(status["resources"]["open_runtimes"].as_u64().unwrap() <= 4);
+        assert!(status["resources"]["cache_bytes"].as_u64().unwrap() <= 128 * 1024 * 1024);
     }
 }

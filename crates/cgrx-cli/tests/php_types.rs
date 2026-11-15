@@ -465,10 +465,13 @@ fn php_unused_imports_external_targets_and_invalid_declarations_do_not_create_gr
 }
 
 #[test]
-fn php_type_revision_30_cache_requires_a_distinct_revision_31_generation() {
+fn php_type_revision_30_cache_requires_a_new_generation() {
     let fixture = Fixture::new("php", SOURCE);
     let mut old = fixture.stored();
-    assert_eq!(old["extraction_revision"], 31);
+    assert_eq!(
+        old["extraction_revision"],
+        255 + 8 * u32::from(cgrx_languages::EXPERIMENTAL_JAVASCRIPT_ENABLED)
+    );
     old["extraction_revision"] = json!(30);
     let mut hash = blake3::Hasher::new();
     hash.update(

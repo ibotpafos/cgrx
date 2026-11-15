@@ -2,11 +2,18 @@
 //! The parent runtime must use these targets instead of name fallback.
 use crate::pack::text;
 use serde::{Deserialize, Serialize};
+use std::borrow::Borrow;
 use std::collections::{BTreeMap, BTreeSet};
 use tree_sitter::{Node, Parser};
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TsFileFacts {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub declaration_facts: Option<super::ts_declarations::DeclarationFacts>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub javascript: Option<crate::javascript::FileFacts>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub javascript_package: Option<crate::javascript::PackageKind>,
     pub imports: Vec<Import>,
     pub calls: Vec<ImportCall>,
     /// All observed direct identifier call sites, including rejected ones.
@@ -87,8 +94,8 @@ pub struct ClassifiedImportSite {
     pub classification: ImportClassification,
 }
 
-pub fn classify_receiver_call_with_modules(
-    files: &BTreeMap<String, TsFileFacts>,
+pub fn classify_receiver_call_with_modules<F: Borrow<TsFileFacts>>(
+    files: &BTreeMap<String, F>,
     path: &str,
     call: [usize; 2],
     modules: &BTreeMap<(String, String), String>,
@@ -98,7 +105,11 @@ pub fn classify_receiver_call_with_modules(
         caller: None,
         classification: ImportClassification::Rejected,
     };
-    let Some(file) = files.get(path).filter(|file| file.valid) else {
+    let Some(file) = files
+        .get(path)
+        .map(Borrow::borrow)
+        .filter(|file| file.valid)
+    else {
         return result;
     };
     let calls: Vec<_> = file
@@ -118,8 +129,8 @@ pub fn classify_receiver_call_with_modules(
 /// Classify a FULL call-expression span, never just a name or start offset.
 /// Missing/old/invalid facts and unknown spans are Rejected, not NotImport.
 /// The caller must bind facts to current source hashes and a coherent inventory.
-pub fn classify_call(
-    files: &BTreeMap<String, TsFileFacts>,
+pub fn classify_call<F: Borrow<TsFileFacts>>(
+    files: &BTreeMap<String, F>,
     path: &str,
     call: [usize; 2],
 ) -> ClassifiedImportSite {
@@ -127,8 +138,8 @@ pub fn classify_call(
 }
 /// Overrides are config-proven relative specifiers, keyed by exact importer and
 /// original module. They never change lexical binding or source span identity.
-pub fn classify_call_with_modules(
-    files: &BTreeMap<String, TsFileFacts>,
+pub fn classify_call_with_modules<F: Borrow<TsFileFacts>>(
+    files: &BTreeMap<String, F>,
     path: &str,
     call: [usize; 2],
     modules: &BTreeMap<(String, String), String>,
@@ -138,7 +149,7 @@ pub fn classify_call_with_modules(
         caller: None,
         classification: ImportClassification::Rejected,
     };
-    let Some(file) = files.get(path) else {
+    let Some(file) = files.get(path).map(Borrow::borrow) else {
         return result;
     };
     let sites: Vec<_> = file.sites.iter().filter(|site| site.call == call).collect();
@@ -370,6 +381,9 @@ impl TsFileFacts {
         let root = tree.root_node();
         let mut facts = Self {
             valid: !root.has_error(),
+            declaration_facts: Some(super::ts_declarations::DeclarationFacts::from_tree(
+                root, source,
+            )),
             ..Self::default()
         };
         let mut cursor = root.walk();
@@ -691,8 +705,8 @@ pub fn module_candidates(from: &str, module: &str) -> Vec<String> {
     }
     candidates(from, module).unwrap_or_default()
 }
-fn module_path(
-    files: &BTreeMap<String, TsFileFacts>,
+fn module_path<F: Borrow<TsFileFacts>>(
+    files: &BTreeMap<String, F>,
     from: &str,
     module: &str,
     modules: &BTreeMap<(String, String), String>,
@@ -713,8 +727,8 @@ fn module_path(
 
 /// Resolve one static module specifier to exactly one indexed source file.
 /// Callers supply revision-bound alias mappings; ambiguous candidates abstain.
-pub fn resolve_module_path(
-    files: &BTreeMap<String, TsFileFacts>,
+pub fn resolve_module_path<F: Borrow<TsFileFacts>>(
+    files: &BTreeMap<String, F>,
     from: &str,
     module: &str,
     modules: &BTreeMap<(String, String), String>,
@@ -722,20 +736,20 @@ pub fn resolve_module_path(
     module_path(files, from, module, modules)
 }
 
-pub fn resolve_call(
-    files: &BTreeMap<String, TsFileFacts>,
+pub fn resolve_call<F: Borrow<TsFileFacts>>(
+    files: &BTreeMap<String, F>,
     path: &str,
     call_start: usize,
 ) -> Option<ResolvedImport> {
     resolve_call_with_modules(files, path, call_start, &BTreeMap::new())
 }
-fn resolve_call_with_modules(
-    files: &BTreeMap<String, TsFileFacts>,
+fn resolve_call_with_modules<F: Borrow<TsFileFacts>>(
+    files: &BTreeMap<String, F>,
     path: &str,
     call_start: usize,
     modules: &BTreeMap<(String, String), String>,
 ) -> Option<ResolvedImport> {
-    let file = files.get(path)?;
+    let file = files.get(path).map(Borrow::borrow)?;
     if !file.valid {
         return None;
     }
@@ -765,8 +779,8 @@ fn resolve_call_with_modules(
     })
 }
 
-fn resolve_receiver_call(
-    files: &BTreeMap<String, TsFileFacts>,
+fn resolve_receiver_call<F: Borrow<TsFileFacts>>(
+    files: &BTreeMap<String, F>,
     path: &str,
     call: &ReceiverCall,
     modules: &BTreeMap<(String, String), String>,
@@ -782,7 +796,7 @@ fn resolve_receiver_call(
         0,
         modules,
     )?;
-    let target_file = files.get(&target_path)?;
+    let target_file = files.get(&target_path).map(Borrow::borrow)?;
     if !target_file.valid {
         return None;
     }
@@ -799,8 +813,8 @@ fn resolve_receiver_call(
     })
 }
 
-fn resolve_export_binding(
-    files: &BTreeMap<String, TsFileFacts>,
+fn resolve_export_binding<F: Borrow<TsFileFacts>>(
+    files: &BTreeMap<String, F>,
     path: &str,
     name: &str,
     seen: &mut BTreeSet<(String, String)>,
@@ -811,7 +825,7 @@ fn resolve_export_binding(
     if depth >= 8 || !seen.insert((path.to_owned(), name.to_owned())) {
         return None;
     }
-    let file = files.get(path)?;
+    let file = files.get(path).map(Borrow::borrow)?;
     if !file.valid {
         return None;
     }
@@ -851,8 +865,8 @@ fn resolve_export_binding(
     )
 }
 
-fn resolve_export(
-    files: &BTreeMap<String, TsFileFacts>,
+fn resolve_export<F: Borrow<TsFileFacts>>(
+    files: &BTreeMap<String, F>,
     path: &str,
     name: &str,
     seen: &mut BTreeSet<(String, String)>,
@@ -863,7 +877,7 @@ fn resolve_export(
     if depth >= 8 || !seen.insert((path.to_owned(), name.to_owned())) {
         return None;
     }
-    let file = files.get(path)?;
+    let file = files.get(path).map(Borrow::borrow)?;
     if !file.valid {
         return None;
     }

@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::Path;
 
 use cgrx_core::{
     ByteRange, ConfidenceClass, EdgeEvidence, Hash32, RepoSnapshot, ResolverClass, Scope,
@@ -263,20 +264,95 @@ impl Runtime {
         let mut external_references = 0usize;
         let mut out_of_scope_references = 0usize;
         let mut unresolved_references = Vec::new();
+        let mut ts_reference_proofs = BTreeMap::<(&str, usize, usize), Vec<&EdgeEvidence>>::new();
+        let mut ts_reference_targets = BTreeMap::<(&str, usize, usize), Vec<&str>>::new();
+        for arc in self
+            .stored
+            .arcs
+            .iter()
+            .filter(|a| a.kind == cgrx_core::RelationKind::References)
+        {
+            let Some(evidence) = arc.evidence.as_ref().filter(|e| {
+                e.is_definitive()
+                    && e.resolver == ResolverClass::SyntaxExact
+                    && self.stored.path_hashes.get(&e.path) == Some(&e.source_hash)
+            }) else {
+                continue;
+            };
+            let Some(target) = super::scan_helpers::syntax_document(&self.stored, arc.target)
+            else {
+                continue;
+            };
+            let key = (
+                evidence.path.as_str(),
+                evidence.span.start,
+                evidence.span.end,
+            );
+            ts_reference_proofs.entry(key).or_default().push(evidence);
+            ts_reference_targets
+                .entry(key)
+                .or_default()
+                .push(&target.path);
+        }
         for reference in scoped_documents
             .iter()
             .copied()
             .filter(|document| document.provenance == "REFERENCES")
         {
-            let resolution = resolve_import(
-                &reference.path,
-                &reference.qualified_name,
-                &self.stored.path_hashes,
-                &self.stored.go_modules,
-                &self.stored.cargo_manifests,
-                &ts_files,
-                &ts_modules,
+            let key = (
+                reference.path.as_str(),
+                reference.span_start,
+                reference.span_end,
             );
+            let typed_reference = matches!(
+                Path::new(&reference.path)
+                    .extension()
+                    .and_then(|e| e.to_str()),
+                Some("ts" | "tsx")
+            );
+            let native_evidence =
+                ts_reference_proofs
+                    .get(&key)
+                    .and_then(|proofs| match proofs.as_slice() {
+                        [proof] => Some(*proof),
+                        _ => None,
+                    });
+            let resolution = if typed_reference {
+                match ts_reference_targets.get(&key).map(Vec::as_slice) {
+                    Some([target]) => ImportResolution::Proven((*target).to_owned()),
+                    _ => {
+                        let module = self
+                            .stored
+                            .ts_files
+                            .get(&reference.path)
+                            .and_then(|f| f.facts.declaration_facts.as_ref())
+                            .and_then(|f| {
+                                f.imports
+                                    .iter()
+                                    .find(|i| i.local == reference.qualified_name)
+                            })
+                            .map(|i| i.module.as_str());
+                        if module.is_some_and(|m| {
+                            !m.starts_with('.')
+                                && !ts_modules.contains_key(&(reference.path.clone(), m.to_owned()))
+                        }) {
+                            ImportResolution::External
+                        } else {
+                            ImportResolution::UnresolvedLocal
+                        }
+                    }
+                }
+            } else {
+                resolve_import(
+                    &reference.path,
+                    &reference.qualified_name,
+                    &self.stored.path_hashes,
+                    &self.stored.go_modules,
+                    &self.stored.cargo_manifests,
+                    &ts_files,
+                    &ts_modules,
+                )
+            };
             let target_path = match resolution {
                 ImportResolution::Proven(path) if path_in_scope(&path, scope) => path,
                 ImportResolution::Proven(_) => {
@@ -321,7 +397,7 @@ impl Runtime {
             boundary.edges += 1;
             boundary.relations.insert("REFERENCES".to_owned());
             if boundary.evidence.len() < 8 {
-                let evidence = EdgeEvidence {
+                let evidence = native_evidence.cloned().unwrap_or_else(|| EdgeEvidence {
                     path: reference.path.clone(),
                     span: ByteRange::new(reference.span_start, reference.span_end),
                     source_hash: self.stored.path_hashes[&reference.path],
@@ -329,7 +405,7 @@ impl Runtime {
                     confidence: ConfidenceClass::Proven,
                     assumptions: Vec::new(),
                     counter_evidence: Vec::new(),
-                };
+                });
                 boundary
                     .evidence
                     .push(serde_json::to_value(evidence).expect("serialize reference evidence"));
@@ -1293,45 +1369,35 @@ fn strongly_connected_components(
     nodes: &BTreeSet<String>,
     adjacency: &BTreeMap<String, BTreeSet<String>>,
 ) -> Vec<Vec<String>> {
-    fn visit(
-        node: &str,
-        adjacency: &BTreeMap<String, BTreeSet<String>>,
-        visited: &mut BTreeSet<String>,
-        order: &mut Vec<String>,
-    ) {
-        if !visited.insert(node.to_owned()) {
-            return;
-        }
-        for next in adjacency.get(node).into_iter().flatten() {
-            visit(next, adjacency, visited, order);
-        }
-        order.push(node.to_owned());
-    }
-    let mut order = Vec::new();
-    let mut visited = BTreeSet::new();
+    // Preserve the evidence projection; only the graph algorithm changes.
+    // Kosaraju in petgraph is iterative, including both DFS passes.
+    let mut graph = petgraph::graph::DiGraph::<&str, ()>::new();
+    let mut indices = BTreeMap::new();
     for node in nodes {
-        visit(node, adjacency, &mut visited, &mut order);
+        indices.insert(node.as_str(), graph.add_node(node.as_str()));
     }
-    let mut reverse = BTreeMap::<String, BTreeSet<String>>::new();
     for (source, targets) in adjacency {
-        for target in targets {
-            reverse
-                .entry(target.clone())
-                .or_default()
-                .insert(source.clone());
-        }
-    }
-    visited.clear();
-    let mut components = Vec::new();
-    for node in order.into_iter().rev() {
-        if visited.contains(&node) {
+        let Some(&source_index) = indices.get(source.as_str()) else {
             continue;
+        };
+        for target in targets {
+            if let Some(&target_index) = indices.get(target.as_str()) {
+                graph.add_edge(source_index, target_index, ());
+            }
         }
-        let mut component = Vec::new();
-        collect_component(&node, &reverse, &mut visited, &mut component);
-        component.sort();
-        components.push(component);
     }
+    let mut components = petgraph::algo::kosaraju_scc(&graph)
+        .into_iter()
+        .map(|component| {
+            let mut names = component
+                .into_iter()
+                .map(|index| graph[index].to_owned())
+                .collect::<Vec<_>>();
+            names.sort();
+            names
+        })
+        .collect::<Vec<_>>();
+    components.sort();
     components
 }
 
@@ -1483,17 +1549,65 @@ fn detect_semantic_communities<T: Ord + Clone>(
     }
 }
 
-fn collect_component(
-    node: &str,
-    adjacency: &BTreeMap<String, BTreeSet<String>>,
-    visited: &mut BTreeSet<String>,
-    component: &mut Vec<String>,
-) {
-    if !visited.insert(node.to_owned()) {
-        return;
+#[cfg(test)]
+mod graph_algorithm_tests {
+    use super::*;
+
+    #[test]
+    fn components_preserve_cycles_self_loops_and_isolated_nodes() {
+        let nodes = ["a", "b", "c", "d", "e", "isolated"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        let adjacency = [
+            ("a", vec!["b"]),
+            ("b", vec!["a", "c"]),
+            ("c", vec!["d"]),
+            ("d", vec!["c"]),
+            ("e", vec!["e"]),
+        ]
+        .into_iter()
+        .map(|(source, targets)| {
+            (
+                source.to_owned(),
+                targets.into_iter().map(str::to_owned).collect(),
+            )
+        })
+        .collect();
+        assert_eq!(
+            strongly_connected_components(&nodes, &adjacency),
+            vec![vec!["a", "b"], vec!["c", "d"], vec!["e"], vec!["isolated"]]
+        );
     }
-    component.push(node.to_owned());
-    for next in adjacency.get(node).into_iter().flatten() {
-        collect_component(next, adjacency, visited, component);
+
+    #[test]
+    fn deep_dependency_chain_and_cycle_fit_a_small_thread_stack() {
+        std::thread::Builder::new()
+            .stack_size(64 * 1024)
+            .spawn(|| {
+                let names = (0..30_000)
+                    .map(|index| format!("package_{index:05}"))
+                    .collect::<Vec<_>>();
+                let nodes = names.iter().cloned().collect();
+                let mut adjacency = names
+                    .windows(2)
+                    .map(|pair| (pair[0].clone(), [pair[1].clone()].into_iter().collect()))
+                    .collect::<BTreeMap<_, _>>();
+                assert_eq!(
+                    strongly_connected_components(&nodes, &adjacency).len(),
+                    names.len()
+                );
+                adjacency.insert(
+                    names.last().unwrap().clone(),
+                    [names[0].clone()].into_iter().collect(),
+                );
+                assert_eq!(
+                    strongly_connected_components(&nodes, &adjacency),
+                    vec![names]
+                );
+            })
+            .unwrap()
+            .join()
+            .unwrap();
     }
 }

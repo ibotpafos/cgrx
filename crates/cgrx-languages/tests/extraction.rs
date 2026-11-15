@@ -463,6 +463,203 @@ fn rebuild_arcs() {}
 }
 
 #[test]
+fn rust_parameter_calls_prove_the_first_receiver_candidate_and_exact_declarations() {
+    for source in [
+        "struct A; impl A { fn run(&self) {} } fn caller(value: &A) { value.run(); }",
+        "struct A; impl A { fn run(&mut self) {} } fn caller(value: &mut A) { value.run(); }",
+        "struct A; impl A { fn run(self) {} } fn caller(value: A) { value.run(); }",
+        "struct A<'a>(&'a u8); impl A<'_> { fn run(&self) {} } fn caller(value: &A<'_>) { value.run(); }",
+        "#[derive(Default)] struct A { #[cfg(test)] field: u8 } impl A { fn run(&self) {} } fn caller(value: &A) { value.run(); }",
+        "struct A; impl A { fn run(&mut self) {} } trait T { fn run(&self); } impl T for A { fn run(&self) {} } fn caller(value: &mut A) { value.run(); }",
+        "struct A; impl A { fn run(&self) {} } fn caller<T>(value: &A, _other: T) { value.run(); }",
+        "mod inner { struct A; impl A { fn run(&self) {} } fn caller(value: &A) { value.run(); } }",
+        "struct A; impl A { fn run(&self) {} } fn caller(value: &A) { { let value = 0; } value.run(); }",
+        "struct A; impl A { fn run(&self) {} } fn caller(value: &A) { let value = value.run(); }",
+    ] {
+        let source =
+            format!("{source} struct Other; impl Other {{ fn run(&self) {{}} }} fn run() {{}}");
+        let extraction = pack_for_path(Path::new("main.rs"))
+            .unwrap()
+            .extract(Path::new("main.rs"), source.as_bytes())
+            .unwrap();
+        let calls: Vec<_> = extraction
+            .edges
+            .iter()
+            .filter(|edge| edge.relation == RelationKind::Calls)
+            .collect();
+        assert_eq!(calls.len(), 1, "{source}");
+        let Provenance::RustParameter {
+            owner,
+            caller,
+            parameter,
+            binding,
+            receiver_type,
+            receiver,
+            target_implementation,
+            target,
+        } = calls[0].provenance
+        else {
+            panic!("missing parameter proof: {source}")
+        };
+        assert_eq!(&source[owner.start..owner.end], "A");
+        assert_eq!(caller.start, source.find("fn caller").unwrap() + 3);
+        assert_eq!(target.start, source.find("fn run").unwrap() + 3);
+        assert_eq!(&source[binding.start..binding.end], "value");
+        assert_eq!(&source[receiver.start..receiver.end], "value");
+        assert_eq!(
+            &source[receiver_type.start..receiver_type.end],
+            source[parameter.start..parameter.end]
+                .split_once(':')
+                .unwrap()
+                .1
+                .trim()
+        );
+        assert!(parameter.start <= binding.start && binding.end < receiver_type.start);
+        assert!(receiver_type.end <= parameter.end && parameter.end < receiver.start);
+        assert!(
+            target_implementation.start < target.start && target.end < target_implementation.end
+        );
+    }
+}
+
+#[test]
+fn rust_parameter_calls_abstain_on_shadowing_and_later_lookup_candidates() {
+    for source in [
+        "struct A; impl A { fn run(&self) {} } fn caller(value: A) { value.run(); }",
+        "struct A; impl A { fn run(&self) {} } fn caller(value: &mut A) { value.run(); }",
+        "struct A; impl A { fn run(self) {} } fn caller(value: &A) { value.run(); }",
+        "struct A; impl A { fn run(&self) {} } fn caller(value: Box<A>) { value.run(); }",
+        "struct A; impl A { fn run(&self) {} } fn caller(value: &self::A) { value.run(); }",
+        "struct A; impl A { fn run(&self) {} } type Alias = A; fn caller(value: &Alias) { value.run(); }",
+        "struct A<T>(T); impl<T> A<T> { fn run(&self) {} } fn caller(value: &A<u8>) { value.run(); }",
+        "struct A; impl A { fn run(&self) {} } fn caller<A>(value: &A) { value.run(); }",
+        "struct A; impl A { fn run(&self) {} } fn caller((value, _): (&A, u8)) { value.run(); }",
+        "struct A; impl A { fn run(&self) {} } fn caller(value: &A) { let f = || value.run(); }",
+        "struct A; impl A { fn run(&self) {} } fn caller(value: &A) { let value = Other; value.run(); }",
+        "struct A; impl A { fn run(&self) {} } fn caller(value: &A) { match 1 { value => value.run() } }",
+        "struct A; impl A { fn run(&self) {} } fn caller(value: &A) { for value in [] { value.run(); } }",
+        "struct A; impl A { fn run(&self) {} } fn caller(value: &A) { if let Some(value) = None { value.run(); } }",
+        "struct A; impl A { fn run(&self) {} } fn caller(value: &A) { while let Some(value) = None { value.run(); } }",
+        "struct A; impl A { fn run(&self) {} } fn caller(value: &A) { shadow!(); value.run(); }",
+        "struct A; impl A { fn run(&self) {} } fn caller(#[cfg(test)] value: &A) { value.run(); }",
+        "struct A; impl A { fn run(&self) {} } #[cfg(test)] fn caller(value: &A) { value.run(); }",
+        "#[cfg(test)] struct A; impl A { fn run(&self) {} } fn caller(value: &A) { value.run(); }",
+        "#[replace] #[derive(Default)] struct A; impl A { fn run(&self) {} } fn caller(value: &A) { value.run(); }",
+        "struct A; impl A { #[cfg(test)] fn run(&self) {} } fn caller(value: &A) { value.run(); }",
+        "struct A; #[cfg(test)] impl A { fn run(&self) {} } fn caller(value: &A) { value.run(); }",
+        "#[cfg(test)] mod inner { struct A; impl A { fn run(&self) {} } fn caller(value: &A) { value.run(); } }",
+        "struct A; struct A; impl A { fn run(&self) {} } fn caller(value: &A) { value.run(); }",
+        "struct A; impl A { fn run(&self) {} } impl A { fn run(&self) {} } fn caller(value: &A) { value.run(); }",
+        "struct A<'a: 'static>(&'a u8); impl A<'_> { fn run(&self) {} } fn caller(value: &A<'_>) { value.run(); }",
+        "struct A; impl A { fn run() {} } fn caller(value: &A) { value.run(); }",
+        "struct A; impl A { fn run(&self) {} } fn caller(value: &A) { value.field.run(); }",
+        "struct A; impl A { fn run(&mut self) {} } trait T { fn run(&self); } impl T for A { fn run(&self) {} } fn caller(mut value: A) { value.run(); }",
+    ] {
+        let source =
+            format!("{source} struct Other; impl Other {{ fn run(&self) {{}} }} fn run() {{}}");
+        let extraction = pack_for_path(Path::new("main.rs"))
+            .unwrap()
+            .extract(Path::new("main.rs"), source.as_bytes())
+            .unwrap();
+        assert!(
+            !extraction
+                .edges
+                .iter()
+                .any(|e| e.relation == RelationKind::Calls),
+            "{source}"
+        );
+        assert!(
+            extraction
+                .unresolved
+                .iter()
+                .any(|u| u.kind == UnresolvedKind::Dispatch),
+            "{source}"
+        );
+    }
+}
+
+#[test]
+fn rust_lifetime_only_self_calls_retain_exact_owner_and_target_identity() {
+    for source in [
+        "struct A<'a>(&'a u8); impl A<'_> { fn caller(&self) { self.run(); } fn run(&self) {} }",
+        "struct A<'a>(&'a u8); impl<'a> A<'a> { fn caller(&self) { Self::run(self); } fn run(&self) {} }",
+        "enum A<'a, 'b> { Item(&'a u8, &'b u8) } impl<'x, 'y> A<'x, 'y> { fn caller(&self) { self.run(); } fn run(&self) {} }",
+        "struct A<'a>(&'a u8); impl A<'_> { fn caller(&self) { self.run(); } } impl<'b> A<'b> { fn run(&self) {} }",
+        "struct A<'a>(&'a u8); impl<'a /* comment */> A<'a /* comment */> { fn caller(&self) { self.run(); } fn run(&self) {} }",
+    ] {
+        let source = format!("{source} struct B; impl B {{ fn run(&self) {{}} }} fn run() {{}}");
+        let extraction = pack_for_path(Path::new("main.rs"))
+            .unwrap()
+            .extract(Path::new("main.rs"), source.as_bytes())
+            .unwrap();
+        let calls: Vec<_> = extraction
+            .edges
+            .iter()
+            .filter(|edge| edge.relation == RelationKind::Calls)
+            .collect();
+        assert_eq!(calls.len(), 1, "{source}");
+        let Provenance::RustSelf {
+            owner,
+            caller,
+            target,
+            implementation,
+            target_implementation,
+        } = &calls[0].provenance
+        else {
+            panic!("missing owner identity: {source}")
+        };
+        assert_eq!(owner.start, source.find("A<").unwrap());
+        assert_eq!(caller.start, source.find("fn caller").unwrap() + 3);
+        assert_eq!(target.start, source.find("fn run").unwrap() + 3);
+        assert!(implementation.start < caller.start && caller.end < implementation.end);
+        assert!(
+            target_implementation.start < target.start && target.end < target_implementation.end
+        );
+    }
+}
+
+#[test]
+fn rust_lifetime_self_calls_abstain_on_unsupported_or_competing_owners() {
+    for source in [
+        "struct A<'a> { broken: , value: &'a u8 } impl A<'_> { fn caller(&self) { self.run(); } fn run(&self) {} }",
+        "struct A<'a, T>(&'a T); impl<'a, T> A<'a, T> { fn caller(&self) { self.run(); } fn run(&self) {} }",
+        "struct A<'a, const N: usize>(&'a [u8; N]); impl<'a, const N: usize> A<'a, N> { fn caller(&self) { self.run(); } fn run(&self) {} }",
+        "struct A<'a, 'b>(&'a u8, &'b u8); impl A<'_> { fn caller(&self) { self.run(); } fn run(&self) {} }",
+        "struct A<'a>(&'a u8); impl<'a> A<'a> where 'a: 'static { fn caller(&self) { self.run(); } fn run(&self) {} }",
+        "struct A<'a: 'static>(&'a u8); impl A<'_> { fn caller(&self) { self.run(); } fn run(&self) {} }",
+        "struct A<'a>(&'a u8); impl A<'_> { fn caller(&self) { self.run(); } } impl A<'_> { fn run(&self) {} } impl A<'static> { fn run(&self) {} }",
+        "struct A<'a>(&'a u8); impl A<'_> { fn caller(&self) { self.run(); } } impl<'a> self::A<'a> { fn run(&self) {} }",
+        "struct A<'a>(&'a u8); impl A<'_> { fn caller(&self) { self.run(); } fn run(&self) {} } trait T { fn run(&self); } impl T for A<'_> { fn run(&self) {} }",
+        "struct A<'a>(&'a u8); #[cfg(feature=\"x\")] impl A<'_> { fn run(&self) {} } impl A<'_> { fn caller(&self) { self.run(); } }",
+        "#[cfg(feature=\"x\")] struct A<'a>(&'a u8); impl A<'_> { fn caller(&self) { self.run(); } fn run(&self) {} }",
+        "struct A<'a>(&'a u8); impl A<'_> { fn caller(&self) { self.run(); } #[cfg(feature=\"x\")] fn run(&self) {} }",
+        "struct A<'a>(&'a u8); impl A<'_> { fn caller(&self) { self.run(); } fn run() {} }",
+        "struct A<'a>(&'a u8); impl A<'_> { fn caller(&self) { self.run(); } } struct B; impl B { fn run(&self) {} }",
+    ] {
+        let source = format!("{source} fn run() {{}}");
+        let extraction = pack_for_path(Path::new("main.rs"))
+            .unwrap()
+            .extract(Path::new("main.rs"), source.as_bytes())
+            .unwrap();
+        assert!(
+            !extraction
+                .edges
+                .iter()
+                .any(|e| e.relation == RelationKind::Calls),
+            "{source}"
+        );
+        assert!(
+            extraction
+                .unresolved
+                .iter()
+                .any(|u| u.kind == UnresolvedKind::Dispatch
+                    && &source[u.span.start..u.span.end] == "self.run()"),
+            "{source}"
+        );
+    }
+}
+
+#[test]
 fn rust_self_calls_remain_but_unproven_receivers_stay_dispatch() {
     let source = br#"trait Worker { fn run(&self); }
 struct Runtime;
@@ -1566,6 +1763,137 @@ fn typescript_class_initializers_keep_explicit_dispatch_gaps() {
                 "{source}"
             );
         }
+    }
+}
+
+#[test]
+fn go_indexed_field_bindings_prove_exact_array_and_slice_element_methods() {
+    for collection in ["[2]Shard", "[]Shard"] {
+        for owner in ["Limiter", "*Limiter"] {
+            for target in ["Shard", "*Shard", "unnamed"] {
+                let target_receiver = if target == "unnamed" {
+                    "*Shard".to_owned()
+                } else {
+                    format!("s {target}")
+                };
+                let source = format!(
+                    "package rate\ntype Shard struct {{ count int }}\ntype Limiter struct {{ shards {collection} }}\nfunc ({target_receiver}) Run() {{}}\nfunc (l {owner}) Allow(i int) {{ shard := &l.shards[i]; shard.count++; l.shards[i].count = 1; if i > 0 {{ shard.Run() }}; shard.Run() }}"
+                );
+                let path = Path::new("rate.go");
+                let extraction = pack_for_path(path)
+                    .unwrap()
+                    .extract(path, source.as_bytes())
+                    .unwrap();
+                let edges: Vec<_> = extraction
+                    .edges
+                    .iter()
+                    .filter(|e| e.target == "shard.Run")
+                    .collect();
+                assert_eq!(edges.len(), 2, "{source}");
+                for edge in edges {
+                    let Provenance::GoIndexedFieldReceiver {
+                        package,
+                        caller,
+                        receiver_type,
+                        field,
+                        field_type,
+                        target,
+                        collection: collection_span,
+                        statement,
+                        binding,
+                        initializer,
+                        receiver,
+                    } = edge.provenance
+                    else {
+                        panic!("{source}")
+                    };
+                    for (span, expected) in [
+                        (package, "rate"),
+                        (caller, "Allow"),
+                        (receiver_type, "Limiter"),
+                        (field, "shards"),
+                        (field_type, "Shard"),
+                        (target, "Run"),
+                        (collection_span, collection),
+                        (statement, "shard := &l.shards[i]"),
+                        (binding, "shard"),
+                        (initializer, "&l.shards[i]"),
+                        (receiver, "shard"),
+                    ] {
+                        assert_eq!(&source[span.start..span.end], expected, "{source}");
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn go_indexed_field_binding_unsupported_shapes_and_changes_remain_gaps() {
+    let base = "package rate\ntype Shard struct { count int }\ntype Limiter struct { shards [2]Shard }\nfunc (s *Shard) Run() {}\nfunc (l *Limiter) Allow(i int) { shard := &l.shards[i]; shard.Run() }";
+    let mut cases = Vec::new();
+    for body in [
+        "shard := &l.shards[i]; shard = other; shard.Run()",
+        "shard := &l.shards[i]; { shard := other; _ = shard }; shard.Run()",
+        "shard := &l.shards[i]; { var shard *Shard; _ = shard }; shard.Run()",
+        "shard := &l.shards[i]; _ = func() { shard = other }; shard.Run()",
+        "shard := &l.shards[i]; l = other; shard.Run()",
+        "shard := &other.shards[i]; shard.Run()",
+        "shard := &l.inner.shards[i]; shard.Run()",
+        "shard := l.shards[i]; shard.Run()",
+        "shard, ok := &l.shards[i], true; _ = ok; shard.Run()",
+        "if i > 0 { shard := &l.shards[i]; shard.Run() }",
+        "shard := &l.shards[i]; _ = func() { shard.Run() }",
+        "shard.Run(); shard := &l.shards[i]",
+        "shard := (&l.shards[i]); shard.Run()",
+    ] {
+        cases.push(base.replace("shard := &l.shards[i]; shard.Run()", body));
+    }
+    for collection in [
+        "map[int]Shard",
+        "[]*Shard",
+        "[]other.Shard",
+        "[]interface { Run() }",
+        "Shards",
+        "[2]Shard[int]",
+    ] {
+        cases.push(base.replace("[2]Shard", collection));
+    }
+    for replacement in [
+        "type Shard = Other",
+        "type Shard interface { Run() }",
+        "type Shard struct { Embedded }",
+        "type Shard struct { Run func() }",
+    ] {
+        cases.push(base.replace("type Shard struct { count int }", replacement));
+    }
+    cases.extend([
+        base.replace("Allow(i int)", "Allow(i int, shard *Shard)"),
+        base.replace("Allow(i int)", "Allow(i int) (shard *Shard)"),
+        format!("{base}\ntype Shard struct {{}}"),
+        format!("{base}\nfunc (s Shard) Run() {{}}"),
+        format!("{base}\nfunc (l Limiter) Allow(i int) {{}}"),
+        base.replace("shards [2]Shard", "shards [2]Shard; shards [2]Shard"),
+        base.replace("type Limiter struct", "type Limiter[T any] struct"),
+        base.replace("shard.Run()", "shard.Run(); @"),
+    ]);
+    for source in cases {
+        let path = Path::new("rate.go");
+        let extraction = pack_for_path(path)
+            .unwrap()
+            .extract(path, source.as_bytes())
+            .unwrap();
+        assert!(
+            !extraction.edges.iter().any(|e| e.target == "shard.Run"),
+            "{source}"
+        );
+        assert!(
+            extraction
+                .unresolved
+                .iter()
+                .any(|g| g.kind == UnresolvedKind::Dispatch && g.text == "shard.Run()"),
+            "{source}"
+        );
     }
 }
 

@@ -40,7 +40,7 @@ MODIFIED. Raw output is withheld because scripts may print secrets.
 remain unchanged. Missing configuration/dependencies, invalid config, copy limits,
 timeouts, excessive output, failed typechecks or tests never count as success.
 
-Default limits: 50,000 entries and 256 MiB per copy, 20 seconds per copy, 100–30,000 ms per
+Default limits: 50,000 entries and 256 MiB per copy, 20 seconds per copy, 100–60,000 ms per
 command (default 10 seconds), 128 KiB combined output per command. On Unix each
 command has its own process group; timeout/output limits kill its descendants.
 Kilo/OpenCode connections should allow at least 240 seconds for a full verification.
@@ -82,3 +82,26 @@ project_checks_passed, all six stages passed, stable sources and the current
 source-hash precondition. Syntax-only/blocked/unavailable/timeout/failure never
 authorizes application. Unsupported changes need equivalent isolated checks and
 review, not a fabricated candidate. Never bypass a baseline failure silently.
+
+### Repository bootstrap (outside verification copies)
+
+For this Rust/TypeScript repository, install the declared web dependencies with
+`npm ci --ignore-scripts` and the pinned formatter/contract tooling with
+`npm ci --prefix scripts/mcp-contract --ignore-scripts`. Neither command is run
+by the verifier. Other projects may provide Prettier through their existing
+node_modules or a dedicated local tools/cgrx-quality package.
+
+A preexisting broken dependency link, external tool symlink, or workspace binary
+pointing to an excluded dist/build tree blocks snapshot creation. Repair the
+installed dependency graph outside verification, or supply self-contained local
+tools; do not weaken the gate or mark these checks passed. Stage details distinguish
+this prerequisite failure from a type error or failing test.
+
+### Declared generated package dependencies
+
+`dependency_roots` may explicitly name at most 16 in-repository `dist`, `build`, `types` or `generated`
+directories needed by installed workspace binaries. They are copied, never shared
+with the working tree, and consume the same snapshot budget. Absolute paths,
+parent traversal, external symlinks and secret/state directories remain forbidden.
+This does not skip typechecks/tests or turn an incomplete snapshot into a pass.
+For example: `"dependency_roots": ["services/example-mcp/dist"]`.

@@ -1,7 +1,10 @@
 mod arc_resolution;
 mod architecture;
+mod ast_search;
 mod check_helpers;
 mod config;
+mod containment;
+mod edit_distance;
 mod extraction;
 mod frameworks;
 mod git_helpers;
@@ -9,9 +12,11 @@ mod graph_query;
 mod graph_view;
 mod helpers;
 mod index_helpers;
+mod javascript_resolution;
 mod observations;
 mod orient_helpers;
 mod php_resolution;
+mod python_import_resolution;
 pub mod quality;
 mod refactors;
 mod risks;
@@ -19,10 +24,13 @@ mod scan_helpers;
 mod scip_resolution;
 pub mod security;
 mod semantic_rerank;
+mod swift_compiler;
+mod swift_resolution;
 mod target_types;
 #[cfg(test)]
 mod tests;
 mod ts_config;
+mod ts_dependency_resolution;
 mod ts_helpers;
 
 use arc_resolution::go_module_name;
@@ -49,7 +57,7 @@ use scan_helpers::{
 };
 use target_types::{
     GoFieldTarget, GoLocalConstructorTarget, GoReceiverTarget, JavaConstructorTarget,
-    RustSelfTarget, TsLexicalTarget,
+    RustParameterTarget, RustSelfTarget, TsLexicalTarget,
 };
 use ts_config::TsResolutionConfig;
 use ts_helpers::{
@@ -80,20 +88,31 @@ use cgrx_core::{ConfidenceClass, ResolverClass};
 use cgrx_languages::ts_imports::TsFileFacts;
 use cgrx_languages::{Span, pack_for_path};
 use cgrx_retrieval::{
-    Candidate, CandidateProvenance, CandidateSet, GraphArc, GraphDocumentRef, RetrievalEngine,
-    ScoreComponents, path_in_scope,
+    Bm25Cache, Candidate, CandidateProvenance, CandidateSet, GraphArc, GraphDocumentRef,
+    RetrievalEngine, ScoreComponents, path_in_scope,
 };
 use cgrx_store::{GenerationReader, GenerationWriter};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 // Read the effective dependency policy, not just this crate's feature flag:
-// Cargo may enable cgrx-languages/experimental-php through another workspace member.
-const EXTRACTION_REVISION: u32 = if cgrx_languages::EXPERIMENTAL_PHP_ENABLED {
-    31
-} else {
-    29
-};
+// Cargo may enable an experimental language through another workspace member.
+// Revisions through 171 predate default Swift declarations and exact Swift
+// dependencies. The legacy Swift feature is now a no-op: use one disjoint
+// revision block for its default and feature-unified builds so old caches are
+// rebuilt even when HEAD and source bytes are unchanged. Advance the base
+// by 16 for a new policy: PHP/JavaScript offsets must never overlap an older
+// policy family.
+const EXTRACTION_REVISION: u32 =
+    253 + if cgrx_languages::EXPERIMENTAL_PHP_ENABLED {
+        2
+    } else {
+        0
+    } + if cgrx_languages::EXPERIMENTAL_JAVASCRIPT_ENABLED {
+        8
+    } else {
+        0
+    };
 
 const NODES_SEGMENT: &str = "nodes.seg";
 const EDGES_SEGMENT: &str = "edges.seg";
@@ -102,7 +121,7 @@ const TERMS_MARKER: &[u8] = b"CGRXTERMS1";
 #[allow(dead_code)]
 const GRAPH_FANOUT_LIMIT: usize = 8;
 #[allow(dead_code)]
-const UNTRACKED_SCAN_ENTRY_LIMIT: usize = 64;
+const UNTRACKED_SCAN_ENTRY_LIMIT: usize = 8192;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct IndexReport {
@@ -202,6 +221,8 @@ struct StoredDocument {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     rust_self_target: Option<Box<RustSelfTarget>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    rust_parameter_target: Option<Box<RustParameterTarget>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     ts_lexical_target: Option<TsLexicalTarget>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     ts_constructor_target: Option<TsLexicalTarget>,
@@ -258,6 +279,8 @@ struct StoredIndex {
     cargo_manifests: BTreeMap<String, String>,
     #[serde(default)]
     rust_files: BTreeMap<String, cgrx_languages::RustFileFacts>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    python_files: BTreeMap<String, StoredPythonFileFacts>,
     #[serde(default)]
     ts_files: BTreeMap<String, StoredTsFileFacts>,
     #[serde(default)]
@@ -271,6 +294,10 @@ struct StoredIndex {
     indexed_files: u64,
     #[serde(default)]
     scip_edges: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    scip_resolution_revision: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    scip_input_hash: Option<Hash32>,
     path_hashes: BTreeMap<String, Hash32>,
     documents: Vec<StoredDocument>,
     arcs: Vec<StoredArc>,
@@ -281,12 +308,37 @@ struct StoredIndex {
     coverage: CoverageMetadata,
 }
 
+impl StoredIndex {
+    fn scip_policy_is_current(&self) -> bool {
+        match self.scip_resolution_revision {
+            Some(revision) => {
+                revision == scip_resolution::RESOLUTION_REVISION && self.scip_input_hash.is_some()
+            }
+            None => {
+                self.scip_input_hash.is_none()
+                    && self.scip_edges == 0
+                    && !self.arcs.iter().any(|arc| {
+                        arc.evidence.as_ref().is_some_and(|evidence| {
+                            evidence.resolver == cgrx_core::ResolverClass::ScipConfirmed
+                        })
+                    })
+            }
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 struct StoredTsFileFacts {
     source_hash: Hash32,
     facts: TsFileFacts,
     #[serde(default)]
     inventory_only: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+struct StoredPythonFileFacts {
+    source_hash: Hash32,
+    facts: cgrx_languages::PythonFileFacts,
 }
 
 pub struct Runtime {
@@ -296,6 +348,7 @@ pub struct Runtime {
     stored: StoredIndex,
     similarity_background: refactors::SimilarityBackground,
     architecture_cache: RwLock<BTreeMap<String, Value>>,
+    bm25_cache: Bm25Cache,
     base_snapshot: RepoSnapshot,
     base_path_hashes: BTreeMap<String, Hash32>,
     changed_paths: BTreeSet<String>,
@@ -304,6 +357,7 @@ pub struct Runtime {
     ts_verified_fingerprints: BTreeMap<String, SourceFingerprint>,
     base_traversal_truncated: bool,
     untracked_scan_cache: Option<UntrackedScanCache>,
+    swift_compiler: swift_compiler::CompilerCache,
 }
 
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -347,6 +401,7 @@ fn open_current_report(state: &Path, snapshot: &RepoSnapshot) -> Option<IndexRep
     let stored: StoredIndex = serde_json::from_slice(&bytes).ok()?;
     if stored.snapshot != *snapshot
         || stored.extraction_revision != EXTRACTION_REVISION
+        || !stored.scip_policy_is_current()
         || !stored.similarity_index.is_current()
         || reader.read_segment(TERMS_SEGMENT).ok().as_deref() != Some(TERMS_MARKER)
     {
@@ -361,6 +416,17 @@ fn open_current_report(state: &Path, snapshot: &RepoSnapshot) -> Option<IndexRep
 }
 
 impl Runtime {
+    /// The exact SCIP input accepted by this base snapshot, when supplied.
+    #[must_use]
+    pub const fn scip_input_hash(&self) -> Option<Hash32> {
+        self.stored.scip_input_hash
+    }
+
+    /// Hash a size-checked SCIP artifact for managed refresh decisions.
+    pub fn scip_file_hash(path: &Path) -> Result<Hash32, RuntimeError> {
+        scip_resolution::read_index(path).map(|bytes| Hash32(*blake3::hash(&bytes).as_bytes()))
+    }
+
     #[must_use]
     pub const fn snapshot(&self) -> &RepoSnapshot {
         &self.stored.snapshot
@@ -380,6 +446,10 @@ impl Runtime {
         self.stored.arcs.len()
     }
 
+    pub fn swift_compiler_status(&self) -> Value {
+        self.swift_compiler.status()
+    }
+
     pub fn search_graph(
         &self,
         query: &str,
@@ -397,11 +467,25 @@ impl Runtime {
         language: Option<&str>,
         include_body: bool,
     ) -> Result<Value, RuntimeError> {
+        self.search_graph_page(query, scope, limit, 0, language, include_body)
+    }
+
+    /// Discover a bounded page of symbols in the current index snapshot.
+    pub fn search_graph_page(
+        &self,
+        query: &str,
+        scope: &Scope,
+        limit: usize,
+        offset: usize,
+        language: Option<&str>,
+        include_body: bool,
+    ) -> Result<Value, RuntimeError> {
         let language = language.map(str::trim);
         if language.is_some_and(|language| {
             !matches!(
                 language,
                 "typescript"
+                    | "javascript"
                     | "go"
                     | "java"
                     | "python"
@@ -419,10 +503,17 @@ impl Runtime {
         }) {
             return Err(RuntimeError::new(
                 "cgrx.invalid_arguments",
-                "language must be one of typescript, go, java, python, rust, c, cpp, csharp, ruby, php, swift, scala, elixir, or kotlin",
+                "language must be one of typescript, javascript, go, java, python, rust, c, cpp, csharp, ruby, php, swift, scala, elixir, or kotlin",
             ));
         }
-        self.search_graph_with_matcher(query, scope, limit, language, include_body, path_in_scope)
+        self.search_graph_page_with_matcher(
+            query,
+            scope,
+            (limit, offset),
+            language,
+            include_body,
+            path_in_scope,
+        )
     }
 
     pub fn check_index_coverage(
@@ -632,7 +723,7 @@ impl Runtime {
                             relative.clone(),
                             StoredTsFileFacts {
                                 source_hash: hash,
-                                facts: TsFileFacts::default(),
+                                facts: ts_helpers::inventory_facts(&relative, &source),
                                 inventory_only: true,
                             },
                         );
@@ -671,7 +762,7 @@ impl Runtime {
                 relative_path
                     .extension()
                     .and_then(|extension| extension.to_str()),
-                Some("ts" | "tsx")
+                Some("ts" | "tsx" | "js" | "mjs" | "cjs")
             ) && self
                 .stored
                 .ts_files
@@ -703,6 +794,12 @@ impl Runtime {
                 .insert(relative.clone(), source_hash);
             if let Some(facts) = extracted.rust_file {
                 self.stored.rust_files.insert(relative.clone(), facts);
+            }
+            if let Some(facts) = extracted.python_file {
+                self.stored.python_files.insert(
+                    relative.clone(),
+                    StoredPythonFileFacts { source_hash, facts },
+                );
             }
             if let Some(facts) = extracted.ts_file {
                 self.stored.ts_files.insert(
@@ -749,25 +846,36 @@ impl Runtime {
             requires_normalize = true;
         }
         self.refresh_input_bytes = refresh_input_bytes;
+        requires_normalize |= self.swift_compiler.refresh(&root, &self.stored.path_hashes);
         if !requires_normalize {
             return Ok(false);
         }
         self.stored.arcs = rebuild_refreshed_arcs(&self.stored);
+        self.swift_compiler.apply(&mut self.stored);
         normalize_stored(&mut self.stored);
+        self.bm25_cache.clear();
         self.stored.similarity_index = Default::default();
         self.changed_paths = changed_paths(&self.base_path_hashes, &self.stored.path_hashes);
-        self.stored.snapshot = if self.changed_paths.is_empty() {
-            self.base_snapshot.clone()
-        } else {
-            RepoSnapshot {
-                repo_revision: self.base_snapshot.repo_revision.clone(),
-                working_tree_digest: working_tree_digest(
-                    &self.changed_paths,
-                    &self.stored.path_hashes,
-                ),
-                graph_generation: self.base_snapshot.graph_generation,
-            }
-        };
+        self.stored.snapshot =
+            if self.changed_paths.is_empty() && self.swift_compiler.valid_hash.is_none() {
+                self.base_snapshot.clone()
+            } else {
+                RepoSnapshot {
+                    repo_revision: self.base_snapshot.repo_revision.clone(),
+                    working_tree_digest: working_tree_digest(
+                        &self.changed_paths,
+                        &self.stored.path_hashes,
+                    ),
+                    graph_generation: self.base_snapshot.graph_generation,
+                }
+            };
+        if let Some(hash) = self.swift_compiler.valid_hash {
+            let mut digest = blake3::Hasher::new();
+            digest.update(b"cgrx-swift-compiler-v1");
+            digest.update(&self.stored.snapshot.working_tree_digest.0);
+            digest.update(&hash.0);
+            self.stored.snapshot.working_tree_digest = Hash32(*digest.finalize().as_bytes());
+        }
         self.stored.indexed_files = self.stored.path_hashes.len() as u64;
         if let Ok(mut cache) = self.architecture_cache.write() {
             cache.clear();
@@ -804,13 +912,23 @@ impl Runtime {
         Self::index_source(root, state, true, Some(scip_index))
     }
 
+    /// Import only the compiler input observed by the managed refresh.
+    pub fn index_committed_head_with_scip_if_hash(
+        root: &Path,
+        state: &Path,
+        scip_index: &Path,
+        expected_hash: Hash32,
+    ) -> Result<IndexReport, RuntimeError> {
+        index_helpers::index_source(root, state, true, Some(scip_index), Some(expected_hash))
+    }
+
     fn index_source(
         root: &Path,
         state: &Path,
         committed_head: bool,
         scip_index: Option<&Path>,
     ) -> Result<IndexReport, RuntimeError> {
-        index_helpers::index_source(root, state, committed_head, scip_index)
+        index_helpers::index_source(root, state, committed_head, scip_index, None)
     }
 
     pub fn open(state: &Path) -> Result<Self, RuntimeError> {
@@ -836,6 +954,12 @@ impl Runtime {
                 "stored extraction revision is obsolete; reindex source before opening",
             ));
         }
+        if !stored.scip_policy_is_current() {
+            return Err(RuntimeError::new(
+                "scip_resolution_revision",
+                "stored SCIP policy or input identity is obsolete; reindex source with a current SCIP index",
+            ));
+        }
         normalize_stored(&mut stored);
         if !stored.similarity_index.is_current() {
             refactors::rebuild_similarity_index(&mut stored);
@@ -854,12 +978,14 @@ impl Runtime {
             stored,
             similarity_background,
             architecture_cache: RwLock::new(BTreeMap::new()),
+            bm25_cache: Bm25Cache::default(),
             changed_paths: BTreeSet::new(),
             refresh_input_bytes: 0,
             source_fingerprints: BTreeMap::new(),
             ts_verified_fingerprints: BTreeMap::new(),
             base_traversal_truncated,
             untracked_scan_cache: None,
+            swift_compiler: Default::default(),
         })
     }
 
@@ -905,7 +1031,7 @@ impl Runtime {
             })
             .collect::<Vec<_>>();
         let mut candidates = RetrievalEngine::default()
-            .retrieve_scoped_refs(request, &graph_documents, &scoped_arcs)
+            .retrieve_scoped_refs_cached(request, &graph_documents, &scoped_arcs, &self.bm25_cache)
             .map_err(|error| RuntimeError::new("retrieve", error.to_string()))?;
         let exact_symbols = exact_symbol_ids(&request.task, &scoped_documents);
         let intent_evidence = if exact_symbols.is_empty() {

@@ -213,7 +213,7 @@ fn project_context(root: &Path) -> Project {
     };
     if let Some(source) = read_manifest(root, "Cargo.toml", &mut project) {
         project.languages.insert("Rust".to_owned());
-        match source.parse::<toml::Value>() {
+        match toml::from_str::<toml::Value>(&source) {
             Ok(document) => {
                 cargo_dependencies(&document, &mut project);
                 if let Some(members) = document
@@ -230,7 +230,7 @@ fn project_context(root: &Path) -> Project {
                         }
                         let relative = format!("{member}/Cargo.toml");
                         if let Some(source) = read_manifest(root, &relative, &mut project) {
-                            match source.parse::<toml::Value>() {
+                            match toml::from_str::<toml::Value>(&source) {
                                 Ok(document) => cargo_dependencies(&document, &mut project),
                                 Err(_) => project.gaps.push(format!("invalid_manifest:{relative}")),
                             }
@@ -278,7 +278,7 @@ fn project_context(root: &Path) -> Project {
     }
     if let Some(source) = read_manifest(root, "pyproject.toml", &mut project) {
         project.languages.insert("Python".to_owned());
-        match source.parse::<toml::Value>() {
+        match toml::from_str::<toml::Value>(&source) {
             Ok(document) => {
                 if let Some(deps) = document
                     .get("project")

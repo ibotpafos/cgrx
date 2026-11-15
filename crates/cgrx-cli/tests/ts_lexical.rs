@@ -380,10 +380,14 @@ fn ts_lexical_metadata_is_compact_and_proofs_are_present_only_on_exact_calls() {
     let stored = fixture.stored();
     assert_eq!(
         stored["extraction_revision"],
-        if cgrx_languages::EXPERIMENTAL_PHP_ENABLED {
-            31
+        253 + if cgrx_languages::EXPERIMENTAL_PHP_ENABLED {
+            2
         } else {
-            29
+            0
+        } + if cgrx_languages::EXPERIMENTAL_JAVASCRIPT_ENABLED {
+            8
+        } else {
+            0
         }
     );
     let docs = stored["documents"].as_array().unwrap();

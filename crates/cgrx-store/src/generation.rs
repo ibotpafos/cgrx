@@ -321,6 +321,13 @@ impl Drop for WriterLock {
 }
 
 pub(crate) fn acquire_writer_lock(root: &Path) -> io::Result<WriterLock> {
+    acquire_writer_lock_with_timeout(root, std::time::Duration::ZERO)
+}
+
+pub(crate) fn acquire_writer_lock_with_timeout(
+    root: &Path,
+    timeout: std::time::Duration,
+) -> io::Result<WriterLock> {
     let directory = root.join(".cgrx");
     fs::create_dir_all(&directory)?;
     let file = OpenOptions::new()
@@ -329,7 +336,21 @@ pub(crate) fn acquire_writer_lock(root: &Path) -> io::Result<WriterLock> {
         .create(true)
         .truncate(false)
         .open(directory.join("WRITER.lock"))?;
-    file.try_lock().map_err(io::Error::from)?;
+    let started = std::time::Instant::now();
+    loop {
+        match file.try_lock().map_err(io::Error::from) {
+            Ok(()) => break,
+            Err(error)
+                if error.kind() == io::ErrorKind::WouldBlock && started.elapsed() < timeout =>
+            {
+                std::thread::sleep(
+                    std::time::Duration::from_millis(10)
+                        .min(timeout.saturating_sub(started.elapsed())),
+                );
+            }
+            Err(error) => return Err(error),
+        }
+    }
     Ok(WriterLock {
         file,
         owner_pid: std::process::id(),
@@ -564,10 +585,40 @@ mod writer_lock_fork_tests {
     }
     #[test]
     fn writer_lock_fork_parent_drop_releases_with_live_inherited_fd() {
-        fork_case(false);
+        isolated_fork_case(
+            "writer_lock_fork_parent_drop_releases_with_live_inherited_fd",
+            false,
+        );
     }
     #[test]
     fn writer_lock_fork_child_drop_preserves_parent_lock() {
-        fork_case(true);
+        isolated_fork_case("writer_lock_fork_child_drop_preserves_parent_lock", true);
+    }
+
+    fn isolated_fork_case(test: &str, child_drops_first: bool) {
+        if std::env::var("CGRX_TEST_ISOLATED_FORK_CASE").as_deref() == Ok(test) {
+            fork_case(child_drops_first);
+            return;
+        }
+        // exec closes inherited descriptors before this child runs fork(). A raw
+        // fork in the shared harness can capture another test's Tantivy writer.
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                &format!("generation::writer_lock_fork_tests::{test}"),
+                "--test-threads=1",
+            ])
+            .env("CGRX_TEST_ISOLATED_FORK_CASE", test)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "isolated fork test failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(
+            String::from_utf8_lossy(&output.stdout).contains("1 passed; 0 failed"),
+            "isolated test did not execute"
+        );
     }
 }

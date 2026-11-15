@@ -142,9 +142,12 @@ def bounded_process(argv, timeout, payload=b"", environment=None):
 
 
 def probe_environment(directory):
+    # Identity checks need the complete revision, which compact tags abbreviate.
+    # Request full payloads only in these owned diagnostic subprocesses.
     environment = os.environ.copy()
     environment.update(CGRX_INSTALL_PROBE="1", CGRX_CLIENT="doctor-cgrx",
-                       CGRX_LOG_DIR=str(Path(directory) / "usage"))
+                       CGRX_LOG_DIR=str(Path(directory) / "usage"),
+                       CGRX_RESPONSE_PROFILE="full")
     return environment
 
 
@@ -243,7 +246,11 @@ def revision_valid(value):
     return isinstance(value,str) and re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}",value) is not None
 
 
-def summarize_rpc(raw, drift, expected_repo=None, expected_revision=None):
+def build_id_valid(value):
+    return isinstance(value,str) and re.fullmatch(r"[0-9a-fA-F]{32}",value) is not None
+
+
+def summarize_rpc(raw, drift, expected_repo=None, expected_revision=None, expected_build_id=None):
     initialize = raw["responses"].get(1, {})
     status = raw["responses"].get(2, {})
     initialize_error, status_error = projected_error(initialize), projected_error(status)
@@ -263,6 +270,17 @@ def summarize_rpc(raw, drift, expected_repo=None, expected_revision=None):
     generation_valid = type(generation) is int and 0 <= generation < 2**64
     freshness = structured.get("freshness")
     freshness_valid = isinstance(freshness,str) and freshness in ("WATCHED","PINNED")
+    identity = object_value(structured.get("server"))
+    identity_valid = (version_valid and identity.get("name") == "cgrx" and identity.get("version") == version
+                      and type(identity.get("pid")) is int and 0 < identity["pid"] < 2**32
+                      and "build_id" in identity
+                      and (identity["build_id"] is None or build_id_valid(identity["build_id"])))
+    if "server" in structured and not identity_valid:
+        drift.append({"code":"server_identity_invalid","action":"check bounded server identity fields"})
+    build_matches = (identity_valid and identity.get("build_id") == expected_build_id
+                     if expected_build_id is not None else None)
+    if build_matches is False:
+        drift.append({"code":"server_build_mismatch","action":"check the compiled build ID and restart the MCP client"})
     status_ok = ("error" not in status and status_result.get("isError",False) is False
                  and freshness_valid and matched_revision and generation_valid
                  and expected_repo is not None and structured.get("repo") == expected_repo)
@@ -274,7 +292,9 @@ def summarize_rpc(raw, drift, expected_repo=None, expected_revision=None):
         "status":{"ok":bool(status_ok), "error_code":status_error["error_code"] if status_error else None,
                   "freshness":freshness if freshness_valid else None,
                   "repo_revision":revision if matched_revision else None,
-                  "graph_generation":generation if generation_valid else None}}
+                  "graph_generation":generation if generation_valid else None,
+                  "server":{key:identity[key] for key in ("name","version","pid","build_id")} if identity_valid else None,
+                  "server_build_matches":build_matches}}
     process = raw["process"]
     if not process_ok(process):
         drift.append({"code":"jsonrpc_timeout" if process.get("timed_out") else "jsonrpc_process_failed",
@@ -355,6 +375,10 @@ def main(argv=None):
                 "command_sha256": hashlib.sha256(command.encode()).hexdigest(),
                 "hash_matches": recorded_hash == executable["sha256"],
             }
+            if "build_id" in raw_metadata:
+                if not build_id_valid(raw_metadata["build_id"]):
+                    raise ValueError("invalid build identifier")
+                metadata["build_id"] = raw_metadata["build_id"]
             if not metadata["hash_matches"]:
                 drift.append({
                     "code": "metadata_hash_mismatch",
@@ -373,7 +397,8 @@ def main(argv=None):
     version = probe_version(launcher["canonical"], args.timeout)
     if not process_ok(version) or version["value"] is None:
         drift.append({"code":"version_probe_failed","action":"check bounded version probe"})
-    rpc = summarize_rpc(run_rpc(launcher["canonical"], str(repo), args.timeout), drift, str(repo), revision)
+    rpc = summarize_rpc(run_rpc(launcher["canonical"], str(repo), args.timeout), drift, str(repo), revision,
+                        metadata.get("build_id") if metadata else None)
     try:
         stable = (git_identity(repo,args.timeout) == revision and
                   all(sha256(Path(item["canonical"])) == item["sha256"] for item in (executable,launcher)))

@@ -1,0 +1,15 @@
+{
+  "provider": "rust-analyzer 0.3.3073-standalone (65ac641199 2026-10-04)",
+  "release": "2026-10-05",
+  "provider_binary_sha256": "6e232bb1835fee8106ee985d90702e2cef9647392b28b91dcfa2cae17a975983",
+  "source_a_revision": "a6acb518dfa1dbf123416a07521199bea4414254",
+  "source_b_revision": "f9572e905eb29a7d81d86c37d79ea760ad53a31f",
+  "source_a_sha256": "14eede924445f200c2757dd2b60a02d986b1396fa4eab5c427fb27484881d900",
+  "source_b_sha256": "85f6c3232c7a7bd57c2b2937636a0e894e28da8eaa8019c65a8280294994fd52",
+  "scip_a_sha256": "6a5a43072a1643e90aef28c18e4757db707166cf9aa197ed267bb7413467d250",
+  "scip_b_sha256": "334f028dd3be53400ef93f02f3eb0b015172855feda540fc061170ee37759918",
+  "unedited_provider_output": true,
+  "both_sources_compiler_checked": true,
+  "source_b_change": "caller(worker: A) -> caller(worker: B), same byte length",
+  "provider_limit": "Offline sysroot metadata has r-efi-alloc warning; reduced fixture has no external dependencies. No whole-project or complete sysroot coverage claim."
+}

@@ -4,7 +4,7 @@
 //! source collection, watch scan paths, index normalization, and qualified call
 //! gap refreshing.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
@@ -23,12 +23,14 @@ use super::{
 };
 
 #[allow(dead_code)]
-const UNTRACKED_SCAN_ENTRY_LIMIT: usize = 64;
+const UNTRACKED_SCAN_ENTRY_LIMIT: usize = 8192;
+const UNTRACKED_OPEN_DIRECTORY_LIMIT: usize = 32;
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(super) struct QueryIndex {
     ready: bool,
     document_indices_by_path: BTreeMap<String, Vec<usize>>,
+    import_document_indices_by_path: BTreeMap<String, Vec<usize>>,
     syntax_documents_by_node: BTreeMap<u64, Vec<usize>>,
     syntax_documents_by_name: BTreeMap<String, Vec<usize>>,
     syntax_documents_by_folded_name: BTreeMap<String, Vec<usize>>,
@@ -40,6 +42,7 @@ pub(super) struct QueryIndex {
 
 pub(super) fn rebuild_query_index(stored: &mut StoredIndex) {
     let mut document_indices_by_path = BTreeMap::<String, Vec<usize>>::new();
+    let mut import_document_indices_by_path = BTreeMap::<String, Vec<usize>>::new();
     let mut syntax_documents_by_node = BTreeMap::<u64, Vec<usize>>::new();
     let mut syntax_documents_by_name = BTreeMap::<String, Vec<usize>>::new();
     let mut syntax_documents_by_folded_name = BTreeMap::<String, Vec<usize>>::new();
@@ -51,6 +54,13 @@ pub(super) fn rebuild_query_index(stored: &mut StoredIndex) {
             .or_default()
             .push(index);
         if document.provenance != "SYNTAX" {
+            if named_import_document(document) {
+                import_document_indices_by_path
+                    .entry(document.path.clone())
+                    .or_default()
+                    .push(index);
+                live_nodes.insert(document.node_id);
+            }
             continue;
         }
         syntax_documents_by_node
@@ -97,6 +107,7 @@ pub(super) fn rebuild_query_index(stored: &mut StoredIndex) {
     stored.query_index = QueryIndex {
         ready: true,
         document_indices_by_path,
+        import_document_indices_by_path,
         syntax_documents_by_node,
         syntax_documents_by_name,
         syntax_documents_by_folded_name,
@@ -105,6 +116,14 @@ pub(super) fn rebuild_query_index(stored: &mut StoredIndex) {
         incoming_definitive_arcs,
         outgoing_definitive_arcs,
     };
+}
+
+fn named_import_document(document: &StoredDocument) -> bool {
+    document.provenance == "IMPORTS"
+        && document
+            .semantic_tags
+            .iter()
+            .any(|tag| matches!(tag.as_str(), "TS_IMPORT_BINDING" | "PY_IMPORT_BINDING"))
 }
 
 pub(super) fn crosses_nested_git_boundary(
@@ -135,11 +154,26 @@ pub(super) fn expand_untracked_directories(
     root: &Path,
     discovered: BTreeSet<String>,
 ) -> Result<UntrackedScanCache, RuntimeError> {
+    expand_untracked_with_budget(root, discovered, UNTRACKED_SCAN_ENTRY_LIMIT)
+}
+
+enum UntrackedScanWork {
+    Directory(PathBuf),
+    Entries(fs::ReadDir),
+}
+
+fn expand_untracked_with_budget(
+    root: &Path,
+    discovered: BTreeSet<String>,
+    mut remaining: usize,
+) -> Result<UntrackedScanCache, RuntimeError> {
     let mut expanded = BTreeSet::new();
     let mut watched_metadata = BTreeMap::new();
     watch_scan_path(root, Path::new(".gitignore"), &mut watched_metadata)?;
     let mut ignored = GitIgnoreMatcher::spawn(root)?;
-    let mut remaining = UNTRACKED_SCAN_ENTRY_LIMIT;
+    let mut pending = VecDeque::new();
+    let mut deferred = VecDeque::new();
+    let mut open_directories = 0;
     let mut truncated = false;
     for relative in &discovered {
         let absolute = root.join(relative);
@@ -148,56 +182,49 @@ pub(super) fn expand_untracked_directories(
             continue;
         }
         if absolute.is_dir() {
-            if remaining == 0 {
-                truncated = true;
-                continue;
-            }
-            truncated |= collect_untracked_sources(
-                root,
-                &absolute,
-                &mut ignored,
-                &mut remaining,
-                &mut watched_metadata,
-                &mut expanded,
-            )?;
+            pending.push_back(UntrackedScanWork::Directory(absolute));
         } else {
             expanded.insert(relative.clone());
         }
     }
-    ignored.finish()?;
-    Ok(UntrackedScanCache {
-        discovered,
-        expanded,
-        watched_metadata,
-        truncated,
-    })
-}
-
-pub(super) fn collect_untracked_sources(
-    root: &Path,
-    directory: &Path,
-    ignored: &mut GitIgnoreMatcher,
-    remaining: &mut usize,
-    watched_metadata: &mut BTreeMap<String, SourceFingerprint>,
-    paths: &mut BTreeSet<String>,
-) -> Result<bool, RuntimeError> {
-    let relative_directory = directory
-        .strip_prefix(root)
-        .map_err(|error| RuntimeError::new("path", error.to_string()))?;
-    watch_scan_path(root, relative_directory, watched_metadata)?;
-    if directory.join(".git").exists() {
-        return Ok(false);
-    }
-    let mut entries = fs::read_dir(directory)
-        .map_err(|error| RuntimeError::new("source_read", error.to_string()))?
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|error| RuntimeError::new("source_read", error.to_string()))?;
-    entries.sort_by_key(|entry| entry.file_name());
-    for entry in entries {
-        let Some(next_remaining) = remaining.checked_sub(1) else {
-            return Ok(true);
+    // Share the same hard entry budget across directories. A generated tree
+    // must not consume it before sibling source directories get a turn.
+    while let Some(work) = pending.pop_front() {
+        if remaining == 0 {
+            truncated = true;
+            break;
+        }
+        let mut entries = match work {
+            UntrackedScanWork::Directory(directory) => {
+                if open_directories == UNTRACKED_OPEN_DIRECTORY_LIMIT {
+                    deferred.push_back(directory);
+                    continue;
+                }
+                if let Some(entries) =
+                    open_untracked_directory(root, &directory, &mut watched_metadata)?
+                {
+                    open_directories += 1;
+                    pending.push_back(UntrackedScanWork::Entries(entries));
+                } else if let Some(directory) = deferred.pop_front() {
+                    pending.push_front(UntrackedScanWork::Directory(directory));
+                }
+                continue;
+            }
+            UntrackedScanWork::Entries(entries) => entries,
         };
-        *remaining = next_remaining;
+        let Some(entry) = entries.next() else {
+            drop(entries);
+            open_directories -= 1;
+            if let Some(directory) = deferred.pop_front() {
+                pending.push_front(UntrackedScanWork::Directory(directory));
+            }
+            continue;
+        };
+        remaining -= 1;
+        // Keep enumeration lazy: materializing/sorting the full directory
+        // would bypass the budget before a single entry had been charged.
+        pending.push_back(UntrackedScanWork::Entries(entries));
+        let entry = entry.map_err(|error| RuntimeError::new("source_read", error.to_string()))?;
         let file_type = entry
             .file_type()
             .map_err(|error| RuntimeError::new("source_read", error.to_string()))?;
@@ -213,31 +240,175 @@ pub(super) fn collect_untracked_sources(
             .ok_or_else(|| RuntimeError::new("path", "source path is not UTF-8"))?
             .replace('\\', "/");
         if entry.file_name() == ".gitignore" {
-            watch_scan_path(root, relative, watched_metadata)?;
+            watch_scan_path(root, relative, &mut watched_metadata)?;
         }
         if ignored.is_ignored(&portable)? {
             continue;
         }
         if file_type.is_dir() {
-            if collect_untracked_sources(root, &path, ignored, remaining, watched_metadata, paths)?
-            {
-                return Ok(true);
-            }
-            continue;
-        }
-        if !file_type.is_file() {
-            continue;
-        }
-        if pack_for_path(relative).is_none()
-            && relative
-                .file_name()
-                .is_none_or(|name| name != "go.mod" && name != "Cargo.toml")
+            pending.push_back(UntrackedScanWork::Directory(path));
+        } else if file_type.is_file()
+            && (pack_for_path(relative).is_some()
+                || relative
+                    .file_name()
+                    .is_some_and(|name| name == "go.mod" || name == "Cargo.toml"))
         {
-            continue;
+            expanded.insert(portable);
         }
-        paths.insert(portable);
     }
-    Ok(false)
+    ignored.finish()?;
+    Ok(UntrackedScanCache {
+        discovered,
+        expanded,
+        watched_metadata,
+        truncated,
+    })
+}
+
+fn open_untracked_directory(
+    root: &Path,
+    directory: &Path,
+    watched_metadata: &mut BTreeMap<String, SourceFingerprint>,
+) -> Result<Option<fs::ReadDir>, RuntimeError> {
+    let relative_directory = directory
+        .strip_prefix(root)
+        .map_err(|error| RuntimeError::new("path", error.to_string()))?;
+    watch_scan_path(root, relative_directory, watched_metadata)?;
+    if directory.join(".git").exists() {
+        return Ok(None);
+    }
+    // The bounded prefix follows filesystem order; the final set stays sorted.
+    fs::read_dir(directory)
+        .map(Some)
+        .map_err(|error| RuntimeError::new("source_read", error.to_string()))
+}
+
+#[cfg(test)]
+mod untracked_scan_tests {
+    use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+    struct Fixture(PathBuf);
+    impl Fixture {
+        fn new() -> Self {
+            let nonce = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos();
+            let root = std::env::temp_dir().join(format!(
+                "cgrx-untracked-{}-{nonce}-{}",
+                std::process::id(),
+                SEQUENCE.fetch_add(1, Ordering::Relaxed)
+            ));
+            fs::create_dir(&root).unwrap();
+            assert!(
+                Command::new("git")
+                    .args(["init", "-q"])
+                    .current_dir(&root)
+                    .status()
+                    .unwrap()
+                    .success()
+            );
+            Self(root)
+        }
+    }
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn generated_entries_cannot_starve_sibling_sources_within_the_same_budget() {
+        let f = Fixture::new();
+        fs::create_dir(f.0.join("artifacts")).unwrap();
+        fs::create_dir(f.0.join("src")).unwrap();
+        for index in 0..20 {
+            fs::write(f.0.join(format!("artifacts/{index:02}.json")), "{}").unwrap();
+        }
+        fs::write(f.0.join("src/main.cpp"), "void target() {}\n").unwrap();
+        let discovered = BTreeSet::from(["artifacts/".to_owned(), "src/".to_owned()]);
+        let small = expand_untracked_with_budget(&f.0, discovered.clone(), 3).unwrap();
+        assert_eq!(small.expanded, BTreeSet::from(["src/main.cpp".to_owned()]));
+        assert!(
+            small.truncated,
+            "unvisited artifacts remain explicitly partial"
+        );
+        assert!(small.is_valid(&f.0, &discovered));
+        let complete = expand_untracked_with_budget(&f.0, discovered, 64).unwrap();
+        assert_eq!(complete.expanded, small.expanded);
+        assert!(!complete.truncated);
+    }
+
+    #[test]
+    fn more_directories_than_open_limit_are_deferred_without_losing_sources() {
+        let f = Fixture::new();
+        let mut discovered = BTreeSet::new();
+        let mut expected = BTreeSet::new();
+        for index in 0..UNTRACKED_OPEN_DIRECTORY_LIMIT * 3 {
+            let directory = format!("dir-{index:03}");
+            fs::create_dir(f.0.join(&directory)).unwrap();
+            let source = format!("{directory}/main.cpp");
+            fs::write(f.0.join(&source), "void target() {}\n").unwrap();
+            discovered.insert(format!("{directory}/"));
+            expected.insert(source);
+        }
+        let scanned = expand_untracked_with_budget(&f.0, discovered, 512).unwrap();
+        assert_eq!(scanned.expanded, expected);
+        assert!(
+            !scanned.truncated,
+            "the handle cap must defer rather than omit directories"
+        );
+    }
+
+    #[test]
+    fn skipped_nested_repositories_cannot_strand_deferred_sources() {
+        let f = Fixture::new();
+        let mut discovered = BTreeSet::new();
+        for index in 0..UNTRACKED_OPEN_DIRECTORY_LIMIT {
+            let directory = format!("a-empty-{index:03}");
+            fs::create_dir(f.0.join(&directory)).unwrap();
+            discovered.insert(format!("{directory}/"));
+        }
+        for index in 0..UNTRACKED_OPEN_DIRECTORY_LIMIT * 3 {
+            let directory = format!("b-nested-{index:03}");
+            fs::create_dir_all(f.0.join(&directory).join(".git")).unwrap();
+            discovered.insert(format!("{directory}/"));
+        }
+        fs::create_dir(f.0.join("z-src")).unwrap();
+        fs::write(f.0.join("z-src/main.cpp"), "void target() {}\n").unwrap();
+        discovered.insert("z-src/".to_owned());
+        let scanned = expand_untracked_with_budget(&f.0, discovered, 512).unwrap();
+        assert_eq!(
+            scanned.expanded,
+            BTreeSet::from(["z-src/main.cpp".to_owned()])
+        );
+        assert!(!scanned.truncated);
+    }
+
+    #[test]
+    fn fair_scan_preserves_ignore_symlink_and_nested_repository_boundaries() {
+        let f = Fixture::new();
+        fs::create_dir(f.0.join("src")).unwrap();
+        fs::write(f.0.join("src/main.cpp"), "void target() {}\n").unwrap();
+        fs::write(f.0.join("src/ignored.cpp"), "void ignored() {}\n").unwrap();
+        fs::write(f.0.join(".gitignore"), "src/ignored.cpp\n").unwrap();
+        fs::create_dir_all(f.0.join("src/nested/.git")).unwrap();
+        fs::write(f.0.join("src/nested/child.cpp"), "void child() {}\n").unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink("main.cpp", f.0.join("src/alias.cpp")).unwrap();
+        let scanned =
+            expand_untracked_with_budget(&f.0, BTreeSet::from(["src/".to_owned()]), 64).unwrap();
+        assert_eq!(
+            scanned.expanded,
+            BTreeSet::from(["src/main.cpp".to_owned()])
+        );
+        assert!(!scanned.truncated);
+        fs::write(f.0.join(".gitignore"), "src/main.cpp\n").unwrap();
+        assert!(!scanned.is_valid(&f.0, &scanned.discovered));
+    }
 }
 
 pub(super) fn watch_scan_path(
@@ -377,6 +548,7 @@ pub(super) fn normalize_stored(stored: &mut StoredIndex) {
         stored.arcs = migrated;
     }
     super::php_resolution::normalize(stored);
+    super::ts_dependency_resolution::normalize(stored);
     refresh_proof_gaps(stored);
     // QueryIndex stores positions into the normalized documents/arcs vectors.
     // Rebuild it unconditionally after every normalization pass so an early
@@ -388,6 +560,10 @@ pub(super) fn normalize_stored(stored: &mut StoredIndex) {
 // discharged only by the expected relation with a current source hash. The v1
 // coverage schema stores these binding gaps in its legacy dynamic_dispatch list.
 pub(super) fn refresh_proof_gaps(stored: &mut StoredIndex) {
+    super::python_import_resolution::normalize(stored);
+    if cgrx_languages::EXPERIMENTAL_JAVASCRIPT_ENABLED {
+        super::javascript_resolution::normalize(stored);
+    }
     let dynamic_sites: BTreeMap<_, _> = stored
         .documents
         .iter()
@@ -408,6 +584,9 @@ pub(super) fn refresh_proof_gaps(stored: &mut StoredIndex) {
         .iter()
         .filter(|doc| {
             doc.go_import_path.is_some()
+                || (doc.path.ends_with(".py")
+                    && doc.provenance == "CALLS"
+                    && doc.semantic_tags.iter().any(|tag| tag == "EXACT_CALL"))
                 || (matches!(doc.provenance.as_str(), "CALLS" | "REFERENCES")
                     && super::php_resolution::is_php_path(&doc.path))
                 || doc
@@ -418,10 +597,15 @@ pub(super) fn refresh_proof_gaps(stored: &mut StoredIndex) {
                     .semantic_tags
                     .iter()
                     .any(|tag| tag == "JAVA_CONSTRUCTOR_CALL")
-                || doc
-                    .semantic_tags
-                    .iter()
-                    .any(|tag| tag == "TS_IMPORT_CALL" || tag == "TS_IMPORT_REJECTED")
+                || doc.semantic_tags.iter().any(|tag| {
+                    matches!(
+                        tag.as_str(),
+                        "TS_IMPORT_CALL"
+                            | "TS_IMPORT_REJECTED"
+                            | "TS_IMPORT_BINDING"
+                            | "TS_DECLARATION_REFERENCE"
+                    )
+                })
                 || doc
                     .semantic_tags
                     .iter()
@@ -433,10 +617,10 @@ pub(super) fn refresh_proof_gaps(stored: &mut StoredIndex) {
         .map(|doc| {
             (
                 format!("{}:{}-{}", doc.path, doc.span_start, doc.span_end),
-                if doc.provenance == "REFERENCES" {
-                    cgrx_core::RelationKind::References
-                } else {
-                    cgrx_core::RelationKind::Calls
+                match doc.provenance.as_str() {
+                    "REFERENCES" => cgrx_core::RelationKind::References,
+                    "IMPORTS" => cgrx_core::RelationKind::Imports,
+                    _ => cgrx_core::RelationKind::Calls,
                 },
             )
         })
@@ -469,27 +653,37 @@ pub(super) fn refresh_proof_gaps(stored: &mut StoredIndex) {
             .filter(|site| !proven.contains(*site) && !dynamic_sites.contains_key(*site))
             .cloned(),
     );
-    let unresolved_dynamic: Vec<_> = dynamic_sites
+    let unresolved_dynamic = dynamic_sites
         .iter()
         .filter(|(location, _)| !proven.contains(*location))
+        .map(|(location, (path, start, end))| (path.as_str(), *start, *end, location.as_str()))
         .collect();
     stored.coverage.dynamic_dispatch.extend(
-        unresolved_dynamic
-            .iter()
-            .filter(|(_, (path, start, end))| {
-                !unresolved_dynamic
-                    .iter()
-                    .any(|(_, (outer_path, outer_start, outer_end))| {
-                        outer_path == path
-                            && (outer_start, outer_end) != (start, end)
-                            && outer_start <= start
-                            && outer_end >= end
-                    })
-            })
-            .map(|(location, _)| (*location).clone()),
+        outermost_dynamic_sites(unresolved_dynamic)
+            .into_iter()
+            .map(str::to_owned),
     );
     stored.coverage.dynamic_dispatch.sort();
     stored.coverage.dynamic_dispatch.dedup();
+}
+
+// Sort by file, then opening position, with enclosing spans first. A running
+// maximum end replaces comparing every unresolved site with every other site.
+fn outermost_dynamic_sites<'a>(mut sites: Vec<(&'a str, usize, usize, &'a str)>) -> Vec<&'a str> {
+    sites.sort_unstable_by_key(|(path, start, end, _)| (*path, *start, std::cmp::Reverse(*end)));
+    let mut outer: Option<(&str, usize, usize)> = None;
+    let mut result = Vec::new();
+    for (path, start, end, location) in sites {
+        let contained =
+            outer.is_some_and(|(p, s, e)| p == path && end <= e && (start, end) != (s, e));
+        if !contained {
+            result.push(location);
+        }
+        if outer.is_none_or(|(p, _, e)| p != path || end > e) {
+            outer = Some((path, start, end));
+        }
+    }
+    result
 }
 
 // Bounded by distinct consulted document/evidence/coverage paths, and dropped
@@ -536,6 +730,14 @@ impl<'a, F: FnMut(&str, &Scope) -> bool> ScopedQuery<'a, F> {
                 .map(|document| document.node_id)
                 .collect()
         };
+        if scope.relation_kinds.is_empty()
+            || scope
+                .relation_kinds
+                .contains(&cgrx_core::RelationKind::Imports)
+        {
+            let imports = query.import_documents(stored);
+            query.live.extend(imports.iter().map(|d| d.node_id));
+        }
         query
     }
 
@@ -599,6 +801,40 @@ impl<'a, F: FnMut(&str, &Scope) -> bool> ScopedQuery<'a, F> {
                 document.provenance == "SYNTAX" && self.contains_path(&document.path)
             })
             .collect()
+    }
+
+    fn import_documents<'s: 'a>(&mut self, stored: &'s StoredIndex) -> Vec<&'s StoredDocument> {
+        if stored.query_index.ready {
+            let mut result = Vec::new();
+            for (path, indices) in &stored.query_index.import_document_indices_by_path {
+                if self.contains_path(path) {
+                    result.extend(indices.iter().filter_map(|i| stored.documents.get(*i)));
+                }
+            }
+            result
+        } else {
+            stored
+                .documents
+                .iter()
+                .filter(|d| named_import_document(d) && self.contains_path(&d.path))
+                .collect()
+        }
+    }
+
+    pub(super) fn relationship_documents<'s: 'a>(
+        &mut self,
+        stored: &'s StoredIndex,
+    ) -> Vec<&'s StoredDocument> {
+        let mut documents = self.syntax_documents(stored);
+        if self.scope.relation_kinds.is_empty()
+            || self
+                .scope
+                .relation_kinds
+                .contains(&cgrx_core::RelationKind::Imports)
+        {
+            documents.extend(self.import_documents(stored));
+        }
+        documents
     }
 
     pub(super) fn matching_symbols<'s: 'a>(
@@ -736,6 +972,54 @@ impl<'a, F: FnMut(&str, &Scope) -> bool> ScopedQuery<'a, F> {
             .collect()
     }
 
+    /// Count distinct scoped relationships only for the requested page nodes.
+    ///
+    /// Indexed snapshots consult adjacent arcs. The legacy fallback scans the
+    /// graph once for the whole page, rather than once per returned definition.
+    pub(super) fn relationship_degrees(
+        &mut self,
+        stored: &'a StoredIndex,
+        node_ids: &BTreeSet<u64>,
+    ) -> BTreeMap<u64, (usize, usize)> {
+        if node_ids.is_empty() {
+            return BTreeMap::new();
+        }
+        if stored.query_index.ready {
+            return node_ids
+                .iter()
+                .map(|node_id| {
+                    let incoming: BTreeSet<_> = self
+                        .incoming_arcs(stored, *node_id)
+                        .into_iter()
+                        .map(|arc| (arc.source, arc.target, arc.kind))
+                        .collect();
+                    let outgoing: BTreeSet<_> = self
+                        .outgoing_arcs(stored, *node_id)
+                        .into_iter()
+                        .map(|arc| (arc.source, arc.target, arc.kind))
+                        .collect();
+                    (*node_id, (incoming.len(), outgoing.len()))
+                })
+                .collect();
+        }
+        let distinct: BTreeSet<_> = self
+            .definitive_arcs(stored)
+            .into_iter()
+            .filter(|arc| node_ids.contains(&arc.source) || node_ids.contains(&arc.target))
+            .map(|arc| (arc.source, arc.target, arc.kind))
+            .collect();
+        let mut degrees = BTreeMap::<u64, (usize, usize)>::new();
+        for (source, target, _) in distinct {
+            if node_ids.contains(&source) {
+                degrees.entry(source).or_default().1 += 1;
+            }
+            if node_ids.contains(&target) {
+                degrees.entry(target).or_default().0 += 1;
+            }
+        }
+        degrees
+    }
+
     pub(super) fn definitive_arcs<'s: 'a>(
         &mut self,
         stored: &'s StoredIndex,
@@ -863,8 +1147,8 @@ pub(super) fn syntax_document(stored: &StoredIndex, node_id: u64) -> Option<&Sto
 }
 
 pub(super) fn rebuild_refreshed_arcs(stored: &StoredIndex) -> Vec<StoredArc> {
-    // Slice A has no dependency footprint or non-CALLS rebuilder. Any effective
-    // source update therefore invalidates every non-CALLS proof conservatively.
+    // Rebuild CALLS and syntax containment from the effective documents and
+    // hashes. Other relation proofs lack a refresh rebuilder and are invalidated.
     let mut arcs = rebuild_arcs_with_cargo(
         &stored.documents,
         &stored.path_hashes,
@@ -875,96 +1159,12 @@ pub(super) fn rebuild_refreshed_arcs(stored: &StoredIndex) -> Vec<StoredArc> {
         &stored.ts_resolution_configs,
     );
 
-    // Add CONTAINS arcs: each file's first SYNTAX symbol contains all others
-    // Also add hierarchical containment: parent symbols contain child symbols by span
-    {
-        use std::collections::BTreeMap;
-        let mut symbols_by_file: BTreeMap<&str, Vec<&StoredDocument>> = BTreeMap::new();
-        for document in stored.documents.iter().filter(|d| d.provenance == "SYNTAX") {
-            symbols_by_file
-                .entry(document.path.as_str())
-                .or_default()
-                .push(document);
-        }
-        for (file_path, symbols) in &symbols_by_file {
-            let mut sorted: Vec<_> = symbols.clone();
-            sorted.sort_by_key(|d| (d.span_start, d.node_id));
-            let source_hash = stored
-                .path_hashes
-                .get(*file_path)
-                .copied()
-                .unwrap_or(cgrx_core::Hash32([0; 32]));
-
-            // File-level containment: first symbol contains all others
-            if let Some(module) = sorted.first() {
-                for symbol in sorted.iter().skip(1) {
-                    arcs.push(StoredArc {
-                        source: module.node_id,
-                        target: symbol.node_id,
-                        kind: cgrx_core::RelationKind::Contains,
-                        evidence: Some(cgrx_core::EdgeEvidence {
-                            path: file_path.to_string(),
-                            span: cgrx_core::ByteRange::new(symbol.span_start, symbol.span_end),
-                            source_hash,
-                            resolver: cgrx_core::ResolverClass::SyntaxExact,
-                            confidence: cgrx_core::ConfidenceClass::Proven,
-                            assumptions: Vec::new(),
-                            counter_evidence: Vec::new(),
-                        }),
-                    });
-                }
-            }
-
-            // Hierarchical containment: parent symbols contain children whose span is inside theirs
-            // Use body_start/body_end for containment (body spans include nested definitions)
-            for (i, parent) in sorted.iter().enumerate() {
-                let p_start = parent.body_start;
-                let p_end = parent.body_end;
-                if p_start == p_end {
-                    continue;
-                }
-                for child in sorted.iter().skip(i + 1) {
-                    // Stop if child starts after parent ends
-                    if child.span_start >= p_end {
-                        break;
-                    }
-                    // Child is inside parent's body
-                    if child.span_start >= p_start && child.span_end <= p_end {
-                        arcs.push(StoredArc {
-                            source: parent.node_id,
-                            target: child.node_id,
-                            kind: cgrx_core::RelationKind::Contains,
-                            evidence: Some(cgrx_core::EdgeEvidence {
-                                path: file_path.to_string(),
-                                span: cgrx_core::ByteRange::new(child.span_start, child.span_end),
-                                source_hash,
-                                resolver: cgrx_core::ResolverClass::SyntaxExact,
-                                confidence: cgrx_core::ConfidenceClass::Proven,
-                                assumptions: Vec::new(),
-                                counter_evidence: Vec::new(),
-                            }),
-                        });
-                    }
-                }
-                // Also add sibling containment: if two symbols have the same body range,
-                // they are siblings in the same parent scope
-                if p_start > 0 && p_end > p_start {
-                    for child in sorted.iter().skip(i + 1) {
-                        if child.span_start >= p_end {
-                            break;
-                        }
-                        if child.body_start == p_start && child.body_end == p_end {
-                            // Same parent scope — this is already handled by file-level containment
-                            continue;
-                        }
-                    }
-                }
-            }
-        }
-        arcs.sort_by_key(|arc| (arc.source, arc.target, arc.kind, arc.evidence.clone()));
-        arcs.dedup();
-    }
-
+    arcs.extend(super::containment::syntax_containment_arcs(
+        &stored.documents,
+        &stored.path_hashes,
+    ));
+    arcs.sort_by_key(|arc| (arc.source, arc.target, arc.kind, arc.evidence.clone()));
+    arcs.dedup();
     arcs
 }
 
@@ -996,4 +1196,47 @@ pub(super) fn working_tree_digest(
         hasher.update(b"\0");
     }
     Hash32(*hasher.finalize().as_bytes())
+}
+
+#[cfg(test)]
+mod proof_gap_tests {
+    use super::outermost_dynamic_sites;
+
+    #[test]
+    fn sweep_matches_pairwise_containment_for_overlapping_and_nested_sites() {
+        // Include equal starts/ends, empty spans, duplicates and separate files.
+        let sites: Vec<_> = ["a.rs", "b.rs"]
+            .into_iter()
+            .flat_map(|path| {
+                (0..24).flat_map(move |start| {
+                    (start..24).map(move |end| (path, start, end, format!("{path}:{start}-{end}")))
+                })
+            })
+            .collect();
+        for stride in [1, 2, 5, 7, 11, 19] {
+            let selected: Vec<_> = sites
+                .iter()
+                .step_by(stride)
+                .map(|(p, s, e, l)| (*p, *s, *e, l.as_str()))
+                .rev()
+                .collect();
+            let mut expected: Vec<_> = selected
+                .iter()
+                .filter(|(p, s, e, _)| {
+                    !selected
+                        .iter()
+                        .any(|(op, os, oe, _)| op == p && (os, oe) != (s, e) && os <= s && oe >= e)
+                })
+                .map(|(_, _, _, l)| *l)
+                .collect();
+            let mut actual = outermost_dynamic_sites(selected);
+            expected.sort();
+            actual.sort();
+            assert_eq!(actual, expected);
+        }
+        assert_eq!(
+            outermost_dynamic_sites(vec![("a", 1, 3, "x"), ("a", 1, 3, "y")]).len(),
+            2
+        );
+    }
 }

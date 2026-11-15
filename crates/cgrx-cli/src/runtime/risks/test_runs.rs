@@ -26,6 +26,8 @@ pub enum TestOutcome {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct TestCaseResult {
     pub path: String,
+    // File-level runner summaries are accepted but cannot verify a symbol.
+    #[serde(default)]
     pub symbol: String,
     pub status: TestOutcome,
     pub source_hash: Option<String>,
@@ -37,6 +39,7 @@ pub struct TestCaseResult {
 /// `runner_command` is the literal command that was run (for audit, never
 /// executed by this crate), and `results` lists per-test outcomes.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(default)]
 pub struct TestRunRecord {
     pub runner_command: String,
     pub revision: String,
@@ -72,6 +75,17 @@ pub(super) fn apply(
     snapshot_revision: &str,
     path_hashes: &BTreeMap<String, Hash32>,
 ) {
+    if !runs.is_empty() {
+        plan["test_run_input"] = json!({
+            "runs": runs.len(),
+            "incomplete_runs": runs.iter().filter(|run| {
+                run.runner_command.trim().is_empty() || run.revision.is_empty() || run.results.is_empty()
+            }).count(),
+            "incomplete_results": runs.iter().flat_map(|run| &run.results).filter(|result| {
+                result.symbol.is_empty() || result.source_hash.is_none()
+            }).count(),
+        });
+    }
     let Some(tests) = plan.get_mut("related_tests").and_then(Value::as_array_mut) else {
         return;
     };
@@ -90,7 +104,7 @@ pub(super) fn apply(
         let current_hash = path_hashes.get(path).map(hex_hash);
         let mut outcome: Option<(&TestRunRecord, TestOutcome)> = None;
         for run in runs {
-            if run.revision != snapshot_revision {
+            if run.runner_command.trim().is_empty() || run.revision != snapshot_revision {
                 continue;
             }
             for result in &run.results {

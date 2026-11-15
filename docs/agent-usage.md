@@ -36,6 +36,15 @@ callsites for a pair are not exhaustively listed. Existing scan/result/source
 budgets, `partial` and coverage gaps still apply; absent impacts are not
 whole-program coverage or evidence of correctness.
 
+`changed_paths` is the indexed graph delta, not every path reported by Git.
+`scan_risks` also reports `unindexed_changed_paths` and its full count when a
+working-tree path has no graph hash (for example, an unsupported C++ or Swift
+source). Such paths produce `UNINDEXED_CHANGED_PATH` gaps and `partial=true`;
+inspect them directly rather than treating an empty finding list as a pass.
+These paths are live Git observations, not snapshot-bound graph evidence. The
+structured path list is bounded to 20 (12 in the compact MCP response); use
+the count to detect truncation.
+
 ## Small agent A/B protocol
 
 Use a fixed task set with independently specified acceptance tests and expected

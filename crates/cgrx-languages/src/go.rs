@@ -38,7 +38,9 @@ pub fn go_callable_type(source: &[u8]) -> Option<GoCallableType> {
     };
     let name = text(declaration.child_by_field_name("name")?, source);
     if declaration.kind() == "method_declaration" {
-        let (_, ty) = receiver(*declaration)?;
+        // A signature needs the receiver type, including unnamed receivers;
+        // a binding name is required only when proving an own-receiver use.
+        let ty = method_receiver_type(*declaration)?;
         return Some(GoCallableType {
             kind: GoCallableKind::Method,
             name,
@@ -176,6 +178,7 @@ fn classify_go(
                 });
             } else if let Some(provenance) = own_receiver_target(function, source, context)
                 .or_else(|| field_receiver_target(function, source, context))
+                .or_else(|| indexed_field_receiver_target(function, source, context))
                 .or_else(|| local_constructor_target(function, source, context))
             {
                 extraction.edges.push(Edge {
@@ -521,6 +524,18 @@ impl<'tree> GoContext<'tree> {
 // invalidates receiver proof throughout the enclosing method. Closures remain
 // gaps; their bindings also conservatively affect the parent.
 fn collect_bindings(node: Node<'_>, source: &[u8], names: &mut BTreeSet<String>) {
+    collect_bindings_except(node, source, names, None);
+}
+
+fn collect_bindings_except(
+    node: Node<'_>,
+    source: &[u8],
+    names: &mut BTreeSet<String>,
+    excluded: Option<usize>,
+) {
+    if excluded == Some(node.id()) {
+        return;
+    }
     let field = match node.kind() {
         "short_var_declaration" | "assignment_statement" | "range_clause" | "receive_statement" => {
             Some("left")
@@ -542,7 +557,7 @@ fn collect_bindings(node: Node<'_>, source: &[u8], names: &mut BTreeSet<String>)
     }
     let mut cursor = node.walk();
     for child in node.named_children(&mut cursor) {
-        collect_bindings(child, source, names);
+        collect_bindings_except(child, source, names, excluded);
     }
 }
 
@@ -651,6 +666,9 @@ struct ConcreteField {
     name: Span,
     // Only a named type or a single pointer to one is supported here.
     type_name: Option<String>,
+    // Address-taking is supported only for an explicit array/slice of a local
+    // non-pointer named element. Maps, named containers and aliases stay gaps.
+    indexed_element: Option<(String, Span)>,
 }
 struct ConcreteType {
     name: Span,
@@ -714,6 +732,14 @@ fn concrete_type(
                     .child_by_field_name("type")
                     .and_then(named_type)
                     .map(|n| text(n, source));
+                let indexed_element = field.child_by_field_name("type").and_then(|ty| {
+                    if !matches!(ty.kind(), "array_type" | "slice_type") {
+                        return None;
+                    }
+                    let element = ty.child_by_field_name("element")?;
+                    (element.kind() == "type_identifier")
+                        .then(|| (text(element, source), Span::from(ty)))
+                });
                 for name in names {
                     if result
                         .fields
@@ -722,6 +748,7 @@ fn concrete_type(
                             ConcreteField {
                                 name: Span::from(name),
                                 type_name: ty.clone(),
+                                indexed_element: indexed_element.clone(),
                             },
                         )
                         .is_some()
@@ -737,6 +764,144 @@ fn concrete_type(
     }
     Some(result)
 }
+fn indexed_field_receiver_target(
+    function: Node<'_>,
+    source: &[u8],
+    context: &GoContext<'_>,
+) -> Option<Provenance> {
+    if function.kind() != "selector_expression" || context.has_error {
+        return None;
+    }
+    let operand = function.child_by_field_name("operand")?;
+    if operand.kind() != "identifier" {
+        return None;
+    }
+    let binding_name = text(operand, source);
+    let target_name = text(function.child_by_field_name("field")?, source);
+    let mut method = function.parent()?;
+    loop {
+        match method.kind() {
+            "method_declaration" => break,
+            "function_declaration" | "func_literal" => return None,
+            _ => method = method.parent()?,
+        }
+    }
+    let (receiver_name, receiver_type) = receiver(method)?;
+    if context.receiver_shadows.contains(&method.id()) {
+        return None;
+    }
+    let owner_name = text(receiver_type, source);
+    let owner = context.concrete_types.get(&owner_name)?;
+    if !owner.is_struct
+        || !owner
+            .fields
+            .values()
+            .any(|field| field.indexed_element.is_some())
+    {
+        return None;
+    }
+    for field in ["parameters", "result", "receiver"] {
+        let mut names = BTreeSet::new();
+        if let Some(node) = method.child_by_field_name(field) {
+            collect_bindings(node, source, &mut names);
+        }
+        if names.contains(&binding_name) {
+            return None;
+        }
+    }
+    let body = method.child_by_field_name("body")?;
+    let statements = body.named_child(0)?;
+    let mut cursor = statements.walk();
+    let mut declarations = statements.named_children(&mut cursor).filter(|node| {
+        node.kind() == "short_var_declaration"
+            && node.child_by_field_name("left").is_some_and(|left| {
+                left.named_child_count() == 1
+                    && left.named_child(0).is_some_and(|name| {
+                        name.kind() == "identifier" && text(name, source) == binding_name
+                    })
+            })
+    });
+    let statement = declarations.next()?;
+    if declarations.next().is_some() || statement.end_byte() >= function.start_byte() {
+        return None;
+    }
+    let binding = statement.child_by_field_name("left")?.named_child(0)?;
+    let right = statement.child_by_field_name("right")?;
+    if right.named_child_count() != 1 {
+        return None;
+    }
+    let initializer = right.named_child(0)?;
+    if initializer.kind() != "unary_expression"
+        || text(initializer.child_by_field_name("operator")?, source) != "&"
+    {
+        return None;
+    }
+    let index = initializer.child_by_field_name("operand")?;
+    if index.kind() != "index_expression" {
+        return None;
+    }
+    let selection = index.child_by_field_name("operand")?;
+    if selection.kind() != "selector_expression" {
+        return None;
+    }
+    let owner_binding = selection.child_by_field_name("operand")?;
+    if owner_binding.kind() != "identifier"
+        || text(owner_binding, source) != text(receiver_name, source)
+        || text(receiver_name, source) == "_"
+    {
+        return None;
+    }
+    let field_name = text(selection.child_by_field_name("field")?, source);
+    if context
+        .field_methods
+        .contains_key(&(owner_name.clone(), field_name.clone()))
+    {
+        return None;
+    }
+    let caller = method.child_by_field_name("name")?;
+    if context
+        .field_methods
+        .get(&(owner_name, text(caller, source)))?
+        .as_slice()
+        != [Span::from(caller)]
+    {
+        return None;
+    }
+    let field = owner.fields.get(&field_name)?;
+    let (element_name, collection) = field.indexed_element.as_ref()?;
+    let element = context.concrete_types.get(element_name)?;
+    if !element.is_struct || element.fields.contains_key(&target_name) {
+        return None;
+    }
+    let [target] = context
+        .field_methods
+        .get(&(element_name.clone(), target_name))?
+        .as_slice()
+    else {
+        return None;
+    };
+    // Most selectors cannot have this shape. Scan the enclosing body only
+    // after proving the explicit collection and element declarations.
+    let mut changes = BTreeSet::new();
+    collect_bindings_except(body, source, &mut changes, Some(statement.id()));
+    if changes.contains(&binding_name) {
+        return None;
+    }
+    Some(Provenance::GoIndexedFieldReceiver {
+        package: context.package?,
+        caller: Span::from(caller),
+        receiver_type: owner.name,
+        field: field.name,
+        field_type: element.name,
+        target: *target,
+        collection: *collection,
+        statement: Span::from(statement),
+        binding: Span::from(binding),
+        initializer: Span::from(initializer),
+        receiver: Span::from(operand),
+    })
+}
+
 fn field_receiver_target(
     function: Node<'_>,
     source: &[u8],

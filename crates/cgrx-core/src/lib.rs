@@ -10,7 +10,7 @@ pub use canonical::canonical_hash;
 pub use evidence::{ConfidenceClass, EdgeEvidence, EvidenceEdge, ResolverClass};
 pub use model::{
     ByteRange, CapsuleStatus, CoreError, Edge, Hash32, IoAccounting, Mode, NodeId, QueryRequest,
-    RelationKind, Scope,
+    RelationKind, Scope, SymbolSelector,
 };
 pub use revision::RepoSnapshot;
 pub use runtime_evidence::{

@@ -10,8 +10,6 @@ const CHANGE_VERIFICATION: &str =
 const BUDGETED_CONTEXT: &str =
     include_str!("../assets/cgrx-code-discovery/references/budgeted-context.md");
 const AGENT_MEMORY: &str = include_str!("../assets/cgrx-code-discovery/references/agent-memory.md");
-const GITHUB_EXAMPLES: &str =
-    include_str!("../assets/cgrx-code-discovery/references/github-examples.md");
 const OPENAI_YAML: &str = include_str!("../assets/cgrx-code-discovery/agents/openai.yaml");
 const LEGACY_START: &str = "<!-- cgrx-agent:start -->";
 const LEGACY_END: &str = "<!-- cgrx-agent:end -->";
@@ -67,8 +65,6 @@ fn install_skill(home: &Path) -> Result<PathBuf, String> {
         .map_err(|error| error.to_string())?;
         fs::write(stage.join("references/agent-memory.md"), AGENT_MEMORY)
             .map_err(|error| error.to_string())?;
-        fs::write(stage.join("references/github-examples.md"), GITHUB_EXAMPLES)
-            .map_err(|error| error.to_string())?;
         fs::write(stage.join("agents/openai.yaml"), OPENAI_YAML)
             .map_err(|error| error.to_string())?;
 
@@ -112,7 +108,6 @@ fn installed_files_match(destination: &Path) -> bool {
         ("references/change-verification.md", CHANGE_VERIFICATION),
         ("references/budgeted-context.md", BUDGETED_CONTEXT),
         ("references/agent-memory.md", AGENT_MEMORY),
-        ("references/github-examples.md", GITHUB_EXAMPLES),
         ("agents/openai.yaml", OPENAI_YAML),
     ]
     .iter()

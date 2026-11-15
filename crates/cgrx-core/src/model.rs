@@ -3,6 +3,32 @@ use std::fmt;
 use serde::de::Visitor;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+/// A discovered symbol, optionally pinned to one definition in one index snapshot.
+/// References are opaque strings returned by symbol discovery, never numeric node IDs.
+#[derive(Clone, Copy, Debug)]
+pub struct SymbolSelector<'a> {
+    pub symbol: &'a str,
+    pub path: Option<&'a str>,
+    pub symbol_ref: Option<&'a str>,
+}
+
+impl<'a> SymbolSelector<'a> {
+    #[must_use]
+    pub const fn new(symbol: &'a str, path: Option<&'a str>) -> Self {
+        Self {
+            symbol,
+            path,
+            symbol_ref: None,
+        }
+    }
+
+    #[must_use]
+    pub const fn with_ref(mut self, symbol_ref: &'a str) -> Self {
+        self.symbol_ref = Some(symbol_ref);
+        self
+    }
+}
+
 /// A BLAKE3 digest stored as exactly 32 bytes.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Hash32(pub [u8; 32]);

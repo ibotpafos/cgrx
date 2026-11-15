@@ -20,7 +20,52 @@ The comparison is grounded in real CGRX behavior documented in `README.md` and
 out explicitly rather than glossed over. No overall superiority over other
 tools is asserted.
 
+The [symbol selection follow-up](benchmarks/symbol-selection-evidence-2026-10-08.md)
+lets agents address individual same-name definitions using snapshot-bound
+references, including two methods in one file. It improves access to existing
+proven relationships; comparative performance and token-cost conclusions
+require separate measurements.
+
+The [reference cost experiment](benchmarks/symbol-reference-cost-2026-10-08.md)
+reduces emitted content tokens by 8.414% across 300 paired queries per profile
+on ten retained snapshots, while preserving full digests and legacy references.
+This compares two CGRX versions; whole-task costs against competitors remain open.
+
+The [2026-10-08 Python import experiment](benchmarks/python-import-evidence-2026-10-08.md)
+closes a measured navigation gap: CGRX improves from 0/24 to 24/24 selected
+source-curated import assertions, and compact outlines expose target spans and
+source evidence. A fresh CBM 0.10.8 full index also finds all 24 designated
+targets. The measurements have different evidence scopes and do not establish
+overall superiority or resource efficiency.
+
+The [Rust receiver follow-up](benchmarks/rust-lifetime-evidence-2026-10-08.md)
+resolves three lifetime-based self calls that CBM's selected CALLS queries miss.
+At that iteration CBM finds the two remaining local/parameter receiver targets
+that CGRX misses. The subsequent [parameter receiver experiment](benchmarks/rust-parameter-evidence-2026-10-08.md)
+closes the witness parameter case, bringing CGRX to four of five selected
+targets while CBM 0.10.8 returns two. The local constructed receiver remains
+missing in CGRX. Eight constructed Rust compiler checks validate the native
+proof's first-candidate boundary, including trait-preemption abstentions.
+The five diagnosed cases are implementation-informed observations from one
+source file; they do not establish a broad Rust or resource-efficiency win.
+
+The [Go indexed-field experiment](benchmarks/go-indexed-field-evidence-2026-10-08.md)
+closes the diagnosed Vex `Allow → cleanupLocked` miss with a source-bound proof.
+All previous relationships in ten frozen snapshots are retained. CBM 0.10.8
+also returns that target with heuristic confidence 0.9, and its depth-one trace
+returns a `Run` target absent from the complete caller body, at confidence 0.07.
+This is one implementation-informed source case, not a whole-graph precision
+comparison. Eight constructed Go compiler cases pass native grading and public
+MCP checks, including an unnamed target receiver and two explicit abstentions.
+
 ## (a) Feature comparison
+
+The [search discovery update](search-discovery.md) adds conjunctive identifier
+and optional body-token discovery, resumable pages with a snapshot guard, and
+a native CLI entry point. It also repairs SARIF export against the live gate
+contracts: failed and inconclusive checks now appear in the report itself.
+The associated experiment compares CGRX alpha.17 with the updated engine on
+synthetic tasks; it does not establish a whole-product win over a competitor.
 
 Capabilities are scored against how CGRX actually behaves today. Cells marked
 **different scope** mean the tool targets a different job and is not directly
@@ -30,7 +75,7 @@ comparable on that axis.
 | --- | --- | --- | --- | --- |
 | Local, offline execution (no API key) | ✅ One binary, no embedding/API key | ⚠️ CLI is local but needs build/extraction and a licensed runner for some flows | ❌ Centrally hosted server / Cody uses LLM APIs | ✅ Local stdio server, no API key |
 | Stdio MCP server for agents | ✅ `cgrx serve`, 22 focused tools | ❌ different scope (CI/scanning, not an agent MCP) | ❌ different scope (search UI + Cody API) | ✅ MCP tool surface |
-| Symbol search (name, prefix, substring, fuzzy) | ✅ `search_graph`, name-first deterministic ranking + fuzzy matching (Levenshtein) | ❌ different scope | ✅ Full-text + structural search | ✅ Full-text + language/file filters |
+| Symbol search (name, prefix, substring, fuzzy) | ✅ `search_graph`, name-first ranking, conjunctive identifier/body terms, language/scope filters and snapshot-guarded pages | ❌ different scope | ✅ Full-text + structural search | ✅ Full-text + language/file filters |
 | Exact source definitions | ✅ `get_code_snippet`, `get_outline` (spans, no bodies) | ❌ different scope | ✅ Go to definition | ✅ `get_code_snippet` / outline → exact |
 | Bounded caller/callee traces | ✅ `trace_path`, `find_usages` (1–4 hop, proven edges only) | ❌ different scope (data-flow, not call trace) | ✅ Find references / call graph (broader language coverage) | ✅ `find_usages` with `depth`, `via` |
 | Task-sized context with token budgets | ✅ `orient` + `expand` with handles; budgeted | ❌ different scope | ❌ different scope | ✅ Budgeted context bundles (`orient`-class) |
@@ -43,7 +88,7 @@ comparable on that axis.
 | Security audit gate | ✅ `check_security_gates` model-free secret/dependency/license gate with explicit verdict and coverage-gap honesty (`docs/security-gates.md`) | ⚠️ CodeQL detects secrets via queries (different scope: vulnerability finding vs. CI gate) | ❌ different scope | ⚠️ No equivalent security gate described |
 | Deterministic, model-free (`llm_used=false`) | ✅ All planners report `llm_used=false` | ✅ Static analysis, no LLM | ❌ Cody is LLM-backed | ❌ Optional AI paths use Ollama/OpenAI |
 | Revision-pinned snapshots | ✅ Graph bound to revision/working-tree digest | ✅ Analysis bound to a commit/checkout | ✅ Indexed at a commit | ✅ Pinned SHAs in benchmark |
-| Language breadth | ⚠️ 7 validated packs today (Rust, Go, Java, TS/JS/TSX, Python, C, Kotlin); additional parsers remain experimental until coverage evidence is reviewed | ✅ Very broad language support | ✅ Very broad (SCIP/LSIF) | ✅ Larger symbol-only surface documented |
+| Language breadth | ⚠️ 9 source graph packs (Rust, Go, Java, TS/TSX, Python, C, C++, Kotlin, Swift); proof depth varies by language; JavaScript and PHP still require opt-in builds | ✅ Very broad language support | ✅ Very broad (SCIP/LSIF) | ✅ Larger symbol-only surface documented |
 
 **Reading the table honestly.** CGRX wins on the agent-facing, evidence-honest,
 model-free axes: token-budgeted context, first-class coverage gaps,
@@ -126,7 +171,7 @@ not a claim of current parity.
 
 ### P1 — Language breadth
 
-**Goal:** grow from the current 7 packs (Rust, Go, Java, TypeScript/JS/TSX,
+**Goal:** grow from the current 7 packs (Rust, Go, Java, TypeScript/TSX,
 Python, C, Kotlin) toward 10+ languages.
 
 - Today's parsers live in `crates/cgrx-languages/src/` (`rust.rs`, `go.rs`,
@@ -138,6 +183,9 @@ Python, C, Kotlin) toward 10+ languages.
   (the bar set by Java's `java.rs`: unique-target call proof, constructor proof,
   explicit dispatch gaps). Symbol-only extraction is explicitly *not* counted as
   relationship support (`docs/reference-trace-mcp.md`).
+- The opt-in JavaScript iteration and its pinned Express comparison are recorded
+  in [JavaScript evidence validation](benchmarks/javascript-evidence-2026-10-07.md).
+  This adds source-build capability; the seven default packs remain unchanged.
 - **Measured today:** `docs/benchmarks/java-call-graph-2026-09-07.md` shows the
   cost of adding a fifth call-aware language with positive/negative controls.
   New languages should follow the same fixture discipline so precision/recall

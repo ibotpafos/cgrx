@@ -3,7 +3,7 @@ mod strategies;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 use std::thread;
 
 use cgrx_core::{Hash32, RelationKind, RepoSnapshot, Scope};
@@ -143,20 +143,29 @@ struct SimilarityBackgroundState {
     spawn_failed: bool,
 }
 
+#[derive(Default)]
+struct SimilarityQueue {
+    pending: Option<(u64, RepoSnapshot, SimilarityBuildInput)>,
+    running: bool,
+}
 struct SimilarityBackgroundShared {
+    queue: Mutex<SimilarityQueue>,
     epoch: AtomicU64,
     state: RwLock<SimilarityBackgroundState>,
 }
 
 pub(super) struct SimilarityBackground {
     shared: Arc<SimilarityBackgroundShared>,
+    worker: Mutex<Option<thread::JoinHandle<()>>>,
 }
 
 impl SimilarityBackground {
     pub(super) fn ready(snapshot: RepoSnapshot, index: SimilarityIndex) -> Self {
         Self {
+            worker: Mutex::new(None),
             shared: Arc::new(SimilarityBackgroundShared {
                 epoch: AtomicU64::new(0),
+                queue: Mutex::new(SimilarityQueue::default()),
                 state: RwLock::new(SimilarityBackgroundState {
                     snapshot,
                     index: index.is_current().then(|| Arc::new(index)),
@@ -215,34 +224,86 @@ impl SimilarityBackground {
             state.building = true;
             state.spawn_failed = false;
         }
+        let mut queue = self
+            .shared
+            .queue
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        queue.pending = Some((epoch, snapshot, input));
+        if queue.running {
+            return;
+        }
+        queue.running = true;
         let shared = Arc::clone(&self.shared);
-        let worker_snapshot = snapshot.clone();
         let spawn = thread::Builder::new()
             .name("cgrx-similarity-index".to_owned())
             .spawn(move || {
-                let index = build_similarity_index_from_input(&input);
-                if shared.epoch.load(Ordering::Acquire) != epoch {
-                    return;
+                loop {
+                    let job = {
+                        let mut queue = shared
+                            .queue
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner);
+                        match queue.pending.take() {
+                            Some(job) => job,
+                            None => {
+                                queue.running = false;
+                                return;
+                            }
+                        }
+                    };
+                    let (epoch, snapshot, input) = job;
+                    let cancelled = || shared.epoch.load(Ordering::Acquire) != epoch;
+                    let Some(index) = build_similarity_index_cancellable(&input, &cancelled) else {
+                        continue;
+                    };
+                    let mut state = shared
+                        .state
+                        .write()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    if state.snapshot == snapshot && !cancelled() {
+                        state.index = Some(Arc::new(index));
+                        state.building = false;
+                        state.spawn_failed = false;
+                    }
                 }
-                let mut state = shared
-                    .state
-                    .write()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
-                if state.snapshot != worker_snapshot
-                    || shared.epoch.load(Ordering::Acquire) != epoch
-                {
-                    return;
-                }
-                state.index = Some(Arc::new(index));
-                state.building = false;
-                state.spawn_failed = false;
             });
-        if spawn.is_err() {
-            let mut state = self.write_state();
-            if state.snapshot == snapshot && self.shared.epoch.load(Ordering::Acquire) == epoch {
+        match spawn {
+            Ok(worker) => {
+                *self
+                    .worker
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(worker);
+            }
+            Err(_) => {
+                queue.running = false;
+                queue.pending = None;
+                let mut state = self.write_state();
                 state.building = false;
                 state.spawn_failed = true;
             }
+        }
+    }
+}
+
+impl Drop for SimilarityBackground {
+    fn drop(&mut self) {
+        self.shared.epoch.fetch_add(1, Ordering::AcqRel);
+        self.shared
+            .queue
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .pending = None;
+        // No queue/state lock is held while joining. Otherwise dropping an
+        // idle runtime could leave its cancelled worker's source copy alive
+        // past the allocator purge (or deadlock the worker at its next poll).
+        if let Some(worker) = self
+            .worker
+            .get_mut()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take()
+        {
+            let _ = worker.join();
         }
     }
 }
@@ -478,8 +539,21 @@ pub(super) fn rebuild_similarity_index(stored: &mut StoredIndex) {
 }
 
 fn build_similarity_index_from_input(input: &SimilarityBuildInput) -> SimilarityIndex {
+    build_similarity_index_cancellable(input, &|| false).expect("uncancelled similarity build")
+}
+
+fn build_similarity_index_cancellable(
+    input: &SimilarityBuildInput,
+    cancelled: &impl Fn() -> bool,
+) -> Option<SimilarityIndex> {
+    if cancelled() {
+        return None;
+    }
     let mut exact_groups = BTreeMap::<String, Vec<u64>>::new();
     for document in &input.documents {
+        if cancelled() {
+            return None;
+        }
         if let Some(fingerprint) = &document.semantic_fingerprint {
             exact_groups
                 .entry(fingerprint.clone())
@@ -522,11 +596,19 @@ fn build_similarity_index_from_input(input: &SimilarityBuildInput) -> Similarity
         .collect::<Vec<_>>();
     let fingerprints = selected
         .iter()
-        .map(|(document, language)| (*language, fingerprint_text(&document.search_text)))
-        .collect::<Vec<_>>();
+        .map(|(document, language)| {
+            (!cancelled()).then(|| (*language, fingerprint_text(&document.search_text)))
+        })
+        .collect::<Option<Vec<_>>>()?;
 
+    if cancelled() {
+        return None;
+    }
     let mut buckets = BTreeMap::<(&str, &str), Vec<usize>>::new();
     for (index, (language, fingerprint)) in fingerprints.iter().enumerate() {
+        if cancelled() {
+            return None;
+        }
         if !fingerprint.eligible {
             continue;
         }
@@ -549,7 +631,13 @@ fn build_similarity_index_from_input(input: &SimilarityBuildInput) -> Similarity
     let mut pairs_truncated = false;
     'buckets: for (_, members) in ordered_buckets {
         for (offset, left) in members.iter().enumerate() {
+            if cancelled() {
+                return None;
+            }
             for right in members.iter().skip(offset + 1) {
+                if cancelled() {
+                    return None;
+                }
                 let pair = (*left.min(right), *left.max(right));
                 if !raw_pairs.contains(&pair) && raw_pairs.len() >= BACKGROUND_PAIR_LIMIT {
                     pairs_truncated = true;
@@ -573,6 +661,9 @@ fn build_similarity_index_from_input(input: &SimilarityBuildInput) -> Similarity
         .collect::<BTreeSet<_>>();
     let mut functional_buckets = BTreeMap::<(&str, RelationKind, u64), Vec<usize>>::new();
     for arc in &input.arcs {
+        if cancelled() {
+            return None;
+        }
         if !matches!(arc.kind, RelationKind::Calls | RelationKind::Implements)
             || !live_nodes.contains(&arc.target)
         {
@@ -611,7 +702,13 @@ fn build_similarity_index_from_input(input: &SimilarityBuildInput) -> Similarity
         members.sort_unstable();
         members.dedup();
         for (offset, left) in members.iter().enumerate() {
+            if cancelled() {
+                return None;
+            }
             for right in members.iter().skip(offset + 1) {
+                if cancelled() {
+                    return None;
+                }
                 let pair = (*left.min(right), *left.max(right));
                 if raw_functional_pairs.contains(&pair) {
                     continue;
@@ -625,27 +722,32 @@ fn build_similarity_index_from_input(input: &SimilarityBuildInput) -> Similarity
         }
     }
     let functional_inspected_pairs = raw_functional_pairs.len();
+    let compact = compact_fingerprints(&fingerprints);
     let mut functional_pairs = raw_functional_pairs
         .into_iter()
-        .map(|(left_index, right_index)| SimilarityPair {
-            left_node_id: documents[left_index].node_id,
-            right_node_id: documents[right_index].node_id,
-            basis: similarity(&fingerprints[left_index].1, &fingerprints[right_index].1),
+        .map(|(left_index, right_index)| {
+            (!cancelled()).then(|| SimilarityPair {
+                left_node_id: documents[left_index].node_id,
+                right_node_id: documents[right_index].node_id,
+                basis: compact_similarity(&compact[left_index], &compact[right_index]),
+            })
         })
-        .collect::<Vec<_>>();
+        .collect::<Option<Vec<_>>>()?;
     functional_pairs.sort_by_key(|pair| (pair.left_node_id, pair.right_node_id));
 
     let mut pairs = raw_pairs
         .into_iter()
-        .map(|(left_index, right_index)| SimilarityPair {
-            left_node_id: documents[left_index].node_id,
-            right_node_id: documents[right_index].node_id,
-            basis: similarity(&fingerprints[left_index].1, &fingerprints[right_index].1),
+        .map(|(left_index, right_index)| {
+            (!cancelled()).then(|| SimilarityPair {
+                left_node_id: documents[left_index].node_id,
+                right_node_id: documents[right_index].node_id,
+                basis: compact_similarity(&compact[left_index], &compact[right_index]),
+            })
         })
-        .collect::<Vec<_>>();
+        .collect::<Option<Vec<_>>>()?;
     pairs.sort_by_key(|pair| (pair.left_node_id, pair.right_node_id));
 
-    SimilarityIndex {
+    Some(SimilarityIndex {
         version: SIMILARITY_INDEX_VERSION,
         documents_total,
         inspected_pairs,
@@ -657,15 +759,90 @@ fn build_similarity_index_from_input(input: &SimilarityBuildInput) -> Similarity
         exact_groups,
         pairs,
         functional_pairs,
+    })
+}
+
+struct CompactFingerprint {
+    tokens: Vec<usize>,
+    shingles: Vec<usize>,
+    token_count: usize,
+}
+
+fn compact_fingerprints(fingerprints: &[(&str, RefactorFingerprint)]) -> Vec<CompactFingerprint> {
+    fn intern<'a>(
+        values: &'a BTreeSet<String>,
+        dictionary: &mut BTreeMap<&'a str, usize>,
+    ) -> Vec<usize> {
+        let mut ids: Vec<_> = values
+            .iter()
+            .map(|value| {
+                let next = dictionary.len();
+                *dictionary.entry(value.as_str()).or_insert(next)
+            })
+            .collect();
+        ids.sort_unstable();
+        ids
+    }
+    let mut tokens = BTreeMap::new();
+    let mut shingles = BTreeMap::new();
+    fingerprints
+        .iter()
+        .map(|(_, fingerprint)| CompactFingerprint {
+            tokens: intern(&fingerprint.tokens, &mut tokens),
+            shingles: intern(&fingerprint.shingles, &mut shingles),
+            token_count: fingerprint.token_count,
+        })
+        .collect()
+}
+
+fn jaccard_count(intersection: usize, left: usize, right: usize) -> u16 {
+    let union = left + right - intersection;
+    if union == 0 {
+        0
+    } else {
+        ((intersection * 1000) / union) as u16
+    }
+}
+
+fn compact_jaccard(left: &[usize], right: &[usize]) -> u16 {
+    let (mut a, mut b, mut intersection) = (0, 0, 0);
+    while a < left.len() && b < right.len() {
+        match left[a].cmp(&right[b]) {
+            std::cmp::Ordering::Less => a += 1,
+            std::cmp::Ordering::Greater => b += 1,
+            std::cmp::Ordering::Equal => {
+                intersection += 1;
+                a += 1;
+                b += 1;
+            }
+        }
+    }
+    jaccard_count(intersection, left.len(), right.len())
+}
+
+fn compact_similarity(left: &CompactFingerprint, right: &CompactFingerprint) -> Similarity {
+    let body_tokens = compact_jaccard(&left.tokens, &right.tokens);
+    let ordered_shingles = compact_jaccard(&left.shingles, &right.shingles);
+    let largest = left.token_count.max(right.token_count);
+    let size = if largest == 0 {
+        0
+    } else {
+        ((left.token_count.min(right.token_count) * 1000) / largest) as u16
+    };
+    // The background index stores text-only bases. Live call evidence is added
+    // by score_pair for the requested snapshot, as before.
+    Similarity {
+        body_tokens,
+        ordered_shingles,
+        callees: 0,
+        size,
+        total: weighted_similarity(body_tokens, ordered_shingles, 0, size),
     }
 }
 
 fn jaccard<T: Ord>(left: &BTreeSet<T>, right: &BTreeSet<T>) -> u16 {
-    let union = left.union(right).count();
-    if union == 0 {
-        return 0;
-    }
-    ((left.intersection(right).count() * 1000) / union) as u16
+    let intersection = left.intersection(right).count();
+    jaccard_count(intersection, left.len(), right.len())
 }
 
 fn similarity(left: &RefactorFingerprint, right: &RefactorFingerprint) -> Similarity {
@@ -1611,6 +1788,64 @@ mod tests {
         Similarity, fingerprint_text, is_callable_candidate, jaccard, normalized_tokens,
         rank_similarity, reserve_evidence, similarity,
     };
+
+    #[test]
+    fn cancellation_interrupts_fingerprints_and_pair_batches_without_changing_scores() {
+        let input = super::SimilarityBuildInput {
+            documents: (0..100)
+                .map(|id| super::SimilaritySourceDocument {
+                    node_id: id,
+                    path: format!("f{id}.rs"),
+                    search_text: "fn example(x: i32) { let y = x + 1; save(y); return y; }".into(),
+                    semantic_fingerprint: None,
+                    span_start: 0,
+                    span_end: 60,
+                })
+                .collect(),
+            arcs: vec![],
+            path_hashes: std::collections::BTreeMap::new(),
+        };
+        let expected = super::build_similarity_index_from_input(&input);
+        assert_eq!(
+            Some(expected),
+            super::build_similarity_index_cancellable(&input, &|| false)
+        );
+        for limit in [0, 150, 350, 1000] {
+            let checks = std::cell::Cell::new(0);
+            let result = super::build_similarity_index_cancellable(&input, &|| {
+                let n = checks.get();
+                checks.set(n + 1);
+                n >= limit
+            });
+            assert!(result.is_none(), "cancelled at checkpoint {limit}");
+            assert_eq!(checks.get(), limit + 1);
+        }
+    }
+
+    #[test]
+    fn compact_scores_preserve_exact_string_set_scores() {
+        let sources = [
+            "",
+            "fn a() {}",
+            "fn b() {}",
+            "fn walk(x: i32) { for i in 0..x { emit(i); } }",
+            "fn other(y: i32) { for k in 0..y { print(k); } }",
+            "fn map(x: i32) -> i32 { x + 1 }",
+        ];
+        let fingerprints: Vec<_> = sources
+            .iter()
+            .map(|source| ("rust", fingerprint_text(source)))
+            .collect();
+        let compact = super::compact_fingerprints(&fingerprints);
+        for left in 0..sources.len() {
+            for right in 0..sources.len() {
+                assert_eq!(
+                    super::compact_similarity(&compact[left], &compact[right]),
+                    similarity(&fingerprints[left].1, &fingerprints[right].1)
+                );
+            }
+        }
+    }
 
     #[test]
     fn normalization_ignores_local_spelling_and_literal_values() {

@@ -1,10 +1,12 @@
 # CGRX
 
+[![CI](https://github.com/ibotpafos/cgrx/actions/workflows/ci.yml/badge.svg)](https://github.com/ibotpafos/cgrx/actions/workflows/ci.yml)
+[![PHP validation](https://github.com/ibotpafos/cgrx/actions/workflows/php-validation.yml/badge.svg)](https://github.com/ibotpafos/cgrx/actions/workflows/php-validation.yml)
+
 **Local, evidence-oriented code intelligence for AI coding agents.**
 
 One Rust executable. One stdio MCP server. Multiple Git repositories selected
-explicitly on each request. Local graph queries require no embedding service,
-hosted index or API key.
+explicitly on each request. No embedding service, hosted index or API key.
 
 [Русская инструкция](docs/installation.md) ·
 [Releases](https://github.com/ibotpafos/cgrx/releases) ·
@@ -12,11 +14,9 @@ hosted index or API key.
 
 ## Features
 
-- Symbol search, exact source definitions and bounded caller/callee traces.
-- Experimental [GitHub implementation examples](docs/github-examples.md): 3–5
-  commit-pinned options with code, project-fit reasons and adaptation notes,
-  through an explicitly configured read-only GitHub MCP bridge.
-- Task-sized context with token budgets and follow-up retrieval handles.
+- Symbol and structural-pattern search, exact source definitions and bounded caller/callee traces.
+- Task-sized context with token budgets, follow-up retrieval handles and reusable
+  BM25 document terms with source fingerprints and scope-specific ranking.
 - Persistent [agent memory](docs/decision-memory.md): facts, episodes, procedures
   and task checkpoints, with local multilingual search, source freshness and
   versioned corrections.
@@ -31,18 +31,38 @@ hosted index or API key.
 - Snapshot-bound architecture projection with packages, proven boundaries,
   hotspots, package cycles and deterministic weighted communities.
 - Incremental working-tree refresh, isolated repo identities and writer locks.
-- Seven reviewed production packs: Rust, Go, Java, TypeScript/JavaScript/TSX, Python, C and Kotlin.
+- Source graph packs: Rust, Go, Java, TypeScript/TSX, Python, C, C++, Kotlin and Swift.
   Resolution depth varies by language; this does not replace a compiler or language server.
+- C++ indexes `.cpp`, `.cc`, `.cxx`, `.hpp`, `.hh`, `.hxx` and C++ syntax in `.h`.
+  Valid C headers retain the C parser. Classes, namespaces and callable definitions
+  are discoverable; unknown member dispatch and ambiguous bindings remain coverage gaps.
+  Proven calls are limited to unique same-file free functions with known primitive
+  arguments. Templates, unknown receivers, macros and imported overloads abstain.
+  Untracked discovery is bounded to 8192 filesystem entries and reports truncation.
+- Swift is enabled by default for `.swift` files, including nominal types,
+  protocols, extensions, properties and callable declarations. Source selectors
+  distinguish repeated names and overloads. Calls and type references use exact
+  same-file declaration proofs. Broad member proofs require a file-private type;
+  visible types retain only zero-argument Void statement calls. Dynamic dispatch,
+  imported bindings, open nominal type scopes and ambiguous
+  overloads remain explicit coverage gaps. The legacy `experimental-swift` feature
+  is accepted for compatibility and no longer changes the registry.
+  Optional [Swift compiler evidence](#swift-compiler-evidence) adds source-bound
+  cross-file calls and references for the selected build configuration.
 - PHP validation is available behind the explicit `experimental-php` build feature and stays
   outside the production language contract until its reviewed evidence is promoted.
+- JavaScript (`.js`, `.mjs`, `.cjs`) is available in source builds with
+  `--features experimental-javascript`. It proves bounded lexical calls and relative
+  ESM/CommonJS callable bindings; dynamic receivers and unsupported imports retain
+  coverage gaps. [Validation and limits](docs/benchmarks/javascript-evidence-2026-10-07.md).
 
 ## Roadmap
 
 See [Competitive positioning](docs/COMPETITIVE.md) for the full comparison and
 roadmap. The four phases toward competitive parity are:
 
-- **P1 — Language breadth:** grow from the current 7 validated packs (Rust, Go, Java,
-  TypeScript/TSX, Python, C, Kotlin) toward 10+ languages with conservative relationship
+- **P1 — Language breadth:** grow from the current 9 source graph packs (Rust, Go, Java,
+  TypeScript/TSX, Python, C, C++, Kotlin, Swift) toward 10+ languages with conservative relationship
   proofs (`crates/cgrx-languages/src/`).
 - **P2 — Monorepo scale:** replace hard caps (e.g. `100_000`/`20_000` in
   `crates/cgrx-cli/src/runtime/risks.rs`) with streaming, pagination and
@@ -56,7 +76,7 @@ roadmap. The four phases toward competitive parity are:
 ## Install with one command
 
 ~~~sh
-curl -fsSL https://raw.githubusercontent.com/ibotpafos/cgrx/v0.1.0-alpha.11/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/ibotpafos/cgrx/v0.1.0-alpha.18/install.sh | sh
 ~~~
 
 Installs to `$HOME/.local/bin/cgrx`, without sudo. Apple Silicon macOS downloads
@@ -89,7 +109,7 @@ Native Windows is not supported.
 ~~~sh
 git clone https://github.com/ibotpafos/cgrx.git
 cd cgrx
-git checkout v0.1.0-alpha.11
+git checkout v0.1.0-alpha.18
 cargo install --locked --path crates/cgrx-cli
 ~~~
 
@@ -115,6 +135,15 @@ include the absolute Git worktree root in **repo**. Example status arguments:
 ~~~
 
 CGRX writes its managed index under Git metadata, not into source files.
+Managed MCP serving also supports Git repositories before their first commit:
+an explicit `unborn` revision represents an empty committed baseline while the
+graph reads current worktree files. Risk scans report `NO_COMMITTED_BASELINE`
+and remain partial. Creating the first commit refreshes the baseline automatically.
+Untracked directories share a lazy scan in turns, so a generated directory
+cannot consume every entry before sibling sources are considered. The scan
+reads at most 8192 entries and keeps at most 32 directory iterators open,
+deferring additional directories until a slot is free. Exhausting the budget
+remains an explicit coverage gap; the bounded prefix follows filesystem order.
 See [installation](docs/installation.md) for OpenCode, binary installation,
 updates, uninstalling and troubleshooting.
 
@@ -124,7 +153,9 @@ both the full report and a duplicate compact report in model context. Use `--res
 `CGRX_RESPONSE_PROFILE=full` for programmatic clients that need every internal
 field. `orient` accepts `quick`, `standard`, and `deep` budget presets; when its
 budget is omitted, CGRX chooses a 400-1000 token first-pass budget from the mode,
-task, and scope.
+task, and scope. `orient` needs only `task`: its default mode is `BOUNDED`, with
+`CALLS` at depth 1. Prefer a narrow scope, supplied as a path, paths or a partial
+scope object. An explicit `budget` takes precedence over `budget_preset`.
 
 Compiler-backed method resolution is available through a SCIP index. For Rust,
 generate it with rust-analyzer and pass it when the managed MCP server starts:
@@ -136,11 +167,123 @@ cgrx serve --root . --scip index.scip
 
 For an explicit index destination, use `cgrx index --root . --state /path/to/state
 --scip /path/to/index.scip --json`. CGRX matches SCIP definition and reference
-ranges against the current source before adding `SCIP_CONFIRMED` call edges. The
-SCIP file hash is part of the graph generation, so replacing the semantic index
-cannot reuse a syntax-only cache. Only a unique concrete target closes the gap;
-trait, abstract, protocol, specification, and pure-virtual method targets remain
+ranges to the exact called name before adding `SCIP_CONFIRMED` call edges.
+References in receivers, type arguments, and callback arguments cannot resolve
+the enclosing call. Only one global identity mapped to one concrete indexed
+definition closes the gap; unknown or local alternatives preserve ambiguity.
+Trait, abstract, protocol, specification, and pure-virtual method targets remain
 visible as `DYNAMIC_DISPATCH` because their runtime implementation is still open.
+
+Generate SCIP from the same source revision you index. Embedded document text,
+when supplied by the indexer, must match the source; SCIP also permits omitted
+text. Both the SCIP bytes and the import policy are part of the graph generation.
+An obsolete semantic policy requires reindexing; a managed server rebuilds from
+its source and supplied SCIP index. Without SCIP it rebuilds native evidence.
+During live serving, a new Git HEAD withdraws the previous SCIP proofs. A
+different SCIP artifact restores them once the indexed working sources match
+committed HEAD. Publish the new file atomically after generating it for that
+revision; rewriting identical bytes does not establish freshness. Missing or
+incomplete files return typed errors until publication finishes. An omitted-text
+artifact carries no source attestation, so its producer must ensure that its
+references describe the current source, including the first explicit import.
+
+### MCP memory lifecycle
+
+`serve --multi-repo` keeps one repository by default. After 180 seconds without
+a tool call to a repository, it drops that runtime and its continuation state.
+Semantic embeddings run in a private native child, reused throughout one tool
+call and reaped after that call, including durable-write verification. Its model
+and inference allocations do not accumulate across chat processes. The same E5
+model, vectors and persistent memory format are used. The MCP connection stays
+open; the next tool call reloads the graph and
+persistent memory. `ping`, initialization and tool-list discovery do not renew
+repository activity. A running request is never stopped by the idle timer.
+
+A soft 512 MiB **post-request retention** budget uses macOS physical footprint,
+including compressed memory, or Linux RSS plus swap. Above the budget, CGRX
+returns free allocator pages when the platform supports it, then evicts
+repository entries if necessary. Active
+request allocations can exceed the budget; this is not an operating-system
+memory limit. Include the inference child when measuring active memory. The
+tokenizer and executable runtime still have a small idle
+footprint. Continuation state is independently limited to 32 outstanding handles.
+Expired handles return `cgrx.handle_not_found`; rerun `orient` with an appropriate
+scope and budget. Snapshot/source guards and on-disk memory versions remain intact.
+
+Across processes sharing `CGRX_RESOURCE_DIR` (default
+`$XDG_CACHE_HOME/cgrx/resources-v1`, otherwise `~/.cache/cgrx/resources-v1`), two
+tool requests can execute simultaneously. FIFO tickets keep new requests from
+bypassing waiters; OS leases release on exit or crash, including crashed waiters.
+Admission waits up to 30 seconds, then returns `cgrx.resource_busy` with
+`request_started: false`; it never replays a request. Use the same limits and
+resource directory for all clients. This bounds active CGRX work; it does not
+control how many MCP processes a client starts or total application memory.
+Semantic calls pay model startup latency; batches within one call share a
+worker. A failed worker returns an error without retrying the operation.
+If the MCP process exits, its inference child stops even during model
+initialization. A caller can resubmit a request refused before admission;
+`request_started: false` distinguishes that case from an uncertain write.
+
+Options: `--max-repos 1`, `--idle-seconds 180`, `--memory-budget-mib 512`,
+`--max-active-requests 2`, and `--resource-wait-seconds 30`. `status.resource_control`
+reports these limits, retention and reclaim counters. Automatic resource control
+applies to multi-repository STDIO mode; standalone `--root`/`--state` servers retain
+their explicit lifetime behavior. New options require `--multi-repo`.
+
+Run `CGRX_TEST_BINARY=target/release/cgrx python3 -m unittest discover -s scripts
+-p test_mcp_resources.py` for lifecycle, persistence, admission and 24-session
+regressions. The real semantic-model reload case additionally needs
+`CGRX_RUN_SEMANTIC_RESOURCE_TEST=1` and an existing model cache.
+
+### Swift compiler evidence
+
+On macOS, `scripts/index_swift.py` (Python 3.11+) can use an existing, current
+SwiftPM `description.json` to compile selected modules into a fresh IndexStore.
+It emits modules only; it does not link, stage or launch the application. Supply
+explicit build/cache directories on the appropriate development volume:
+
+~~~sh
+python3 scripts/index_swift.py --repo /absolute/project \
+  --description /absolute/project/.build/arm64-apple-macosx/debug/description.json \
+  --work-dir /absolute/compiler-artifacts --module-cache /absolute/swift-module-cache
+~~~
+
+The default source inventory is `Sources`; repeat `--source-root` to include
+other module source directories. Every Swift file in those directories must
+belong to the prepared build plan. The producer preserves the plan's target,
+SDK, conditional defines and semantic flags, compiles local dependencies first,
+and retains native CALL, DYNAMIC, USR and owner roles through the producing
+toolchain's public [IndexStore C API](https://github.com/swiftlang/indexstore-db/tree/main/Sources/IndexStoreCAPI).
+Standard SCIP references do not retain all those Swift invocation roles.
+
+After a successful build and matching before/after source and input checks, the
+producer atomically publishes private `.cgrx/swift-compiler.json`. Keep `.cgrx/`
+out of version control: this derived file embeds source text and local paths.
+Watched MCP runtimes, including multi-repo serving, consume it automatically.
+`status.swift_compiler` reports current, absent or stale evidence and counts
+accepted calls/references and unsupported occurrences. Exact USRs and UTF-8
+anchors join local source definitions; names never choose an overload. Computed
+accessors and local initializers keep their compiler-recorded owner; synthesized
+constructors point to their owning nominal declaration. Dynamic dispatch,
+inactive branches, external SDK definitions and unsupported bindings retain
+coverage gaps. Evidence applies only to this selected compiler configuration.
+
+Generic parameters retain distinct source declarations, including references
+through `T.Type`. Native compiler calls also retain their full syntax range
+inside prefix/binary expressions and generic construction. This does not make
+computed or returned function values into exact calls. Language-defined
+`Any`/`Self` type syntax is not reported as a missing user declaration.
+
+Compiler-confirmed operator calls use the exact operator token and native USR,
+including overloaded infix, prefix and supported postfix syntax. Operator
+declarations retain body dependencies; a same-spelled overload is never a fallback.
+
+Any source edit, added/removed Swift file, changed package/dependency/compiler
+input, missing payload or invalid payload withdraws the compiler overlay on the
+next refresh and restores unresolved gaps. The payload identity participates in
+the graph snapshot, so replacing compiler evidence invalidates old handles.
+Regenerate it after source or build-setting changes. CGRX never runs a compiler
+as a side effect of a graph query; the portable parser remains available.
 
 ## Explore the graph locally
 
@@ -156,15 +299,36 @@ server binds only to `127.0.0.1`, gives the browser a random process-local
 capability, accepts only GET and HEAD, and never sends graph or source data to
 an external service.
 
-The default `Project map` shows the whole repository at package granularity as
-a Three.js/WebGL star field. Packages are grouped into weighted dependency
-communities, proven package boundaries become weighted links, cycle candidates
-are marked, and high-degree packages receive labels. Hovering a package dims the
-rest of the galaxy and exposes its immediate neighborhood; selecting it focuses
-the camera and fills the inspector. Double-click a package to drill into one of
-its representative symbols. Left-drag orbits, right-drag pans, the wheel zooms
-toward the pointer, and Reset fits the repository again. Labels progressively
-appear as the camera moves closer.
+The **Projects** panel lists local Git repositories next to the launch repository.
+Use `cgrx visualize --repo /path/to/repo --projects-dir /path/to/projects` to choose
+another projects directory; repeat `--projects-dir` for multiple locations.
+Discovery checks only immediate children, skips hidden directories and does not
+index other projects until selected. Search the list by name or path. **New**
+means no managed index exists yet; the first selection builds it. The selected
+project is stored in the page URL, so refresh/back navigation preserve it. Every
+API request (including source, runtime evidence and Git history) selects the same
+project explicitly. Up to four project runtimes are cached; switching back reloads
+an evicted index. Refresh the project list to discover newly added repositories.
+
+The default `Project map` shows indexed symbols and their proven call / implementation
+relationships in a React 2D code atlas with a full-screen canvas,
+soft community regions and collision-aware labels, adapted from
+[Clew](https://github.com/miuuyy/Clew). A compact dock switches between graph,
+architecture, change missions and history; search and evidence open in floating
+panels. Drag to pan, scroll to zoom around the pointer, and drag nodes to arrange
+them for the current view. Click a symbol to inspect its source and double-click to open its focused graph.
+The **Symbols / Files / Packages** selector changes granularity; file views retain
+internal calls as loops and aggregate calls between files. Package mode remains
+available as an architectural summary. Graph scope accepts path globs, for example
+`crates/cgrx-core/**`. The overview loads up to 5,000 symbols and 30,000 relationships,
+shows truncation explicitly, and preserves disconnected indexed symbols. Reset restores
+the layout. Source snapshot changes discard manual positions.
+
+Switch to **3D** for the Three.js map: left-drag orbits, right-drag pans and the
+wheel zooms. Press `/` to search, `?` for controls and Escape to close evidence
+or help. The 2D graph supports Tab/Enter navigation. Partial coverage stays visible
+in the status strip; an edge's inspector retains its original proof metadata.
+See [adaptation notes](docs/research/clew-explorer.md) and the retained MIT notice.
 
 The focused graph keeps candidate tests below the selected symbol. Current
 proven edges, known coverage gaps, hypothetical refactor edges, conditional
@@ -289,7 +453,7 @@ is not required by the released executable.
 | Tool | Purpose |
 | --- | --- |
 | status | Snapshot, graph counts, freshness, coverage |
-| search_graph | Bounded symbol/body discovery with optional language filter |
+| search_graph | Bounded symbol/body discovery and source-bound AST patterns |
 | get_outline | File symbols and definition spans without bodies |
 | get_architecture | Paginated packages, proven call, implementation, local-import and static-reference boundaries, hotspots, cycles and weighted semantic communities |
 | trace_path | Caller/callee traversal |
@@ -308,13 +472,39 @@ is not required by the released executable.
 | check_repository_gates | Architecture gate for cycles, coupling, unresolved local dependencies and graph coverage |
 | suggest_refactors | Similar callable bodies and a hypothetical extract-helper graph delta |
 
-`search_graph` searches symbol names by default. Set `include_body: true` to
-also locate a term inside symbol bodies, and use `language` (`typescript`, `go`,
+`search_graph` searches symbol names by default, including all terms of a query
+such as `http request` in `HTTPRequest`, `http_request`, or `HTTP2Request`.
+Exact, prefix and substring names retain priority over token matches. Set
+`include_body: true` to also find every query term in a symbol body, even when
+the terms are separated, and use `language` (`typescript`, `go`,
 `java`, `python`, or `rust`) to keep mixed-repository results focused. TypeScript covers
-both `.ts` and `.tsx`. Every match reports `matched_by` as `symbol` or `body`.
+both `.ts` and `.tsx`. Every match reports its literal, token or fuzzy lane
+through `matched_by`.
+`limit` bounds a page to 1–50 results; `offset` resumes in deterministic order.
+Continue with `page.next_offset` and `expected_snapshot: page.snapshot_id` to
+reject a changed source snapshot rather than mixing pages. Compact responses
+retain every requested match and include the same pagination metadata.
+
+The same managed search is available directly from a terminal:
+
+~~~sh
+cgrx search --root /absolute/path/to/repository --query "http request" --language rust
+cgrx search --root /absolute/path/to/repository --query "cache expiry" --include-body true --paths 'src/**'
+cgrx search --root /absolute/path/to/repository --query 'fetch($$$ARGS)' --match-mode ast --language typescript --paths 'src/**'
+~~~
+
+The command prints JSON with source spans, symbol references and pagination.
+See [search discovery](docs/search-discovery.md) for ranking, safe continuation
+and a reproducible comparison with alpha.17.
+
 Use `get_outline` with a repository-relative source path to inspect its symbols
 in source order without paying for function bodies; `limit` defaults to 200 and
 is capped at 500.
+Python outlines also list proven explicit relative imports, including each local
+name, target declaration, file and source evidence. `limit` bounds the symbols
+and imports separately; check `imports_truncated` (compact: `imports_more`) as
+well as symbol truncation. This covers unique plain function/class declarations
+inside regular source packages. [Validation and limits](docs/benchmarks/python-import-evidence-2026-10-08.md).
 `get_architecture` groups source files and symbols by the first `package_depth`
 path components. It aggregates proven `CALLS` and `IMPLEMENTS` relationships
 plus unambiguous repository-local `IMPORTS` and conservative static `REFERENCES`
@@ -340,7 +530,24 @@ of being assigned speculatively.
 `CALLS`/`IMPLEMENTS` edges allowed by `scope`, including callsite path/span and
 resolver class. `depth` defaults to 1 and is capped at 4; transitive rows include
 `hop` and the immediate `via` target so every step remains inspectable. It fails
-on ambiguous symbols unless `path` disambiguates them.
+on ambiguous symbols unless `path` or `symbol_ref` disambiguates them.
+
+`search_graph` and `get_outline` return an opaque `symbol_ref` for each
+definition. Copy that string into `get_code_snippet`, `trace_path`, or
+`find_usages` alongside `symbol` to select a specific overload or same-name
+method, including two methods in the same file. Supplied `path` and `scope`
+still constrain the selection. Traces return references for their root and
+neighbors; usages return references for the selected target and caller.
+Compact responses append reference columns without shifting existing columns.
+References bind the index location, full snapshot, extraction policy, definition
+identity and source hash. After a snapshot change, rediscover the definition;
+an outdated reference returns `cgrx.symbol_ref_not_found` without name fallback.
+Existing Rust APIs remain available; `SymbolSelector` and the `*_selected`
+methods provide exact selection. References are not written to usage logs.
+Current responses use the shorter `cgrxs2` encoding of the complete 256-bit
+digest. Previously issued `cgrxs1` references remain accepted in their original
+index and snapshot. Treat both formats as opaque strings and copy them from
+discovery results.
 
 `find_similar` keeps exact duplicate bodies in `matches` and reports heuristic
 near-duplicates, similar structure and shared proven functionality separately in
@@ -417,6 +624,29 @@ Module-self imports `use crate::worker::{self as api}` and
 `use crate::{worker::{self as api}}` resolve the same direct module.
 Aliases with nested suffixes (`api::inner::target()`), function aliases
 and reexport chains are not covered by this Rust alias proof.
+
+Development builds prove Go method calls through a single local address binding
+to an explicit array or slice field element (`shard := &l.shards[i]`). The owner,
+element declaration, target method, binding and callsite are tied to the current
+source hash. Reassignment, shadowing, interfaces, aliases, generic/imported
+elements and promoted methods remain gaps. Both named and unnamed target
+receivers are supported. [Go indexed-field evidence](docs/benchmarks/go-indexed-field-evidence-2026-10-08.md)
+records the exact source case, compiler checks and compact MCP observations.
+
+Development builds also preserve exact Rust owner and method identity for
+`self` / `Self` calls on local structs and enums with only lifetime parameters,
+including methods in separate inherent impl blocks. Type/const parameters,
+bounded lifetimes, trait dispatch and ambiguous impls remain gaps.
+Static `find_usages` includes recursive call sites once without repeating the
+traversal. [Rust receiver evidence](docs/benchmarks/rust-lifetime-evidence-2026-10-08.md)
+records the measured improvement at that iteration. Development builds now
+also resolve explicitly typed parameters when their value/reference type is
+the first receiver candidate of a unique same-module inherent method. Exact
+parameter, owner, caller and target spans are bound to the current source hash.
+Autoref/deref, local constructed receivers, aliases, type/const generics and
+shadowed or macro-dependent bindings remain gaps. See
+[parameter receiver evidence](docs/benchmarks/rust-parameter-evidence-2026-10-08.md)
+for the measured scope and lookup-order checks.
 
 Development builds resolve named imports and bounded named reexports to direct
 module-level `const` arrow functions as well as free-function declarations.

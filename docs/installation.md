@@ -6,7 +6,7 @@
 ## Одной командой
 
 ~~~sh
-curl -fsSL https://raw.githubusercontent.com/ibotpafos/cgrx/v0.1.0-alpha.11/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/ibotpafos/cgrx/v0.1.0-alpha.18/install.sh | sh
 ~~~
 
 Путь: `$HOME/.local/bin/cgrx`. Установщик не использует sudo и не меняет
@@ -19,7 +19,7 @@ SHA-256 проверяет соответствие опубликованном
 Свой каталог или принудительная сборка:
 
 ~~~sh
-curl -fsSL https://raw.githubusercontent.com/ibotpafos/cgrx/v0.1.0-alpha.11/install.sh | CGRX_INSTALL_DIR="$HOME/tools/bin" sh -s -- --source
+curl -fsSL https://raw.githubusercontent.com/ibotpafos/cgrx/v0.1.0-alpha.18/install.sh | CGRX_INSTALL_DIR="$HOME/tools/bin" sh -s -- --source
 ~~~
 
 Повтор команды обновляет бинарник; прежняя версия сохраняется рядом в
@@ -59,7 +59,7 @@ curl -fsSL https://raw.githubusercontent.com/ibotpafos/cgrx/v0.1.0-alpha.11/inst
 ~~~sh
 git clone https://github.com/ibotpafos/cgrx.git
 cd cgrx
-git checkout v0.1.0-alpha.11
+git checkout v0.1.0-alpha.18
 cargo install --locked --path crates/cgrx-cli
 ~~~
 
@@ -71,13 +71,13 @@ Cargo скачивает зависимости при установке; са�
 
 ## Готовый бинарник: macOS Apple Silicon
 
-Из [релиза](https://github.com/ibotpafos/cgrx/releases/tag/v0.1.0-alpha.11)
-скачайте cgrx-v0.1.0-alpha.11-aarch64-apple-darwin.tar.gz и SHA256SUMS.
+Из [релиза](https://github.com/ibotpafos/cgrx/releases/tag/v0.1.0-alpha.18)
+скачайте cgrx-v0.1.0-alpha.18-aarch64-apple-darwin.tar.gz и SHA256SUMS.
 В каталоге со скачанными файлами:
 
 ~~~sh
 shasum -a 256 -c SHA256SUMS
-tar -xzf cgrx-v0.1.0-alpha.11-aarch64-apple-darwin.tar.gz
+tar -xzf cgrx-v0.1.0-alpha.18-aarch64-apple-darwin.tar.gz
 mkdir -p "$HOME/.local/bin"
 install -m 755 cgrx "$HOME/.local/bin/cgrx"
 ~~~
@@ -145,6 +145,22 @@ args = ["serve", "--multi-repo", "--response-profile", "token-efficient"]
 ~~~json
 {"repo": "/absolute/path/to/project", "query": "target", "limit": 10}
 ~~~
+
+Поиск понимает составные имена: `http request` находит `HTTPRequest` и
+`http_request`. Для нескольких слов в теле функции добавьте `include_body: true`.
+В ответе `page.next_offset` указывает следующую страницу; передайте его в
+`offset`, а `page.snapshot_id` — в `expected_snapshot`. Если исходники изменились,
+повторите поиск с первой страницы.
+
+Можно искать прямо из терминала без MCP-клиента:
+
+~~~sh
+cgrx search --root /absolute/path/to/project --query "http request" --limit 20
+cgrx search --root /absolute/path/to/project --query "cache expiry" --include-body true --paths 'src/**'
+~~~
+
+Команда выводит JSON с определениями и данными для продолжения поиска.
+[Подробности и проверяемое сравнение](search-discovery.md).
 
 Нужен репозиторий с существующим коммитом HEAD. Изменённые/новые файлы
 обновляются в рабочем представлении. Первый запрос на большой базе может

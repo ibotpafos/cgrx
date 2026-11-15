@@ -54,7 +54,7 @@ export function layoutProjectMap(graph, viewport = {}) {
     .sort((left, right) => right.members.length - left.members.length || left.id.localeCompare(right.id));
   const centerX = width / 2;
   const centerY = height / 2;
-  const maxCenterRadius = Math.max(96, Math.min(width, height) * .27);
+  const maxCenterRadius = Math.max(112, Math.min(width, height) * .34);
   const centers = new Map();
   communityRows.forEach((community, index) => {
     if (communityRows.length === 1) {
@@ -78,7 +78,7 @@ export function layoutProjectMap(graph, viewport = {}) {
       const radius = Math.max(5, Math.min(17, 5 + Math.log2(Number(node.degree || 0) + 1) * 1.9));
       const pin = viewport.pins?.[identity(node)];
       const angle = seededAngle(identity(node));
-      const distance = members.length === 1 ? 0 : 24 + Math.sqrt(index + 1) * 27;
+      const distance = members.length === 1 ? 0 : 30 + Math.sqrt(index + 1) * 34;
       nodes.push({
         ...node,
         x: pin?.x ?? center.x + Math.cos(angle) * distance,
@@ -97,11 +97,12 @@ export function layoutProjectMap(graph, viewport = {}) {
     const members = nodes.filter((node) => node.community === community.id);
     const x = members.reduce((sum, node) => sum + node.x, 0) / Math.max(1, members.length);
     const y = members.reduce((sum, node) => sum + node.y, 0) / Math.max(1, members.length);
-    const radius = Math.max(38, ...members.map((node) => Math.hypot(node.x - x, node.y - y) + node.radius + 22));
+    const radius = Math.max(46, ...members.map((node) => Math.hypot(node.x - x, node.y - y) + node.radius + 34));
     return { ...community, x, y, radius };
   });
   const ranked = [...nodes].sort((left, right) => Number(right.degree || 0) - Number(left.degree || 0));
-  const labelIds = new Set(ranked.slice(0, Math.min(24, ranked.length)).map(identity));
+  const labelLimit = Math.min(36, Math.max(16, Math.floor(width / 52)), ranked.length);
+  const labelIds = new Set(ranked.slice(0, labelLimit).map(identity));
   return {
     width,
     height,
@@ -162,7 +163,7 @@ function settleProjectMap(nodes, edges, centers, width, height, pins) {
       const dx = target.x - source.x;
       const dy = target.y - source.y;
       const distance = Math.max(1, Math.hypot(dx, dy));
-      const preferred = source.community === target.community ? 76 : 132;
+      const preferred = source.community === target.community ? 92 : 164;
       const strength = Math.min(.09, .018 + Math.log2(link.weight + 1) * .009) * alpha;
       const pull = (distance - preferred) * strength;
       const px = dx / distance * pull;

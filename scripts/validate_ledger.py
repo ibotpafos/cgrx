@@ -12,6 +12,7 @@ import hashlib
 import json
 from pathlib import Path
 import re
+import stat
 import subprocess
 import sys
 
@@ -34,6 +35,10 @@ RULE_KEYS = (
     "syntax_other",
 )
 
+# These are the relationship kinds advertised by trace_path. Missing
+# relation_kind preserves the original call-only ledger contract.
+RELATION_KINDS = ("CALLS", "IMPLEMENTS", "CONTAINS")
+
 
 def require(condition, message):
     if not condition:
@@ -51,6 +56,29 @@ def nonempty(value):
 
 def digest(data):
     return hashlib.sha256(data).hexdigest()
+
+
+def fixture_hashes(directory):
+    """Pin every materialized byte, including hidden source and ignore files."""
+    directory = Path(directory)
+    actual = {}
+
+    def visit(full):
+        require(full.name.casefold() != '.git', 'Git metadata forbidden in fixture')
+        mode = full.lstat().st_mode
+        require(not stat.S_ISLNK(mode), 'symlink fixture evidence forbidden')
+        if stat.S_ISDIR(mode):
+            for child in sorted(full.iterdir()):
+                visit(child)
+        else:
+            require(stat.S_ISREG(mode), 'special fixture evidence forbidden')
+            actual[full.relative_to(directory).as_posix()] = digest(full.read_bytes())
+
+    try:
+        visit(directory)
+    except OSError as exc:
+        raise ValueError('fixture evidence unavailable') from exc
+    return actual
 
 
 def git(repo, *args):
@@ -77,13 +105,14 @@ def validate(doc, root=ROOT):
     for case in doc['cases']:
         fields(case, ('id', 'rule_key', 'kind', 'repo_kind', 'caller', 'target',
                       'reported_from', 'cgrx_version', 'extraction_revision', 'date'),
-               ('fixture', 'fixture_sha256', 'repo', 'revision', 'evidence'))
+               ('fixture', 'fixture_sha256', 'repo', 'revision', 'evidence', 'relation_kind'))
         for key in ('id', 'rule_key', 'kind', 'repo_kind', 'reported_from', 'cgrx_version'):
             require(nonempty(case[key]), 'invalid ' + key)
         require(case['id'] not in ids, 'duplicate case id')
         ids.add(case['id'])
         require(case['rule_key'] in RULE_KEYS, 'unknown rule_key')
         require(case['kind'] in ('false_positive', 'false_negative'), 'invalid kind')
+        require(case.get('relation_kind', 'CALLS') in RELATION_KINDS, 'invalid relation_kind')
         require(case['repo_kind'] in ('synthetic', 'public_clone'), 'invalid repo_kind')
         require(isinstance(case['extraction_revision'], int) and case['extraction_revision'] > 0,
                 'invalid extraction_revision')
@@ -102,12 +131,7 @@ def validate(doc, root=ROOT):
             require(directory.is_dir(), 'missing fixture directory')
             recorded = case['fixture_sha256']
             require(isinstance(recorded, dict) and recorded, 'fixture_sha256 must be nonempty map')
-            actual = {}
-            for full in sorted(directory.rglob('*')):
-                if not full.is_file() or full.name.startswith('.'):
-                    continue
-                rel = full.relative_to(directory).as_posix()
-                actual[rel] = digest(full.read_bytes())
+            actual = fixture_hashes(directory)
             require(actual == recorded, 'fixture drift: %s' % name)
             require(case['caller']['path'] in recorded and case['target']['path'] in recorded,
                     'caller/target path must be fixture files')

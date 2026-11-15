@@ -21,34 +21,45 @@ Upstream: [GIS-Info/web-git-graph](https://github.com/GIS-Info/web-git-graph).
 Both packages are MIT-licensed. The bundled notice is in
 [licenses/web-git-graph-MIT.txt](licenses/web-git-graph-MIT.txt).
 
-## Optional GitHub MCP prototype
+## Clew visual graph patterns
 
-`scripts/github_mcp_bridge.py` uses the official Python MCP SDK `mcp` 2.3.0
-([modelcontextprotocol/python-sdk](https://github.com/modelcontextprotocol/python-sdk),
-MIT) and `httpx2` 2.10.0
-([pydantic/httpx2](https://github.com/pydantic/httpx2), BSD-3-Clause).
-They are pinned in the script metadata and installed only into uv's optional
-script environment; they are not bundled in the CGRX Rust executable.
-
-The adapter connects to GitHub's hosted MCP service. Its search index is not
-part of the MIT-licensed [GitHub MCP server](https://github.com/github/github-mcp-server).
+The local graph explorer adapts visual and interaction patterns from Clew's
+open-source graph canvas. `clew-geometry.js` adapts the zone contour and convex
+hull implementation, cursor zoom and label placement. The React workspace and
+stylesheet adapt its compact dock and floating-panel composition.
+Upstream: [miuuyy/Clew](https://github.com/miuuyy/Clew), revision
+`85b7af12c992593568f6564ad322c9e3d258a919`.
+Clew is MIT-licensed. The upstream notice is in
+[licenses/clew-MIT.txt](licenses/clew-MIT.txt).
 
 ## Rust dependencies
-
-The GitHub prototype uses RustCrypto `sha1` 0.10.6 (MIT OR Apache-2.0) for Git
-blob identity interoperability, independently of the local repository's hash
-format. It does not use SHA-1 for authorization or as a security guarantee;
-source fingerprints additionally use the existing BLAKE3 implementation.
-Upstream: [RustCrypto SHA-1](https://docs.rs/sha1/0.10.6/sha1/).
 
 Dependencies are pinned in Cargo.lock and downloaded during source installation.
 [licenses/dependencies.md](licenses/dependencies.md) lists versions and declared
 licenses. Binary distributions include available dependency license/notice files
 in the licenses directory. Tree-sitter grammars retain their upstream authorship.
 
+The code-discovery runtime additionally uses ast-grep-core 0.45.2 (MIT) for
+read-only structural patterns, Rayon 1.12.0 (MIT OR Apache-2.0) for extraction
+scheduling, and petgraph 0.8.3 (MIT OR Apache-2.0) for iterative package SCCs.
+Upstreams: [ast-grep](https://github.com/ast-grep/ast-grep),
+[Rayon](https://github.com/rayon-rs/rayon), and
+[petgraph](https://github.com/petgraph/petgraph).
+Retained notices: [ast-grep MIT](licenses/ast-grep-0.45.2-MIT.txt),
+[Rayon MIT](licenses/rayon-1.12.0-LICENSE-MIT.txt),
+[Rayon Apache](licenses/rayon-1.12.0-LICENSE-APACHE.txt),
+[petgraph MIT](licenses/petgraph-0.8.3-LICENSE-MIT.txt), and
+[petgraph Apache](licenses/petgraph-0.8.3-LICENSE-APACHE.txt).
+
+## D3 force layout
+
+The symbol/file atlas bundles `d3-force` 3.0.0 and its d3-quadtree,
+d3-dispatch and d3-timer dependencies. Upstream: https://github.com/d3/d3-force.
+Their ISC license notices are retained in [licenses/d3-ISC.txt](licenses/d3-ISC.txt).
+
 ## ast-grep-core
 
-Syntax-only review hints use ast-grep-core 0.39.6 (MIT).
+Syntax-only review hints use ast-grep-core 0.45.2 (MIT).
 Upstream: https://github.com/ast-grep/ast-grep .
 
 ## similar

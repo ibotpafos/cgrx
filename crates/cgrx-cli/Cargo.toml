@@ -1,8 +1,10 @@
 [package]
 name = "cgrx-cli"
-version = "0.1.0"
+version.workspace = true
 edition.workspace = true
 license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
 autobins = false
 
 [[bin]]
@@ -11,21 +13,26 @@ path = "src/main.rs"
 
 [dependencies]
 similar = "=2.7.0"
-toml = { version = "=0.8.23", default-features = false, features = ["parse"] }
-cgrx-capsule = { path = "../cgrx-capsule" }
-cgrx-core = { path = "../cgrx-core" }
-cgrx-cgcr = { path = "../cgrx-cgcr" }
-cgrx-languages = { path = "../cgrx-languages" }
-cgrx-mcp = { path = "../cgrx-mcp" }
-cgrx-retrieval = { path = "../cgrx-retrieval" }
-cgrx-store = { path = "../cgrx-store" }
-cgrx-metrics = { path = "../cgrx-metrics" }
-blake3 = "1.8.7"
-levenshtein = "1.0.5"
-serde = { version = "1.0.219", features = ["derive"] }
-serde_json = "1.0.143"
+toml = { version = "=1.1.6", default-features = false, features = ["parse", "serde"] }
+cgrx-capsule.workspace = true
+cgrx-core.workspace = true
+cgrx-cgcr.workspace = true
+cgrx-languages.workspace = true
+cgrx-mcp.workspace = true
+cgrx-retrieval.workspace = true
+cgrx-store.workspace = true
+cgrx-metrics.workspace = true
+blake3.workspace = true
+sha2 = "=0.10.9"
 sha1 = "=0.10.6"
-notify = "6.1.1"
+base64 = "=0.22.1"
+ast-grep-core = "=0.45.2"
+petgraph = { version = "=0.8.3", default-features = false, features = ["std"] }
+rayon = "=1.12.0"
+levenshtein = "1.0.5"
+serde.workspace = true
+serde_json.workspace = true
+notify = "8.2.0"
 protobuf = "=3.7.2"
 scip = "=0.10.0"
 
@@ -40,3 +47,6 @@ path = "../../tests/multi_repo.rs"
 [features]
 # Validation-only opt-in; never enabled by a default or release build.
 experimental-php = ["cgrx-languages/experimental-php"]
+# Backward-compatible alias; Swift is enabled in every build.
+experimental-swift = ["cgrx-languages/experimental-swift"]
+experimental-javascript = ["cgrx-languages/experimental-javascript"]

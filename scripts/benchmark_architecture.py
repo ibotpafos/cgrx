@@ -108,7 +108,7 @@ def benchmark(binary: Path, label: str, repo: Path, depth: int, limit: int) -> d
     ]
     started = time.perf_counter()
     process = subprocess.run(
-        [binary, "serve", "--multi-repo"],
+        [binary, "serve", "--multi-repo", "--response-profile", "full"],
         input="".join(json.dumps(frame, separators=(",", ":")) + "\n" for frame in frames),
         text=True,
         capture_output=True,

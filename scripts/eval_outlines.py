@@ -45,7 +45,13 @@ def main():
             },
         })
     result = subprocess.run(
-        [str(args.binary.resolve()), "serve", "--multi-repo"],
+        [
+            str(args.binary.resolve()),
+            "serve",
+            "--multi-repo",
+            "--response-profile",
+            "full",
+        ],
         input="".join(json.dumps(frame) + "\n" for frame in frames),
         text=True,
         capture_output=True,

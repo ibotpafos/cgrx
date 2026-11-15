@@ -26,7 +26,7 @@ class LanguageCoverageTests(unittest.TestCase):
             )
 
     def test_complete_registered_matrix(self):
-        self.assertEqual(coverage.validate_coverage(self.contract, self.corpus, ROOT), (7, 10, 40, 40))
+        self.assertEqual(coverage.validate_coverage(self.contract, self.corpus, ROOT), (9, 17, 68, 68))
 
     def test_missing_relation_or_extension_cell_fails(self):
         contract = copy.deepcopy(self.contract)

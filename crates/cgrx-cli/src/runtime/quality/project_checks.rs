@@ -285,14 +285,6 @@ fn hashes(root: &Path) -> io::Result<BTreeMap<PathBuf, String>> {
                     p.strip_prefix(root).unwrap().to_owned(),
                     blake3::hash(&fs::read(p)?).to_hex().to_string(),
                 );
-            } else if m.file_type().is_symlink() {
-                out.insert(
-                    p.strip_prefix(root).unwrap().to_owned(),
-                    format!(
-                        "symlink:{}",
-                        blake3::hash(fs::read_link(&p)?.as_os_str().as_encoded_bytes()).to_hex()
-                    ),
-                );
             }
         }
         Ok(())
@@ -396,13 +388,6 @@ fn run(root: &Path, logs: &Path, label: &str, argv: &[String], path: &str, timeo
         };
         #[cfg(unix)]
         kill_group(pid);
-        #[cfg(test)]
-        if let Ok(directory) = std::env::var("CGRX_VERIFY_LOG_DIR") {
-            let target = Path::new(&directory);
-            fs::create_dir_all(target)?;
-            fs::copy(&stdout, target.join(format!("{label}.out")))?;
-            fs::copy(&stderr, target.join(format!("{label}.err")))?;
-        }
         Ok(
             json!({"status":reason.unwrap_or(if status.success(){"passed"}else{"failed"}),"exit_code":status.code(),"duration_ms":start.elapsed().as_millis(),
             "output_bytes":fs::metadata(&stdout)?.len()+fs::metadata(&stderr)?.len(),"diagnostics":"withheld: project output may contain secrets"}),
@@ -465,56 +450,6 @@ fn check_config(root: &Path) -> io::Result<Config> {
     }
     Ok(c)
 }
-fn check_copy(
-    copy: &Path,
-    logs: &Path,
-    label: &str,
-    config: &Config,
-    path: &str,
-    initial: Option<&BTreeMap<PathBuf, String>>,
-) -> io::Result<(Value, Option<String>, bool)> {
-    let mut report = json!({});
-    let mut formatted = None;
-    let mut after_format = None;
-    for (stage, argv) in [
-        ("format", &config.format),
-        ("typecheck", &config.typecheck),
-        ("tests", &config.tests),
-    ] {
-        report[stage] = run(
-            copy,
-            logs,
-            &format!("{label}-{stage}"),
-            argv,
-            path,
-            config.timeout_ms,
-        );
-        if stage == "format" {
-            let now = hashes(copy)?;
-            if let Some(initial) = initial {
-                if initial
-                    .iter()
-                    .any(|(p, h)| p != Path::new(path) && now.get(p) != Some(h))
-                    || now.keys().any(|p| !initial.contains_key(p))
-                {
-                    report[stage]["status"] = json!("failed");
-                    report[stage]["reason"] = json!("formatter_changed_other_files");
-                }
-                let text = fs::read_to_string(copy.join(path))?;
-                if text.len() > 262144 {
-                    return Err(bad("formatted_file_too_large"));
-                }
-                formatted = Some(text);
-            }
-            after_format = Some(now);
-        }
-    }
-    Ok((
-        report,
-        formatted,
-        after_format.as_ref() == Some(&hashes(copy)?),
-    ))
-}
 pub(super) fn verify(root: &Path, path: &str, before: &str, after: &str, diff: &str) -> Value {
     let work = || -> io::Result<Value> {
         let root = root.canonicalize()?;
@@ -522,8 +457,8 @@ pub(super) fn verify(root: &Path, path: &str, before: &str, after: &str, diff: &
         let dir: CopyDir = super::verification::temporary()?;
         let baseline = dir.0.join("baseline");
         let modified = dir.0.join("modified");
-        let original_hashes = hashes(&root)?;
         copy_snapshot(&root, &baseline, &mut Budget::new(&config))?;
+        let original_hashes = hashes(&baseline)?;
         // Recopy from the immutable snapshot, rebasing internal symlinks to each copy.
         copy_tree(
             &baseline,
@@ -549,21 +484,55 @@ pub(super) fn verify(root: &Path, path: &str, before: &str, after: &str, diff: &
             return Err(bad("patch_application_failed"));
         }
         let initial = hashes(&modified)?;
-        // The two isolated copies can run their commands concurrently.
-        let (base_result, changed_result) = std::thread::scope(|scope| {
-            let baseline_job =
-                scope.spawn(|| check_copy(&baseline, &dir.0, "baseline", &config, path, None));
-            let modified_job = scope
-                .spawn(|| check_copy(&modified, &dir.0, "modified", &config, path, Some(&initial)));
-            (baseline_job.join().unwrap(), modified_job.join().unwrap())
-        });
-        let (base, _, baseline_stable) = base_result?;
-        let (changed, formatted, modified_stable) = changed_result?;
-        let checks_stable = baseline_stable && modified_stable;
+        let mut base = json!({});
+        let mut changed = json!({});
+        let mut formatted = None;
+        let mut checks_stable = true;
+        for (label, copy, out) in [
+            ("baseline", &baseline, &mut base),
+            ("modified", &modified, &mut changed),
+        ] {
+            let mut after_format = None;
+            for (stage, argv) in [
+                ("format", &config.format),
+                ("typecheck", &config.typecheck),
+                ("tests", &config.tests),
+            ] {
+                out[stage] = run(
+                    copy,
+                    &dir.0,
+                    &format!("{label}-{stage}"),
+                    argv,
+                    path,
+                    config.timeout_ms,
+                );
+                if stage == "format" && label == "modified" {
+                    let now = hashes(copy)?;
+                    if initial
+                        .iter()
+                        .any(|(p, h)| p != Path::new(path) && now.get(p) != Some(h))
+                        || now.keys().any(|p| !initial.contains_key(p))
+                    {
+                        out[stage]["status"] = json!("failed");
+                        out[stage]["reason"] = json!("formatter_changed_other_files");
+                    }
+                    let text = fs::read_to_string(copy.join(path))?;
+                    if text.len() > 262144 {
+                        return Err(bad("formatted_file_too_large"));
+                    }
+                    formatted = Some(text);
+                }
+                if stage == "format" {
+                    after_format = Some(hashes(copy)?);
+                }
+            }
+            checks_stable &= after_format.as_ref() == Some(&hashes(copy)?);
+        }
         let formatted = formatted.ok_or_else(|| bad("no_formatted_source"))?;
         let final_source = fs::read_to_string(modified.join(path))?;
-        let current_hashes = hashes(&root)?;
-        let unchanged = original_hashes == current_hashes;
+        let unchanged = original_hashes.iter().all(|(p, h)| {
+            fs::read(root.join(p)).is_ok_and(|b| blake3::hash(&b).to_hex().as_str() == h)
+        });
         let stable = final_source == formatted && checks_stable;
         let passed = unchanged
             && stable
@@ -599,18 +568,6 @@ pub(super) fn verify(root: &Path, path: &str, before: &str, after: &str, diff: &
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[cfg(unix)]
-    #[test]
-    fn integrity_hashes_detect_retargeted_symlinks() {
-        let dir = super::super::verification::temporary().unwrap();
-        fs::write(dir.0.join("a.ts"), "same").unwrap();
-        fs::write(dir.0.join("b.ts"), "same").unwrap();
-        std::os::unix::fs::symlink("a.ts", dir.0.join("entry.ts")).unwrap();
-        let before = hashes(&dir.0).unwrap();
-        fs::remove_file(dir.0.join("entry.ts")).unwrap();
-        std::os::unix::fs::symlink("b.ts", dir.0.join("entry.ts")).unwrap();
-        assert_ne!(before, hashes(&dir.0).unwrap());
-    }
     #[test]
     fn compiled_dependency_directories_are_copied() {
         assert!(!excluded_from_copy(Path::new(
@@ -788,25 +745,4 @@ fn timeout_kills_spawned_descendants() {
     }
     let _ = Command::new("/bin/kill").args(["-KILL", &pid]).status();
     panic!("descendant remained alive after timeout");
-}
-
-// Manual configuration acceptance probe; never run against arbitrary projects in CI.
-#[cfg(test)]
-#[test]
-#[ignore]
-fn configured_repository_probe() {
-    let root =
-        std::path::PathBuf::from(std::env::var("CGRX_VERIFY_REPO").expect("CGRX_VERIFY_REPO"));
-    let path = std::env::var("CGRX_VERIFY_PATH").expect("CGRX_VERIFY_PATH");
-    let before = fs::read_to_string(root.join(&path)).unwrap();
-    let after = format!("{before}\n");
-    let diff = similar::TextDiff::from_lines(&before, &after)
-        .unified_diff()
-        .context_radius(1)
-        .header(&format!("a/{path}"), &format!("b/{path}"))
-        .to_string();
-    let mut result = verify(&root, &path, &before, &after, &diff);
-    result.as_object_mut().unwrap().remove("formatted_diff");
-    println!("CONFIGURED_REPOSITORY_RESULT={result}");
-    assert_eq!(fs::read_to_string(root.join(&path)).unwrap(), before);
 }

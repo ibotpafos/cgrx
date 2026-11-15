@@ -14,8 +14,11 @@ fn hash(byte: u8) -> Hash32 {
 fn extraction(name: &str, target: &str) -> Extraction {
     Extraction {
         rust_file: None,
+        python_file: None,
         package_span: None,
         lexical_arrows: Vec::new(),
+        swift_free_functions: Vec::new(),
+        swift_type_references: Vec::new(),
         symbols: vec![Symbol {
             name: name.to_owned(),
             span: Span { start: 0, end: 4 },

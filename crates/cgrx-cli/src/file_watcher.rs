@@ -21,7 +21,7 @@ pub struct FileWatcherEvent {
 ///
 /// Implementations must:
 /// - Watch a single root directory recursively.
-/// - Filter events to supported source extensions (`.rs`, `.ts`, `.go`, `.py`, `.java`).
+/// - Filter events through the active language registry, including C++ headers.
 /// - Ignore `.git/`, `target/`, `node_modules/` directories.
 /// - Debounce rapid successive changes into a single event.
 #[allow(dead_code)]
@@ -32,9 +32,6 @@ pub trait FileWatcher: Send {
 
 #[allow(dead_code)]
 const DEBOUNCE_DURATION: Duration = Duration::from_millis(500);
-
-/// Supported source-file extensions.
-const WATCHED_EXTENSIONS: &[&str] = &["rs", "ts", "go", "py", "java"];
 
 /// Directories to ignore entirely.
 const IGNORED_DIR_NAMES: &[&str] = &[".git", "target", "node_modules"];
@@ -49,9 +46,7 @@ fn is_watched(path: &Path) -> bool {
     {
         return false;
     }
-    path.extension()
-        .and_then(|ext| ext.to_str())
-        .is_some_and(|ext| WATCHED_EXTENSIONS.contains(&ext))
+    cgrx_languages::pack_for_path(path).is_some()
 }
 
 /// Real filesystem watcher backed by the `notify` crate (inotify on Linux,

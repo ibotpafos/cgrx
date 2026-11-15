@@ -39,6 +39,55 @@ use super::git_helpers::{git_bytes, git_text, store_writer_error};
 mod proof_edge_tests {
     use super::*;
     #[test]
+    fn swift_direct_proof_is_exact_and_never_falls_back_to_name_matching() {
+        let source = b"func target() {}\nfunc caller() { target() }\n";
+        let extracted = extract_path("src/main.swift", source).unwrap();
+        let hashes = BTreeMap::from([(
+            "src/main.swift".to_owned(),
+            Hash32(*blake3::hash(source).as_bytes()),
+        )]);
+        let arcs = rebuild_arcs(&extracted.documents, &hashes, &BTreeMap::new());
+        assert_eq!(arcs.len(), 1);
+        assert_eq!(arcs[0].kind, RelationKind::Calls);
+
+        for case in ["missing", "caller", "target", "tag", "duplicate"] {
+            let mut docs = extracted.documents.clone();
+            let call = docs
+                .iter_mut()
+                .find(|document| document.provenance == "CALLS")
+                .unwrap();
+            match case {
+                "missing" => call.ts_lexical_target = None,
+                "caller" => call.ts_lexical_target.as_mut().unwrap().caller.start += 1,
+                "target" => call.ts_lexical_target.as_mut().unwrap().target.start += 1,
+                "tag" => call.semantic_tags.retain(|tag| tag != "SWIFT_EXACT_CALL"),
+                "duplicate" => {
+                    let target = docs
+                        .iter()
+                        .find(|document| {
+                            document.provenance == "SYNTAX" && document.qualified_name == "target"
+                        })
+                        .unwrap()
+                        .clone();
+                    docs.push(target);
+                }
+                _ => unreachable!(),
+            }
+            assert!(
+                rebuild_arcs(&docs, &hashes, &BTreeMap::new()).is_empty(),
+                "{case}"
+            );
+        }
+
+        let shadowed = b"func target() {}\nfunc caller() { let target = { }; target() }\n";
+        let extracted = extract_path("src/main.swift", shadowed).unwrap();
+        let hashes = BTreeMap::from([(
+            "src/main.swift".to_owned(),
+            Hash32(*blake3::hash(shadowed).as_bytes()),
+        )]);
+        assert!(rebuild_arcs(&extracted.documents, &hashes, &BTreeMap::new()).is_empty());
+    }
+    #[test]
     fn unreadable_config_presence_is_an_explicit_resolution_blocker() {
         let mut hashes = BTreeMap::new();
         let mut files = BTreeMap::new();
@@ -96,6 +145,175 @@ mod proof_edge_tests {
                 "{case}"
             );
         }
+    }
+
+    #[test]
+    fn go_indexed_field_proof_requires_binding_identity_and_current_source_hash() {
+        let source = b"package rate\ntype Shard struct{}\ntype Other struct{}\ntype Limiter struct{ shards [2]Shard }\nfunc (s *Shard) Run() {}\nfunc (s *Other) Run() {}\nfunc (l *Limiter) Allow() { shard := &l.shards[0]; shard.Run() }";
+        let extracted = extract_path("rate.go", source).unwrap();
+        let hashes = BTreeMap::from([(
+            "rate.go".to_owned(),
+            Hash32(*blake3::hash(source).as_bytes()),
+        )]);
+        assert_eq!(
+            rebuild_arcs(&extracted.documents, &hashes, &BTreeMap::new()).len(),
+            1
+        );
+        for case in [
+            "missing",
+            "binding_missing",
+            "tag",
+            "caller",
+            "owner",
+            "target",
+            "other_target",
+            "collection",
+            "statement",
+            "binding",
+            "initializer",
+            "receiver",
+            "hash",
+            "duplicate",
+        ] {
+            let mut docs = extracted.documents.clone();
+            let other_target = docs
+                .iter()
+                .find(|d| {
+                    d.provenance == "SYNTAX"
+                        && d.qualified_name == "Run"
+                        && d.search_text.contains("*Other")
+                })
+                .map(|d| ByteRange::new(d.span_start, d.span_end))
+                .unwrap();
+            let call = docs
+                .iter_mut()
+                .find(|d| d.go_field_target.is_some())
+                .unwrap();
+            if case == "missing" {
+                call.go_field_target = None;
+            } else if case == "tag" {
+                call.semantic_tags.retain(|t| t != "GO_INDEXED_FIELD_CALL");
+            } else if case == "duplicate" {
+                let span = call.go_field_target.as_ref().unwrap().target;
+                let target = docs
+                    .iter()
+                    .find(|d| {
+                        d.provenance == "SYNTAX"
+                            && d.span_start == span.start
+                            && d.span_end == span.end
+                    })
+                    .unwrap()
+                    .clone();
+                docs.push(target);
+            } else {
+                let proof = call.go_field_target.as_mut().unwrap();
+                match case {
+                    "binding_missing" => proof.indexed_binding = None,
+                    "caller" => proof.caller.start += 1,
+                    "owner" => proof.receiver_type.start += 1,
+                    "target" => proof.target.start += 1,
+                    "other_target" => proof.target = other_target,
+                    _ => {
+                        let binding = proof.indexed_binding.as_mut().unwrap();
+                        match case {
+                            "collection" => binding.collection.start = 0,
+                            "statement" => binding.statement.end = call.span_start,
+                            "binding" => binding.binding.start += 1,
+                            "initializer" => binding.initializer.start = binding.statement.start,
+                            "receiver" => binding.receiver.start += 1,
+                            "hash" => binding.source_hash = Hash32([9; 32]),
+                            _ => unreachable!(),
+                        }
+                    }
+                }
+            }
+            assert!(
+                rebuild_arcs(&docs, &hashes, &BTreeMap::new()).is_empty(),
+                "{case}"
+            );
+        }
+        let stale = BTreeMap::from([("rate.go".to_owned(), Hash32([7; 32]))]);
+        assert!(rebuild_arcs(&extracted.documents, &stale, &BTreeMap::new()).is_empty());
+    }
+
+    #[test]
+    fn rust_parameter_proof_requires_exact_identity_and_current_source_hash() {
+        let source = b"#[derive(Default)] struct A; impl A { fn run(&self) {} } fn caller(value: &A) { value.run(); }";
+        let extracted = extract_path("main.rs", source).unwrap();
+        let hashes = BTreeMap::from([(
+            "main.rs".to_owned(),
+            Hash32(*blake3::hash(source).as_bytes()),
+        )]);
+        let arcs = rebuild_arcs(&extracted.documents, &hashes, &BTreeMap::new());
+        assert_eq!(
+            arcs.iter()
+                .filter(|arc| arc.kind == RelationKind::Calls)
+                .count(),
+            1
+        );
+        for case in [
+            "missing",
+            "caller",
+            "target",
+            "owner",
+            "parameter",
+            "binding",
+            "type",
+            "receiver",
+            "impl",
+            "hash",
+            "tag",
+            "duplicate",
+        ] {
+            let mut docs = extracted.documents.clone();
+            let call = docs
+                .iter_mut()
+                .find(|d| d.rust_parameter_target.is_some())
+                .unwrap();
+            if case == "missing" {
+                call.rust_parameter_target = None;
+            } else if case == "tag" {
+                call.semantic_tags.retain(|t| t != "RUST_PARAMETER_CALL");
+            } else if case == "duplicate" {
+                let span = call.rust_parameter_target.as_ref().unwrap().target;
+                let target = docs
+                    .iter()
+                    .find(|d| {
+                        d.provenance == "SYNTAX"
+                            && d.span_start == span.start
+                            && d.span_end == span.end
+                    })
+                    .unwrap()
+                    .clone();
+                docs.push(target);
+            } else {
+                let proof = call.rust_parameter_target.as_mut().unwrap();
+                match case {
+                    "caller" => proof.caller.start += 1,
+                    "target" => proof.target.start += 1,
+                    "owner" => proof.owner.start += 1,
+                    "parameter" => proof.parameter.start = 0,
+                    "binding" => proof.binding.end = proof.receiver_type.end,
+                    "type" => proof.receiver_type.start = proof.binding.start,
+                    "receiver" => proof.receiver.start += 1,
+                    "impl" => proof.target_implementation.end = proof.target_implementation.start,
+                    "hash" => proof.source_hash = Hash32([9; 32]),
+                    _ => unreachable!(),
+                }
+            }
+            assert!(
+                rebuild_arcs(&docs, &hashes, &BTreeMap::new())
+                    .iter()
+                    .all(|arc| arc.kind != RelationKind::Calls),
+                "{case}"
+            );
+        }
+        let changed_hashes = BTreeMap::from([("main.rs".to_owned(), Hash32([7; 32]))]);
+        assert!(
+            rebuild_arcs(&extracted.documents, &changed_hashes, &BTreeMap::new())
+                .iter()
+                .all(|arc| arc.kind != RelationKind::Calls)
+        );
     }
 
     #[test]
@@ -243,12 +461,172 @@ mod proof_edge_tests {
         (repository, state, runtime, preserved)
     }
 
+    #[test]
+    fn cached_orientation_matches_streaming_after_edits_deletes_and_restore() {
+        let (repo, _state, mut runtime, _) = refresh_fixture("cached-orientation");
+        let path = repo.path().join("calls.rs");
+        for source in [
+            Some("fn target() { let _ = \"oldneedle\"; }\nfn caller() { target(); }\n"),
+            Some("fn target() { let _ = \"newneedle\"; }\nfn caller() { target(); }\n"),
+            None,
+            Some("fn replacement() { let _ = \"newneedle\"; }\n"),
+        ] {
+            match source {
+                Some(source) => fs::write(&path, source).unwrap(),
+                None => fs::remove_file(&path).unwrap(),
+            }
+            runtime.refresh(repo.path()).unwrap();
+            for include in [vec!["**".to_owned()], vec!["calls.rs".to_owned()]] {
+                for task in ["oldneedle", "newneedle", "caller", "missing"] {
+                    let request = QueryRequest {
+                        task: task.into(),
+                        scope: Scope {
+                            include: include.clone(),
+                            exclude: vec![],
+                            relation_kinds: vec![RelationKind::Calls],
+                            max_depth: 1,
+                        },
+                        mode: Mode::Bounded,
+                        token_budget: 800,
+                    };
+                    runtime.bm25_cache = Bm25Cache::new(0);
+                    let expected = runtime.orient(request.clone()).unwrap();
+                    runtime.bm25_cache = Bm25Cache::default();
+                    for _ in 0..2 {
+                        assert_eq!(runtime.orient(request.clone()).unwrap(), expected);
+                    }
+                }
+            }
+            // Leave populated entries in place across the next watched edit.
+            runtime
+                .orient(QueryRequest {
+                    task: "needle".into(),
+                    scope: proof_scope(),
+                    mode: Mode::Bounded,
+                    token_budget: 800,
+                })
+                .unwrap();
+        }
+    }
+
+    #[test]
+    fn python_named_callback_without_proof_has_a_gap_at_its_own_callsite() {
+        let (repo, state, _, _) = refresh_fixture("python-callback-gap");
+        let source = "def helper(): return 1\ndef invoke(callback): return callback() + helper()\n";
+        fs::write(repo.path().join("callbacks.py"), source).unwrap();
+        git(repo.path(), &["add", "callbacks.py"]);
+        git(repo.path(), &["commit", "-qm", "callback fixture"]);
+        Runtime::index(repo.path(), state.path()).unwrap();
+        let runtime = Runtime::open(state.path()).unwrap();
+        let callback = source.find("callback()").unwrap();
+        let helper = source.rfind("helper()").unwrap();
+        assert!(runtime.stored.coverage.dynamic_dispatch.contains(&format!(
+            "callbacks.py:{callback}-{}",
+            callback + "callback()".len()
+        )));
+        assert!(!runtime.stored.coverage.dynamic_dispatch.contains(&format!(
+            "callbacks.py:{helper}-{}",
+            helper + "helper()".len()
+        )));
+        assert!(runtime.stored.arcs.iter().any(|arc| {
+            arc.kind == RelationKind::Calls
+                && arc.evidence.as_ref().is_some_and(|proof| {
+                    proof.path == "callbacks.py"
+                        && proof.span == ByteRange::new(helper, helper + "helper()".len())
+                        && proof.is_definitive()
+                })
+        }));
+    }
+
+    #[test]
+    fn python_parameter_shadowing_refreshes_proof_and_gap_together() {
+        let (repo, state, _, _) = refresh_fixture("python-callback-shadow-gap");
+        let original = "def helper(): return 1\ndef invoke(): return helper()\n";
+        fs::write(repo.path().join("callbacks.py"), original).unwrap();
+        git(repo.path(), &["add", "callbacks.py"]);
+        git(repo.path(), &["commit", "-qm", "known call fixture"]);
+        Runtime::index(repo.path(), state.path()).unwrap();
+        let mut runtime = Runtime::open(state.path()).unwrap();
+        let count = |runtime: &Runtime| {
+            runtime
+                .stored
+                .arcs
+                .iter()
+                .filter(|arc| {
+                    arc.kind == RelationKind::Calls
+                        && arc.evidence.as_ref().is_some_and(|proof| {
+                            proof.path == "callbacks.py" && proof.is_definitive()
+                        })
+                })
+                .count()
+        };
+        assert_eq!(count(&runtime), 1);
+        let shadowed = "def helper(): return 1\ndef invoke(helper): return helper()\n";
+        fs::write(repo.path().join("callbacks.py"), shadowed).unwrap();
+        assert!(runtime.refresh(repo.path()).unwrap());
+        assert_eq!(count(&runtime), 0);
+        let site = shadowed.rfind("helper()").unwrap();
+        assert!(
+            runtime
+                .stored
+                .coverage
+                .dynamic_dispatch
+                .contains(&format!("callbacks.py:{site}-{}", site + "helper()".len()))
+        );
+        fs::write(repo.path().join("callbacks.py"), original).unwrap();
+        assert!(runtime.refresh(repo.path()).unwrap());
+        assert_eq!(count(&runtime), 1);
+        assert!(
+            !runtime
+                .stored
+                .coverage
+                .dynamic_dispatch
+                .iter()
+                .any(|location| location.starts_with("callbacks.py:"))
+        );
+    }
+
+    #[test]
+    fn symbol_reference_rejects_colliding_identity_even_with_a_unique_name() {
+        let (_repository, _state, mut runtime, _) = refresh_fixture("symbol-ref-node-collision");
+        let snippet = runtime
+            .get_code_snippet("target", Some("calls.rs"))
+            .unwrap();
+        let reference = snippet["symbol_ref"].as_str().unwrap();
+        let selector =
+            cgrx_core::SymbolSelector::new("target", Some("calls.rs")).with_ref(reference);
+        let mut collision = runtime
+            .stored
+            .documents
+            .iter()
+            .find(|document| document.provenance == "SYNTAX" && document.qualified_name == "target")
+            .unwrap()
+            .clone();
+        collision.qualified_name = "collision".into();
+        collision.path = "impl.rs".into();
+        runtime.stored.documents.push(collision);
+        runtime.stored.query_index = Default::default();
+        for indexed in [false, true] {
+            if indexed {
+                rebuild_query_index(&mut runtime.stored);
+            }
+            assert_eq!(
+                runtime
+                    .get_code_snippet_selected(selector)
+                    .unwrap_err()
+                    .code(),
+                "cgrx.symbol_ref_not_found"
+            );
+        }
+    }
+
     fn syntax(node_id: u64, name: &str, path: &str, start: usize, end: usize) -> StoredDocument {
         StoredDocument {
             php_function_target: None,
             php_type_target: None,
             rust_module_target: None,
             rust_self_target: None,
+            rust_parameter_target: None,
             ts_lexical_target: None,
             ts_constructor_target: None,
             go_field_target: None,
@@ -273,12 +651,391 @@ mod proof_edge_tests {
         }
     }
 
+    fn containment_syntax(
+        node_id: u64,
+        name: &str,
+        path: &str,
+        name_span: ByteRange,
+        body: ByteRange,
+    ) -> StoredDocument {
+        let mut document = syntax(node_id, name, path, name_span.start, name_span.end);
+        document.body_start = body.start;
+        document.body_end = body.end;
+        document
+    }
+
+    #[test]
+    fn syntax_containment_proves_real_nested_ancestors_not_the_first_file_symbol() {
+        let source =
+            b"fn anchor() {}\nfn parent() {\n fn middle() { fn child() {} }\n}\nfn sibling() {}\n";
+        let documents = extract_path("src/main.rs", source).unwrap().documents;
+        let source_hash = Hash32(*blake3::hash(source).as_bytes());
+        let hashes = BTreeMap::from([("src/main.rs".to_owned(), source_hash)]);
+        let arcs = super::super::containment::syntax_containment_arcs(&documents, &hashes);
+        let symbol = |node_id| {
+            documents
+                .iter()
+                .find(|document| document.provenance == "SYNTAX" && document.node_id == node_id)
+                .unwrap()
+        };
+        assert_eq!(
+            arcs.iter()
+                .map(|arc| {
+                    (
+                        symbol(arc.source).qualified_name.as_str(),
+                        symbol(arc.target).qualified_name.as_str(),
+                    )
+                })
+                .collect::<BTreeSet<_>>(),
+            BTreeSet::from([
+                ("parent", "middle"),
+                ("parent", "child"),
+                ("middle", "child"),
+            ])
+        );
+        assert_eq!(arcs.len(), 3);
+        for arc in &arcs {
+            let parent = symbol(arc.source);
+            let child = symbol(arc.target);
+            assert_ne!(arc.source, arc.target);
+            assert_eq!(arc.kind, RelationKind::Contains);
+            assert!(parent.body_start <= child.body_start && child.body_end <= parent.body_end);
+            assert_ne!(
+                (parent.body_start, parent.body_end),
+                (child.body_start, child.body_end)
+            );
+            let evidence = arc.evidence.as_ref().unwrap();
+            assert_eq!(evidence.path, "src/main.rs");
+            assert_eq!(
+                evidence.span,
+                ByteRange::new(child.span_start, child.span_end)
+            );
+            assert_eq!(
+                &source[evidence.span.start..evidence.span.end],
+                child.qualified_name.as_bytes()
+            );
+            assert_eq!(evidence.source_hash, source_hash);
+            assert_eq!(evidence.resolver, ResolverClass::SyntaxExact);
+            assert_eq!(evidence.confidence, ConfidenceClass::Proven);
+            assert!(evidence.assumptions.is_empty());
+            assert!(evidence.counter_evidence.is_empty());
+        }
+        let mut reversed = documents.clone();
+        reversed.reverse();
+        assert_eq!(
+            super::super::containment::syntax_containment_arcs(&reversed, &hashes),
+            arcs
+        );
+    }
+
+    #[test]
+    fn syntax_containment_allows_declaration_names_before_their_own_body() {
+        // Arrow initializers may begin after their declaration's name. The
+        // child's name and its whole body still belong inside the parent.
+        let documents = vec![
+            containment_syntax(
+                1,
+                "same",
+                "main.ts",
+                ByteRange::new(0, 1),
+                ByteRange::new(5, 100),
+            ),
+            containment_syntax(
+                2,
+                "same",
+                "main.ts",
+                ByteRange::new(10, 11),
+                ByteRange::new(20, 60),
+            ),
+            containment_syntax(
+                3,
+                "same",
+                "main.ts",
+                ByteRange::new(25, 26),
+                ByteRange::new(30, 40),
+            ),
+        ];
+        let hashes = BTreeMap::from([("main.ts".to_owned(), Hash32([7; 32]))]);
+        let arcs = super::super::containment::syntax_containment_arcs(&documents, &hashes);
+        assert_eq!(
+            arcs.iter()
+                .map(|arc| (arc.source, arc.target))
+                .collect::<BTreeSet<_>>(),
+            BTreeSet::from([(1, 2), (1, 3), (2, 3)])
+        );
+        assert_eq!(arcs.len(), 3);
+    }
+
+    #[test]
+    fn syntax_containment_rejects_invalid_or_unbound_proofs() {
+        let parent = containment_syntax(
+            1,
+            "parent",
+            "main.rs",
+            ByteRange::new(1, 2),
+            ByteRange::new(0, 100),
+        );
+        let child = containment_syntax(
+            2,
+            "child",
+            "main.rs",
+            ByteRange::new(21, 22),
+            ByteRange::new(20, 30),
+        );
+        for case in [
+            "missing_hash",
+            "zero_hash",
+            "cross_file",
+            "empty_body",
+            "inverted_body",
+            "empty_name",
+            "inverted_name",
+            "empty_parent_name",
+            "inverted_parent_body",
+            "parent_name_after_own_body",
+            "child_name_after_own_body",
+            "name_outside_parent",
+            "body_overlaps_parent",
+            "equal_body",
+            "non_syntax",
+            "same_node",
+            "duplicate_node_other_path",
+            "duplicate_node_malformed",
+        ] {
+            let mut documents = vec![parent.clone(), child.clone()];
+            let mut hashes = BTreeMap::from([("main.rs".to_owned(), Hash32([7; 32]))]);
+            match case {
+                "missing_hash" => hashes.clear(),
+                "zero_hash" => {
+                    hashes.insert("main.rs".to_owned(), Hash32([0; 32]));
+                }
+                "cross_file" => documents[1].path = "other.rs".to_owned(),
+                "empty_body" => documents[1].body_end = documents[1].body_start,
+                "inverted_body" => documents[1].body_end = documents[1].body_start - 1,
+                "empty_name" => documents[1].span_end = documents[1].span_start,
+                "inverted_name" => documents[1].span_end = documents[1].span_start - 1,
+                "empty_parent_name" => documents[0].span_end = documents[0].span_start,
+                "inverted_parent_body" => documents[0].body_start = documents[0].body_end + 1,
+                "parent_name_after_own_body" => {
+                    documents[0].span_start = 110;
+                    documents[0].span_end = 111;
+                }
+                "child_name_after_own_body" => {
+                    documents[1].span_start = 31;
+                    documents[1].span_end = 32;
+                }
+                "name_outside_parent" => {
+                    documents[1].span_start = 110;
+                    documents[1].span_end = 111;
+                }
+                "body_overlaps_parent" => documents[0].body_end = 25,
+                "equal_body" => {
+                    documents[1].body_start = documents[0].body_start;
+                    documents[1].body_end = documents[0].body_end;
+                }
+                "non_syntax" => documents[1].provenance = "CALLS".to_owned(),
+                "same_node" => documents[1].node_id = documents[0].node_id,
+                "duplicate_node_other_path" => {
+                    let mut duplicate = child.clone();
+                    duplicate.path = "other.rs".to_owned();
+                    documents.push(duplicate);
+                }
+                "duplicate_node_malformed" => {
+                    let mut duplicate = child.clone();
+                    duplicate.span_end = duplicate.span_start;
+                    documents.push(duplicate);
+                }
+                _ => unreachable!(),
+            }
+            assert!(
+                super::super::containment::syntax_containment_arcs(&documents, &hashes).is_empty(),
+                "{case}"
+            );
+        }
+    }
+
+    #[test]
+    fn syntax_containment_equal_extent_peers_have_no_unambiguous_parent_role() {
+        let documents = vec![
+            containment_syntax(
+                1,
+                "outer",
+                "main.rs",
+                ByteRange::new(1, 2),
+                ByteRange::new(0, 100),
+            ),
+            containment_syntax(
+                2,
+                "peer",
+                "main.rs",
+                ByteRange::new(12, 13),
+                ByteRange::new(10, 80),
+            ),
+            containment_syntax(
+                3,
+                "peer",
+                "main.rs",
+                ByteRange::new(15, 16),
+                ByteRange::new(10, 80),
+            ),
+            containment_syntax(
+                4,
+                "child",
+                "main.rs",
+                ByteRange::new(21, 22),
+                ByteRange::new(20, 30),
+            ),
+        ];
+        let hashes = BTreeMap::from([("main.rs".to_owned(), Hash32([7; 32]))]);
+        let arcs = super::super::containment::syntax_containment_arcs(&documents, &hashes);
+        assert_eq!(
+            arcs.iter()
+                .map(|arc| (arc.source, arc.target))
+                .collect::<BTreeSet<_>>(),
+            BTreeSet::from([(1, 2), (1, 3), (1, 4)])
+        );
+        assert_eq!(arcs.len(), 3);
+    }
+
+    #[test]
+    fn syntax_containment_includes_proper_subranges_with_shared_boundaries() {
+        let documents = vec![
+            containment_syntax(
+                1,
+                "outer",
+                "main.rs",
+                ByteRange::new(1, 2),
+                ByteRange::new(0, 100),
+            ),
+            containment_syntax(
+                2,
+                "left",
+                "main.rs",
+                ByteRange::new(10, 11),
+                ByteRange::new(0, 50),
+            ),
+            containment_syntax(
+                3,
+                "right",
+                "main.rs",
+                ByteRange::new(60, 61),
+                ByteRange::new(50, 100),
+            ),
+        ];
+        let hashes = BTreeMap::from([("main.rs".to_owned(), Hash32([7; 32]))]);
+        let arcs = super::super::containment::syntax_containment_arcs(&documents, &hashes);
+        assert_eq!(
+            arcs.iter()
+                .map(|arc| (arc.source, arc.target))
+                .collect::<BTreeSet<_>>(),
+            BTreeSet::from([(1, 2), (1, 3)])
+        );
+        assert_eq!(arcs.len(), 2);
+    }
+
+    #[test]
+    fn syntax_containment_crossing_endpoints_abstain_but_valid_ancestors_survive() {
+        let documents = vec![
+            containment_syntax(
+                1,
+                "outer",
+                "bad.rs",
+                ByteRange::new(1, 2),
+                ByteRange::new(0, 100),
+            ),
+            containment_syntax(
+                2,
+                "left",
+                "bad.rs",
+                ByteRange::new(11, 12),
+                ByteRange::new(10, 50),
+            ),
+            containment_syntax(
+                3,
+                "right",
+                "bad.rs",
+                ByteRange::new(41, 42),
+                ByteRange::new(40, 80),
+            ),
+            containment_syntax(
+                4,
+                "nested",
+                "bad.rs",
+                ByteRange::new(21, 22),
+                ByteRange::new(20, 30),
+            ),
+            containment_syntax(
+                5,
+                "branch",
+                "bad.rs",
+                ByteRange::new(91, 92),
+                ByteRange::new(90, 95),
+            ),
+            containment_syntax(
+                6,
+                "parent",
+                "good.rs",
+                ByteRange::new(1, 2),
+                ByteRange::new(0, 100),
+            ),
+            containment_syntax(
+                7,
+                "child",
+                "good.rs",
+                ByteRange::new(21, 22),
+                ByteRange::new(20, 30),
+            ),
+        ];
+        let hashes = BTreeMap::from([
+            ("bad.rs".to_owned(), Hash32([7; 32])),
+            ("good.rs".to_owned(), Hash32([9; 32])),
+        ]);
+        let arcs = super::super::containment::syntax_containment_arcs(&documents, &hashes);
+        assert_eq!(
+            arcs.iter()
+                .map(|arc| (arc.source, arc.target))
+                .collect::<BTreeSet<_>>(),
+            BTreeSet::from([(1, 4), (1, 5), (6, 7)])
+        );
+        assert_eq!(arcs.len(), 3);
+    }
+
+    #[test]
+    fn syntax_containment_crossings_with_already_rejected_extents_also_abstain() {
+        let documents = vec![
+            containment_syntax(
+                1,
+                "left",
+                "main.rs",
+                ByteRange::new(1, 2),
+                ByteRange::new(0, 10),
+            ),
+            containment_syntax(
+                2,
+                "right",
+                "main.rs",
+                ByteRange::new(6, 7),
+                ByteRange::new(5, 15),
+            ),
+            containment_syntax(
+                3,
+                "inner",
+                "main.rs",
+                ByteRange::new(8, 9),
+                ByteRange::new(7, 11),
+            ),
+        ];
+        let hashes = BTreeMap::from([("main.rs".to_owned(), Hash32([7; 32]))]);
+        assert!(super::super::containment::syntax_containment_arcs(&documents, &hashes).is_empty());
+    }
+
     fn call(node_id: u64, name: &str, path: &str, start: usize, end: usize) -> StoredDocument {
         StoredDocument {
             php_function_target: None,
             php_type_target: None,
             rust_module_target: None,
             rust_self_target: None,
+            rust_parameter_target: None,
             ts_lexical_target: None,
             ts_constructor_target: None,
             go_field_target: None,
@@ -540,22 +1297,27 @@ mod proof_edge_tests {
                 evidence.span = ByteRange::new(30, 40);
             }
             runtime.stored.arcs = vec![arc, repeated];
-            rebuild_query_index(&mut runtime.stored);
-            let baseline = uncached_definitive_arcs(&runtime.stored, &scope);
-            assert_eq!(baseline.len(), expected * 2, "{case}");
-            assert_eq!(
-                definitive_stored_arcs(&runtime.stored, &scope),
-                baseline,
-                "{case}"
-            );
-            for name in ["implementation", "contract"] {
-                let found = runtime.search_graph(name, &scope, 10).unwrap();
-                for row in found["matches"].as_array().unwrap() {
-                    assert_eq!(
-                        row["callers"].as_u64().unwrap() + row["callees"].as_u64().unwrap(),
-                        expected as u64,
-                        "{case}"
-                    );
+            for indexed in [false, true] {
+                runtime.stored.query_index = Default::default();
+                if indexed {
+                    rebuild_query_index(&mut runtime.stored);
+                }
+                let baseline = uncached_definitive_arcs(&runtime.stored, &scope);
+                assert_eq!(baseline.len(), expected * 2, "{case}, indexed={indexed}");
+                assert_eq!(
+                    definitive_stored_arcs(&runtime.stored, &scope),
+                    baseline,
+                    "{case}, indexed={indexed}"
+                );
+                for name in ["implementation", "contract"] {
+                    let found = runtime.search_graph(name, &scope, 10).unwrap();
+                    for row in found["matches"].as_array().unwrap() {
+                        assert_eq!(
+                            row["callers"].as_u64().unwrap() + row["callees"].as_u64().unwrap(),
+                            expected as u64,
+                            "{case}, indexed={indexed}"
+                        );
+                    }
                 }
             }
         }
@@ -638,12 +1400,12 @@ mod proof_edge_tests {
         };
         let mut evaluations = BTreeMap::<String, usize>::new();
         let result = runtime
-            .search_graph_with_matcher("repeated", &scope, 50, None, false, |path, scope| {
+            .search_graph_with_matcher("implementation", &scope, 50, None, false, |path, scope| {
                 *evaluations.entry(path.to_owned()).or_default() += 1;
                 path_in_scope(path, scope)
             })
             .unwrap();
-        assert_eq!(result["total"], 0);
+        assert_eq!(result["total"], 1);
         let expected = BTreeMap::from([
             ("calls.rs".to_owned(), 1),
             ("impl.rs".to_owned(), 1),
@@ -655,6 +1417,312 @@ mod proof_edge_tests {
         assert_eq!(result["coverage_gap_count"], 8);
         println!("path evaluations: {evaluations:?}");
         assert_eq!(evaluations, expected);
+    }
+
+    #[test]
+    fn search_page_degrees_preserve_full_graph_counts_and_skip_unrelated_proofs() {
+        let (_repo, _state, mut runtime, mut proof) = refresh_fixture("search-page-degrees");
+        runtime.stored.documents = vec![
+            syntax(1, "page_a", "a.rs", 0, 10),
+            syntax(2, "page_b", "b.rs", 0, 10),
+            syntax(3, "page_c", "c.rs", 0, 10),
+            syntax(4, "page_d", "excluded.rs", 0, 10),
+        ];
+        runtime.stored.coverage = CoverageMetadata::default();
+        proof.source = 1;
+        proof.target = 2;
+        proof.kind = RelationKind::Calls;
+        proof.evidence.as_mut().unwrap().path = "proof.rs".into();
+        proof.evidence.as_mut().unwrap().source_hash = Hash32([7; 32]);
+        runtime
+            .stored
+            .path_hashes
+            .insert("proof.rs".into(), Hash32([7; 32]));
+        runtime
+            .stored
+            .path_hashes
+            .insert("unrelated-proof.rs".into(), Hash32([7; 32]));
+        runtime
+            .stored
+            .path_hashes
+            .insert("excluded-proof.rs".into(), Hash32([7; 32]));
+        let mut repeated = proof.clone();
+        repeated.evidence.as_mut().unwrap().span = ByteRange::new(30, 40);
+        let mut implements = proof.clone();
+        implements.kind = RelationKind::Implements;
+        let mut reverse = proof.clone();
+        reverse.source = 2;
+        reverse.target = 1;
+        let mut third = proof.clone();
+        third.source = 2;
+        third.target = 3;
+        let mut self_loop = proof.clone();
+        self_loop.source = 3;
+        self_loop.target = 3;
+        self_loop.evidence.as_mut().unwrap().path = "unrelated-proof.rs".into();
+        let mut excluded_endpoint = proof.clone();
+        excluded_endpoint.target = 4;
+        let mut excluded_proof = reverse.clone();
+        excluded_proof.source = 3;
+        excluded_proof.evidence.as_mut().unwrap().path = "excluded-proof.rs".into();
+        let mut stale = excluded_proof.clone();
+        stale.evidence.as_mut().unwrap().path = "proof.rs".into();
+        stale.evidence.as_mut().unwrap().source_hash = Hash32([8; 32]);
+        let mut missing = excluded_proof.clone();
+        missing.evidence = None;
+        let mut unselected_kind = excluded_proof.clone();
+        unselected_kind.kind = RelationKind::References;
+        runtime.stored.arcs = vec![
+            proof,
+            repeated,
+            implements,
+            reverse,
+            third,
+            self_loop,
+            excluded_endpoint,
+            excluded_proof,
+            stale,
+            missing,
+            unselected_kind,
+        ];
+        let scope = Scope {
+            include: vec!["**".into()],
+            exclude: vec!["excluded.rs".into(), "excluded-proof.rs".into()],
+            relation_kinds: vec![RelationKind::Calls, RelationKind::Implements],
+            max_depth: 1,
+        };
+        let mut indexed_pages = Vec::new();
+        for indexed in [true, false] {
+            runtime.stored.query_index = Default::default();
+            if indexed {
+                rebuild_query_index(&mut runtime.stored);
+            }
+            let full = runtime.search_graph("page_", &scope, 50).unwrap();
+            assert_eq!(full["total"], 3);
+            for (offset, (callers, callees)) in [(1, 2), (2, 2), (2, 1)].into_iter().enumerate() {
+                let page = runtime
+                    .search_graph_page("page_", &scope, 1, offset, None, false)
+                    .unwrap();
+                assert_eq!(page["matches"][0], full["matches"][offset]);
+                assert_eq!(page["matches"][0]["callers"], callers);
+                assert_eq!(page["matches"][0]["callees"], callees);
+                if indexed {
+                    indexed_pages.push(page);
+                } else {
+                    assert_eq!(page, indexed_pages[offset]);
+                }
+            }
+        }
+        rebuild_query_index(&mut runtime.stored);
+        for (query, offset, has_results) in [
+            ("page_", 0, true),
+            ("absent requested", 0, false),
+            ("page_", 3, false),
+        ] {
+            let mut evaluations = BTreeMap::<String, usize>::new();
+            let found = runtime
+                .search_graph_page_with_matcher(
+                    query,
+                    &scope,
+                    (1, offset),
+                    None,
+                    false,
+                    |path, scope| {
+                        *evaluations.entry(path.into()).or_default() += 1;
+                        path_in_scope(path, scope)
+                    },
+                )
+                .unwrap();
+            assert_eq!(
+                !found["matches"].as_array().unwrap().is_empty(),
+                has_results
+            );
+            assert!(
+                !evaluations.contains_key("unrelated-proof.rs"),
+                "{query}: {evaluations:?}"
+            );
+            assert_eq!(evaluations.contains_key("proof.rs"), has_results);
+            assert!(evaluations.values().all(|count| *count == 1));
+        }
+    }
+
+    #[test]
+    fn bounded_fuzzy_search_preserves_lane_priority_distance_order_and_pages() {
+        let (_repo, _state, mut runtime, _) = refresh_fixture("bounded-fuzzy-ranking");
+        runtime.stored.documents = vec![
+            syntax(1, "http_request", "z.rs", 0, 10),
+            syntax(2, "http_request_extra", "y.rs", 0, 10),
+            syntax(3, "pre_http_request", "x.rs", 0, 10),
+            syntax(4, "HTTPRequest", "w.rs", 0, 10),
+            syntax(5, "literalcarrier", "v.rs", 0, 10),
+            syntax(6, "tokenstorage", "u.rs", 0, 10),
+            syntax(7, "http_requesx", "z.rs", 20, 30),
+            syntax(8, "http_requext", "a.rs", 0, 10),
+            syntax(9, "htxp_requesx", "a.rs", 20, 30),
+            syntax(10, "hxxp_requesx", "0.rs", 0, 10),
+            syntax(11, "xxxx_requesx", "0.rs", 20, 30),
+        ];
+        runtime.stored.documents[4].search_text = "http_request".into();
+        runtime.stored.documents[5].search_text = "HTTPRequest".into();
+        runtime.stored.arcs.clear();
+        runtime.stored.coverage = CoverageMetadata::default();
+        rebuild_query_index(&mut runtime.stored);
+        let found = runtime
+            .search_graph_filtered("http_request", &proof_scope(), 50, None, true)
+            .unwrap();
+        let identities: Vec<_> = found["matches"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|row| {
+                (
+                    row["node_id"].as_u64().unwrap(),
+                    row["matched_by"].as_str().unwrap(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            identities,
+            [
+                (1, "symbol"),
+                (2, "symbol"),
+                (3, "symbol"),
+                (4, "symbol_tokens"),
+                (5, "body"),
+                (6, "body_tokens"),
+                (8, "fuzzy"),
+                (7, "fuzzy"),
+                (9, "fuzzy"),
+                (10, "fuzzy"),
+            ]
+        );
+        let page = runtime
+            .search_graph_page("http_request", &proof_scope(), 2, 6, None, true)
+            .unwrap();
+        assert_eq!(
+            page["matches"].as_array().unwrap(),
+            &found["matches"].as_array().unwrap()[6..8]
+        );
+        assert_eq!(page["total"], 10);
+        assert_eq!(page["page"]["next_offset"], 8);
+        let names_only = runtime
+            .search_graph("http_request", &proof_scope(), 50)
+            .unwrap();
+        let names_only_ids: Vec<_> = names_only["matches"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|row| row["node_id"].as_u64().unwrap())
+            .collect();
+        assert_eq!(names_only_ids, [1, 2, 3, 4, 8, 7, 9, 10]);
+    }
+
+    #[test]
+    fn bounded_fuzzy_search_preserves_thresholds_and_query_eligibility() {
+        let (_repo, _state, mut runtime, _) = refresh_fixture("bounded-fuzzy-eligibility");
+        runtime.stored.arcs.clear();
+        runtime.stored.coverage = CoverageMetadata::default();
+        for (query, name, expected) in [
+            ("abcd", "abcx", true),
+            ("abcd", "abxx", false),
+            ("abcd", "abdc", false),
+            ("abcdefgh", "xbcdefgx", true),
+            ("abcdefgh", "xxcdefgx", false),
+            ("abcdefghi", "xxxdefghi", true),
+            ("abcdefghi", "xxxxefghi", false),
+            ("ab_cd", "ab_ce", true),
+            ("ab cd", "abxd", false),
+            ("ab\tcd", "abxd", false),
+            ("ab\u{a0}cd", "abxd", false),
+            ("_", "a", false),
+            (" abcd ", "abcx", true),
+            ("parser", "paresr", true),
+        ] {
+            runtime.stored.documents = vec![syntax(1, name, "main.rs", 0, name.len())];
+            rebuild_query_index(&mut runtime.stored);
+            let found = runtime.search_graph(query, &proof_scope(), 50).unwrap();
+            assert_eq!(
+                found["total"],
+                usize::from(expected),
+                "query={query:?}, name={name:?}"
+            );
+            if expected {
+                assert_eq!(found["matches"][0]["matched_by"], "fuzzy");
+            }
+        }
+    }
+
+    #[test]
+    fn bounded_fuzzy_search_uses_folded_unicode_scalar_distances() {
+        let (_repo, _state, mut runtime, _) = refresh_fixture("bounded-fuzzy-unicode");
+        runtime.stored.arcs.clear();
+        runtime.stored.coverage = CoverageMetadata::default();
+        for (query, name, expected) in [
+            ("ёжик", "ёжих", true),
+            ("ёжик", "яжих", false),
+            ("éabc", "Жabc", true),
+            ("İabc", "İaxz", true),
+            ("İabc", "iaxz", false),
+            ("İabc", "iabc", true),
+            ("istanbul", "İstanbul", true),
+            ("iabc", "İabx", false),
+            ("café", "cafe\u{301}", false),
+        ] {
+            runtime.stored.documents = vec![syntax(1, name, "main.rs", 0, name.len())];
+            rebuild_query_index(&mut runtime.stored);
+            let found = runtime.search_graph(query, &proof_scope(), 50).unwrap();
+            assert_eq!(
+                found["total"],
+                usize::from(expected),
+                "query={query:?}, name={name:?}"
+            );
+            if expected {
+                assert_eq!(found["matches"][0]["matched_by"], "fuzzy");
+            }
+        }
+    }
+
+    #[test]
+    fn bounded_fuzzy_search_keeps_long_hits_and_rejects_long_misses() {
+        let (_repo, _state, mut runtime, _) = refresh_fixture("bounded-fuzzy-long");
+        let query = "a".repeat(16_000);
+        runtime.stored.documents = (1..=4)
+            .map(|distance| {
+                let name = format!("{}{}", "a".repeat(16_000 - distance), "b".repeat(distance));
+                syntax(distance as u64, &name, "long.rs", 4 - distance, 16_000)
+            })
+            .chain(std::iter::once(syntax(
+                5,
+                &"c".repeat(16_000),
+                "long.rs",
+                5,
+                16_000,
+            )))
+            .collect();
+        runtime.stored.arcs.clear();
+        runtime.stored.coverage = CoverageMetadata::default();
+        rebuild_query_index(&mut runtime.stored);
+        let found = runtime.search_graph(&query, &proof_scope(), 50).unwrap();
+        let identities: Vec<_> = found["matches"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|row| {
+                (
+                    row["node_id"].as_u64().unwrap(),
+                    row["matched_by"].as_str().unwrap(),
+                )
+            })
+            .collect();
+        assert_eq!(identities, [(1, "fuzzy"), (2, "fuzzy"), (3, "fuzzy")]);
+        for length in [16_000, 15_996] {
+            assert_eq!(
+                runtime
+                    .search_graph(&"b".repeat(length), &proof_scope(), 50)
+                    .unwrap()["total"],
+                0
+            );
+        }
     }
 
     #[test]
@@ -695,6 +1763,7 @@ mod proof_edge_tests {
             extraction_revision: EXTRACTION_REVISION,
             cargo_manifests: BTreeMap::new(),
             rust_files: BTreeMap::new(),
+            python_files: BTreeMap::new(),
             ts_files: BTreeMap::new(),
             ts_resolution_configs: BTreeMap::new(),
             go_modules: BTreeMap::new(),
@@ -706,6 +1775,8 @@ mod proof_edge_tests {
             index_input_bytes: 0,
             indexed_files: 1,
             scip_edges: 0,
+            scip_resolution_revision: None,
+            scip_input_hash: None,
             path_hashes: BTreeMap::from([("src/main.py".to_owned(), Hash32([4; 32]))]),
             documents: vec![
                 syntax(1, "caller", "src/main.py", 0, 80),
@@ -747,6 +1818,7 @@ mod proof_edge_tests {
             extraction_revision: EXTRACTION_REVISION,
             cargo_manifests: BTreeMap::new(),
             rust_files: BTreeMap::new(),
+            python_files: BTreeMap::new(),
             ts_files: BTreeMap::new(),
             ts_resolution_configs: BTreeMap::new(),
             go_modules: BTreeMap::new(),
@@ -758,6 +1830,8 @@ mod proof_edge_tests {
             index_input_bytes: 0,
             indexed_files: 1,
             scip_edges: 0,
+            scip_resolution_revision: None,
+            scip_input_hash: None,
             path_hashes: BTreeMap::from([("src/trait.rs".to_owned(), Hash32([7; 32]))]),
             documents: vec![
                 syntax(1, "implementation", "src/trait.rs", 0, 40),
@@ -855,6 +1929,7 @@ mod proof_edge_tests {
                 extraction_revision: EXTRACTION_REVISION,
                 cargo_manifests: BTreeMap::new(),
                 rust_files: BTreeMap::new(),
+                python_files: BTreeMap::new(),
                 ts_files: BTreeMap::new(),
                 ts_resolution_configs: BTreeMap::new(),
                 go_modules: BTreeMap::new(),
@@ -866,6 +1941,8 @@ mod proof_edge_tests {
                 index_input_bytes: 0,
                 indexed_files: 1,
                 scip_edges: 0,
+                scip_resolution_revision: None,
+                scip_input_hash: None,
                 path_hashes: BTreeMap::from([(path.to_owned(), hash)]),
                 documents: extracted.documents,
                 arcs: vec![StoredArc {
@@ -903,6 +1980,7 @@ mod proof_edge_tests {
             extraction_revision: EXTRACTION_REVISION,
             cargo_manifests: BTreeMap::new(),
             rust_files: BTreeMap::new(),
+            python_files: BTreeMap::new(),
             ts_files: BTreeMap::new(),
             ts_resolution_configs: BTreeMap::new(),
             go_modules: BTreeMap::new(),
@@ -914,6 +1992,8 @@ mod proof_edge_tests {
             index_input_bytes: 0,
             indexed_files: 1,
             scip_edges: 0,
+            scip_resolution_revision: None,
+            scip_input_hash: None,
             path_hashes: BTreeMap::from([("main.py".to_owned(), hash)]),
             documents: vec![
                 syntax(1, "caller", "main.py", 0, 80),
@@ -1164,10 +2244,14 @@ mod compact_storage_tests {
         );
         assert_eq!(
             EXTRACTION_REVISION,
-            if cgrx_languages::EXPERIMENTAL_PHP_ENABLED {
-                31
+            253 + if cgrx_languages::EXPERIMENTAL_PHP_ENABLED {
+                2
             } else {
-                29
+                0
+            } + if cgrx_languages::EXPERIMENTAL_JAVASCRIPT_ENABLED {
+                8
+            } else {
+                0
             }
         );
     }

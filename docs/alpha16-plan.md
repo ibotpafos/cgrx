@@ -1,0 +1,117 @@
+# alpha.16: evidence quality before language breadth
+
+Base: released `v0.1.0-alpha.15` (`d74293b900f8ad79f2cce6efa8d0f6057e2c096e`).
+This records the first opt-in Swift slice and the remaining language-coverage roadmap. The alpha.16 prerelease may include the opt-in slice, but does not promote Swift to the default language contract.
+
+Development update, 2026-10-07: alpha.16 has shipped. The subsequent opt-in
+JavaScript iteration now validates the four existing Express source assertions
+against the engine, including ambiguity abstention. See
+[JavaScript evidence](benchmarks/javascript-evidence-2026-10-07.md) for measured
+scope and remaining promotion gates. This does not add JS to the default pack
+or change the historical source-truth-only status of the original candidate.
+
+Development update, 2026-10-08: all 226 source assertions now validate against
+their exact snapshots in ten repositories. Explicit Python relative-import
+proofs improve the selected 24 import assertions from 0/24 to 24/24 and are
+visible in compact `get_outline` responses. [Python import evidence](benchmarks/python-import-evidence-2026-10-08.md)
+records the source pins, CBM comparison and remaining limits. Current source
+cache revisions after the Go indexed-field iteration are base 93, plus PHP 2,
+Swift 4 and JavaScript 8; the revision
+numbers below describe the historical alpha.16 preparation.
+
+The [Rust receiver follow-up](benchmarks/rust-lifetime-evidence-2026-10-08.md)
+closes three of five previously diagnosed Rust misses, including recursion.
+The [parameter receiver iteration](benchmarks/rust-parameter-evidence-2026-10-08.md)
+adds first-candidate identity proofs for explicit Rust parameters. It closes
+the typed witness case, for four of five diagnosed targets. Local constructed
+receivers still need proof of the applicable lookup candidates.
+
+The [Go indexed-field iteration](benchmarks/go-indexed-field-evidence-2026-10-08.md)
+closes Vex's `Allow → cleanupLocked` through an explicit local array-element
+address binding. Exact owner/element/target spans and the source hash bind the
+proof; reassignment, shadowing and unsupported element types remain gaps.
+All prior graph relationships across ten frozen snapshots are preserved.
+
+The subsequent [symbol selection iteration](benchmarks/symbol-selection-evidence-2026-10-08.md)
+adds snapshot-bound references for selecting distinct same-name definitions,
+including methods in the same file. Discovery, snippets, traces and usages
+carry these references through both MCP response profiles. The extraction
+revision remains unchanged; this iteration improves access to the existing
+graph. Overall quality grading and resource-efficiency measurements remain open.
+
+The [reference encoding follow-up](benchmarks/symbol-reference-cost-2026-10-08.md)
+keeps the full digest and all snapshot guards while reducing measured query
+payload costs. Legacy references remain accepted. Extraction and cache policy
+are unchanged; independent competitor/task-level cost measurements remain open.
+
+## Priority and boundary
+
+1. **JS/TS:** JS is not registered in the alpha.15 default pack: `.js` files
+   are excluded, so JS support is a new gated scope, not an existing proof to
+   preserve. A pinned Express.js held-out candidate now covers CALLS, IMPORTS,
+   REFERENCE and UNRESOLVED; its source anchors validate, but no JS engine
+   result is claimed. For TS, preserve exact import/receiver proofs, compact
+   graph counts and fallback behavior. Add held-out regressions for path
+   aliases, re-exports, stale import inventories and receiver shadowing. A
+   rejected or stale proof must not fall through to a global name match.
+2. **Rust:** focus on the remaining self/recursive and module-qualified misses
+   identified by the curated task matrix. Require exact caller, target and
+   source-hash provenance; retain ambiguity abstention.
+3. **Python:** expand frozen cases for alias chains, relative imports,
+   decorators and dynamic attributes. Dynamic dispatch stays unresolved until
+   a reproducible binding proof exists.
+4. **Swift:** use the existing pinned `tree-sitter-swift` dependency. First ship
+   only an opt-in (`experimental-swift`) proof for unique, zero-argument,
+   unshadowed top-level free functions in a declaration-only file. Member calls,
+   overloads, imports, type references, local bindings and parser errors abstain.
+   Default registration waits for a manually curated, pinned Swift CALLS /
+   IMPORTS / REFERENCE / UNRESOLVED corpus and its coverage contract. Do not
+   relax the default seven-language contract to enable the prototype.
+   A pinned Swift System held-out candidate validates four source-truth cells;
+   the current opt-in extractor abstains on its argument-bearing CALLS case,
+   correctly abstains on closure dispatch, and has not established IMPORTS or
+   REFERENCE proofs. This is an open promotion gate, not a passing matrix.
+   The opt-in index uses distinct extraction revisions (33 without PHP, 35
+   with it); default 29 and PHP-only 31 remain unchanged.
+
+To exercise the opt-in slice without changing the installed alpha.15 binary:
+
+```sh
+cargo test --locked -p cgrx-cli -p cgrx-languages --features cgrx-cli/experimental-swift
+```
+
+PHP is maintenance-only for this cycle: existing validation remains blocking,
+but new PHP language work is not a release priority.
+
+## Verification matrix
+
+| Surface | Positive controls | Negative controls | Observation |
+| --- | --- | --- | --- |
+| JS/TS | exact local/import receiver calls | shadow, stale config, ambiguous re-export | proven target span/hash or explicit gap |
+| Rust | exact self/module/recursive calls | duplicate impl, stale target, external crate | proven target span/hash or explicit gap |
+| Python | static local and relative-import binding | decorator, alias ambiguity, dynamic attribute | proven target span/hash or explicit gap |
+| Swift opt-in | unique same-file direct call | overload, local shadow, member call, import, malformed syntax | exactly one proven call or dispatch/parser gap |
+| Runtime | index, reopen, refresh, delete | stale proof metadata, duplicate target, missing source | old arc disappears; no name-only fallback |
+| Explorer | alpha.15 20k/120k fixture, selection, switch, WebGL loss | incomplete request, queue saturation | same-SHA GPU thresholds and resource counters |
+
+Run the frozen corpus before and after each resolver change. Record complete
+source commit IDs, fixture hashes, literal outputs, per-language target recall,
+false-proven count, gap count and query latency. **Acceptance:** zero
+false-proven edges in curated negative cases; no regression in existing frozen
+positive cases; all persisted/reopen/refresh/delete and language-policy tests
+pass. Investigate any moved node ID, changed source span or altered coverage
+gap before accepting it. For the explorer, re-run the alpha.15 exact-SHA GPU
+ceilings (2 s interactive, 12 s layout, 20 ms frame p95, 50 ms selection,
+zero leaked workers/GPU resources after 20 switches) rather than extrapolating
+from software CI. Default Swift registration remains blocked until its held-out
+coverage contract is complete. The alpha.16 prerelease requires the frozen
+regression controls, exact-SHA real-GPU thresholds and full release CI; the
+source-truth-only JavaScript and Swift candidates are not engine acceptance.
+
+## Iteration order
+
+Freeze the four-language fixtures first; fix one resolver family at a time;
+run the matrix and compare to alpha.15; curate external Swift held-out tasks;
+promote Swift only after the coverage contract is complete; then perform the
+real-GPU and release checks. Keep alpha.15's executable as a reversible local
+fallback after the alpha.16 prerelease.

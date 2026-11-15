@@ -330,9 +330,21 @@ fn explicit_field_selection_survives_cross_file_owner_override() {
     )
     .unwrap();
     assert!(runtime.refresh(&fixture.root()).unwrap());
+    let updated = trace(&runtime);
+    assert_ne!(
+        updated["nodes"][0]["symbol_ref"],
+        before["nodes"][0]["symbol_ref"]
+    );
+    let semantic_nodes = |trace: &Value| {
+        let mut nodes = trace["nodes"].clone();
+        for node in nodes.as_array_mut().unwrap() {
+            node.as_object_mut().unwrap().remove("symbol_ref");
+        }
+        nodes
+    };
     assert_eq!(
-        trace(&runtime)["nodes"],
-        before["nodes"],
+        semantic_nodes(&updated),
+        semantic_nodes(&before),
         "explicit field selects Concrete, not Service"
     );
 }

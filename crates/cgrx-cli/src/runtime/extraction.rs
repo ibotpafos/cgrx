@@ -5,13 +5,16 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
+use std::sync::OnceLock;
+
+use rayon::prelude::*;
 
 use cgrx_capsule::{ContextWindow, slice_source};
 use cgrx_core::{ByteRange, Hash32};
 use cgrx_languages::ts_imports::{SiteBinding, TsFileFacts};
 use cgrx_languages::{
     Provenance as LanguageProvenance, RelationKind as LanguageRelation, Span, UnresolvedKind,
-    pack_for_path,
+    pack_for_source,
 };
 
 use super::RuntimeError;
@@ -20,13 +23,14 @@ use super::helpers::{
 };
 use super::{
     GoFieldTarget, GoLocalConstructorTarget, GoReceiverTarget, JavaConstructorTarget,
-    RustSelfTarget, StoredArc, StoredDocument, TsLexicalTarget,
+    RustParameterTarget, RustSelfTarget, StoredArc, StoredDocument, TsLexicalTarget,
 };
 
 use cgrx_cgcr::SourceRange;
 
 pub(super) struct ExtractedPath {
     pub(super) rust_file: Option<cgrx_languages::RustFileFacts>,
+    pub(super) python_file: Option<cgrx_languages::PythonFileFacts>,
     pub(super) ts_file: Option<TsFileFacts>,
     pub(super) documents: Vec<StoredDocument>,
     #[allow(dead_code)]
@@ -47,51 +51,322 @@ pub(super) fn extract_sources_parallel(
     if sources.is_empty() {
         return Ok(Vec::new());
     }
-    let workers = std::thread::available_parallelism()
-        .map_or(1, usize::from)
-        .min(16)
-        .min(sources.len());
-    let chunk_size = sources.len().div_ceil(workers);
-    let chunks = std::thread::scope(|scope| {
-        let handles: Vec<_> = sources
-            .chunks(chunk_size)
-            .map(|chunk| {
-                scope.spawn(move || {
-                    chunk
-                        .iter()
-                        .map(|(relative, source)| {
-                            Ok(ExtractedSource {
-                                relative: relative.clone(),
-                                hash: Hash32(*blake3::hash(source).as_bytes()),
-                                extracted: extract_path(relative, source)?,
-                            })
-                        })
-                        .collect::<Result<Vec<_>, RuntimeError>>()
+    // One bounded pool is shared across repositories; uneven files can be
+    // stolen by idle workers without spawning a new pool for each refresh.
+    static POOL: OnceLock<Result<rayon::ThreadPool, String>> = OnceLock::new();
+    let pool = POOL
+        .get_or_init(|| {
+            rayon::ThreadPoolBuilder::new()
+                .num_threads(
+                    std::thread::available_parallelism()
+                        .map_or(1, usize::from)
+                        .min(16),
+                )
+                .thread_name(|index| format!("cgrx-extract-{index}"))
+                .build()
+                .map_err(|error| error.to_string())
+        })
+        .as_ref()
+        .map_err(|error| RuntimeError::new("extract_worker", error.clone()))?;
+    let results = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        pool.install(|| {
+            sources
+                .par_iter()
+                .map(|(relative, source)| {
+                    Ok(ExtractedSource {
+                        relative: relative.clone(),
+                        hash: Hash32(*blake3::hash(source).as_bytes()),
+                        extracted: extract_path(relative, source)?,
+                    })
                 })
-            })
-            .collect();
-        handles
-            .into_iter()
-            .map(|handle| {
-                handle.join().map_err(|_| {
-                    RuntimeError::new("extract_worker", "source extraction worker panicked")
-                })?
-            })
-            .collect::<Result<Vec<_>, RuntimeError>>()
-    })?;
-    let mut extracted: Vec<_> = chunks.into_iter().flatten().collect();
+                // Collect in input order before propagating errors, so worker
+                // scheduling cannot change which failed file is reported.
+                .collect::<Vec<Result<ExtractedSource, RuntimeError>>>()
+        })
+    }))
+    .map_err(|_| RuntimeError::new("extract_worker", "source extraction worker panicked"))?;
+    let mut extracted = results.into_iter().collect::<Result<Vec<_>, _>>()?;
     extracted.sort_by(|left, right| left.relative.cmp(&right.relative));
     Ok(extracted)
 }
 
+struct DocumentSeed {
+    node_id: u64,
+    qualified_name: String,
+    text: String,
+    search_text: String,
+    span: Span,
+    provenance: &'static str,
+    semantic_tags: Vec<String>,
+}
+
+fn plain_document(relative: &str, seed: DocumentSeed) -> StoredDocument {
+    StoredDocument {
+        php_function_target: None,
+        php_type_target: None,
+        rust_module_target: None,
+        rust_self_target: None,
+        rust_parameter_target: None,
+        ts_lexical_target: None,
+        ts_constructor_target: None,
+        go_field_target: None,
+        go_local_constructor_target: None,
+        java_constructor_target: None,
+        semantic_fingerprint: None,
+        node_id: seed.node_id,
+        qualified_name: seed.qualified_name,
+        path: relative.to_owned(),
+        text: seed.text,
+        search_text: seed.search_text,
+        span_start: seed.span.start,
+        span_end: seed.span.end,
+        body_start: seed.span.start,
+        body_end: seed.span.end,
+        provenance: seed.provenance.to_owned(),
+        semantic_tags: seed.semantic_tags,
+        go_receiver_target: None,
+        go_import_path: None,
+        go_import_explicit_alias: false,
+        go_package: None,
+    }
+}
+
+fn apply_ts_call_facts(
+    relative: &str,
+    source: &[u8],
+    facts: Option<&TsFileFacts>,
+    documents: &mut Vec<StoredDocument>,
+) -> BTreeSet<[usize; 2]> {
+    let ts_receiver_spans: BTreeSet<_> = facts
+        .into_iter()
+        .flat_map(|facts| facts.receiver_calls.iter().map(|receiver| receiver.call))
+        .collect();
+    if let Some(facts) = facts {
+        for site in &facts.sites {
+            let tag = match &site.binding {
+                SiteBinding::Candidate(_) => "TS_IMPORT_CALL",
+                SiteBinding::Rejected => "TS_IMPORT_REJECTED",
+                SiteBinding::NotImport => continue,
+            };
+            if let Some(document) = documents.iter_mut().find(|document| {
+                document.provenance == "CALLS"
+                    && document.span_start == site.call[0]
+                    && document.span_end == site.call[1]
+            }) {
+                document
+                    .semantic_tags
+                    .retain(|value| value != "DYNAMIC_DISPATCH");
+                if !document.semantic_tags.iter().any(|value| value == tag) {
+                    document.semantic_tags.push(tag.to_owned());
+                }
+                continue;
+            }
+            let SiteBinding::Candidate(import) = &site.binding else {
+                continue;
+            };
+            let span = Span {
+                start: site.call[0],
+                end: site.call[1],
+            };
+            let slice = slice_source(
+                source,
+                ByteRange::new(span.start, span.end),
+                ContextWindow::lines(0),
+            );
+            let text = String::from_utf8_lossy(&slice.bytes).into_owned();
+            let identity = format!("call:{}", import.local);
+            documents.push(plain_document(
+                relative,
+                DocumentSeed {
+                    node_id: stable_node_id(relative, span, &identity),
+                    qualified_name: import.local.clone(),
+                    text: text.clone(),
+                    search_text: text,
+                    span,
+                    provenance: "CALLS",
+                    semantic_tags: vec!["EXACT_CALL".to_owned(), tag.to_owned()],
+                },
+            ));
+        }
+        for receiver in &facts.receiver_calls {
+            let span = Span {
+                start: receiver.call[0],
+                end: receiver.call[1],
+            };
+            if let Some(document) = documents.iter_mut().find(|document| {
+                document.provenance == "CALLS"
+                    && document.span_start == span.start
+                    && document.span_end == span.end
+                    && document.qualified_name == receiver.method
+            }) {
+                document
+                    .semantic_tags
+                    .retain(|value| value != "DYNAMIC_DISPATCH");
+                for tag in ["EXACT_CALL", "TS_RECEIVER_CALL"] {
+                    if !document.semantic_tags.iter().any(|value| value == tag) {
+                        document.semantic_tags.push(tag.to_owned());
+                    }
+                }
+                continue;
+            }
+            let slice = slice_source(
+                source,
+                ByteRange::new(span.start, span.end),
+                ContextWindow::lines(0),
+            );
+            let text = String::from_utf8_lossy(&slice.bytes).into_owned();
+            let identity = format!("call:{}", receiver.method);
+            documents.push(plain_document(
+                relative,
+                DocumentSeed {
+                    node_id: stable_node_id(relative, span, &identity),
+                    qualified_name: receiver.method.clone(),
+                    text: text.clone(),
+                    search_text: text,
+                    span,
+                    provenance: "CALLS",
+                    semantic_tags: vec!["EXACT_CALL".to_owned(), "TS_RECEIVER_CALL".to_owned()],
+                },
+            ));
+        }
+    }
+
+    ts_receiver_spans
+}
+
+fn append_unresolved_documents(
+    relative: &str,
+    source: &[u8],
+    symbols: &[cgrx_languages::Symbol],
+    unresolved: &[cgrx_languages::Unresolved],
+    ts_receiver_spans: &BTreeSet<[usize; 2]>,
+    swift_type_spans: &BTreeSet<Span>,
+    documents: &mut Vec<StoredDocument>,
+) {
+    let relative_path = Path::new(relative);
+    let mut unresolved_by_span = BTreeMap::<(usize, usize), Vec<UnresolvedKind>>::new();
+    for candidate in unresolved {
+        if ts_receiver_spans.contains(&[candidate.span.start, candidate.span.end]) {
+            continue;
+        }
+        unresolved_by_span
+            .entry((candidate.span.start, candidate.span.end))
+            .or_default()
+            .push(candidate.kind);
+    }
+    for ((start, end), mut kinds) in unresolved_by_span {
+        kinds.sort();
+        kinds.dedup();
+        if kinds.iter().any(|kind| {
+            matches!(
+                kind,
+                UnresolvedKind::DynamicProperty | UnresolvedKind::Dispatch
+            )
+        }) {
+            let span = Span { start, end };
+            let text = source.get(start..end).map_or_else(String::new, |bytes| {
+                String::from_utf8_lossy(bytes).into_owned()
+            });
+            let semantic_tags = kinds
+                .iter()
+                .filter_map(|kind| match kind {
+                    UnresolvedKind::DynamicProperty => Some("DYNAMIC_PROPERTY".to_owned()),
+                    UnresolvedKind::Dispatch => Some("DYNAMIC_DISPATCH".to_owned()),
+                    _ => None,
+                })
+                .collect();
+            let qualified_name = format!("unresolved:{text}");
+            documents.push(plain_document(
+                relative,
+                DocumentSeed {
+                    node_id: stable_node_id(relative, span, &qualified_name),
+                    qualified_name,
+                    text,
+                    search_text: String::new(),
+                    span,
+                    provenance: if swift_type_spans.contains(&span) {
+                        "REFERENCES"
+                    } else {
+                        "CALLS"
+                    },
+                    semantic_tags,
+                },
+            ));
+        }
+    }
+    for candidate in unresolved
+        .iter()
+        .filter(|candidate| candidate.kind == UnresolvedKind::Decorator)
+    {
+        let Some(symbol) = symbols
+            .iter()
+            .filter(|symbol| symbol.span.start >= candidate.span.end)
+            .min_by_key(|symbol| symbol.span.start)
+        else {
+            continue;
+        };
+        let Some(span) = declaration_span(source, symbol.span, relative_path) else {
+            continue;
+        };
+        let text = String::from_utf8_lossy(&source[span.start..span.end]).into_owned();
+        let identity = format!("route:{text}");
+        documents.push(plain_document(
+            relative,
+            DocumentSeed {
+                node_id: stable_node_id(relative, span, &identity),
+                qualified_name: symbol.name.clone(),
+                text,
+                search_text: String::new(),
+                span,
+                provenance: "ROUTE_HANDLER",
+                semantic_tags: vec!["DECORATOR_HANDLER".to_owned()],
+            },
+        ));
+    }
+}
+
+fn append_implements_documents(
+    relative: &str,
+    relative_path: &Path,
+    source: &[u8],
+    documents: &mut Vec<StoredDocument>,
+) {
+    for span in implements_spans(source, relative_path) {
+        let text = String::from_utf8_lossy(&source[span.start..span.end]).into_owned();
+        let identity = format!("implements:{text}");
+        documents.push(plain_document(
+            relative,
+            DocumentSeed {
+                node_id: stable_node_id(relative, span, &identity),
+                qualified_name: text.clone(),
+                text,
+                search_text: String::new(),
+                span,
+                provenance: "IMPLEMENTS",
+                semantic_tags: vec!["IMPLEMENTS".to_owned()],
+            },
+        ));
+    }
+}
+
 pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPath, RuntimeError> {
     let relative_path = Path::new(relative);
-    let ts_file = matches!(
+    let mut ts_file = matches!(
         relative_path.extension().and_then(|value| value.to_str()),
         Some("ts" | "tsx")
     )
     .then(|| TsFileFacts::parse(relative, source));
-    let pack = pack_for_path(relative_path)
+    if cgrx_languages::EXPERIMENTAL_JAVASCRIPT_ENABLED
+        && cgrx_languages::javascript::is_javascript_path(relative)
+    {
+        ts_file = Some(TsFileFacts {
+            javascript: Some(cgrx_languages::javascript::FileFacts::parse(
+                relative, source,
+            )),
+            ..TsFileFacts::default()
+        });
+    }
+    let pack = pack_for_source(relative_path, source)
         .ok_or_else(|| RuntimeError::new("unsupported_path", relative.to_owned()))?;
     let extraction = pack
         .extract(relative_path, source)
@@ -102,8 +377,23 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
         .and_then(|bytes| std::str::from_utf8(bytes).ok())
         .map(str::to_owned);
     let lexical_arrows: BTreeSet<_> = extraction.lexical_arrows.into_iter().collect();
+    let swift_free_functions: BTreeSet<_> = extraction.swift_free_functions.into_iter().collect();
+    let swift_type_spans: BTreeSet<_> = extraction.swift_type_references.into_iter().collect();
     let symbols = extraction.symbols;
     let edges = extraction.edges;
+    let rust_parameter_source_hash = edges
+        .iter()
+        .any(|e| matches!(e.provenance, LanguageProvenance::RustParameter { .. }))
+        .then(|| Hash32(*blake3::hash(source).as_bytes()));
+    let go_indexed_source_hash = edges
+        .iter()
+        .any(|e| {
+            matches!(
+                e.provenance,
+                LanguageProvenance::GoIndexedFieldReceiver { .. }
+            )
+        })
+        .then(|| Hash32(*blake3::hash(source).as_bytes()));
     let php_targets: BTreeSet<_> = edges
         .iter()
         .filter_map(|edge| {
@@ -145,40 +435,42 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
                 String::from_utf8_lossy(bytes).into_owned()
             });
         let semantic_fingerprint = body_fingerprint(&symbol.name, &search_text);
+        let semantic_tags = if pack.id() == "cpp" {
+            vec!["CPP_LANGUAGE".to_owned()]
+        } else if pack.id() == "swift" {
+            let mut tags = vec!["SWIFT_DECLARATION".to_owned()];
+            if swift_free_functions.contains(&symbol.span) {
+                tags.push("SWIFT_FREE_FUNCTION".to_owned());
+            }
+            tags
+        } else if lexical_arrows.contains(&symbol.span) {
+            vec!["TS_LEXICAL_ARROW".to_owned()]
+        } else if swift_free_functions.contains(&symbol.span) {
+            vec!["SWIFT_FREE_FUNCTION".to_owned()]
+        } else if php_type_targets.contains(&symbol.span) {
+            vec!["PHP_TYPE_DECLARATION".to_owned()]
+        } else if php_targets.contains(&symbol.span) {
+            vec!["PHP_GLOBAL_FUNCTION".to_owned()]
+        } else {
+            Vec::new()
+        };
         documents.push(StoredDocument {
-            php_function_target: None,
-            php_type_target: None,
-            rust_module_target: None,
-            rust_self_target: None,
-            ts_lexical_target: None,
-            ts_constructor_target: None,
-            go_field_target: None,
-            go_local_constructor_target: None,
-            java_constructor_target: None,
-            go_import_path: None,
-            go_import_explicit_alias: false,
             go_package: go_package.clone(),
-            go_receiver_target: None,
             semantic_fingerprint,
-            node_id: stable_node_id(relative, symbol.span, &symbol.name),
-            qualified_name: symbol.name.clone(),
-            path: relative.to_owned(),
-            text,
-            search_text,
-            span_start: symbol.span.start,
-            span_end: symbol.span.end,
             body_start: symbol.search_span.start,
             body_end: symbol.search_span.end,
-            provenance: "SYNTAX".to_owned(),
-            semantic_tags: if lexical_arrows.contains(&symbol.span) {
-                vec!["TS_LEXICAL_ARROW".to_owned()]
-            } else if php_type_targets.contains(&symbol.span) {
-                vec!["PHP_TYPE_DECLARATION".to_owned()]
-            } else if php_targets.contains(&symbol.span) {
-                vec!["PHP_GLOBAL_FUNCTION".to_owned()]
-            } else {
-                Vec::new()
-            },
+            ..plain_document(
+                relative,
+                DocumentSeed {
+                    node_id: stable_node_id(relative, symbol.span, &symbol.name),
+                    qualified_name: symbol.name.clone(),
+                    text,
+                    search_text,
+                    span: symbol.span,
+                    provenance: "SYNTAX",
+                    semantic_tags,
+                },
+            )
         });
     }
     for edge in edges
@@ -189,86 +481,72 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
         // line-oriented context slice can contain adjacent imports and make an
         // external specifier look like a second repository-local dependency.
         let text = String::from_utf8_lossy(&source[edge.span.start..edge.span.end]).into_owned();
-        documents.push(StoredDocument {
-            php_function_target: None,
-            php_type_target: None,
-            rust_module_target: None,
-            rust_self_target: None,
-            ts_lexical_target: None,
-            ts_constructor_target: None,
-            go_field_target: None,
-            go_local_constructor_target: None,
-            java_constructor_target: None,
-            go_import_path: None,
-            go_import_explicit_alias: false,
-            go_package: None,
-            go_receiver_target: None,
-            semantic_fingerprint: None,
-            node_id: stable_node_id(relative, edge.span, &format!("import:{text}")),
-            qualified_name: edge.target.clone(),
-            path: relative.to_owned(),
-            text: text.clone(),
-            search_text: text,
-            span_start: edge.span.start,
-            span_end: edge.span.end,
-            body_start: edge.span.start,
-            body_end: edge.span.end,
-            provenance: "IMPORTS".to_owned(),
-            semantic_tags: vec!["IMPORTS".to_owned()],
-        });
+        let identity = format!("import:{text}");
+        documents.push(plain_document(
+            relative,
+            DocumentSeed {
+                node_id: stable_node_id(relative, edge.span, &identity),
+                qualified_name: edge.target.clone(),
+                text: text.clone(),
+                search_text: text,
+                span: edge.span,
+                provenance: "IMPORTS",
+                semantic_tags: vec!["IMPORTS".to_owned()],
+            },
+        ));
     }
     for edge in edges
         .iter()
-        .filter(|edge| edge.relation == LanguageRelation::References)
+        .filter(|edge| edge.relation == LanguageRelation::References && ts_file.is_none())
     {
         let text = String::from_utf8_lossy(&source[edge.span.start..edge.span.end]).into_owned();
-        documents.push(StoredDocument {
-            php_function_target: None,
-            php_type_target: if let LanguageProvenance::PhpType {
+        let php_type_target = if let LanguageProvenance::PhpType {
+            owner,
+            target,
+            import,
+        } = edge.provenance
+        {
+            Some(Box::new(super::php_resolution::PhpTypeTarget::new(
+                php_source_hash.expect("PHP type identity was collected"),
                 owner,
                 target,
                 import,
-            } = edge.provenance
-            {
-                Some(Box::new(super::php_resolution::PhpTypeTarget::new(
-                    php_source_hash.expect("PHP type identity was collected"),
-                    owner,
-                    target,
-                    import,
-                    relative,
-                    edge,
-                    source,
-                )))
-            } else {
-                None
+                relative,
+                edge,
+                source,
+            )))
+        } else {
+            None
+        };
+        let semantic_tags = if php_type_target.is_some() {
+            vec!["REFERENCES".to_owned(), "PHP_TYPE_REFERENCE".to_owned()]
+        } else if matches!(edge.provenance, LanguageProvenance::SwiftExact { .. }) {
+            vec!["REFERENCES".to_owned(), "SWIFT_EXACT_REFERENCE".to_owned()]
+        } else {
+            vec!["REFERENCES".to_owned()]
+        };
+        let identity = format!("reference:{text}");
+        documents.push(StoredDocument {
+            php_type_target,
+            ts_lexical_target: match edge.provenance {
+                LanguageProvenance::SwiftExact { owner, target } => Some(TsLexicalTarget {
+                    caller: ByteRange::new(owner.start, owner.end),
+                    target: ByteRange::new(target.start, target.end),
+                }),
+                _ => None,
             },
-            rust_module_target: None,
-            rust_self_target: None,
-            ts_lexical_target: None,
-            ts_constructor_target: None,
-            go_field_target: None,
-            go_local_constructor_target: None,
-            java_constructor_target: None,
-            go_import_path: None,
-            go_import_explicit_alias: false,
-            go_package: None,
-            go_receiver_target: None,
-            semantic_fingerprint: None,
-            node_id: stable_node_id(relative, edge.span, &format!("reference:{text}")),
-            qualified_name: edge.target.clone(),
-            path: relative.to_owned(),
-            text: text.clone(),
-            search_text: text,
-            span_start: edge.span.start,
-            span_end: edge.span.end,
-            body_start: edge.span.start,
-            body_end: edge.span.end,
-            provenance: "REFERENCES".to_owned(),
-            semantic_tags: if matches!(edge.provenance, LanguageProvenance::PhpType { .. }) {
-                vec!["REFERENCES".to_owned(), "PHP_TYPE_REFERENCE".to_owned()]
-            } else {
-                vec!["REFERENCES".to_owned()]
-            },
+            ..plain_document(
+                relative,
+                DocumentSeed {
+                    node_id: stable_node_id(relative, edge.span, &identity),
+                    qualified_name: edge.target.clone(),
+                    text: text.clone(),
+                    search_text: text,
+                    span: edge.span,
+                    provenance: "REFERENCES",
+                    semantic_tags,
+                },
+            )
         });
     }
     for edge in edges {
@@ -298,13 +576,17 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
             | LanguageProvenance::PhpFunction { .. }
             | LanguageProvenance::PhpType { .. }
             | LanguageProvenance::GoFieldReceiver { .. }
+            | LanguageProvenance::GoIndexedFieldReceiver { .. }
             | LanguageProvenance::GoLocalConstructor { .. }
             | LanguageProvenance::GoImport { .. }
             | LanguageProvenance::TsLexical { .. }
             | LanguageProvenance::TsConstructor { .. }
             | LanguageProvenance::JavaConstructor { .. }
             | LanguageProvenance::RustSelf { .. }
+            | LanguageProvenance::RustParameter { .. }
             | LanguageProvenance::RustModule { .. }
+            | LanguageProvenance::SwiftDirect { .. }
+            | LanguageProvenance::SwiftExact { .. }
             | LanguageProvenance::RustConstructor { .. } => None,
         };
         let is_go_receiver = go_receiver_target.is_some();
@@ -349,6 +631,15 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
                     field,
                     field_type,
                     target,
+                }
+                | LanguageProvenance::GoIndexedFieldReceiver {
+                    package,
+                    caller,
+                    receiver_type,
+                    field,
+                    field_type,
+                    target,
+                    ..
                 } => {
                     let range = |span: Span| ByteRange::new(span.start, span.end);
                     Some(Box::new(GoFieldTarget {
@@ -359,6 +650,24 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
                         field: range(field),
                         field_type: range(field_type),
                         target: range(target),
+                        indexed_binding: match edge.provenance {
+                            LanguageProvenance::GoIndexedFieldReceiver {
+                                collection,
+                                statement,
+                                binding,
+                                initializer,
+                                receiver,
+                                ..
+                            } => Some(Box::new(super::target_types::GoIndexedFieldBinding {
+                                source_hash: go_indexed_source_hash.expect("Go indexed proof hash"),
+                                collection: range(collection),
+                                statement: range(statement),
+                                binding: range(binding),
+                                initializer: range(initializer),
+                                receiver: range(receiver),
+                            })),
+                            _ => None,
+                        },
                     }))
                 }
                 _ => None,
@@ -400,6 +709,18 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
                 }),
                 _ => None,
             },
+            ts_lexical_target: match edge.provenance {
+                LanguageProvenance::SwiftExact { owner, target } => Some(TsLexicalTarget {
+                    caller: ByteRange::new(owner.start, owner.end),
+                    target: ByteRange::new(target.start, target.end),
+                }),
+                LanguageProvenance::SwiftDirect { caller, target }
+                | LanguageProvenance::TsLexical { target, caller } => Some(TsLexicalTarget {
+                    target: ByteRange::new(target.start, target.end),
+                    caller: ByteRange::new(caller.start, caller.end),
+                }),
+                _ => None,
+            },
             rust_self_target: match edge.provenance {
                 LanguageProvenance::RustSelf {
                     owner,
@@ -419,11 +740,30 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
                 }
                 _ => None,
             },
-            ts_lexical_target: match edge.provenance {
-                LanguageProvenance::TsLexical { target, caller } => Some(TsLexicalTarget {
-                    target: ByteRange::new(target.start, target.end),
-                    caller: ByteRange::new(caller.start, caller.end),
-                }),
+            rust_parameter_target: match edge.provenance {
+                LanguageProvenance::RustParameter {
+                    owner,
+                    caller,
+                    parameter,
+                    binding,
+                    receiver_type,
+                    receiver,
+                    target_implementation,
+                    target,
+                } => {
+                    let range = |s: Span| ByteRange::new(s.start, s.end);
+                    Some(Box::new(RustParameterTarget {
+                        source_hash: rust_parameter_source_hash.expect("Rust parameter proof hash"),
+                        owner: range(owner),
+                        caller: range(caller),
+                        parameter: range(parameter),
+                        binding: range(binding),
+                        receiver_type: range(receiver_type),
+                        receiver: range(receiver),
+                        target_implementation: range(target_implementation),
+                        target: range(target),
+                    }))
+                }
                 _ => None,
             },
             ts_constructor_target: match edge.provenance {
@@ -457,8 +797,23 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
                 vec!["EXACT_CALL".to_owned(), "PHP_FUNCTION_CALL".to_owned()]
             } else if matches!(edge.provenance, LanguageProvenance::RustModule { .. }) {
                 vec!["EXACT_CALL".to_owned(), "RUST_MODULE_CALL".to_owned()]
+            } else if matches!(edge.provenance, LanguageProvenance::SwiftDirect { .. }) {
+                vec!["EXACT_CALL".to_owned(), "SWIFT_DIRECT_CALL".to_owned()]
+            } else if matches!(edge.provenance, LanguageProvenance::SwiftExact { .. }) {
+                vec!["EXACT_CALL".to_owned(), "SWIFT_EXACT_CALL".to_owned()]
             } else if matches!(edge.provenance, LanguageProvenance::RustSelf { .. }) {
                 vec!["EXACT_CALL".to_owned(), "RUST_SELF_CALL".to_owned()]
+            } else if matches!(edge.provenance, LanguageProvenance::RustParameter { .. }) {
+                vec!["EXACT_CALL".to_owned(), "RUST_PARAMETER_CALL".to_owned()]
+            } else if matches!(
+                edge.provenance,
+                LanguageProvenance::GoIndexedFieldReceiver { .. }
+            ) {
+                vec![
+                    "EXACT_CALL".to_owned(),
+                    "GO_FIELD_CALL".to_owned(),
+                    "GO_INDEXED_FIELD_CALL".to_owned(),
+                ]
             } else if matches!(edge.provenance, LanguageProvenance::GoFieldReceiver { .. }) {
                 vec!["EXACT_CALL".to_owned(), "GO_FIELD_CALL".to_owned()]
             } else if matches!(
@@ -491,298 +846,148 @@ pub(super) fn extract_path(relative: &str, source: &[u8]) -> Result<ExtractedPat
                 ByteRange::new(edge.context_span.start, edge.context_span.end),
                 ContextWindow::lines(0),
             );
-            documents.push(StoredDocument {
-                php_function_target: None,
-                php_type_target: None,
-                rust_module_target: None,
-                rust_self_target: None,
-                ts_lexical_target: None,
-                ts_constructor_target: None,
-                go_field_target: None,
-                go_local_constructor_target: None,
-                java_constructor_target: None,
-                go_import_path: None,
-                go_import_explicit_alias: false,
-                go_package: None,
-                go_receiver_target: None,
-                semantic_fingerprint: None,
-                node_id: stable_node_id(
-                    relative,
-                    edge.context_span,
-                    &format!("statement:{target}"),
-                ),
-                qualified_name: target,
-                path: relative.to_owned(),
-                text: String::from_utf8_lossy(&context.bytes).into_owned(),
-                search_text: String::from_utf8_lossy(&context.bytes).into_owned(),
-                span_start: edge.context_span.start,
-                span_end: edge.context_span.end,
-                body_start: edge.context_span.start,
-                body_end: edge.context_span.end,
-                provenance: "CALLS".to_owned(),
-                semantic_tags: vec!["STATEMENT_CALL".to_owned()],
-            });
+            let text = String::from_utf8_lossy(&context.bytes).into_owned();
+            let identity = format!("statement:{target}");
+            documents.push(plain_document(
+                relative,
+                DocumentSeed {
+                    node_id: stable_node_id(relative, edge.context_span, &identity),
+                    qualified_name: target,
+                    text: text.clone(),
+                    search_text: text,
+                    span: edge.context_span,
+                    provenance: "CALLS",
+                    semantic_tags: vec!["STATEMENT_CALL".to_owned()],
+                },
+            ));
         }
     }
-    let ts_receiver_spans: BTreeSet<_> = ts_file
+    if let Some(facts) = &extraction.python_file {
+        for import in &facts.imports {
+            let span = Span {
+                start: import.span[0],
+                end: import.span[1],
+            };
+            let text = String::from_utf8_lossy(&source[span.start..span.end]).into_owned();
+            documents.push(plain_document(
+                relative,
+                DocumentSeed {
+                    node_id: stable_node_id(
+                        relative,
+                        span,
+                        &format!("python-import:{}", import.local),
+                    ),
+                    qualified_name: import.local.clone(),
+                    text: text.clone(),
+                    search_text: text,
+                    span,
+                    provenance: "IMPORTS",
+                    semantic_tags: vec!["PY_IMPORT_BINDING".to_owned()],
+                },
+            ));
+        }
+    }
+    if let Some(facts) = ts_file
         .as_ref()
-        .into_iter()
-        .flat_map(|facts| facts.receiver_calls.iter().map(|receiver| receiver.call))
-        .collect();
-    if let Some(facts) = ts_file.as_ref() {
-        for site in &facts.sites {
-            let tag = match &site.binding {
-                SiteBinding::Candidate(_) => "TS_IMPORT_CALL",
-                SiteBinding::Rejected => "TS_IMPORT_REJECTED",
-                SiteBinding::NotImport => continue,
-            };
-            if let Some(document) = documents.iter_mut().find(|document| {
-                document.provenance == "CALLS"
-                    && document.span_start == site.call[0]
-                    && document.span_end == site.call[1]
-            }) {
-                document
-                    .semantic_tags
-                    .retain(|value| value != "DYNAMIC_DISPATCH");
-                if !document.semantic_tags.iter().any(|value| value == tag) {
-                    document.semantic_tags.push(tag.to_owned());
-                }
-                continue;
-            }
-            let SiteBinding::Candidate(import) = &site.binding else {
-                continue;
-            };
-            let span = Span {
-                start: site.call[0],
-                end: site.call[1],
-            };
-            let slice = slice_source(
-                source,
-                ByteRange::new(span.start, span.end),
-                ContextWindow::lines(0),
-            );
-            documents.push(StoredDocument {
-                php_function_target: None,
-                php_type_target: None,
-                rust_module_target: None,
-                rust_self_target: None,
-                ts_lexical_target: None,
-                ts_constructor_target: None,
-                go_field_target: None,
-                go_local_constructor_target: None,
-                java_constructor_target: None,
-                go_import_path: None,
-                go_import_explicit_alias: false,
-                go_package: None,
-                go_receiver_target: None,
-                semantic_fingerprint: None,
-                node_id: stable_node_id(relative, span, &format!("call:{}", import.local)),
-                qualified_name: import.local.clone(),
-                path: relative.to_owned(),
-                text: String::from_utf8_lossy(&slice.bytes).into_owned(),
-                search_text: String::from_utf8_lossy(&slice.bytes).into_owned(),
-                span_start: span.start,
-                span_end: span.end,
-                body_start: span.start,
-                body_end: span.end,
-                provenance: "CALLS".to_owned(),
-                semantic_tags: vec!["EXACT_CALL".to_owned(), tag.to_owned()],
-            });
-        }
-        for receiver in &facts.receiver_calls {
-            let span = Span {
-                start: receiver.call[0],
-                end: receiver.call[1],
-            };
-            if let Some(document) = documents.iter_mut().find(|document| {
-                document.provenance == "CALLS"
-                    && document.span_start == span.start
-                    && document.span_end == span.end
-                    && document.qualified_name == receiver.method
-            }) {
-                document
-                    .semantic_tags
-                    .retain(|value| value != "DYNAMIC_DISPATCH");
-                for tag in ["EXACT_CALL", "TS_RECEIVER_CALL"] {
-                    if !document.semantic_tags.iter().any(|value| value == tag) {
-                        document.semantic_tags.push(tag.to_owned());
-                    }
-                }
-                continue;
-            }
-            let slice = slice_source(
-                source,
-                ByteRange::new(span.start, span.end),
-                ContextWindow::lines(0),
-            );
-            documents.push(StoredDocument {
-                php_function_target: None,
-                php_type_target: None,
-                rust_module_target: None,
-                rust_self_target: None,
-                ts_lexical_target: None,
-                ts_constructor_target: None,
-                go_field_target: None,
-                go_local_constructor_target: None,
-                java_constructor_target: None,
-                go_import_path: None,
-                go_import_explicit_alias: false,
-                go_package: None,
-                go_receiver_target: None,
-                semantic_fingerprint: None,
-                node_id: stable_node_id(relative, span, &format!("call:{}", receiver.method)),
-                qualified_name: receiver.method.clone(),
-                path: relative.to_owned(),
-                text: String::from_utf8_lossy(&slice.bytes).into_owned(),
-                search_text: String::from_utf8_lossy(&slice.bytes).into_owned(),
-                span_start: span.start,
-                span_end: span.end,
-                body_start: span.start,
-                body_end: span.end,
-                provenance: "CALLS".to_owned(),
-                semantic_tags: vec!["EXACT_CALL".to_owned(), "TS_RECEIVER_CALL".to_owned()],
-            });
-        }
-    }
-    let mut unresolved_by_span = BTreeMap::<(usize, usize), Vec<UnresolvedKind>>::new();
-    for candidate in &unresolved {
-        if ts_receiver_spans.contains(&[candidate.span.start, candidate.span.end]) {
-            continue;
-        }
-        unresolved_by_span
-            .entry((candidate.span.start, candidate.span.end))
-            .or_default()
-            .push(candidate.kind);
-    }
-    for ((start, end), mut kinds) in unresolved_by_span {
-        kinds.sort();
-        kinds.dedup();
-        if kinds.iter().any(|kind| {
-            matches!(
-                kind,
-                UnresolvedKind::DynamicProperty | UnresolvedKind::Dispatch
-            )
-        }) {
-            let span = Span { start, end };
-            let text = source.get(start..end).map_or_else(String::new, |bytes| {
-                String::from_utf8_lossy(bytes).into_owned()
-            });
-            let semantic_tags = kinds
-                .iter()
-                .filter_map(|kind| match kind {
-                    UnresolvedKind::DynamicProperty => Some("DYNAMIC_PROPERTY".to_owned()),
-                    UnresolvedKind::Dispatch => Some("DYNAMIC_DISPATCH".to_owned()),
-                    _ => None,
-                })
-                .collect();
-            documents.push(StoredDocument {
-                php_function_target: None,
-                php_type_target: None,
-                rust_module_target: None,
-                rust_self_target: None,
-                ts_lexical_target: None,
-                ts_constructor_target: None,
-                go_field_target: None,
-                go_local_constructor_target: None,
-                java_constructor_target: None,
-                go_import_path: None,
-                go_import_explicit_alias: false,
-                go_package: None,
-                go_receiver_target: None,
-                semantic_fingerprint: None,
-                node_id: stable_node_id(relative, span, &format!("unresolved:{text}")),
-                qualified_name: format!("unresolved:{text}"),
-                path: relative.to_owned(),
-                text,
-                search_text: String::new(),
-                span_start: start,
-                span_end: end,
-                body_start: start,
-                body_end: end,
-                provenance: "CALLS".to_owned(),
-                semantic_tags,
-            });
-        }
-    }
-    for candidate in unresolved
-        .iter()
-        .filter(|candidate| candidate.kind == UnresolvedKind::Decorator)
+        .and_then(|file| file.declaration_facts.as_ref())
     {
-        let Some(symbol) = symbols
+        let mut declaration_spans: BTreeSet<_> = documents
             .iter()
-            .filter(|symbol| symbol.span.start >= candidate.span.end)
-            .min_by_key(|symbol| symbol.span.start)
-        else {
-            continue;
-        };
-        let Some(span) = declaration_span(source, symbol.span, relative_path) else {
-            continue;
-        };
-        let text = String::from_utf8_lossy(&source[span.start..span.end]).into_owned();
-        documents.push(StoredDocument {
-            php_function_target: None,
-            php_type_target: None,
-            rust_module_target: None,
-            rust_self_target: None,
-            ts_lexical_target: None,
-            ts_constructor_target: None,
-            go_field_target: None,
-            go_local_constructor_target: None,
-            java_constructor_target: None,
-            go_import_path: None,
-            go_import_explicit_alias: false,
-            go_package: None,
-            go_receiver_target: None,
-            semantic_fingerprint: None,
-            node_id: stable_node_id(relative, span, &format!("route:{text}")),
-            qualified_name: symbol.name.clone(),
-            path: relative.to_owned(),
-            text,
-            search_text: String::new(),
-            span_start: span.start,
-            span_end: span.end,
-            body_start: span.start,
-            body_end: span.end,
-            provenance: "ROUTE_HANDLER".to_owned(),
-            semantic_tags: vec!["DECORATOR_HANDLER".to_owned()],
-        });
+            .filter(|d| d.provenance == "SYNTAX")
+            .map(|d| (d.span_start, d.span_end))
+            .collect();
+        for (name, declarations) in &facts.declarations {
+            for declaration in declarations {
+                let span = Span {
+                    start: declaration.name[0],
+                    end: declaration.name[1],
+                };
+                if !declaration_spans.insert((span.start, span.end)) {
+                    continue;
+                }
+                let text = String::from_utf8_lossy(&source[span.start..span.end]).into_owned();
+                let search_text =
+                    String::from_utf8_lossy(&source[declaration.body[0]..declaration.body[1]])
+                        .into_owned();
+                documents.push(StoredDocument {
+                    body_start: declaration.body[0],
+                    body_end: declaration.body[1],
+                    ..plain_document(
+                        relative,
+                        DocumentSeed {
+                            node_id: stable_node_id(relative, span, name),
+                            qualified_name: name.clone(),
+                            text,
+                            search_text,
+                            span,
+                            provenance: "SYNTAX",
+                            semantic_tags: vec!["TS_DEPENDENCY_DECLARATION".to_owned()],
+                        },
+                    )
+                });
+            }
+        }
+        for import in &facts.imports {
+            let span = Span {
+                start: import.member[0],
+                end: import.member[1],
+            };
+            let text = String::from_utf8_lossy(&source[span.start..span.end]).into_owned();
+            documents.push(plain_document(
+                relative,
+                DocumentSeed {
+                    node_id: stable_node_id(relative, span, &format!("ts-import:{}", import.local)),
+                    qualified_name: import.local.clone(),
+                    text: text.clone(),
+                    search_text: text,
+                    span,
+                    provenance: "IMPORTS",
+                    semantic_tags: vec!["TS_IMPORT_BINDING".to_owned()],
+                },
+            ));
+        }
+        for reference in &facts.references {
+            let span = Span {
+                start: reference.site[0],
+                end: reference.site[1],
+            };
+            let text = String::from_utf8_lossy(&source[span.start..span.end]).into_owned();
+            documents.push(plain_document(
+                relative,
+                DocumentSeed {
+                    node_id: stable_node_id(
+                        relative,
+                        span,
+                        &format!("ts-reference:{}", reference.local),
+                    ),
+                    qualified_name: reference.local.clone(),
+                    text: text.clone(),
+                    search_text: text,
+                    span,
+                    provenance: "REFERENCES",
+                    semantic_tags: vec!["TS_DECLARATION_REFERENCE".to_owned()],
+                },
+            ));
+        }
     }
-    for span in implements_spans(source, relative_path) {
-        let text = String::from_utf8_lossy(&source[span.start..span.end]).into_owned();
-        documents.push(StoredDocument {
-            php_function_target: None,
-            php_type_target: None,
-            rust_module_target: None,
-            rust_self_target: None,
-            ts_lexical_target: None,
-            ts_constructor_target: None,
-            go_field_target: None,
-            go_local_constructor_target: None,
-            java_constructor_target: None,
-            go_import_path: None,
-            go_import_explicit_alias: false,
-            go_package: None,
-            go_receiver_target: None,
-            semantic_fingerprint: None,
-            node_id: stable_node_id(relative, span, &format!("implements:{text}")),
-            qualified_name: text.clone(),
-            path: relative.to_owned(),
-            text,
-            search_text: String::new(),
-            span_start: span.start,
-            span_end: span.end,
-            body_start: span.start,
-            body_end: span.end,
-            provenance: "IMPLEMENTS".to_owned(),
-            semantic_tags: vec!["IMPLEMENTS".to_owned()],
-        });
-    }
+    let ts_receiver_spans = apply_ts_call_facts(relative, source, ts_file.as_ref(), &mut documents);
+    append_unresolved_documents(
+        relative,
+        source,
+        &symbols,
+        &unresolved,
+        &ts_receiver_spans,
+        &swift_type_spans,
+        &mut documents,
+    );
+    append_implements_documents(relative, relative_path, source, &mut documents);
     let dynamic_dispatch = outer_dynamic_spans(&unresolved)
         .into_iter()
         .map(|span| format!("{}:{}-{}", relative, span.start, span.end))
         .collect();
     Ok(ExtractedPath {
         rust_file: extraction.rust_file,
+        python_file: extraction.python_file,
         ts_file,
         documents,
         reference_arcs: Vec::new(),
@@ -819,4 +1024,134 @@ pub(super) fn outer_dynamic_spans(unresolved: &[cgrx_languages::Unresolved]) -> 
                 .any(|outer| outer != span && outer.start <= span.start && outer.end >= span.end)
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn plain_document_preserves_identity_span_and_empty_proof_targets() {
+        let span = Span { start: 4, end: 12 };
+        let document = plain_document(
+            "src/example.ts",
+            DocumentSeed {
+                node_id: stable_node_id("src/example.ts", span, "call:demo"),
+                qualified_name: "demo".to_owned(),
+                text: "demo()".to_owned(),
+                search_text: "demo()".to_owned(),
+                span,
+                provenance: "CALLS",
+                semantic_tags: vec!["EXACT_CALL".to_owned()],
+            },
+        );
+
+        assert_eq!(
+            document.node_id,
+            stable_node_id("src/example.ts", span, "call:demo")
+        );
+        assert_eq!((document.span_start, document.span_end), (4, 12));
+        assert_eq!((document.body_start, document.body_end), (4, 12));
+        assert_eq!(document.provenance, "CALLS");
+        assert_eq!(document.semantic_tags, vec!["EXACT_CALL"]);
+        assert!(document.php_function_target.is_none());
+        assert!(document.php_type_target.is_none());
+        assert!(document.rust_module_target.is_none());
+        assert!(document.rust_self_target.is_none());
+        assert!(document.ts_lexical_target.is_none());
+        assert!(document.ts_constructor_target.is_none());
+        assert!(document.go_field_target.is_none());
+        assert!(document.go_local_constructor_target.is_none());
+        assert!(document.java_constructor_target.is_none());
+        assert!(document.go_receiver_target.is_none());
+        assert!(document.go_import_path.is_none());
+        assert!(!document.go_import_explicit_alias);
+        assert!(document.go_package.is_none());
+        assert!(document.semantic_fingerprint.is_none());
+    }
+}
+
+#[cfg(test)]
+mod scheduling_tests {
+    use super::*;
+    use serde_json::{Value, json};
+
+    fn observe(value: ExtractedSource) -> Value {
+        json!({"path":value.relative,"hash":value.hash,"documents":value.extracted.documents,
+            "rust":value.extracted.rust_file,"python":value.extracted.python_file,"ts":value.extracted.ts_file,
+            "parser_errors":value.extracted.parser_error_ranges,"dynamic":value.extracted.dynamic_dispatch,
+            "references":value.extracted.reference_arcs})
+    }
+
+    #[test]
+    fn concurrent_uneven_extraction_preserves_serial_facts_hashes_and_order() {
+        let sources = (0..48)
+            .rev()
+            .map(|index| {
+                let padding = "padding ".repeat((index % 11) * 1000);
+                match index % 3 {
+                    0 => (
+                        format!("src/f_{index:02}.rs"),
+                        format!("fn f_{index}() {{ /* {padding} */ let text = \"Привет\"; }}")
+                            .into_bytes(),
+                    ),
+                    1 => (
+                        format!("src/f_{index:02}.py"),
+                        format!("def f_{index}():\n    # {padding}\n    return helper()\n")
+                            .into_bytes(),
+                    ),
+                    _ => (
+                        format!("src/f_{index:02}.ts"),
+                        format!(
+                            "export function f_{index}() {{ /* {padding} */ return helper(); }}"
+                        )
+                        .into_bytes(),
+                    ),
+                }
+            })
+            .collect::<Vec<_>>();
+        let mut expected = sources
+            .iter()
+            .map(|(relative, source)| {
+                observe(ExtractedSource {
+                    relative: relative.clone(),
+                    hash: Hash32(*blake3::hash(source).as_bytes()),
+                    extracted: extract_path(relative, source).unwrap(),
+                })
+            })
+            .collect::<Vec<_>>();
+        expected.sort_by(|a, b| a["path"].as_str().cmp(&b["path"].as_str()));
+        std::thread::scope(|scope| {
+            let first = scope.spawn(|| {
+                extract_sources_parallel(&sources)
+                    .unwrap()
+                    .into_iter()
+                    .map(observe)
+                    .collect::<Vec<_>>()
+            });
+            let second = scope.spawn(|| {
+                extract_sources_parallel(&sources)
+                    .unwrap()
+                    .into_iter()
+                    .map(observe)
+                    .collect::<Vec<_>>()
+            });
+            assert_eq!(first.join().unwrap(), expected);
+            assert_eq!(second.join().unwrap(), expected);
+        });
+        assert!(extract_sources_parallel(&[]).unwrap().is_empty());
+    }
+
+    #[test]
+    fn parallel_failures_report_the_first_input_deterministically() {
+        let sources = vec![
+            ("first.unsupported".to_owned(), vec![]),
+            ("second.unsupported".to_owned(), vec![]),
+        ];
+        for _ in 0..8 {
+            let error = extract_sources_parallel(&sources).err().unwrap();
+            assert_eq!(error.code(), "unsupported_path");
+            assert_eq!(error.detail, "first.unsupported");
+        }
+    }
 }

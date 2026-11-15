@@ -1,0 +1,107 @@
+{
+  "before": {
+    "samples": [
+      {
+        "startup_ms": 1081.505333,
+        "status_ms": 649.1225410000001,
+        "graph_ms": 36.60270900000007,
+        "nodes": 3216,
+        "edges": 2250,
+        "graph_sha256": "0d76d436cda2f495e2fe1bff5caad11ea9742842507deff5ddeccc3e962a3be2",
+        "snapshot": {
+          "graph_generation": 5254752323806868,
+          "repo_revision": "e082a97b19679acf563dcdfa6c2a3f23861972b6",
+          "working_tree_digest": "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"
+        },
+        "graph_repeat_ms": 33.439416
+      },
+      {
+        "startup_ms": 1072.0232919999999,
+        "status_ms": 633.9676249999994,
+        "graph_ms": 37.76249999999948,
+        "nodes": 3216,
+        "edges": 2250,
+        "graph_sha256": "0d76d436cda2f495e2fe1bff5caad11ea9742842507deff5ddeccc3e962a3be2",
+        "snapshot": {
+          "graph_generation": 5254752323806868,
+          "repo_revision": "e082a97b19679acf563dcdfa6c2a3f23861972b6",
+          "working_tree_digest": "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"
+        },
+        "graph_repeat_ms": 33.203541999999864
+      },
+      {
+        "startup_ms": 1064.3328749999998,
+        "status_ms": 637.4838330000001,
+        "graph_ms": 37.355666999999926,
+        "nodes": 3216,
+        "edges": 2250,
+        "graph_sha256": "0d76d436cda2f495e2fe1bff5caad11ea9742842507deff5ddeccc3e962a3be2",
+        "snapshot": {
+          "graph_generation": 5254752323806868,
+          "repo_revision": "e082a97b19679acf563dcdfa6c2a3f23861972b6",
+          "working_tree_digest": "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"
+        },
+        "graph_repeat_ms": 34.594292000000415
+      }
+    ],
+    "median_ms": {
+      "startup_ms": 1072.0232919999999,
+      "status_ms": 637.4838330000001,
+      "graph_ms": 37.355666999999926,
+      "graph_repeat_ms": 33.439416
+    }
+  },
+  "after": {
+    "samples": [
+      {
+        "startup_ms": 984.0458330000001,
+        "status_ms": 432.07770800000003,
+        "graph_ms": 36.609208999999865,
+        "nodes": 3216,
+        "edges": 2250,
+        "graph_sha256": "0d76d436cda2f495e2fe1bff5caad11ea9742842507deff5ddeccc3e962a3be2",
+        "snapshot": {
+          "graph_generation": 5254752323806868,
+          "repo_revision": "e082a97b19679acf563dcdfa6c2a3f23861972b6",
+          "working_tree_digest": "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"
+        },
+        "graph_repeat_ms": 32.27987499999996
+      },
+      {
+        "startup_ms": 416.8172079999994,
+        "status_ms": 431.4547090000005,
+        "graph_ms": 34.4772080000002,
+        "nodes": 3216,
+        "edges": 2250,
+        "graph_sha256": "0d76d436cda2f495e2fe1bff5caad11ea9742842507deff5ddeccc3e962a3be2",
+        "snapshot": {
+          "graph_generation": 5254752323806868,
+          "repo_revision": "e082a97b19679acf563dcdfa6c2a3f23861972b6",
+          "working_tree_digest": "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"
+        },
+        "graph_repeat_ms": 32.45879200000079
+      },
+      {
+        "startup_ms": 415.86937499999976,
+        "status_ms": 428.2682080000004,
+        "graph_ms": 36.886292000000154,
+        "nodes": 3216,
+        "edges": 2250,
+        "graph_sha256": "0d76d436cda2f495e2fe1bff5caad11ea9742842507deff5ddeccc3e962a3be2",
+        "snapshot": {
+          "graph_generation": 5254752323806868,
+          "repo_revision": "e082a97b19679acf563dcdfa6c2a3f23861972b6",
+          "working_tree_digest": "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"
+        },
+        "graph_repeat_ms": 33.3247090000004
+      }
+    ],
+    "median_ms": {
+      "startup_ms": 416.8172079999994,
+      "status_ms": 431.4547090000005,
+      "graph_ms": 36.609208999999865,
+      "graph_repeat_ms": 32.45879200000079
+    }
+  },
+  "identical_graphs": true
+}

@@ -2,7 +2,7 @@
 //!
 //! These structs represent resolved call targets for various languages.
 
-use cgrx_core::ByteRange;
+use cgrx_core::{ByteRange, Hash32};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
@@ -13,6 +13,18 @@ pub(super) struct GoFieldTarget {
     pub(super) field: ByteRange,
     pub(super) field_type: ByteRange,
     pub(super) target: ByteRange,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) indexed_binding: Option<Box<GoIndexedFieldBinding>>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
+pub(super) struct GoIndexedFieldBinding {
+    pub(super) source_hash: Hash32,
+    pub(super) collection: ByteRange,
+    pub(super) statement: ByteRange,
+    pub(super) binding: ByteRange,
+    pub(super) initializer: ByteRange,
+    pub(super) receiver: ByteRange,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
@@ -37,6 +49,19 @@ pub(super) struct RustSelfTarget {
     #[serde(default)]
     pub(super) target_implementation: Option<ByteRange>,
     pub(super) caller: ByteRange,
+    pub(super) target: ByteRange,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
+pub(super) struct RustParameterTarget {
+    pub(super) source_hash: Hash32,
+    pub(super) owner: ByteRange,
+    pub(super) caller: ByteRange,
+    pub(super) parameter: ByteRange,
+    pub(super) binding: ByteRange,
+    pub(super) receiver_type: ByteRange,
+    pub(super) receiver: ByteRange,
+    pub(super) target_implementation: ByteRange,
     pub(super) target: ByteRange,
 }
 

@@ -287,7 +287,15 @@ def invoke(binary, document):
         )
     started = time.perf_counter_ns()
     result = subprocess.run(
-        [str(binary.resolve()), "serve", "--multi-repo", "--max-repos", "8"],
+        [
+            str(binary.resolve()),
+            "serve",
+            "--multi-repo",
+            "--max-repos",
+            "8",
+            "--response-profile",
+            "full",
+        ],
         input="".join(json.dumps(frame, separators=(",", ":")) + "\n" for frame in frames),
         text=True,
         capture_output=True,

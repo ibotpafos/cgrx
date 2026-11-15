@@ -64,7 +64,7 @@ impl<'a> CargoRoots<'a> {
             owners: BTreeMap::new(),
         };
         for (dir, source) in manifests {
-            let Ok(value) = source.parse::<toml::Value>() else {
+            let Ok(value) = toml::from_str::<toml::Value>(source) else {
                 continue;
             };
             let Some(package) = value.get("package") else {
@@ -94,8 +94,7 @@ impl<'a> CargoRoots<'a> {
                 || edition == "workspace"
                     && manifests.iter().any(|(parent, text)| {
                         (parent.is_empty() || Path::new(dir).starts_with(parent))
-                            && text
-                                .parse::<toml::Value>()
+                            && toml::from_str::<toml::Value>(text)
                                 .ok()
                                 .and_then(|v| {
                                     v.get("workspace")?

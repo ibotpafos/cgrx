@@ -1,0 +1,608 @@
+{
+  "format_version": 5,
+  "api_version": 16,
+  "occurrences": [
+    {
+      "path": "CrossFileExtension.swift",
+      "module": "Probe",
+      "line": 1,
+      "column": 11,
+      "usr": "s:5Probe6EngineV",
+      "name": "Engine",
+      "kind": 6,
+      "roles": 16388,
+      "relations": [
+        {
+          "usr": "s:e:s:5Probe6EngineV4sendyySSF",
+          "roles": 16384
+        }
+      ]
+    },
+    {
+      "path": "CrossFileExtension.swift",
+      "module": "Probe",
+      "line": 1,
+      "column": 11,
+      "usr": "s:e:s:5Probe6EngineV4sendyySSF",
+      "name": "Engine",
+      "kind": 9,
+      "roles": 2,
+      "relations": []
+    },
+    {
+      "path": "CrossFileExtension.swift",
+      "module": "Probe",
+      "line": 2,
+      "column": 10,
+      "usr": "s:5Probe6EngineV4sendyySSF",
+      "name": "send(_:)",
+      "kind": 16,
+      "roles": 514,
+      "relations": [
+        {
+          "usr": "s:e:s:5Probe6EngineV4sendyySSF",
+          "roles": 512
+        }
+      ]
+    },
+    {
+      "path": "CrossFileExtension.swift",
+      "module": "Probe",
+      "line": 2,
+      "column": 17,
+      "usr": "s:5Probe6EngineV4sendyySSF5valueL_SSvp",
+      "name": "value",
+      "kind": 25,
+      "roles": 514,
+      "relations": [
+        {
+          "usr": "s:5Probe6EngineV4sendyySSF",
+          "roles": 512
+        }
+      ]
+    },
+    {
+      "path": "CrossFileExtension.swift",
+      "module": "Probe",
+      "line": 2,
+      "column": 24,
+      "usr": "s:SS",
+      "name": "String",
+      "kind": 6,
+      "roles": 65540,
+      "relations": [
+        {
+          "usr": "s:5Probe6EngineV4sendyySSF",
+          "roles": 65536
+        }
+      ]
+    },
+    {
+      "path": "CrossFileExtension.swift",
+      "module": "Probe",
+      "line": 3,
+      "column": 10,
+      "usr": "s:5Probe6EngineV6resultSSyF",
+      "name": "result()",
+      "kind": 16,
+      "roles": 514,
+      "relations": [
+        {
+          "usr": "s:e:s:5Probe6EngineV4sendyySSF",
+          "roles": 512
+        }
+      ]
+    },
+    {
+      "path": "CrossFileExtension.swift",
+      "module": "Probe",
+      "line": 3,
+      "column": 22,
+      "usr": "s:SS",
+      "name": "String",
+      "kind": 6,
+      "roles": 65540,
+      "relations": [
+        {
+          "usr": "s:5Probe6EngineV6resultSSyF",
+          "roles": 65536
+        }
+      ]
+    },
+    {
+      "path": "CrossFileExtension.swift",
+      "module": "Probe",
+      "line": 5,
+      "column": 11,
+      "usr": "s:5Probe6HolderV",
+      "name": "Holder",
+      "kind": 6,
+      "roles": 16388,
+      "relations": [
+        {
+          "usr": "s:e:s:5Probe6HolderV7Payloada",
+          "roles": 16384
+        }
+      ]
+    },
+    {
+      "path": "CrossFileExtension.swift",
+      "module": "Probe",
+      "line": 5,
+      "column": 11,
+      "usr": "s:e:s:5Probe6HolderV7Payloada",
+      "name": "Holder",
+      "kind": 9,
+      "roles": 2,
+      "relations": []
+    },
+    {
+      "path": "CrossFileExtension.swift",
+      "module": "Probe",
+      "line": 5,
+      "column": 30,
+      "usr": "s:5Probe6HolderV7Payloada",
+      "name": "Payload",
+      "kind": 11,
+      "roles": 514,
+      "relations": [
+        {
+          "usr": "s:e:s:5Probe6HolderV7Payloada",
+          "roles": 512
+        }
+      ]
+    },
+    {
+      "path": "CrossFileExtension.swift",
+      "module": "Probe",
+      "line": 5,
+      "column": 40,
+      "usr": "s:5Probe5OtherV",
+      "name": "Other",
+      "kind": 6,
+      "roles": 4,
+      "relations": []
+    },
+    {
+      "path": "CrossFileExtension.swift",
+      "module": "Probe",
+      "line": 6,
+      "column": 6,
+      "usr": "s:5Probe7witnessyAA5OtherVAA6HolderVF",
+      "name": "witness(_:)",
+      "kind": 12,
+      "roles": 2,
+      "relations": []
+    },
+    {
+      "path": "CrossFileExtension.swift",
+      "module": "Probe",
+      "line": 6,
+      "column": 16,
+      "usr": "s:5Probe7witnessyAA5OtherVAA6HolderVF5valueL_AFvp",
+      "name": "value",
+      "kind": 25,
+      "roles": 514,
+      "relations": [
+        {
+          "usr": "s:5Probe7witnessyAA5OtherVAA6HolderVF",
+          "roles": 512
+        }
+      ]
+    },
+    {
+      "path": "CrossFileExtension.swift",
+      "module": "Probe",
+      "line": 6,
+      "column": 23,
+      "usr": "s:5Probe6HolderV",
+      "name": "Holder",
+      "kind": 6,
+      "roles": 65540,
+      "relations": [
+        {
+          "usr": "s:5Probe7witnessyAA5OtherVAA6HolderVF",
+          "roles": 65536
+        }
+      ]
+    },
+    {
+      "path": "CrossFileExtension.swift",
+      "module": "Probe",
+      "line": 6,
+      "column": 34,
+      "usr": "s:5Probe5OtherV",
+      "name": "Other",
+      "kind": 6,
+      "roles": 65540,
+      "relations": [
+        {
+          "usr": "s:5Probe7witnessyAA5OtherVAA6HolderVF",
+          "roles": 65536
+        }
+      ]
+    },
+    {
+      "path": "CrossFileExtension.swift",
+      "module": "Probe",
+      "line": 6,
+      "column": 42,
+      "usr": "s:5Probe7witnessyAA5OtherVAA6HolderVF5valueL_AFvp",
+      "name": "value",
+      "kind": 25,
+      "roles": 65548,
+      "relations": [
+        {
+          "usr": "s:5Probe7witnessyAA5OtherVAA6HolderVF",
+          "roles": 65536
+        }
+      ]
+    },
+    {
+      "path": "CrossFileExtension.swift",
+      "module": "Probe",
+      "line": 6,
+      "column": 48,
+      "usr": "s:5Probe6HolderV5valueAA5OtherVvg",
+      "name": "getter:value",
+      "kind": 16,
+      "roles": 74020,
+      "relations": [
+        {
+          "usr": "s:5Probe7witnessyAA5OtherVAA6HolderVF",
+          "roles": 73728
+        }
+      ]
+    },
+    {
+      "path": "CrossFileExtension.swift",
+      "module": "Probe",
+      "line": 6,
+      "column": 48,
+      "usr": "s:5Probe6HolderV5valueAA5OtherVvp",
+      "name": "value",
+      "kind": 19,
+      "roles": 65548,
+      "relations": [
+        {
+          "usr": "s:5Probe7witnessyAA5OtherVAA6HolderVF",
+          "roles": 65536
+        }
+      ]
+    },
+    {
+      "path": "CrossFilePrimary.swift",
+      "module": "Probe",
+      "line": 1,
+      "column": 8,
+      "usr": "s:5Probe7PayloadVACycfc",
+      "name": "init()",
+      "kind": 22,
+      "roles": 770,
+      "relations": [
+        {
+          "usr": "s:5Probe7PayloadV",
+          "roles": 512
+        }
+      ]
+    },
+    {
+      "path": "CrossFilePrimary.swift",
+      "module": "Probe",
+      "line": 1,
+      "column": 8,
+      "usr": "s:5Probe7PayloadV",
+      "name": "Payload",
+      "kind": 6,
+      "roles": 2,
+      "relations": []
+    },
+    {
+      "path": "CrossFilePrimary.swift",
+      "module": "Probe",
+      "line": 2,
+      "column": 8,
+      "usr": "s:5Probe5OtherVACycfc",
+      "name": "init()",
+      "kind": 22,
+      "roles": 770,
+      "relations": [
+        {
+          "usr": "s:5Probe5OtherV",
+          "roles": 512
+        }
+      ]
+    },
+    {
+      "path": "CrossFilePrimary.swift",
+      "module": "Probe",
+      "line": 2,
+      "column": 8,
+      "usr": "s:5Probe5OtherV",
+      "name": "Other",
+      "kind": 6,
+      "roles": 2,
+      "relations": []
+    },
+    {
+      "path": "CrossFilePrimary.swift",
+      "module": "Probe",
+      "line": 3,
+      "column": 8,
+      "usr": "s:5Probe6HolderV5valueAcA5OtherV_tcfc",
+      "name": "init(value:)",
+      "kind": 22,
+      "roles": 770,
+      "relations": [
+        {
+          "usr": "s:5Probe6HolderV",
+          "roles": 512
+        }
+      ]
+    },
+    {
+      "path": "CrossFilePrimary.swift",
+      "module": "Probe",
+      "line": 3,
+      "column": 8,
+      "usr": "s:5Probe6HolderV",
+      "name": "Holder",
+      "kind": 6,
+      "roles": 2,
+      "relations": []
+    },
+    {
+      "path": "CrossFilePrimary.swift",
+      "module": "Probe",
+      "line": 3,
+      "column": 21,
+      "usr": "s:5Probe6HolderV5valueAA5OtherVvg",
+      "name": "getter:value",
+      "kind": 16,
+      "roles": 33538,
+      "relations": [
+        {
+          "usr": "s:5Probe6HolderV5valueAA5OtherVvp",
+          "roles": 33280
+        }
+      ]
+    },
+    {
+      "path": "CrossFilePrimary.swift",
+      "module": "Probe",
+      "line": 3,
+      "column": 21,
+      "usr": "s:5Probe6HolderV5valueAA5OtherVvs",
+      "name": "setter:value",
+      "kind": 16,
+      "roles": 33538,
+      "relations": [
+        {
+          "usr": "s:5Probe6HolderV5valueAA5OtherVvp",
+          "roles": 33280
+        }
+      ]
+    },
+    {
+      "path": "CrossFilePrimary.swift",
+      "module": "Probe",
+      "line": 3,
+      "column": 21,
+      "usr": "s:5Probe6HolderV5valueAA5OtherVvp",
+      "name": "value",
+      "kind": 19,
+      "roles": 514,
+      "relations": [
+        {
+          "usr": "s:5Probe6HolderV",
+          "roles": 512
+        }
+      ]
+    },
+    {
+      "path": "CrossFilePrimary.swift",
+      "module": "Probe",
+      "line": 3,
+      "column": 28,
+      "usr": "s:5Probe6HolderV7Payloada",
+      "name": "Payload",
+      "kind": 11,
+      "roles": 65540,
+      "relations": [
+        {
+          "usr": "s:5Probe6HolderV5valueAA5OtherVvp",
+          "roles": 65536
+        }
+      ]
+    },
+    {
+      "path": "CrossFilePrimary.swift",
+      "module": "Probe",
+      "line": 4,
+      "column": 8,
+      "usr": "s:5Probe6EngineVACycfc",
+      "name": "init()",
+      "kind": 22,
+      "roles": 770,
+      "relations": [
+        {
+          "usr": "s:5Probe6EngineV",
+          "roles": 512
+        }
+      ]
+    },
+    {
+      "path": "CrossFilePrimary.swift",
+      "module": "Probe",
+      "line": 4,
+      "column": 8,
+      "usr": "s:5Probe6EngineV",
+      "name": "Engine",
+      "kind": 6,
+      "roles": 2,
+      "relations": []
+    },
+    {
+      "path": "CrossFilePrimary.swift",
+      "module": "Probe",
+      "line": 5,
+      "column": 10,
+      "usr": "s:5Probe6EngineV4sendyySiF",
+      "name": "send(_:)",
+      "kind": 16,
+      "roles": 514,
+      "relations": [
+        {
+          "usr": "s:5Probe6EngineV",
+          "roles": 512
+        }
+      ]
+    },
+    {
+      "path": "CrossFilePrimary.swift",
+      "module": "Probe",
+      "line": 5,
+      "column": 17,
+      "usr": "s:5Probe6EngineV4sendyySiF5valueL_Sivp",
+      "name": "value",
+      "kind": 25,
+      "roles": 514,
+      "relations": [
+        {
+          "usr": "s:5Probe6EngineV4sendyySiF",
+          "roles": 512
+        }
+      ]
+    },
+    {
+      "path": "CrossFilePrimary.swift",
+      "module": "Probe",
+      "line": 5,
+      "column": 24,
+      "usr": "s:Si",
+      "name": "Int",
+      "kind": 6,
+      "roles": 65540,
+      "relations": [
+        {
+          "usr": "s:5Probe6EngineV4sendyySiF",
+          "roles": 65536
+        }
+      ]
+    },
+    {
+      "path": "CrossFilePrimary.swift",
+      "module": "Probe",
+      "line": 6,
+      "column": 10,
+      "usr": "s:5Probe6EngineV6invokeyyF",
+      "name": "invoke()",
+      "kind": 16,
+      "roles": 514,
+      "relations": [
+        {
+          "usr": "s:5Probe6EngineV",
+          "roles": 512
+        }
+      ]
+    },
+    {
+      "path": "CrossFilePrimary.swift",
+      "module": "Probe",
+      "line": 6,
+      "column": 21,
+      "usr": "s:5Probe6EngineV4sendyySSF",
+      "name": "send(_:)",
+      "kind": 16,
+      "roles": 73764,
+      "relations": [
+        {
+          "usr": "s:5Probe6EngineV6invokeyyF",
+          "roles": 73728
+        }
+      ]
+    },
+    {
+      "path": "CrossFilePrimary.swift",
+      "module": "Probe",
+      "line": 7,
+      "column": 10,
+      "usr": "s:5Probe6EngineV6resultSiyF",
+      "name": "result()",
+      "kind": 16,
+      "roles": 514,
+      "relations": [
+        {
+          "usr": "s:5Probe6EngineV",
+          "roles": 512
+        }
+      ]
+    },
+    {
+      "path": "CrossFilePrimary.swift",
+      "module": "Probe",
+      "line": 7,
+      "column": 22,
+      "usr": "s:Si",
+      "name": "Int",
+      "kind": 6,
+      "roles": 65540,
+      "relations": [
+        {
+          "usr": "s:5Probe6EngineV6resultSiyF",
+          "roles": 65536
+        }
+      ]
+    },
+    {
+      "path": "CrossFilePrimary.swift",
+      "module": "Probe",
+      "line": 8,
+      "column": 10,
+      "usr": "s:5Probe6EngineV10contextualSSyF",
+      "name": "contextual()",
+      "kind": 16,
+      "roles": 514,
+      "relations": [
+        {
+          "usr": "s:5Probe6EngineV",
+          "roles": 512
+        }
+      ]
+    },
+    {
+      "path": "CrossFilePrimary.swift",
+      "module": "Probe",
+      "line": 8,
+      "column": 26,
+      "usr": "s:SS",
+      "name": "String",
+      "kind": 6,
+      "roles": 65540,
+      "relations": [
+        {
+          "usr": "s:5Probe6EngineV10contextualSSyF",
+          "roles": 65536
+        }
+      ]
+    },
+    {
+      "path": "CrossFilePrimary.swift",
+      "module": "Probe",
+      "line": 8,
+      "column": 35,
+      "usr": "s:5Probe6EngineV6resultSSyF",
+      "name": "result()",
+      "kind": 16,
+      "roles": 73764,
+      "relations": [
+        {
+          "usr": "s:5Probe6EngineV10contextualSSyF",
+          "roles": 73728
+        }
+      ]
+    }
+  ],
+  "units": 6,
+  "records": 2
+}

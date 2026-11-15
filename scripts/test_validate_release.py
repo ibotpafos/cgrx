@@ -6,20 +6,30 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 VERSION = (ROOT / "RELEASE_VERSION").read_text().strip()
 
+
 class ReleaseMetadataTests(unittest.TestCase):
-    def test_version_shape_and_crate_line(self):
+    def test_version_shape_and_workspace_package(self):
         self.assertRegex(VERSION, r"^v\d+\.\d+\.\d+-alpha\.\d+$")
+
+        workspace_manifest = (ROOT / "Cargo.toml").read_text()
+        self.assertIn("[workspace.package]", workspace_manifest)
+        workspace_package = workspace_manifest.split("[workspace.package]", 1)[1]
+        workspace_package = workspace_package.split("\n[", 1)[0]
         crate_version = re.search(
             r'^version = "([^"]+)"$',
-            (ROOT / "crates/cgrx-cli/Cargo.toml").read_text(),
+            workspace_package,
             re.M,
         )
         self.assertIsNotNone(crate_version)
+
+        cli_manifest = (ROOT / "crates/cgrx-cli/Cargo.toml").read_text()
+        self.assertRegex(cli_manifest, r"(?m)^version\.workspace = true$")
+        self.assertNotRegex(cli_manifest, r'(?m)^version = "[^"]+"$')
         self.assertTrue(VERSION.startswith("v" + crate_version.group(1) + "-"))
 
     def test_installer_defaults_to_release(self):
         installer = (ROOT / "install.sh").read_text()
-        self.assertIn(f"version=${{CGRX_VERSION:-{VERSION}}}", installer)
+        self.assertIn("version=$" + "{CGRX_VERSION:-" + VERSION + "}", installer)
         self.assertIn(f"CGRX_VERSION={VERSION}", installer)
 
     def test_public_install_docs_pin_release(self):
@@ -35,6 +45,7 @@ class ReleaseMetadataTests(unittest.TestCase):
         notes = ROOT / ".github" / "release-notes" / f"{VERSION}.md"
         self.assertTrue(notes.is_file())
         self.assertIn(VERSION, notes.read_text())
+
 
 if __name__ == "__main__":
     unittest.main()

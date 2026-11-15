@@ -1,0 +1,255 @@
+{
+  "baseline": {
+    "bytes": 23379744,
+    "sha256": "5b7d39580c4252df33409630e9fff17f30defc4337c7886c63b3bf0000a9b38a",
+    "version": "cgrx 0.1.0"
+  },
+  "baseline_source_commit": "2e9d3514140126f871302d4f8bf3cb4ca34173ff",
+  "candidate": {
+    "bytes": 23400224,
+    "sha256": "2b503901ee68503e39bd58d7c0d29f466b1af47efc7df37bfcad72067b6d8279",
+    "version": "cgrx 0.1.0"
+  },
+  "candidate_source": {
+    "commit": "9218e7e4b51b1662f841909d9b4308cfda21da4f",
+    "has_tracked_rust_changes": false,
+    "published_commit": "9a077e3f3e8cecd70fffbf898a757cdcfe37da70",
+    "source_tree": "069547e24db9b2eb6ea8ffc3a5c9e67d28690122",
+    "tracked_rust_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "declared_build": {
+    "profile": "release",
+    "rust_toolchain": "1.89.0"
+  },
+  "fixture": {
+    "coverage_gap_count": 0,
+    "definitions": 1002,
+    "fanout": 20,
+    "file_bytes": {
+      "body.rs": 3700029,
+      "graph.rs": 279000,
+      "marker.rs": 15
+    },
+    "graph_edges": 20999,
+    "graph_nodes": 1002,
+    "snapshot": {
+      "graph_generation": 3263062615525962,
+      "repo_revision": "557f26abe0596666f6ffdcf9adc9271b6d100803",
+      "working_tree_digest": "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262"
+    },
+    "source_bytes": 3979044
+  },
+  "full_payload_parity": true,
+  "measured_rounds": 25,
+  "measurement": "CGRX_USAGE_LOG latency_us, static stdio MCP",
+  "platform": "Linux-6.18.44-x86_64-with-glibc2.41",
+  "results": [
+    {
+      "arguments": {
+        "limit": 1,
+        "query": "absent requested"
+      },
+      "baseline": {
+        "max_us": 3751,
+        "min_us": 3368,
+        "p50_us": 3465,
+        "p95_us": 3748,
+        "samples": 25
+      },
+      "candidate": {
+        "max_us": 393,
+        "min_us": 250,
+        "p50_us": 273,
+        "p95_us": 377,
+        "samples": 25
+      },
+      "case": "empty",
+      "full_payload_parity": true,
+      "p50_speedup": 12.692,
+      "returned": 0,
+      "total": 0
+    },
+    {
+      "arguments": {
+        "limit": 1,
+        "query": "marker"
+      },
+      "baseline": {
+        "max_us": 4001,
+        "min_us": 3277,
+        "p50_us": 3379,
+        "p95_us": 3642,
+        "samples": 25
+      },
+      "candidate": {
+        "max_us": 325,
+        "min_us": 235,
+        "p50_us": 251,
+        "p95_us": 287,
+        "samples": 25
+      },
+      "case": "isolated_marker",
+      "full_payload_parity": true,
+      "p50_speedup": 13.462,
+      "returned": 1,
+      "total": 1
+    },
+    {
+      "arguments": {
+        "limit": 1,
+        "query": "node_0000"
+      },
+      "baseline": {
+        "max_us": 4581,
+        "min_us": 3606,
+        "p50_us": 3745,
+        "p95_us": 4355,
+        "samples": 25
+      },
+      "candidate": {
+        "max_us": 2529,
+        "min_us": 441,
+        "p50_us": 470,
+        "p95_us": 911,
+        "samples": 25
+      },
+      "case": "connected_symbol",
+      "full_payload_parity": true,
+      "p50_speedup": 7.968,
+      "returned": 1,
+      "total": 1000
+    },
+    {
+      "arguments": {
+        "limit": 50,
+        "query": "node_"
+      },
+      "baseline": {
+        "max_us": 4246,
+        "min_us": 3487,
+        "p50_us": 3630,
+        "p95_us": 4152,
+        "samples": 25
+      },
+      "candidate": {
+        "max_us": 2815,
+        "min_us": 672,
+        "p50_us": 747,
+        "p95_us": 2807,
+        "samples": 25
+      },
+      "case": "fifty_row_page",
+      "full_payload_parity": true,
+      "p50_speedup": 4.859,
+      "returned": 50,
+      "total": 1000
+    },
+    {
+      "arguments": {
+        "limit": 50,
+        "offset": 950,
+        "query": "node_"
+      },
+      "baseline": {
+        "max_us": 4590,
+        "min_us": 3487,
+        "p50_us": 3591,
+        "p95_us": 4257,
+        "samples": 25
+      },
+      "candidate": {
+        "max_us": 819,
+        "min_us": 632,
+        "p50_us": 690,
+        "p95_us": 784,
+        "samples": 25
+      },
+      "case": "late_offset",
+      "full_payload_parity": true,
+      "p50_speedup": 5.204,
+      "returned": 50,
+      "total": 1000
+    },
+    {
+      "arguments": {
+        "include_body": true,
+        "query": "cache expiry",
+        "scope": "body.rs"
+      },
+      "baseline": {
+        "max_us": 86589,
+        "min_us": 78455,
+        "p50_us": 80546,
+        "p95_us": 84578,
+        "samples": 25
+      },
+      "candidate": {
+        "max_us": 379,
+        "min_us": 289,
+        "p50_us": 318,
+        "p95_us": 376,
+        "samples": 25
+      },
+      "case": "body_token_hit",
+      "full_payload_parity": true,
+      "p50_speedup": 253.289,
+      "returned": 1,
+      "total": 1
+    },
+    {
+      "arguments": {
+        "include_body": true,
+        "query": "cache missing_term",
+        "scope": "body.rs"
+      },
+      "baseline": {
+        "max_us": 86959,
+        "min_us": 78676,
+        "p50_us": 82295,
+        "p95_us": 85308,
+        "samples": 25
+      },
+      "candidate": {
+        "max_us": 88490,
+        "min_us": 42178,
+        "p50_us": 43040,
+        "p95_us": 82113,
+        "samples": 25
+      },
+      "case": "body_token_miss",
+      "full_payload_parity": true,
+      "p50_speedup": 1.912,
+      "returned": 0,
+      "total": 0
+    },
+    {
+      "arguments": {
+        "include_body": true,
+        "query": "repeated_value",
+        "scope": "body.rs"
+      },
+      "baseline": {
+        "max_us": 2658,
+        "min_us": 2290,
+        "p50_us": 2382,
+        "p95_us": 2624,
+        "samples": 25
+      },
+      "candidate": {
+        "max_us": 2417,
+        "min_us": 239,
+        "p50_us": 272,
+        "p95_us": 472,
+        "samples": 25
+      },
+      "case": "body_literal",
+      "full_payload_parity": true,
+      "p50_speedup": 8.757,
+      "returned": 1,
+      "total": 1
+    }
+  ],
+  "schema_version": 1,
+  "timing_is_ci_threshold": false,
+  "warmup_rounds": 5
+}

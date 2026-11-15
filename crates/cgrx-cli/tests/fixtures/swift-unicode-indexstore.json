@@ -1,0 +1,1748 @@
+{
+  "format_version": 5,
+  "api_version": 16,
+  "occurrences": [
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 1,
+      "column": 8,
+      "usr": "c:@M@Foundation",
+      "name": "Foundation",
+      "kind": 1,
+      "subkind": 0,
+      "roles": 4,
+      "relations": []
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 4,
+      "column": 8,
+      "usr": "s:5Probe0010Mlodie_bvaVACycfc",
+      "name": "init()",
+      "kind": 22,
+      "subkind": 0,
+      "roles": 770,
+      "relations": [
+        {
+          "usr": "s:5Probe0010Mlodie_bvaV",
+          "roles": 512
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 4,
+      "column": 8,
+      "usr": "s:5Probe0010Mlodie_bvaV",
+      "name": "Mélodie",
+      "kind": 6,
+      "subkind": 0,
+      "roles": 2,
+      "relations": []
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 5,
+      "column": 10,
+      "usr": "s:5Probe0010Mlodie_bvaV6repeatyyF",
+      "name": "repeat()",
+      "kind": 16,
+      "subkind": 0,
+      "roles": 514,
+      "relations": [
+        {
+          "usr": "s:5Probe0010Mlodie_bvaV",
+          "roles": 512
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 6,
+      "column": 10,
+      "usr": "s:5Probe0010Mlodie_bvaV0011dplacer_byayyF",
+      "name": "déplacer()",
+      "kind": 16,
+      "subkind": 0,
+      "roles": 514,
+      "relations": [
+        {
+          "usr": "s:5Probe0010Mlodie_bvaV",
+          "roles": 512
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 6,
+      "column": 24,
+      "usr": "s:5Probe0010Mlodie_bvaV6repeatyyF",
+      "name": "repeat()",
+      "kind": 16,
+      "subkind": 0,
+      "roles": 73764,
+      "relations": [
+        {
+          "usr": "s:5Probe0010Mlodie_bvaV0011dplacer_byayyF",
+          "roles": 73728
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 8,
+      "column": 10,
+      "usr": "s:5Probe6WorkerP",
+      "name": "Worker",
+      "kind": 8,
+      "subkind": 0,
+      "roles": 2,
+      "relations": []
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 8,
+      "column": 24,
+      "usr": "s:5Probe6WorkerP3runyyF",
+      "name": "run()",
+      "kind": 16,
+      "subkind": 0,
+      "roles": 578,
+      "relations": [
+        {
+          "usr": "s:5Probe6WorkerP",
+          "roles": 512
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 9,
+      "column": 7,
+      "usr": "s:5Probe4BaseCACycfc",
+      "name": "init()",
+      "kind": 22,
+      "subkind": 0,
+      "roles": 770,
+      "relations": [
+        {
+          "usr": "s:5Probe4BaseC",
+          "roles": 512
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 9,
+      "column": 7,
+      "usr": "s:5Probe4BaseC",
+      "name": "Base",
+      "kind": 7,
+      "subkind": 0,
+      "roles": 2,
+      "relations": []
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 9,
+      "column": 13,
+      "usr": "s:5Probe6WorkerP",
+      "name": "Worker",
+      "kind": 8,
+      "subkind": 0,
+      "roles": 1028,
+      "relations": [
+        {
+          "usr": "s:5Probe4BaseC",
+          "roles": 1024
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 9,
+      "column": 27,
+      "usr": "s:5Probe4BaseC3runyyF",
+      "name": "run()",
+      "kind": 16,
+      "subkind": 0,
+      "roles": 2626,
+      "relations": [
+        {
+          "usr": "s:5Probe6WorkerP3runyyF",
+          "roles": 2048
+        },
+        {
+          "usr": "s:5Probe4BaseC",
+          "roles": 512
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 10,
+      "column": 6,
+      "usr": "s:5Probe7dynamicyyAA4BaseC_AA6Worker_ptF",
+      "name": "dynamic(_:_:)",
+      "kind": 12,
+      "subkind": 0,
+      "roles": 2,
+      "relations": []
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 10,
+      "column": 16,
+      "usr": "s:5Probe7dynamicyyAA4BaseC_AA6Worker_ptF4baseL_ADvp",
+      "name": "base",
+      "kind": 25,
+      "subkind": 0,
+      "roles": 514,
+      "relations": [
+        {
+          "usr": "s:5Probe7dynamicyyAA4BaseC_AA6Worker_ptF",
+          "roles": 512
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 10,
+      "column": 22,
+      "usr": "s:5Probe4BaseC",
+      "name": "Base",
+      "kind": 7,
+      "subkind": 0,
+      "roles": 65540,
+      "relations": [
+        {
+          "usr": "s:5Probe7dynamicyyAA4BaseC_AA6Worker_ptF",
+          "roles": 65536
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 10,
+      "column": 30,
+      "usr": "s:5Probe7dynamicyyAA4BaseC_AA6Worker_ptF6workerL_AaE_pvp",
+      "name": "worker",
+      "kind": 25,
+      "subkind": 0,
+      "roles": 514,
+      "relations": [
+        {
+          "usr": "s:5Probe7dynamicyyAA4BaseC_AA6Worker_ptF",
+          "roles": 512
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 10,
+      "column": 42,
+      "usr": "s:5Probe6WorkerP",
+      "name": "Worker",
+      "kind": 8,
+      "subkind": 0,
+      "roles": 65540,
+      "relations": [
+        {
+          "usr": "s:5Probe7dynamicyyAA4BaseC_AA6Worker_ptF",
+          "roles": 65536
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 10,
+      "column": 52,
+      "usr": "s:5Probe7dynamicyyAA4BaseC_AA6Worker_ptF4baseL_ADvp",
+      "name": "base",
+      "kind": 25,
+      "subkind": 0,
+      "roles": 65548,
+      "relations": [
+        {
+          "usr": "s:5Probe7dynamicyyAA4BaseC_AA6Worker_ptF",
+          "roles": 65536
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 10,
+      "column": 57,
+      "usr": "s:5Probe4BaseC3runyyF",
+      "name": "run()",
+      "kind": 16,
+      "subkind": 0,
+      "roles": 77924,
+      "relations": [
+        {
+          "usr": "s:5Probe7dynamicyyAA4BaseC_AA6Worker_ptF",
+          "roles": 73728
+        },
+        {
+          "usr": "s:5Probe4BaseC",
+          "roles": 4096
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 10,
+      "column": 64,
+      "usr": "s:5Probe7dynamicyyAA4BaseC_AA6Worker_ptF6workerL_AaE_pvp",
+      "name": "worker",
+      "kind": 25,
+      "subkind": 0,
+      "roles": 65548,
+      "relations": [
+        {
+          "usr": "s:5Probe7dynamicyyAA4BaseC_AA6Worker_ptF",
+          "roles": 65536
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 10,
+      "column": 71,
+      "usr": "s:5Probe6WorkerP3runyyF",
+      "name": "run()",
+      "kind": 16,
+      "subkind": 0,
+      "roles": 77924,
+      "relations": [
+        {
+          "usr": "s:5Probe7dynamicyyAA4BaseC_AA6Worker_ptF",
+          "roles": 73728
+        },
+        {
+          "usr": "s:5Probe6WorkerP",
+          "roles": 4096
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 11,
+      "column": 6,
+      "usr": "s:5Probe8indirectyyyyXEF",
+      "name": "indirect(_:)",
+      "kind": 12,
+      "subkind": 0,
+      "roles": 2,
+      "relations": []
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 11,
+      "column": 17,
+      "usr": "s:5Probe8indirectyyyyXEF8callbackL_yyXEvp",
+      "name": "callback",
+      "kind": 25,
+      "subkind": 0,
+      "roles": 514,
+      "relations": [
+        {
+          "usr": "s:5Probe8indirectyyyyXEF",
+          "roles": 512
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 11,
+      "column": 33,
+      "usr": "s:s4Voida",
+      "name": "Void",
+      "kind": 11,
+      "subkind": 0,
+      "roles": 65540,
+      "relations": [
+        {
+          "usr": "s:5Probe8indirectyyyyXEF",
+          "roles": 65536
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 11,
+      "column": 41,
+      "usr": "s:5Probe8indirectyyyyXEF8callbackL_yyXEvp",
+      "name": "callback",
+      "kind": 25,
+      "subkind": 0,
+      "roles": 65548,
+      "relations": [
+        {
+          "usr": "s:5Probe8indirectyyyyXEF",
+          "roles": 65536
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 12,
+      "column": 6,
+      "usr": "s:5Probe4makeAA0010Mlodie_bvaVyF",
+      "name": "make()",
+      "kind": 12,
+      "subkind": 0,
+      "roles": 2,
+      "relations": []
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 12,
+      "column": 16,
+      "usr": "s:5Probe0010Mlodie_bvaV",
+      "name": "Mélodie",
+      "kind": 6,
+      "subkind": 0,
+      "roles": 65540,
+      "relations": [
+        {
+          "usr": "s:5Probe4makeAA0010Mlodie_bvaVyF",
+          "roles": 65536
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 12,
+      "column": 27,
+      "usr": "s:5Probe0010Mlodie_bvaV",
+      "name": "Mélodie",
+      "kind": 6,
+      "subkind": 0,
+      "roles": 65540,
+      "relations": [
+        {
+          "usr": "s:5Probe4makeAA0010Mlodie_bvaVyF",
+          "roles": 65536
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 12,
+      "column": 27,
+      "usr": "s:5Probe0010Mlodie_bvaVACycfc",
+      "name": "init()",
+      "kind": 22,
+      "subkind": 0,
+      "roles": 73764,
+      "relations": [
+        {
+          "usr": "s:5Probe4makeAA0010Mlodie_bvaVyF",
+          "roles": 73728
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 13,
+      "column": 13,
+      "usr": "c:objc(pl)NSObject(im)isEqual:",
+      "name": "isEqual(_:)",
+      "kind": 16,
+      "subkind": 0,
+      "roles": 67840,
+      "relations": [
+        {
+          "usr": "c:objc(pl)NSObject(im)isEqual:",
+          "roles": 2048
+        },
+        {
+          "usr": "c:@M@Probe@objc(cs)Downloader",
+          "roles": 65536
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 13,
+      "column": 13,
+      "usr": "c:objc(pl)NSObject(py)hash",
+      "name": "hash",
+      "kind": 19,
+      "subkind": 0,
+      "roles": 67840,
+      "relations": [
+        {
+          "usr": "c:objc(pl)NSObject(py)hash",
+          "roles": 2048
+        },
+        {
+          "usr": "c:@M@Probe@objc(cs)Downloader",
+          "roles": 65536
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 13,
+      "column": 13,
+      "usr": "c:objc(pl)NSObject(py)superclass",
+      "name": "superclass",
+      "kind": 19,
+      "subkind": 0,
+      "roles": 67840,
+      "relations": [
+        {
+          "usr": "c:objc(pl)NSObject(py)superclass",
+          "roles": 2048
+        },
+        {
+          "usr": "c:@M@Probe@objc(cs)Downloader",
+          "roles": 65536
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 13,
+      "column": 13,
+      "usr": "c:objc(pl)NSObject(im)class",
+      "name": "class()",
+      "kind": 16,
+      "subkind": 0,
+      "roles": 67840,
+      "relations": [
+        {
+          "usr": "c:objc(pl)NSObject(im)class",
+          "roles": 2048
+        },
+        {
+          "usr": "c:@M@Probe@objc(cs)Downloader",
+          "roles": 65536
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 13,
+      "column": 13,
+      "usr": "c:objc(pl)NSObject(im)self",
+      "name": "self()",
+      "kind": 16,
+      "subkind": 0,
+      "roles": 67840,
+      "relations": [
+        {
+          "usr": "c:objc(pl)NSObject(im)self",
+          "roles": 2048
+        },
+        {
+          "usr": "c:@M@Probe@objc(cs)Downloader",
+          "roles": 65536
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 13,
+      "column": 13,
+      "usr": "c:objc(pl)NSObject(im)performSelector:",
+      "name": "perform(_:)",
+      "kind": 16,
+      "subkind": 0,
+      "roles": 67840,
+      "relations": [
+        {
+          "usr": "c:objc(pl)NSObject(im)performSelector:",
+          "roles": 2048
+        },
+        {
+          "usr": "c:@M@Probe@objc(cs)Downloader",
+          "roles": 65536
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 13,
+      "column": 13,
+      "usr": "c:objc(pl)NSObject(im)performSelector:withObject:",
+      "name": "perform(_:with:)",
+      "kind": 16,
+      "subkind": 0,
+      "roles": 67840,
+      "relations": [
+        {
+          "usr": "c:objc(pl)NSObject(im)performSelector:withObject:",
+          "roles": 2048
+        },
+        {
+          "usr": "c:@M@Probe@objc(cs)Downloader",
+          "roles": 65536
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 13,
+      "column": 13,
+      "usr": "c:objc(pl)NSObject(im)performSelector:withObject:withObject:",
+      "name": "perform(_:with:with:)",
+      "kind": 16,
+      "subkind": 0,
+      "roles": 67840,
+      "relations": [
+        {
+          "usr": "c:objc(pl)NSObject(im)performSelector:withObject:withObject:",
+          "roles": 2048
+        },
+        {
+          "usr": "c:@M@Probe@objc(cs)Downloader",
+          "roles": 65536
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 13,
+      "column": 13,
+      "usr": "c:objc(pl)NSObject(im)isProxy",
+      "name": "isProxy()",
+      "kind": 16,
+      "subkind": 0,
+      "roles": 67840,
+      "relations": [
+        {
+          "usr": "c:objc(pl)NSObject(im)isProxy",
+          "roles": 2048
+        },
+        {
+          "usr": "c:@M@Probe@objc(cs)Downloader",
+          "roles": 65536
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 13,
+      "column": 13,
+      "usr": "c:objc(pl)NSObject(im)isKindOfClass:",
+      "name": "isKind(of:)",
+      "kind": 16,
+      "subkind": 0,
+      "roles": 67840,
+      "relations": [
+        {
+          "usr": "c:objc(pl)NSObject(im)isKindOfClass:",
+          "roles": 2048
+        },
+        {
+          "usr": "c:@M@Probe@objc(cs)Downloader",
+          "roles": 65536
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 13,
+      "column": 13,
+      "usr": "c:objc(pl)NSObject(im)isMemberOfClass:",
+      "name": "isMember(of:)",
+      "kind": 16,
+      "subkind": 0,
+      "roles": 67840,
+      "relations": [
+        {
+          "usr": "c:objc(pl)NSObject(im)isMemberOfClass:",
+          "roles": 2048
+        },
+        {
+          "usr": "c:@M@Probe@objc(cs)Downloader",
+          "roles": 65536
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 13,
+      "column": 13,
+      "usr": "c:objc(pl)NSObject(im)conformsToProtocol:",
+      "name": "conforms(to:)",
+      "kind": 16,
+      "subkind": 0,
+      "roles": 67840,
+      "relations": [
+        {
+          "usr": "c:objc(pl)NSObject(im)conformsToProtocol:",
+          "roles": 2048
+        },
+        {
+          "usr": "c:@M@Probe@objc(cs)Downloader",
+          "roles": 65536
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 13,
+      "column": 13,
+      "usr": "c:objc(pl)NSObject(im)respondsToSelector:",
+      "name": "responds(to:)",
+      "kind": 16,
+      "subkind": 0,
+      "roles": 67840,
+      "relations": [
+        {
+          "usr": "c:objc(pl)NSObject(im)respondsToSelector:",
+          "roles": 2048
+        },
+        {
+          "usr": "c:@M@Probe@objc(cs)Downloader",
+          "roles": 65536
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 13,
+      "column": 13,
+      "usr": "c:objc(pl)NSObject(im)retain",
+      "name": "retain()",
+      "kind": 16,
+      "subkind": 0,
+      "roles": 67840,
+      "relations": [
+        {
+          "usr": "c:objc(pl)NSObject(im)retain",
+          "roles": 2048
+        },
+        {
+          "usr": "c:@M@Probe@objc(cs)Downloader",
+          "roles": 65536
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 13,
+      "column": 13,
+      "usr": "c:objc(pl)NSObject(im)release",
+      "name": "release()",
+      "kind": 16,
+      "subkind": 0,
+      "roles": 67840,
+      "relations": [
+        {
+          "usr": "c:objc(pl)NSObject(im)release",
+          "roles": 2048
+        },
+        {
+          "usr": "c:@M@Probe@objc(cs)Downloader",
+          "roles": 65536
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 13,
+      "column": 13,
+      "usr": "c:objc(pl)NSObject(im)autorelease",
+      "name": "autorelease()",
+      "kind": 16,
+      "subkind": 0,
+      "roles": 67840,
+      "relations": [
+        {
+          "usr": "c:objc(pl)NSObject(im)autorelease",
+          "roles": 2048
+        },
+        {
+          "usr": "c:@M@Probe@objc(cs)Downloader",
+          "roles": 65536
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 13,
+      "column": 13,
+      "usr": "c:objc(pl)NSObject(im)retainCount",
+      "name": "retainCount()",
+      "kind": 16,
+      "subkind": 0,
+      "roles": 67840,
+      "relations": [
+        {
+          "usr": "c:objc(pl)NSObject(im)retainCount",
+          "roles": 2048
+        },
+        {
+          "usr": "c:@M@Probe@objc(cs)Downloader",
+          "roles": 65536
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 13,
+      "column": 13,
+      "usr": "c:objc(pl)NSObject(im)zone",
+      "name": "zone()",
+      "kind": 16,
+      "subkind": 0,
+      "roles": 67840,
+      "relations": [
+        {
+          "usr": "c:objc(pl)NSObject(im)zone",
+          "roles": 2048
+        },
+        {
+          "usr": "c:@M@Probe@objc(cs)Downloader",
+          "roles": 65536
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 13,
+      "column": 13,
+      "usr": "c:objc(pl)NSObject(py)description",
+      "name": "description",
+      "kind": 19,
+      "subkind": 0,
+      "roles": 67840,
+      "relations": [
+        {
+          "usr": "c:objc(pl)NSObject(py)description",
+          "roles": 2048
+        },
+        {
+          "usr": "c:@M@Probe@objc(cs)Downloader",
+          "roles": 65536
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 13,
+      "column": 13,
+      "usr": "c:objc(pl)NSObject(py)debugDescription",
+      "name": "debugDescription",
+      "kind": 19,
+      "subkind": 0,
+      "roles": 67840,
+      "relations": [
+        {
+          "usr": "c:objc(pl)NSObject(py)debugDescription",
+          "roles": 2048
+        },
+        {
+          "usr": "c:@M@Probe@objc(cs)Downloader",
+          "roles": 65536
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 13,
+      "column": 13,
+      "usr": "s:So8NSObjectC10ObjectiveCE2eeoiySbAB_ABtFZ",
+      "name": "==(_:_:)",
+      "kind": 18,
+      "subkind": 1010,
+      "roles": 67840,
+      "relations": [
+        {
+          "usr": "s:SQ2eeoiySbx_xtFZ",
+          "roles": 2048
+        },
+        {
+          "usr": "c:@M@Probe@objc(cs)Downloader",
+          "roles": 65536
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 13,
+      "column": 13,
+      "usr": "s:So8NSObjectC10ObjectiveCE9hashValueSivp",
+      "name": "hashValue",
+      "kind": 19,
+      "subkind": 0,
+      "roles": 67840,
+      "relations": [
+        {
+          "usr": "s:SH9hashValueSivp",
+          "roles": 2048
+        },
+        {
+          "usr": "c:@M@Probe@objc(cs)Downloader",
+          "roles": 65536
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 13,
+      "column": 13,
+      "usr": "s:So8NSObjectC10ObjectiveCE4hash4intoys6HasherVz_tF",
+      "name": "hash(into:)",
+      "kind": 16,
+      "subkind": 0,
+      "roles": 67840,
+      "relations": [
+        {
+          "usr": "s:SH4hash4intoys6HasherVz_tF",
+          "roles": 2048
+        },
+        {
+          "usr": "c:@M@Probe@objc(cs)Downloader",
+          "roles": 65536
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 13,
+      "column": 13,
+      "usr": "c:objc(pl)NSObject(py)description",
+      "name": "description",
+      "kind": 19,
+      "subkind": 0,
+      "roles": 67840,
+      "relations": [
+        {
+          "usr": "s:s23CustomStringConvertibleP11descriptionSSvp",
+          "roles": 2048
+        },
+        {
+          "usr": "c:@M@Probe@objc(cs)Downloader",
+          "roles": 65536
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 13,
+      "column": 13,
+      "usr": "c:objc(pl)NSObject(py)debugDescription",
+      "name": "debugDescription",
+      "kind": 19,
+      "subkind": 0,
+      "roles": 67840,
+      "relations": [
+        {
+          "usr": "s:s28CustomDebugStringConvertibleP16debugDescriptionSSvp",
+          "roles": 2048
+        },
+        {
+          "usr": "c:@M@Probe@objc(cs)Downloader",
+          "roles": 65536
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 13,
+      "column": 13,
+      "usr": "c:@M@Probe@objc(cs)Downloader",
+      "name": "Downloader",
+      "kind": 7,
+      "subkind": 0,
+      "roles": 2,
+      "relations": []
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 13,
+      "column": 25,
+      "usr": "c:objc(cs)NSObject",
+      "name": "NSObject",
+      "kind": 7,
+      "subkind": 0,
+      "roles": 1028,
+      "relations": [
+        {
+          "usr": "c:@M@Probe@objc(cs)Downloader",
+          "roles": 1024
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 13,
+      "column": 34,
+      "usr": "c:@M@Probe@objc(cs)Downloader(im)init",
+      "name": "init()",
+      "kind": 22,
+      "subkind": 0,
+      "roles": 2818,
+      "relations": [
+        {
+          "usr": "c:objc(cs)NSObject(im)init",
+          "roles": 2048
+        },
+        {
+          "usr": "c:@M@Probe@objc(cs)Downloader",
+          "roles": 512
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 14,
+      "column": 6,
+      "usr": "s:5Probe8downloadAA10DownloaderCyF",
+      "name": "download()",
+      "kind": 12,
+      "subkind": 0,
+      "roles": 2,
+      "relations": []
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 14,
+      "column": 20,
+      "usr": "c:@M@Probe@objc(cs)Downloader",
+      "name": "Downloader",
+      "kind": 7,
+      "subkind": 0,
+      "roles": 65540,
+      "relations": [
+        {
+          "usr": "s:5Probe8downloadAA10DownloaderCyF",
+          "roles": 65536
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 14,
+      "column": 33,
+      "usr": "c:@M@Probe@objc(cs)Downloader",
+      "name": "Downloader",
+      "kind": 7,
+      "subkind": 0,
+      "roles": 65540,
+      "relations": [
+        {
+          "usr": "s:5Probe8downloadAA10DownloaderCyF",
+          "roles": 65536
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 14,
+      "column": 33,
+      "usr": "c:@M@Probe@objc(cs)Downloader(im)init",
+      "name": "init()",
+      "kind": 22,
+      "subkind": 0,
+      "roles": 73764,
+      "relations": [
+        {
+          "usr": "s:5Probe8downloadAA10DownloaderCyF",
+          "roles": 73728
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 15,
+      "column": 8,
+      "usr": "s:5Probe5OwnerVACycfc",
+      "name": "init()",
+      "kind": 22,
+      "subkind": 0,
+      "roles": 770,
+      "relations": [
+        {
+          "usr": "s:5Probe5OwnerV",
+          "roles": 512
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 15,
+      "column": 8,
+      "usr": "s:5Probe5OwnerV",
+      "name": "Owner",
+      "kind": 6,
+      "subkind": 0,
+      "roles": 2,
+      "relations": []
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 16,
+      "column": 9,
+      "usr": "s:5Probe5OwnerV7initialAA0010Mlodie_bvaVvg",
+      "name": "getter:initial",
+      "kind": 16,
+      "subkind": 3,
+      "roles": 33538,
+      "relations": [
+        {
+          "usr": "s:5Probe5OwnerV7initialAA0010Mlodie_bvaVvp",
+          "roles": 33280
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 16,
+      "column": 9,
+      "usr": "s:5Probe5OwnerV7initialAA0010Mlodie_bvaVvs",
+      "name": "setter:initial",
+      "kind": 16,
+      "subkind": 4,
+      "roles": 33538,
+      "relations": [
+        {
+          "usr": "s:5Probe5OwnerV7initialAA0010Mlodie_bvaVvp",
+          "roles": 33280
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 16,
+      "column": 9,
+      "usr": "s:5Probe5OwnerV7initialAA0010Mlodie_bvaVvp",
+      "name": "initial",
+      "kind": 19,
+      "subkind": 0,
+      "roles": 514,
+      "relations": [
+        {
+          "usr": "s:5Probe5OwnerV",
+          "roles": 512
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 16,
+      "column": 18,
+      "usr": "s:5Probe0010Mlodie_bvaV",
+      "name": "Mélodie",
+      "kind": 6,
+      "subkind": 0,
+      "roles": 65540,
+      "relations": [
+        {
+          "usr": "s:5Probe5OwnerV7initialAA0010Mlodie_bvaVvp",
+          "roles": 65536
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 16,
+      "column": 30,
+      "usr": "s:5Probe0010Mlodie_bvaVACycfc",
+      "name": "init()",
+      "kind": 22,
+      "subkind": 0,
+      "roles": 65572,
+      "relations": [
+        {
+          "usr": "s:5Probe5OwnerV7initialAA0010Mlodie_bvaVvp",
+          "roles": 65536
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 17,
+      "column": 10,
+      "usr": "s:5Probe5OwnerV9shortenedAA0010Mlodie_bvaVyF",
+      "name": "shortened()",
+      "kind": 16,
+      "subkind": 0,
+      "roles": 514,
+      "relations": [
+        {
+          "usr": "s:5Probe5OwnerV",
+          "roles": 512
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 17,
+      "column": 25,
+      "usr": "s:5Probe0010Mlodie_bvaV",
+      "name": "Mélodie",
+      "kind": 6,
+      "subkind": 0,
+      "roles": 65540,
+      "relations": [
+        {
+          "usr": "s:5Probe5OwnerV9shortenedAA0010Mlodie_bvaVyF",
+          "roles": 65536
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 17,
+      "column": 37,
+      "usr": "s:5Probe0010Mlodie_bvaVACycfc",
+      "name": "init()",
+      "kind": 22,
+      "subkind": 0,
+      "roles": 73764,
+      "relations": [
+        {
+          "usr": "s:5Probe5OwnerV9shortenedAA0010Mlodie_bvaVyF",
+          "roles": 73728
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 18,
+      "column": 9,
+      "usr": "s:5Probe5OwnerV9recoveredSSvp",
+      "name": "recovered",
+      "kind": 19,
+      "subkind": 0,
+      "roles": 514,
+      "relations": [
+        {
+          "usr": "s:5Probe5OwnerV",
+          "roles": 512
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 18,
+      "column": 20,
+      "usr": "s:SS",
+      "name": "String",
+      "kind": 6,
+      "subkind": 0,
+      "roles": 65540,
+      "relations": [
+        {
+          "usr": "s:5Probe5OwnerV9recoveredSSvp",
+          "roles": 65536
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 18,
+      "column": 27,
+      "usr": "s:5Probe5OwnerV9recoveredSSvg",
+      "name": "getter:recovered",
+      "kind": 16,
+      "subkind": 3,
+      "roles": 33282,
+      "relations": [
+        {
+          "usr": "s:5Probe5OwnerV9recoveredSSvp",
+          "roles": 33280
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 19,
+      "column": 9,
+      "usr": "s:SS19stringInterpolationSSs013DefaultStringB0V_tcfc",
+      "name": "init(stringInterpolation:)",
+      "kind": 22,
+      "subkind": 0,
+      "roles": 74020,
+      "relations": [
+        {
+          "usr": "s:5Probe5OwnerV9recoveredSSvg",
+          "roles": 73728
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 19,
+      "column": 9,
+      "usr": "s:s26DefaultStringInterpolationV13appendLiteralyySSF",
+      "name": "appendLiteral(_:)",
+      "kind": 16,
+      "subkind": 0,
+      "roles": 65796,
+      "relations": [
+        {
+          "usr": "s:5Probe5OwnerV9recoveredSSvg",
+          "roles": 65536
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 19,
+      "column": 22,
+      "usr": "s:s26DefaultStringInterpolationV06appendC0yyxs06CustomB11ConvertibleRzs20TextOutputStreamableRzlF",
+      "name": "appendInterpolation(_:)",
+      "kind": 16,
+      "subkind": 0,
+      "roles": 74020,
+      "relations": [
+        {
+          "usr": "s:5Probe5OwnerV9recoveredSSvg",
+          "roles": 73728
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 19,
+      "column": 23,
+      "usr": "c:objc(cs)NSBundle",
+      "name": "Bundle",
+      "kind": 7,
+      "subkind": 0,
+      "roles": 65540,
+      "relations": [
+        {
+          "usr": "s:5Probe5OwnerV9recoveredSSvg",
+          "roles": 65536
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 19,
+      "column": 30,
+      "usr": "c:objc(cs)NSBundle(cm)mainBundle",
+      "name": "getter:main",
+      "kind": 17,
+      "subkind": 3,
+      "roles": 74084,
+      "relations": [
+        {
+          "usr": "s:5Probe5OwnerV9recoveredSSvg",
+          "roles": 73728
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 19,
+      "column": 30,
+      "usr": "c:objc(cs)NSBundle(cpy)mainBundle",
+      "name": "main",
+      "kind": 20,
+      "subkind": 0,
+      "roles": 65548,
+      "relations": [
+        {
+          "usr": "s:5Probe5OwnerV9recoveredSSvg",
+          "roles": 65536
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 19,
+      "column": 35,
+      "usr": "c:objc(cs)NSBundle(im)objectForInfoDictionaryKey:",
+      "name": "object(forInfoDictionaryKey:)",
+      "kind": 16,
+      "subkind": 0,
+      "roles": 77924,
+      "relations": [
+        {
+          "usr": "s:5Probe5OwnerV9recoveredSSvg",
+          "roles": 73728
+        },
+        {
+          "usr": "c:objc(cs)NSBundle",
+          "roles": 4096
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 19,
+      "column": 98,
+      "usr": "s:SS",
+      "name": "String",
+      "kind": 6,
+      "subkind": 0,
+      "roles": 65540,
+      "relations": [
+        {
+          "usr": "s:5Probe5OwnerV9recoveredSSvg",
+          "roles": 65536
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 19,
+      "column": 105,
+      "usr": "s:s2qqoiyxxSgn_xyKXKtKRi_zlF",
+      "name": "??(_:_:)",
+      "kind": 12,
+      "subkind": 1010,
+      "roles": 73764,
+      "relations": [
+        {
+          "usr": "s:5Probe5OwnerV9recoveredSSvg",
+          "roles": 73728
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 19,
+      "column": 116,
+      "usr": "s:s26DefaultStringInterpolationV13appendLiteralyySSF",
+      "name": "appendLiteral(_:)",
+      "kind": 16,
+      "subkind": 0,
+      "roles": 65796,
+      "relations": [
+        {
+          "usr": "s:5Probe5OwnerV9recoveredSSvg",
+          "roles": 65536
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 20,
+      "column": 14,
+      "usr": "s:SS11descriptionSSvg",
+      "name": "getter:description",
+      "kind": 16,
+      "subkind": 3,
+      "roles": 74020,
+      "relations": [
+        {
+          "usr": "s:5Probe5OwnerV9recoveredSSvg",
+          "roles": 73728
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 20,
+      "column": 14,
+      "usr": "s:SS11descriptionSSvp",
+      "name": "description",
+      "kind": 19,
+      "subkind": 0,
+      "roles": 65548,
+      "relations": [
+        {
+          "usr": "s:5Probe5OwnerV9recoveredSSvg",
+          "roles": 65536
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 22,
+      "column": 9,
+      "usr": "s:5Probe5OwnerV8computedAA0010Mlodie_bvaVvp",
+      "name": "computed",
+      "kind": 19,
+      "subkind": 0,
+      "roles": 514,
+      "relations": [
+        {
+          "usr": "s:5Probe5OwnerV",
+          "roles": 512
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 22,
+      "column": 19,
+      "usr": "s:5Probe0010Mlodie_bvaV",
+      "name": "Mélodie",
+      "kind": 6,
+      "subkind": 0,
+      "roles": 65540,
+      "relations": [
+        {
+          "usr": "s:5Probe5OwnerV8computedAA0010Mlodie_bvaVvp",
+          "roles": 65536
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 22,
+      "column": 28,
+      "usr": "s:5Probe5OwnerV8computedAA0010Mlodie_bvaVvg",
+      "name": "getter:computed",
+      "kind": 16,
+      "subkind": 3,
+      "roles": 33282,
+      "relations": [
+        {
+          "usr": "s:5Probe5OwnerV8computedAA0010Mlodie_bvaVvp",
+          "roles": 33280
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 22,
+      "column": 30,
+      "usr": "s:5Probe4makeAA0010Mlodie_bvaVyF",
+      "name": "make()",
+      "kind": 12,
+      "subkind": 0,
+      "roles": 73764,
+      "relations": [
+        {
+          "usr": "s:5Probe5OwnerV8computedAA0010Mlodie_bvaVvg",
+          "roles": 73728
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 23,
+      "column": 10,
+      "usr": "s:5Probe5OwnerV5localAA0010Mlodie_bvaVyF",
+      "name": "local()",
+      "kind": 16,
+      "subkind": 0,
+      "roles": 514,
+      "relations": [
+        {
+          "usr": "s:5Probe5OwnerV",
+          "roles": 512
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 23,
+      "column": 21,
+      "usr": "s:5Probe0010Mlodie_bvaV",
+      "name": "Mélodie",
+      "kind": 6,
+      "subkind": 0,
+      "roles": 65540,
+      "relations": [
+        {
+          "usr": "s:5Probe5OwnerV5localAA0010Mlodie_bvaVyF",
+          "roles": 65536
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 23,
+      "column": 36,
+      "usr": "s:5Probe5OwnerV5localAA0010Mlodie_bvaVyF5valueL_AFvg",
+      "name": "getter:value",
+      "kind": 12,
+      "subkind": 3,
+      "roles": 33538,
+      "relations": [
+        {
+          "usr": "s:5Probe5OwnerV5localAA0010Mlodie_bvaVyF5valueL_AFvp",
+          "roles": 33280
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 23,
+      "column": 36,
+      "usr": "s:5Probe5OwnerV5localAA0010Mlodie_bvaVyF5valueL_AFvs",
+      "name": "setter:value",
+      "kind": 12,
+      "subkind": 4,
+      "roles": 33538,
+      "relations": [
+        {
+          "usr": "s:5Probe5OwnerV5localAA0010Mlodie_bvaVyF5valueL_AFvp",
+          "roles": 33280
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 23,
+      "column": 36,
+      "usr": "s:5Probe5OwnerV5localAA0010Mlodie_bvaVyF5valueL_AFvp",
+      "name": "value",
+      "kind": 13,
+      "subkind": 0,
+      "roles": 514,
+      "relations": [
+        {
+          "usr": "s:5Probe5OwnerV5localAA0010Mlodie_bvaVyF",
+          "roles": 512
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 23,
+      "column": 44,
+      "usr": "s:5Probe4makeAA0010Mlodie_bvaVyF",
+      "name": "make()",
+      "kind": 12,
+      "subkind": 0,
+      "roles": 73764,
+      "relations": [
+        {
+          "usr": "s:5Probe5OwnerV5localAA0010Mlodie_bvaVyF5valueL_AFvp",
+          "roles": 65536
+        },
+        {
+          "usr": "s:5Probe5OwnerV5localAA0010Mlodie_bvaVyF",
+          "roles": 8192
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 23,
+      "column": 59,
+      "usr": "s:5Probe5OwnerV5localAA0010Mlodie_bvaVyF5valueL_AFvg",
+      "name": "getter:value",
+      "kind": 12,
+      "subkind": 3,
+      "roles": 74020,
+      "relations": [
+        {
+          "usr": "s:5Probe5OwnerV5localAA0010Mlodie_bvaVyF",
+          "roles": 73728
+        }
+      ]
+    },
+    {
+      "path": "Unicode.swift",
+      "module": "Probe",
+      "line": 23,
+      "column": 59,
+      "usr": "s:5Probe5OwnerV5localAA0010Mlodie_bvaVyF5valueL_AFvp",
+      "name": "value",
+      "kind": 13,
+      "subkind": 0,
+      "roles": 65548,
+      "relations": [
+        {
+          "usr": "s:5Probe5OwnerV5localAA0010Mlodie_bvaVyF",
+          "roles": 65536
+        }
+      ]
+    }
+  ],
+  "units": 48,
+  "records": 1
+}

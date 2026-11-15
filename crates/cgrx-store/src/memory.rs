@@ -164,6 +164,8 @@ impl MemoryStore {
             recall: query.clone(),
             memory_kind: None,
             task_id: None,
+            path: None,
+            symbol: None,
             include_stale: true,
             id: None,
             include_history: false,

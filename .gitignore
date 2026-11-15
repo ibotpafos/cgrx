@@ -1,6 +1,7 @@
 .worktrees/
 .superpowers/
-.cgrx/
+.cgrx/*
+!.cgrx/quality-checks.json
 __pycache__/
 *.py[cod]
 target/

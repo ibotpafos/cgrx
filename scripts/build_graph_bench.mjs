@@ -1,0 +1,13 @@
+import { build } from 'esbuild';
+import { execFileSync } from 'node:child_process';
+import { mkdir, writeFile, readFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { resolve } from 'node:path';
+const directory = resolve(process.argv[2] || '/tmp/cgrx-alpha15-browser');
+await mkdir(directory, { recursive: true });
+await build({ entryPoints: ['scripts/bench_graph.tsx'], bundle: true, format: 'esm', target: 'es2024', minify: true, outfile: `${directory}/bench.js` });
+const hash = async path => createHash('sha256').update(await readFile(path)).digest('hex');
+const metadata = { commit: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(), dirty: Boolean(execFileSync('git', ['status', '--porcelain'], { encoding: 'utf8' }).trim()), bundle_sha256: await hash(`${directory}/bench.js`), layout_worker_sha256: await hash('crates/cgrx-cli/web/layout-worker.bundle.js') };
+await writeFile(`${directory}/build.json`, JSON.stringify(metadata, null, 2));
+await writeFile(`${directory}/index.html`, '<!doctype html><html><head><link rel="stylesheet" href="/assets/styles.css"><style>body{margin:0;background:#0c1411;}header{position:relative;z-index:3}button{padding:12px;color:white;background:#21332b}#root{height:100vh;}</style></head><body><div id="root"></div><script type="module" src="/bench.js"></script></body></html>');
+console.log(JSON.stringify({ directory, ...metadata }));

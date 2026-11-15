@@ -16,6 +16,203 @@ use super::ts_config::{self, TsResolutionConfig};
 use super::{StoredArc, StoredDocument, StoredTsFileFacts};
 use super::{ts_config_modules, ts_config_supported_for, ts_paths_portable_for};
 
+fn javascript_path(path: &str) -> bool {
+    matches!(
+        Path::new(path).extension().and_then(|s| s.to_str()),
+        Some("js" | "mjs" | "cjs")
+    )
+}
+
+fn typescript_path(path: &str) -> bool {
+    matches!(
+        Path::new(path).extension().and_then(|s| s.to_str()),
+        Some("ts" | "tsx")
+    )
+}
+
+fn append_reference_arcs(
+    documents: &[StoredDocument],
+    path_hashes: &BTreeMap<String, Hash32>,
+    by_name: &BTreeMap<&str, Vec<&StoredDocument>>,
+    arcs: &mut Vec<StoredArc>,
+) {
+    // Create References arcs from reference documents to their targets
+    for document in documents.iter().filter(|d| {
+        d.provenance == "REFERENCES"
+            && !php_resolution::is_php_path(&d.path)
+            && !d.path.ends_with(".swift")
+            && !javascript_path(&d.path)
+            && !typescript_path(&d.path)
+    }) {
+        // Try exact match first, then extract last segment for qualified names
+        let targets = by_name.get(document.qualified_name.as_str()).or_else(|| {
+            // For qualified names like "cgrx_core::IoAccounting", try "IoAccounting"
+            document
+                .qualified_name
+                .rsplit("::")
+                .next()
+                .and_then(|name| by_name.get(name))
+        });
+        let Some(targets) = targets else {
+            continue;
+        };
+        for target in targets {
+            if target.provenance == "SYNTAX" {
+                let source_hash = path_hashes
+                    .get(&document.path)
+                    .copied()
+                    .unwrap_or(Hash32([0; 32]));
+                arcs.push(StoredArc {
+                    source: document.node_id,
+                    target: target.node_id,
+                    kind: RelationKind::References,
+                    evidence: Some(EdgeEvidence {
+                        path: document.path.clone(),
+                        span: ByteRange::new(document.span_start, document.span_end),
+                        source_hash,
+                        resolver: ResolverClass::SyntaxExact,
+                        confidence: ConfidenceClass::Proven,
+                        assumptions: Vec::new(),
+                        counter_evidence: Vec::new(),
+                    }),
+                });
+            }
+        }
+    }
+}
+
+fn append_import_arcs(
+    documents: &[StoredDocument],
+    path_hashes: &BTreeMap<String, Hash32>,
+    syntax_by_path: &BTreeMap<&str, Vec<&StoredDocument>>,
+    by_name: &BTreeMap<&str, Vec<&StoredDocument>>,
+    arcs: &mut Vec<StoredArc>,
+) {
+    // Create IMPORTS arcs from import documents to their targets
+    // Match import targets to SYNTAX documents by path
+    for document in documents.iter().filter(|d| {
+        d.provenance == "IMPORTS"
+            && !php_resolution::is_php_path(&d.path)
+            && !d.path.ends_with(".py")
+            && !javascript_path(&d.path)
+            && !typescript_path(&d.path)
+    }) {
+        // Try to find the imported module by matching the qualified_name to a file path
+        let import_target = &document.qualified_name;
+
+        // For relative imports (./foo, ../foo), try to resolve to a file path
+        // For absolute imports (fmt, std::io), skip as they're external
+        if import_target.starts_with("./") || import_target.starts_with("../") {
+            // Try to find a matching file in syntax_by_path
+            let importing_dir = Path::new(&document.path).parent().unwrap_or(Path::new("."));
+            let resolved = importing_dir.join(import_target);
+            let resolved_str = resolved.to_string_lossy().to_string();
+
+            // Try exact match and with common extensions
+            for candidate in [
+                resolved_str.clone(),
+                format!("{}.rs", resolved_str),
+                format!("{}.go", resolved_str),
+                format!("{}.ts", resolved_str),
+                format!("{}.js", resolved_str),
+                format!("{}.py", resolved_str),
+                format!("{}/mod.rs", resolved_str),
+                format!("{}/index.ts", resolved_str),
+                format!("{}/index.js", resolved_str),
+            ] {
+                if let Some(targets) = syntax_by_path.get(candidate.as_str())
+                    && let Some(target) = targets.first()
+                {
+                    let source_hash = path_hashes
+                        .get(&document.path)
+                        .copied()
+                        .unwrap_or(Hash32([0; 32]));
+                    arcs.push(StoredArc {
+                        source: document.node_id,
+                        target: target.node_id,
+                        kind: RelationKind::Imports,
+                        evidence: Some(EdgeEvidence {
+                            path: document.path.clone(),
+                            span: ByteRange::new(document.span_start, document.span_end),
+                            source_hash,
+                            resolver: ResolverClass::SyntaxExact,
+                            confidence: ConfidenceClass::Proven,
+                            assumptions: Vec::new(),
+                            counter_evidence: Vec::new(),
+                        }),
+                    });
+                    break;
+                }
+            }
+        }
+
+        // For crate:: and internal crate imports, extract symbol names and match to SYNTAX documents
+        let is_internal = import_target.starts_with("crate::")
+            || import_target.starts_with("use crate::")
+            || import_target.starts_with("use cgrx_")
+            || import_target.starts_with("use super::")
+            || import_target.starts_with("use self::");
+        if is_internal {
+            // Extract symbol names from various patterns:
+            // - use crate::Symbol -> ["Symbol"]
+            // - use crate::module::Symbol -> ["Symbol"]
+            // - use crate::{A, B, C} -> ["A", "B", "C"]
+            // - use crate::module::{A, B} -> ["A", "B"]
+            // Remove "use " prefix if present
+            let clean_target = import_target.strip_prefix("use ").unwrap_or(import_target);
+            // Remove trailing semicolon
+            let clean_target = clean_target.trim_end_matches(';');
+            let symbols: Vec<&str> = if clean_target.contains('{') {
+                // Handle brace-enclosed imports: crate::{A, B, C} or crate::module::{A, B}
+                if let Some(brace_start) = clean_target.find('{') {
+                    let inner = &clean_target[brace_start + 1..];
+                    if let Some(brace_end) = inner.find('}') {
+                        inner[..brace_end]
+                            .split(',')
+                            .map(|s| s.trim())
+                            .filter(|s| !s.is_empty())
+                            .collect()
+                    } else {
+                        Vec::new()
+                    }
+                } else {
+                    Vec::new()
+                }
+            } else {
+                // Handle simple imports: crate::Symbol or crate::module::Symbol
+                clean_target.rsplit("::").next().into_iter().collect()
+            };
+
+            for symbol_name in symbols {
+                if let Some(targets) = by_name.get(symbol_name) {
+                    for target in targets {
+                        if target.provenance == "SYNTAX" {
+                            let source_hash = path_hashes
+                                .get(&document.path)
+                                .copied()
+                                .unwrap_or(Hash32([0; 32]));
+                            arcs.push(StoredArc {
+                                source: document.node_id,
+                                target: target.node_id,
+                                kind: RelationKind::Imports,
+                                evidence: Some(EdgeEvidence {
+                                    path: document.path.clone(),
+                                    span: ByteRange::new(document.span_start, document.span_end),
+                                    source_hash,
+                                    resolver: ResolverClass::SyntaxExact,
+                                    confidence: ConfidenceClass::Proven,
+                                    assumptions: Vec::new(),
+                                    counter_evidence: Vec::new(),
+                                }),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 pub(super) fn rebuild_arcs_with_cargo(
     documents: &[StoredDocument],
     path_hashes: &BTreeMap<String, Hash32>,
@@ -26,11 +223,7 @@ pub(super) fn rebuild_arcs_with_cargo(
     ts_resolution_configs: &BTreeMap<String, TsResolutionConfig>,
 ) -> Vec<StoredArc> {
     let cargo = crate::cargo_roots::CargoRoots::new(cargo_manifests, rust_files);
-    let ts_inventory: BTreeMap<_, _> = ts_files
-        .iter()
-        .filter(|(path, stored)| path_hashes.get(*path) == Some(&stored.source_hash))
-        .map(|(path, stored)| (path.clone(), stored.facts.clone()))
-        .collect();
+    let ts_inventory = super::ts_helpers::ts_current_inventory(ts_files, path_hashes);
     let modules = ts_config_modules(ts_files, ts_resolution_configs);
     let mut by_name = BTreeMap::<&str, Vec<&StoredDocument>>::new();
     let mut syntax_by_path = BTreeMap::<&str, Vec<&StoredDocument>>::new();
@@ -40,7 +233,9 @@ pub(super) fn rebuild_arcs_with_cargo(
         .iter()
         .filter(|document| {
             (document.path.ends_with(".go") && document.go_field_target.is_some())
-                || (document.path.ends_with(".rs") && document.rust_module_target.is_some())
+                || (document.path.ends_with(".rs")
+                    && (document.rust_module_target.is_some()
+                        || document.rust_parameter_target.is_some()))
                 || (document.path.ends_with(".java") && document.java_constructor_target.is_some())
         })
         .map(|document| document.path.as_str())
@@ -52,11 +247,14 @@ pub(super) fn rebuild_arcs_with_cargo(
     {
         // Newly exposed arrows require lexical proof, even for other languages'
         // callsites. Never let the legacy resolver discover them by name.
-        if !document
-            .semantic_tags
-            .iter()
-            .any(|tag| tag == "TS_LEXICAL_ARROW")
-            && !php_resolution::is_php_path(&document.path)
+        if !document.semantic_tags.iter().any(|tag| {
+            matches!(
+                tag.as_str(),
+                "TS_LEXICAL_ARROW" | "TS_DEPENDENCY_DECLARATION"
+            )
+        }) && !php_resolution::is_php_path(&document.path)
+            && !document.path.ends_with(".swift")
+            && !javascript_path(&document.path)
         {
             by_name
                 .entry(document.qualified_name.as_str())
@@ -79,13 +277,15 @@ pub(super) fn rebuild_arcs_with_cargo(
             .or_default()
             .push(document);
     }
-    let has_go_local_constructor_calls = documents.iter().any(|document| {
-        document
-            .semantic_tags
-            .iter()
-            .any(|tag| tag == "GO_LOCAL_CONSTRUCTOR_CALL")
+    let has_go_typed_calls = documents.iter().any(|document| {
+        document.semantic_tags.iter().any(|tag| {
+            matches!(
+                tag.as_str(),
+                "GO_LOCAL_CONSTRUCTOR_CALL" | "GO_INDEXED_FIELD_CALL"
+            )
+        })
     });
-    let go_callable_types: BTreeMap<_, _> = if has_go_local_constructor_calls {
+    let go_callable_types: BTreeMap<_, _> = if has_go_typed_calls {
         documents
             .iter()
             .filter(|document| document.provenance == "SYNTAX" && document.path.ends_with(".go"))
@@ -127,11 +327,26 @@ pub(super) fn rebuild_arcs_with_cargo(
         })
         .collect();
     let mut arcs = php_resolution::rebuild(documents, path_hashes);
+    if cgrx_languages::EXPERIMENTAL_JAVASCRIPT_ENABLED {
+        arcs.extend(super::javascript_resolution::rebuild(
+            documents,
+            path_hashes,
+            ts_files,
+        ));
+    }
+    arcs.extend(super::swift_resolution::rebuild(documents, path_hashes));
     for call in documents.iter().filter(|document| {
         document.provenance == "CALLS"
             && !php_resolution::is_php_path(&document.path)
+            && !javascript_path(&document.path)
             && document.semantic_tags.iter().any(|tag| tag == "EXACT_CALL")
     }) {
+        if call.path.ends_with(".swift")
+            && (call.semantic_tags.as_slice() != ["EXACT_CALL", "SWIFT_DIRECT_CALL"]
+                || call.ts_lexical_target.is_none())
+        {
+            continue;
+        }
         let source_document = syntax_by_path
             .get(call.path.as_str())
             .into_iter()
@@ -147,10 +362,12 @@ pub(super) fn rebuild_arcs_with_cargo(
             })
             .copied();
         if call.path.ends_with(".rs")
-            && !call
-                .semantic_tags
-                .iter()
-                .any(|tag| tag == "RUST_SELF_CALL" || tag == "RUST_MODULE_CALL")
+            && !call.semantic_tags.iter().any(|tag| {
+                matches!(
+                    tag.as_str(),
+                    "RUST_SELF_CALL" | "RUST_MODULE_CALL" | "RUST_PARAMETER_CALL"
+                )
+            })
             && !rust_valid_calls.contains(&(
                 call.path.clone(),
                 call.span_start,
@@ -303,6 +520,60 @@ pub(super) fn rebuild_arcs_with_cargo(
                 };
                 (target.qualified_name == target_name).then_some(target.node_id)
             })
+        } else if call
+            .semantic_tags
+            .iter()
+            .any(|tag| tag == "RUST_PARAMETER_CALL")
+        {
+            call.rust_parameter_target.as_ref().and_then(|proof| {
+                if !call.path.ends_with(".rs")
+                    || path_hashes.get(&call.path) != Some(&proof.source_hash)
+                {
+                    return None;
+                }
+                let exact = |span: &ByteRange| {
+                    let [document] = syntax_by_span
+                        .get(&(call.path.as_str(), span.start, span.end))?
+                        .as_slice()
+                    else {
+                        return None;
+                    };
+                    Some(*document)
+                };
+                let caller = exact(&proof.caller)?;
+                let target = exact(&proof.target)?;
+                let _owner = exact(&proof.owner)?;
+                let encloses = |outer: ByteRange, inner: ByteRange| {
+                    outer.start < outer.end
+                        && inner.start < inner.end
+                        && outer.start <= inner.start
+                        && inner.end <= outer.end
+                };
+                if source != Some(caller.node_id)
+                    || target.qualified_name != call.qualified_name
+                    || !encloses(
+                        ByteRange::new(caller.body_start, caller.body_end),
+                        proof.parameter,
+                    )
+                    || !encloses(proof.parameter, proof.binding)
+                    || !encloses(proof.parameter, proof.receiver_type)
+                    || proof.binding.end >= proof.receiver_type.start
+                    || proof.parameter.start < caller.span_end
+                    || proof.parameter.end >= call.span_start
+                    || proof.receiver.start != call.span_start
+                    || !encloses(
+                        ByteRange::new(call.span_start, call.span_end),
+                        proof.receiver,
+                    )
+                    || !encloses(
+                        proof.target_implementation,
+                        ByteRange::new(target.body_start, target.body_end),
+                    )
+                {
+                    return None;
+                }
+                Some(target.node_id)
+            })
         } else if call.semantic_tags.iter().any(|tag| tag == "RUST_SELF_CALL") {
             call.rust_self_target.as_ref().and_then(|proof| {
                 if !call.path.ends_with(".rs") {
@@ -332,6 +603,37 @@ pub(super) fn rebuild_arcs_with_cargo(
                     return None;
                 }
                 Some(target.node_id)
+            })
+        } else if call
+            .semantic_tags
+            .iter()
+            .any(|tag| tag == "SWIFT_DIRECT_CALL")
+        {
+            call.ts_lexical_target.as_ref().and_then(|proof| {
+                if !call.path.ends_with(".swift") {
+                    return None;
+                }
+                let caller = source_document?;
+                if caller.path != call.path
+                    || caller.span_start != proof.caller.start
+                    || caller.span_end != proof.caller.end
+                    || !caller
+                        .semantic_tags
+                        .iter()
+                        .any(|tag| tag == "SWIFT_FREE_FUNCTION")
+                {
+                    return None;
+                }
+                let mut targets = syntax_by_path.get(call.path.as_str())?.iter().filter(|d| {
+                    d.qualified_name == call.qualified_name
+                        && d.span_start == proof.target.start
+                        && d.span_end == proof.target.end
+                        && d.semantic_tags
+                            .iter()
+                            .any(|tag| tag == "SWIFT_FREE_FUNCTION")
+                });
+                let target = targets.next()?;
+                targets.next().is_none().then_some(target.node_id)
             })
         } else if call
             .semantic_tags
@@ -430,6 +732,50 @@ pub(super) fn rebuild_arcs_with_cargo(
                     return None;
                 }
                 let target = exact(&proof.target)?;
+                let indexed_call = call
+                    .semantic_tags
+                    .iter()
+                    .any(|tag| tag == "GO_INDEXED_FIELD_CALL");
+                if indexed_call != proof.indexed_binding.is_some() {
+                    return None;
+                }
+                if let Some(binding) = proof.indexed_binding.as_ref() {
+                    let encloses = |outer: &ByteRange, inner: &ByteRange| {
+                        outer.start <= inner.start
+                            && inner.start < inner.end
+                            && inner.end <= outer.end
+                    };
+                    let caller_body = ByteRange::new(caller.body_start, caller.body_end);
+                    let owner_body = ByteRange::new(owner.body_start, owner.body_end);
+                    let call_span = ByteRange::new(call.span_start, call.span_end);
+                    if path_hashes.get(&call.path) != Some(&binding.source_hash)
+                        || !encloses(&owner_body, &binding.collection)
+                        || proof.field.end > binding.collection.start
+                        || !encloses(&caller_body, &binding.statement)
+                        || !encloses(&binding.statement, &binding.binding)
+                        || !encloses(&binding.statement, &binding.initializer)
+                        || binding.binding.end >= binding.initializer.start
+                        || binding.statement.end >= call.span_start
+                        || !encloses(&call_span, &binding.receiver)
+                        || binding.receiver.start != call.span_start
+                        || binding.binding.end - binding.binding.start
+                            != binding.receiver.end - binding.receiver.start
+                    {
+                        return None;
+                    }
+                    for (document, expected_type) in [(caller, owner), (target, field_type)] {
+                        let signature = go_callable_types.get(&(
+                            document.path.as_str(),
+                            document.span_start,
+                            document.span_end,
+                        ))?;
+                        if signature.kind != cgrx_languages::GoCallableKind::Method
+                            || signature.named_type != expected_type.qualified_name
+                        {
+                            return None;
+                        }
+                    }
+                }
                 (target.qualified_name == target_name).then_some(target.node_id)
             })
         } else if call
@@ -534,6 +880,10 @@ pub(super) fn rebuild_arcs_with_cargo(
                 let target = matches.next()?;
                 matches.next().is_none().then_some(target.node_id)
             })
+        } else if call.path.ends_with(".swift") {
+            // Even stripped or stale Swift proof metadata must never fall back
+            // to name-only resolution in this or another language.
+            None
         } else if call.path.ends_with(".rs") && qualifier.is_some() {
             // Exact Cargo target/root + AST module membership, never a name guess.
             cargo
@@ -632,169 +982,21 @@ pub(super) fn rebuild_arcs_with_cargo(
             });
         }
     }
-    // Create References arcs from reference documents to their targets
-    for document in documents
-        .iter()
-        .filter(|d| d.provenance == "REFERENCES" && !php_resolution::is_php_path(&d.path))
-    {
-        // Try exact match first, then extract last segment for qualified names
-        let targets = by_name.get(document.qualified_name.as_str()).or_else(|| {
-            // For qualified names like "cgrx_core::IoAccounting", try "IoAccounting"
-            document
-                .qualified_name
-                .rsplit("::")
-                .next()
-                .and_then(|name| by_name.get(name))
-        });
-        let Some(targets) = targets else {
-            continue;
-        };
-        for target in targets {
-            if target.provenance == "SYNTAX" {
-                let source_hash = path_hashes
-                    .get(&document.path)
-                    .copied()
-                    .unwrap_or(Hash32([0; 32]));
-                arcs.push(StoredArc {
-                    source: document.node_id,
-                    target: target.node_id,
-                    kind: RelationKind::References,
-                    evidence: Some(EdgeEvidence {
-                        path: document.path.clone(),
-                        span: ByteRange::new(document.span_start, document.span_end),
-                        source_hash,
-                        resolver: ResolverClass::SyntaxExact,
-                        confidence: ConfidenceClass::Proven,
-                        assumptions: Vec::new(),
-                        counter_evidence: Vec::new(),
-                    }),
-                });
-            }
-        }
-    }
-
-    // Create IMPORTS arcs from import documents to their targets
-    // Match import targets to SYNTAX documents by path
-    for document in documents
-        .iter()
-        .filter(|d| d.provenance == "IMPORTS" && !php_resolution::is_php_path(&d.path))
-    {
-        // Try to find the imported module by matching the qualified_name to a file path
-        let import_target = &document.qualified_name;
-
-        // For relative imports (./foo, ../foo), try to resolve to a file path
-        // For absolute imports (fmt, std::io), skip as they're external
-        if import_target.starts_with("./") || import_target.starts_with("../") {
-            // Try to find a matching file in syntax_by_path
-            let importing_dir = Path::new(&document.path).parent().unwrap_or(Path::new("."));
-            let resolved = importing_dir.join(import_target);
-            let resolved_str = resolved.to_string_lossy().to_string();
-
-            // Try exact match and with common extensions
-            for candidate in [
-                resolved_str.clone(),
-                format!("{}.rs", resolved_str),
-                format!("{}.go", resolved_str),
-                format!("{}.ts", resolved_str),
-                format!("{}.js", resolved_str),
-                format!("{}.py", resolved_str),
-                format!("{}/mod.rs", resolved_str),
-                format!("{}/index.ts", resolved_str),
-                format!("{}/index.js", resolved_str),
-            ] {
-                if let Some(targets) = syntax_by_path.get(candidate.as_str())
-                    && let Some(target) = targets.first()
-                {
-                    let source_hash = path_hashes
-                        .get(&document.path)
-                        .copied()
-                        .unwrap_or(Hash32([0; 32]));
-                    arcs.push(StoredArc {
-                        source: document.node_id,
-                        target: target.node_id,
-                        kind: RelationKind::Imports,
-                        evidence: Some(EdgeEvidence {
-                            path: document.path.clone(),
-                            span: ByteRange::new(document.span_start, document.span_end),
-                            source_hash,
-                            resolver: ResolverClass::SyntaxExact,
-                            confidence: ConfidenceClass::Proven,
-                            assumptions: Vec::new(),
-                            counter_evidence: Vec::new(),
-                        }),
-                    });
-                    break;
-                }
-            }
-        }
-
-        // For crate:: and internal crate imports, extract symbol names and match to SYNTAX documents
-        let is_internal = import_target.starts_with("crate::")
-            || import_target.starts_with("use crate::")
-            || import_target.starts_with("use cgrx_")
-            || import_target.starts_with("use super::")
-            || import_target.starts_with("use self::");
-        if is_internal {
-            // Extract symbol names from various patterns:
-            // - use crate::Symbol -> ["Symbol"]
-            // - use crate::module::Symbol -> ["Symbol"]
-            // - use crate::{A, B, C} -> ["A", "B", "C"]
-            // - use crate::module::{A, B} -> ["A", "B"]
-            // Remove "use " prefix if present
-            let clean_target = import_target.strip_prefix("use ").unwrap_or(import_target);
-            // Remove trailing semicolon
-            let clean_target = clean_target.trim_end_matches(';');
-            let symbols: Vec<&str> = if clean_target.contains('{') {
-                // Handle brace-enclosed imports: crate::{A, B, C} or crate::module::{A, B}
-                if let Some(brace_start) = clean_target.find('{') {
-                    let inner = &clean_target[brace_start + 1..];
-                    if let Some(brace_end) = inner.find('}') {
-                        inner[..brace_end]
-                            .split(',')
-                            .map(|s| s.trim())
-                            .filter(|s| !s.is_empty())
-                            .collect()
-                    } else {
-                        Vec::new()
-                    }
-                } else {
-                    Vec::new()
-                }
-            } else {
-                // Handle simple imports: crate::Symbol or crate::module::Symbol
-                clean_target.rsplit("::").next().into_iter().collect()
-            };
-
-            for symbol_name in symbols {
-                if let Some(targets) = by_name.get(symbol_name) {
-                    for target in targets {
-                        if target.provenance == "SYNTAX" {
-                            let source_hash = path_hashes
-                                .get(&document.path)
-                                .copied()
-                                .unwrap_or(Hash32([0; 32]));
-                            arcs.push(StoredArc {
-                                source: document.node_id,
-                                target: target.node_id,
-                                kind: RelationKind::Imports,
-                                evidence: Some(EdgeEvidence {
-                                    path: document.path.clone(),
-                                    span: ByteRange::new(document.span_start, document.span_end),
-                                    source_hash,
-                                    resolver: ResolverClass::SyntaxExact,
-                                    confidence: ConfidenceClass::Proven,
-                                    assumptions: Vec::new(),
-                                    counter_evidence: Vec::new(),
-                                }),
-                            });
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    arcs.sort_by_key(|arc| (arc.source, arc.target, arc.kind, arc.evidence.clone()));
+    append_reference_arcs(documents, path_hashes, &by_name, &mut arcs);
+    append_import_arcs(documents, path_hashes, &syntax_by_path, &by_name, &mut arcs);
+    super::ts_dependency_resolution::append_arcs(
+        documents,
+        path_hashes,
+        ts_files,
+        &ts_inventory,
+        ts_resolution_configs,
+        &modules,
+        &syntax_by_path,
+        &mut arcs,
+    );
+    arcs.sort_by(|a, b| {
+        (a.source, a.target, a.kind, &a.evidence).cmp(&(b.source, b.target, b.kind, &b.evidence))
+    });
     arcs.dedup();
     arcs
 }

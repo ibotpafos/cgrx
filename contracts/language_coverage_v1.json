@@ -219,6 +219,129 @@
      ]
     }
    }
+  },
+  {
+   "id": "cpp",
+   "module": "cpp",
+   "source": "crates/cgrx-languages/src/cpp.rs",
+   "extensions": [
+    "cpp",
+    "cxx",
+    "cc",
+    "hpp",
+    "hxx",
+    "hh"
+   ],
+   "cells": {
+    "cpp": {
+     "CALLS": [
+      "training-cpp-calls"
+     ],
+     "IMPORTS": [
+      "training-cpp-imports"
+     ],
+     "REFERENCE": [
+      "training-cpp-reference"
+     ],
+     "UNRESOLVED": [
+      "training-cpp-unresolved"
+     ]
+    },
+    "cxx": {
+     "CALLS": [
+      "training-cxx-calls"
+     ],
+     "IMPORTS": [
+      "training-cxx-imports"
+     ],
+     "REFERENCE": [
+      "training-cxx-reference"
+     ],
+     "UNRESOLVED": [
+      "training-cxx-unresolved"
+     ]
+    },
+    "cc": {
+     "CALLS": [
+      "training-cc-calls"
+     ],
+     "IMPORTS": [
+      "training-cc-imports"
+     ],
+     "REFERENCE": [
+      "training-cc-reference"
+     ],
+     "UNRESOLVED": [
+      "training-cc-unresolved"
+     ]
+    },
+    "hpp": {
+     "CALLS": [
+      "training-hpp-calls"
+     ],
+     "IMPORTS": [
+      "training-hpp-imports"
+     ],
+     "REFERENCE": [
+      "training-hpp-reference"
+     ],
+     "UNRESOLVED": [
+      "training-hpp-unresolved"
+     ]
+    },
+    "hxx": {
+     "CALLS": [
+      "training-hxx-calls"
+     ],
+     "IMPORTS": [
+      "training-hxx-imports"
+     ],
+     "REFERENCE": [
+      "training-hxx-reference"
+     ],
+     "UNRESOLVED": [
+      "training-hxx-unresolved"
+     ]
+    },
+    "hh": {
+     "CALLS": [
+      "training-hh-calls"
+     ],
+     "IMPORTS": [
+      "training-hh-imports"
+     ],
+     "REFERENCE": [
+      "training-hh-reference"
+     ],
+     "UNRESOLVED": [
+      "training-hh-unresolved"
+     ]
+    }
+   }
+  },
+  {
+   "id": "swift",
+   "module": "swift",
+   "source": "crates/cgrx-languages/src/swift.rs",
+   "extensions": [
+    "swift"
+   ],
+   "cells": {
+    "swift": {
+     "CALLS": [
+      "training-swift-calls"
+     ],
+     "IMPORTS": [
+      "training-swift-imports"
+     ],
+     "REFERENCE": [
+      "training-swift-reference"
+     ],
+     "UNRESOLVED": [
+      "training-swift-unresolved"
+     ]
+    }
+   }
   }
  ]
 }

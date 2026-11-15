@@ -351,8 +351,11 @@ mod tests {
                 hash(2),
                 Extraction {
                     rust_file: None,
+                    python_file: None,
                     package_span: None,
                     lexical_arrows: Vec::new(),
+                    swift_free_functions: Vec::new(),
+                    swift_type_references: Vec::new(),
                     symbols: Vec::new(),
                     edges: vec![edge("", hash(2), "new").edge],
                     parser_error_ranges: Vec::new(),
@@ -406,8 +409,11 @@ mod tests {
                     hash(new),
                     Extraction {
                         rust_file: None,
+                        python_file: None,
                         package_span: None,
                         lexical_arrows: Vec::new(),
+                        swift_free_functions: Vec::new(),
+                        swift_type_references: Vec::new(),
                         symbols: Vec::new(),
                         edges: vec![edge("", hash(new), target).edge],
                         parser_error_ranges: Vec::new(),

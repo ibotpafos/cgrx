@@ -1,3 +1,6 @@
+import { GraphNeighbors } from "./components/GraphNeighbors";
+import { fetchJson } from "./fetch-json.js";
+import { loadTopology } from "./topology-client";
 import React, {
   forwardRef,
   useCallback,
@@ -7,9 +10,15 @@ import React, {
   useRef,
   useState
 } from "react";
+import { projectCodeMap } from "./repository-map.js";
+import { useProjectLayout } from "./components/useProjectLayout";
+import { ProjectPicker } from "./components/ProjectPicker";
+import type { ProjectCatalogue } from "./components/ProjectPicker";
+import { ProjectCanvas } from "./components/ProjectCanvas";
+import { WorkspaceDock, PanelHeading } from "./components/WorkspaceChrome";
 import { createRoot } from "react-dom/client";
 import { defineWebGitGraph } from "@web-git-graph/web";
-import { edgeStyle, layoutGraph, layoutProjectMap } from "./layout.js";
+import { edgeStyle, layoutGraph } from "./layout.js";
 import { CgrxGitGraphProvider } from "./git-history.js";
 import {
   createProjectGraphRenderer,
@@ -48,6 +57,7 @@ import type {
   Mode,
   ProjectLayout,
   ProjectLayoutNode,
+  ProjectNode,
   ProjectMap,
   RefactorCandidate,
   RuntimeStatus,
@@ -145,23 +155,51 @@ const fragment = new URLSearchParams(location.hash.slice(1));
 const capability = fragment.get("token") || sessionStorage.getItem(tokenKey) || "";
 if (capability) sessionStorage.setItem(tokenKey, capability);
 if (location.hash) history.replaceState(null, "", `${location.pathname}${location.search}`);
+// Project selection lives in the URL. Navigating to another project creates a
+// fresh React tree, so responses/selection/history from the old repo cannot leak.
+const selectedProjectId = new URLSearchParams(location.search).get("project");
 defineWebGitGraph();
 
 async function api<T>(path: string, signal?: AbortSignal): Promise<T> {
-  const response = await fetch(path, {
-    headers: { "X-CGRX-Token": capability },
-    cache: "no-store",
-    signal
-  });
-  const value = await response.json() as { error?: { detail?: string } } & T;
-  if (!response.ok) throw new Error(value?.error?.detail || `Request failed: ${response.status}`);
-  return value;
+  const url = new URL(path, location.origin);
+  if (selectedProjectId && url.pathname !== "/api/projects") url.searchParams.set("project", selectedProjectId);
+  return fetchJson(url, capability, signal) as Promise<T>;
 }
 
 function App(): React.JSX.Element {
+  const [projectCatalogue, setProjectCatalogue] = useState<ProjectCatalogue | null>(null);
+  const [projectListError, setProjectListError] = useState("");
+  const [projectPhase, setProjectPhase] = useState("queued");
+  useEffect(() => {
+    const controller = new AbortController(); let busy = false;
+    const poll = async (): Promise<void> => {
+      if (busy) return; busy = true;
+      try { const value = await api<{ state: string }>("/api/project-status", controller.signal); setProjectPhase(value.state); } catch { /* Main status owns actionable errors. */ } finally { busy = false; }
+    };
+    void poll(); const timer = setInterval(() => void poll(), 1000);
+    return () => { clearInterval(timer); controller.abort(); };
+  }, []);
+  const selectedProject = projectCatalogue?.projects.find(project => project.id === (selectedProjectId || projectCatalogue.default_project));
+  const loadProjects = useCallback(async (): Promise<void> => {
+    try {
+      let catalogue = await api<ProjectCatalogue>("/api/projects");
+      setProjectCatalogue(catalogue);
+      while (catalogue.discovering) {
+        await new Promise(resolve => setTimeout(resolve, 250));
+        catalogue = await api<ProjectCatalogue>("/api/projects");
+        setProjectCatalogue(catalogue);
+      }
+      setProjectListError("");
+    } catch (error) { setProjectListError(errorMessage(error)); }
+  }, []);
+  useEffect(() => { void loadProjects(); }, [loadProjects]);
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [freshness, setFreshness] = useState<"connecting" | "live" | "refreshing" | "offline">("connecting");
   const [mode, setMode] = useState<Mode>("project");
+  const [graphDimension, setGraphDimension] = useState<"2d" | "3d">("2d");
+  const [discoveryOpen, setDiscoveryOpen] = useState(true);
+  const [inspectorDismissed, setInspectorDismissed] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const [evidenceMode, setEvidenceMode] = useState<EvidenceMode>("static");
   const [runtimeEnvironment, setRuntimeEnvironment] = useState("");
   const [camera, setCamera] = useState<CameraState>(DEFAULT_CAMERA);
@@ -174,7 +212,18 @@ function App(): React.JSX.Element {
 
   const [currentGraph, setCurrentGraph] = useState<GraphResponse | null>(null);
   const [currentArchitecture, setCurrentArchitecture] = useState<GraphResponse | null>(null);
-  const [currentProjectMap, setCurrentProjectMap] = useState<ProjectMap | null>(null);
+  const [packageMap, setPackageMap] = useState<ProjectMap | null>(null);
+  const [repositoryGraph, setRepositoryGraph] = useState<GraphResponse | null>(null);
+  const [graphDetail, setGraphDetail] = useState<"symbols" | "files" | "packages">("symbols");
+  const [graphScope, setGraphScope] = useState("**");
+  const [scopeDraft, setScopeDraft] = useState("**");
+  const [repositoryError, setRepositoryError] = useState("");
+  const repositoryRequest = useRef(0);
+  const repositoryAbort = useRef<AbortController | null>(null);
+  useEffect(() => () => repositoryAbort.current?.abort(), []);
+  const currentProjectMap = useMemo(() => graphDetail === "packages" ? packageMap
+    : repositoryGraph ? projectCodeMap(repositoryGraph, graphDetail) as ProjectMap : null,
+    [graphDetail, packageMap, repositoryGraph]);
   const [architectureIssues, setArchitectureIssues] = useState<ArchitectureIssue[]>([]);
   const [architecturePartial, setArchitecturePartial] = useState(false);
   const [refactors, setRefactors] = useState<RefactorResponse | null>(null);
@@ -191,6 +240,19 @@ function App(): React.JSX.Element {
   const [inspector, setInspector] = useState<InspectorState>({ kind: "none", facts: [] });
   const [message, setMessage] = useState("Trace evidence, then compare futures.");
   const [announcement, setAnnouncement] = useState("");
+
+  useEffect(() => { setInspectorDismissed(false); }, [inspector]);
+  useEffect(() => {
+    const keyboard = (event: KeyboardEvent): void => {
+      const target = event.target as HTMLElement;
+      if (target.matches("input, textarea, select") || target.isContentEditable) return;
+      if (event.key === "/") { event.preventDefault(); setDiscoveryOpen(true); requestAnimationFrame(() => document.getElementById("search-input")?.focus()); }
+      if (event.key === "?") setHelpOpen(v => !v);
+      if (event.key === "Escape") { setHelpOpen(false); setInspectorDismissed(true); }
+    };
+    window.addEventListener("keydown", keyboard);
+    return () => window.removeEventListener("keydown", keyboard);
+  }, [inspector]);
 
   const snapshotRef = useRef<Snapshot | null>(null);
   const graphRef = useRef<GraphResponse | null>(null);
@@ -229,10 +291,28 @@ function App(): React.JSX.Element {
     await loadFocusedGraph(symbol, path);
   }, [loadFocusedGraph]);
 
+  const loadRepository = useCallback(async (): Promise<void> => {
+    const request = ++repositoryRequest.current;
+    setRepositoryError("");
+    repositoryAbort.current?.abort();
+    const controller = new AbortController(); repositoryAbort.current = controller;
+    try {
+      const url = new URL(`/api/repository-graph?scope=${encodeURIComponent(graphScope)}&node_limit=20000&edge_limit=120000&format=compact`, location.origin);
+      if (selectedProjectId) url.searchParams.set("project", selectedProjectId);
+      const value = await loadTopology(url.href, capability, controller.signal);
+      if (request === repositoryRequest.current) {
+        setRepositoryGraph(value);
+        setSelectedNodeId(selected => value.nodes.some(n => String(n.node_id) === String(selected)) ? selected : null);
+      }
+    } catch (error) {
+      if (request === repositoryRequest.current) setRepositoryError(errorMessage(error));
+    }
+  }, [graphScope]);
+
   const loadArchitecture = useCallback(async (): Promise<void> => {
     const value = await api<ArchitectureResponse>("/api/architecture?scope=**&package_depth=2&limit=300");
     setCurrentArchitecture(projectArchitecture(value) as GraphResponse);
-    setCurrentProjectMap(projectRepositoryMap(value) as ProjectMap);
+    setPackageMap(projectRepositoryMap(value) as ProjectMap);
     setArchitectureIssues(value.architecture_plan?.issues || []);
     setArchitecturePartial(Boolean(value.partial));
   }, []);
@@ -274,16 +354,23 @@ function App(): React.JSX.Element {
   }, []);
 
   const refreshSecondaryData = useCallback(async (): Promise<void> => {
-    await Promise.all([loadMissions(), loadRuntime(), loadArchitecture(), loadRefactors()]);
-  }, [loadArchitecture, loadMissions, loadRefactors, loadRuntime]);
+    await loadRepository();
+  }, [loadRepository]);
+  useEffect(() => { if (mode === "architecture" || graphDetail === "packages") void loadArchitecture(); }, [mode, graphDetail, snapshot, loadArchitecture]);
+  useEffect(() => { if (mode === "changes") void loadMissions(); }, [mode, snapshot, loadMissions]);
 
+  const statusInFlight = useRef(false);
   const loadStatus = useCallback(async (refreshOnChange = true): Promise<void> => {
+    // Cold projects can take longer than the polling interval to index.
+    // Keep one refresh in flight instead of queuing requests behind it.
+    if (statusInFlight.current) return;
+    statusInFlight.current = true;
     try {
       const value = await api<StatusResponse>("/api/status");
       const previousKey = snapshotKey(snapshotRef.current);
       const nextKey = snapshotKey(value.snapshot);
       const changed = Boolean(previousKey && previousKey !== nextKey);
-      setSnapshot(value.snapshot);
+      if (previousKey !== nextKey) setSnapshot(value.snapshot);
       snapshotRef.current = value.snapshot;
       setFreshness(changed ? "refreshing" : "live");
       if (changed && refreshOnChange) {
@@ -298,6 +385,8 @@ function App(): React.JSX.Element {
     } catch (error) {
       setFreshness("offline");
       setMessage(errorMessage(error));
+    } finally {
+      statusInFlight.current = false;
     }
   }, [loadFocusedGraph, refreshSecondaryData]);
 
@@ -351,12 +440,17 @@ function App(): React.JSX.Element {
     }
   };
 
-  const selectProjectNode = (node: ProjectLayoutNode): void => {
+  const selectProjectNode = (node: ProjectNode): void => {
+    if (node.kind === "symbol") {
+      void selectNode(node);
+      projectMapHandle.current?.focusNode(node.node_id);
+      return;
+    }
     setSelectedNodeId(node.node_id);
     setInspector({
-      kind: "package",
+      kind: node.kind === "file" ? "file" : "package",
       facts: [
-        ["Package", node.symbol],
+        [node.kind === "file" ? "File" : "Package", node.symbol],
         ["Community", node.community.replace("community:", "")],
         ["Files", node.files],
         ["Symbols", node.symbols],
@@ -369,7 +463,7 @@ function App(): React.JSX.Element {
     projectMapHandle.current?.focusNode(node.node_id);
   };
 
-  const selectNode = async (node: LayoutNode): Promise<void> => {
+  const selectNode = async (node: GraphNode): Promise<void> => {
     setSelectedNodeId(node.node_id);
     const facts: Array<[string, unknown]> = [
       ["Symbol", node.symbol],
@@ -393,13 +487,29 @@ function App(): React.JSX.Element {
       const snippet = await api<SnippetResponse>(
         `/api/snippet?symbol=${encodeURIComponent(node.symbol)}&path=${encodeURIComponent(node.path)}`
       );
-      setInspector({ kind: node.lane || "node", facts, code: snippet.source || snippet.declaration || "Source unavailable." });
+      setInspector(current => current.facts === facts ? { kind: node.lane || "node", facts, code: snippet.source || snippet.declaration || "Source unavailable." } : current);
     } catch (error) {
-      setInspector({ kind: node.lane || "node", facts, error: errorMessage(error) });
+      setInspector(current => current.facts === facts ? { kind: node.lane || "node", facts, error: errorMessage(error) } : current);
     }
   };
 
+  const evidenceRequest = useRef(0);
+  useEffect(() => { evidenceRequest.current++; }, [repositoryGraph, selectedNodeId]);
   const inspectEdge = (edge: GraphEdge, source: GraphNode, target: GraphNode): void => {
+    if (edge.evidence_ref) {
+      const selection = ++evidenceRequest.current;
+      const ref = edge.evidence_ref;
+      const params = new URLSearchParams({ ...ref, snapshot: JSON.stringify(repositoryGraph?.snapshot) });
+      setInspector({ kind: "edge", facts: [["Relationship", `${source.symbol} → ${target.symbol}`], ["Evidence", "Loading snapshot-bound evidence…"]] });
+      void api<{ evidence: GraphEdge["evidence"][] }>(`/api/edge-evidence?${params}`).then(value => {
+        if (selection === evidenceRequest.current) inspectEdge({ ...edge, evidence_ref: undefined, evidence: value.evidence[0] }, source, target);
+      }).catch((error: Error & { status?: number }) => {
+        if (selection !== evidenceRequest.current) return;
+        setInspector({ kind: "edge", facts: [], error: error.message });
+        if (error.status === 409) void loadRepository();
+      });
+      return;
+    }
     const evidence = typeof edge.evidence === "object" && edge.evidence ? edge.evidence : {};
     setInspector({
       kind: "edge",
@@ -407,8 +517,9 @@ function App(): React.JSX.Element {
         ["Relationship", `${source.symbol} → ${target.symbol}`],
         ["Kind", edge.relation],
         ["Confidence", edge.confidence],
+        ...(Number(edge.weight) > 1 ? [["Aggregated relationships", edge.weight] as [string, unknown]] : []),
         ["Resolver", "resolver" in evidence ? evidence.resolver : "indexed"],
-        ["Evidence site", "path" in evidence ? `${evidence.path}:${evidence.span?.start ?? "?"}` : "hypothetical"],
+        [Number(edge.weight) > 1 ? "Representative evidence site" : "Evidence site", "path" in evidence ? `${evidence.path}:${evidence.span?.start ?? "?"}` : "hypothetical"],
         ["Source hash", "source_hash" in evidence ? evidence.source_hash : "not applicable"],
         ...(edge.count ? [
           ["Observed calls", edge.count],
@@ -586,18 +697,24 @@ function App(): React.JSX.Element {
   return <>
     <a className="skip-link" href="#graph-canvas">Skip to graph</a>
     <header className="topbar">
-      <div className="brand" aria-label="CGRX Evidence Graph Explorer">
-        <span className="brand__mark" aria-hidden="true">CX</span>
-        <span><strong>CGRX</strong><small>Evidence Graph</small></span>
+      <div className="brand" aria-label="CGRX Evidence Graph Explorer"><strong>CGRX</strong><small title={selectedProject?.path}>{selectedProject?.name || "Code atlas"}</small></div>
+      <div className="atlas-stats" aria-label="Repository summary">
+        <span>{currentProjectMap?.nodes.length ?? "—"} {graphDetail}</span>
+        <span>{currentProjectMap?.edges.length ?? "—"} connections</span>
+        {currentProjectMap?.truncated && <span className="atlas-stat--partial">Showing part of {currentProjectMap.totals?.symbols} symbols / {currentProjectMap.totals?.relationships} links · narrow scope</span>}
+        {currentProjectMap?.partial && <span className="atlas-stat--partial">Partial coverage</span>}
       </div>
       <div className="snapshot" aria-live="polite">
         <span className={`badge badge--${freshness === "live" ? "live" : freshness === "connecting" ? "loading" : "stale"}`}>{freshness}</span>
-        <code>{snapshot ? `${snapshot.repo_revision.slice(0, 9)} · g${snapshot.graph_generation}` : "loading snapshot"}</code>
+        <code title={snapshot?.repo_revision}>{snapshot ? snapshot.repo_revision.slice(0, 9) : "loading snapshot"}</code>
       </div>
     </header>
 
-    <main className="workspace">
-      <aside className="rail" aria-label="Graph discovery">
+    <main className={`workspace atlas-workspace${mode === "project" ? " workspace--project" : ""}`}>
+      <WorkspaceDock mode={mode} modes={MODES} onMode={setMode} discoveryOpen={discoveryOpen} onDiscovery={() => setDiscoveryOpen(v => !v)} />
+      <aside id="discovery-panel" className="rail floating-panel" aria-label="Graph discovery" hidden={!discoveryOpen}>
+        <PanelHeading title="Explore repository" detail={selectedProject?.name || "Choose a project and follow its connections"} onClose={() => setDiscoveryOpen(false)} />
+        <ProjectPicker catalogue={projectCatalogue} selectedId={selectedProjectId} error={projectListError} onRefresh={() => { void api("/api/projects?refresh=1").then(loadProjects); }} />
         <form className="search" role="search" onSubmit={(event) => { void doSearch(event); }}>
           <label htmlFor="search-input">Find a symbol</label>
           <div className="search__row">
@@ -605,17 +722,25 @@ function App(): React.JSX.Element {
             <button type="submit" aria-label="Search">↵</button>
           </div>
         </form>
-        <RailSection title="Matches" count={String(searchTotal)}>
+        {mode === "project" && graphDetail !== "packages" && <form className="search" onSubmit={e => { e.preventDefault(); setGraphScope(scopeDraft.trim() || "**"); }}>
+          <label htmlFor="graph-scope">Graph scope · path glob</label><div className="search__row"><input id="graph-scope" value={scopeDraft} onChange={e => setScopeDraft(e.target.value)} placeholder="crates/cgrx-core/**"/><button type="submit" aria-label="Apply graph scope">↵</button></div>
+          <small className="quiet">{currentProjectMap?.truncated ? "View limited to 5,000 symbols / 30,000 links. Narrow scope to explore more." : "All indexed symbols in scope · calls and implementations"}</small>
+        </form>}
+        {mode === "project" && currentProjectMap && <RailSection title={graphDetail === "packages" ? "Packages" : graphDetail === "files" ? "Files" : "Symbols"} count={String(currentProjectMap.nodes.length)} defaultOpen>
+          {currentProjectMap.nodes.slice(0, 100).map(node => <ItemButton key={String(node.node_id)} title={node.symbol} subtitle={node.kind === "symbol" ? `${node.path}:${node.span?.start ?? "?"}` : `${node.symbols} symbols · ${node.degree} connections`} onClick={() => selectProjectNode(node)} />)}
+          {currentProjectMap.nodes.length > 100 && <p className="quiet">First 100 shown in list. All {currentProjectMap.nodes.length} nodes are on the map; use search or narrow scope.</p>}
+        </RailSection>}
+        <RailSection key={`matches-${searchTotal}-${searchError}`} title="Matches" count={String(searchTotal)} defaultOpen={searchTotal > 0 || Boolean(searchError)}>
           {searchError ? <p className="error">{searchError}</p> : searchResults.length
             ? searchResults.map((match) => <ItemButton key={`${match.path}:${match.span.start}:${match.symbol}`} title={match.symbol} subtitle={`${match.path}:${match.span.start}`} onClick={() => { void openFocusedGraph(match.symbol, match.path); }} />)
             : <p className="quiet">Search by intent or symbol.</p>}
         </RailSection>
-        <RailSection title="Runtime intelligence" count={runtimeRows.length ? `${runtimeRows.length}/${runtimeStatus?.insights?.total ?? runtimeRows.length}` : "0"}>
+        <RailSection revision={snapshotKey(snapshot)} onOpen={loadRuntime} title="Runtime intelligence" count={runtimeRows.length ? `${runtimeRows.length}/${runtimeStatus?.insights?.total ?? runtimeRows.length}` : "0"}>
           {runtimeError ? <p className="error">{runtimeError}</p> : runtimeRows.length
             ? runtimeRows.map((row) => <ItemButton key={`${row.path}:${row.symbol}`} title={row.symbol} subtitle={`priority ${row.refactor_priority} · ${row.observed_count} calls · ${row.next_action.replaceAll("_", " ")}`} onClick={() => { void openFocusedGraph(row.symbol, row.path); }} />)
             : <p className="quiet">Import a trace to rank hot paths, divergence and blast radius.</p>}
         </RailSection>
-        <RailSection title="Architecture futures" count={`${visibleIssues.length}${architectureIssues.length > visibleIssues.length ? `/${architectureIssues.length}` : ""}${architecturePartial ? " · partial" : ""}`} maxClass="architecture-future-list">
+        <RailSection revision={snapshotKey(snapshot)} onOpen={loadArchitecture} title="Architecture futures" count={`${visibleIssues.length}${architectureIssues.length > visibleIssues.length ? `/${architectureIssues.length}` : ""}${architecturePartial ? " · partial" : ""}`} maxClass="architecture-future-list">
           {visibleIssues.length ? visibleIssues.map((issue) => {
             const winner = issue.strategies.find((strategy) => strategy.recommended) || issue.strategies[0];
             const title = issue.kind === "PACKAGE_DEPENDENCY_CYCLE"
@@ -627,12 +752,12 @@ function App(): React.JSX.Element {
             return <ItemButton key={issue.issue_id} title={title} subtitle={`${winner?.policy?.replaceAll("_", " ") || "inspect"} · ${evidence}`} onClick={() => selectArchitectureIssue(issue)} />;
           }) : <p className="quiet">No cycle or high fan-in future is available in this scope.</p>}
         </RailSection>
-        <RailSection title="Change missions" count={changeMissions ? `${changeMissions.totals.missions}${changeMissions.partial ? " · partial" : ""}` : "0"} maxClass="mission-list">
+        <RailSection revision={snapshotKey(snapshot)} onOpen={loadMissions} title="Change missions" count={changeMissions ? `${changeMissions.totals.missions}${changeMissions.partial ? " · partial" : ""}` : "0"} maxClass="mission-list">
           {missionError ? <p className="error">{missionError}</p> : changeMissions?.missions.length
             ? changeMissions.missions.slice(0, 12).map((mission) => <ItemButton key={mission.mission_id} title={mission.title} subtitle={`group ${mission.parallel_group + 1} · ${mission.kind.replaceAll("_", " ")}${mission.blocked_by_gaps ? " · blocked" : ""}`} onClick={() => selectMission(mission)} />)
             : <p className="quiet">No source changes. The plan will appear as files change.</p>}
         </RailSection>
-        <RailSection title="Refactor paths" count={refactorSummary.count} grow>
+        <RailSection revision={snapshotKey(snapshot)} onOpen={loadRefactors} title="Refactor paths" count={refactorSummary.count} grow>
           {refactorError ? <p className="error">{refactorError}</p> : refactors?.candidates.length
             ? <>{refactors.candidates.map((candidate) => <ItemButton key={`${candidate.left.node_id}:${candidate.right.node_id}`} title={`${candidate.left.symbol} ↔ ${candidate.right.symbol}`} subtitle={`${candidate.language} · score ${candidate.similarity.total}`} onClick={() => selectCandidate(candidate)} />)}{refactorSummary.note && <p className="quiet bounded-note">{refactorSummary.note}</p>}</>
             : <p className="quiet">No candidate crossed the current threshold.</p>}
@@ -642,10 +767,15 @@ function App(): React.JSX.Element {
       <section className="stage" aria-labelledby="graph-title">
         <div className="stage__toolbar">
           <div><p className="eyebrow">{stageEyebrow}</p><h1 id="graph-title">{stageTitle}</h1></div>
-          <div className="mode-switch" role="group" aria-label="Graph mode">
-            {MODES.map((item) => <button key={item.id} type="button" className={mode === item.id ? "is-active" : ""} onClick={() => setMode(item.id)}>{item.label}</button>)}
-          </div>
-          <div className="evidence-switch" role="group" aria-label="Evidence layer">
+          {mode === "project" && <label className="detail-select">Detail<select aria-label="Graph detail" value={graphDetail} onChange={e => { setGraphDetail(e.target.value as typeof graphDetail); setSelectedNodeId(null); setInspector({ kind: "none", facts: [] }); }}>
+            <option value="symbols">Symbols</option><option value="files">Files</option><option value="packages">Packages</option>
+          </select></label>}
+          {mode === "project" && <div className="dimension-switch" role="group" aria-label="Graph dimensions">
+            <button type="button" aria-pressed={graphDimension === "2d"} onClick={() => setGraphDimension("2d")}>2D</button>
+            <button type="button" aria-pressed={graphDimension === "3d"} onClick={() => setGraphDimension("3d")}>3D</button>
+          </div>}
+          <button className="help-toggle" aria-label="Graph keyboard help" aria-expanded={helpOpen} onClick={() => setHelpOpen(v => !v)}>?</button>
+          {mode !== "project" && <><div className="evidence-switch" role="group" aria-label="Evidence layer">
             {EVIDENCE_MODES.map((item) => <button key={item.id} type="button" className={evidenceMode === item.id ? "is-active" : ""} onClick={() => selectEvidenceMode(item.id)}>{item.label}</button>)}
           </div>
           <label className="environment-filter" htmlFor="runtime-environment">Environment
@@ -653,7 +783,7 @@ function App(): React.JSX.Element {
               <option value="">All</option>
               {(runtimeStatus?.environments || []).map((environment) => <option key={environment} value={environment}>{environment}</option>)}
             </select>
-          </label>
+          </label></>}
           {mode !== "history" && mode !== "changes" && <div className="view-actions">
             <button type="button" onClick={() => zoom(1 / 1.2)} aria-label="Zoom out">−</button>
             <button type="button" onClick={resetView}>Reset</button>
@@ -661,6 +791,11 @@ function App(): React.JSX.Element {
           </div>}
         </div>
 
+        {helpOpen && <div className="keyboard-help floating-panel" role="region" aria-label="Graph help">
+          <PanelHeading title="Graph controls" onClose={() => setHelpOpen(false)} />
+          <p>Drag the canvas to move · Scroll to zoom</p><p>Click a node to inspect · Double-click to open code</p>
+          <p>2D: drag nodes to arrange · 3D: drag to orbit, right-drag to pan</p><p><kbd>/</kbd> Search · <kbd>Tab</kbd> Navigate · <kbd>Enter</kbd> Inspect · <kbd>Esc</kbd> Close · <kbd>?</kbd> Help</p>
+        </div>}
         {mode === "history" ? <GitHistoryPanel snapshot={snapshot} onInspect={setInspector} onError={setMessage} />
           : mode === "changes" ? <MissionDag projection={changeMissions} onSelect={selectMission} onCopy={() => changeMissions?.agent_handoff && void copy(serializeChangeMissionHandoff(changeMissions), "Change mission handoff copied")} />
             : <div
@@ -686,12 +821,13 @@ function App(): React.JSX.Element {
               }}
             >
               {mode === "project" && currentProjectMap
-                ? <ProjectMapCanvas ref={projectMapHandle} graph={currentProjectMap} selectedId={selectedNodeId} onNodeSelect={selectProjectNode} onNodeOpen={(node) => { const representative = node.representatives?.[0]; if (representative) void openFocusedGraph(representative.symbol, representative.path); }} onEdgeSelect={inspectEdge} />
+                ? <ProjectCanvasSwitch dimension={graphDimension} ref={projectMapHandle} graph={currentProjectMap} selectedId={selectedNodeId} onNodeSelect={selectProjectNode} onNodeOpen={(node) => { const representative = node.representatives?.[0]; if (representative) void openFocusedGraph(representative.symbol, representative.path); }} onEdgeSelect={inspectEdge} />
+                : mode === "project" ? <div className="graph-message"><strong>{repositoryError || `Project ${projectPhase}: loading repository relationships…`}</strong>{repositoryError && <button onClick={() => void loadRepository()}>Retry</button>}</div>
                 : mode === "compare" && currentGraph && selectedStrategy
                   ? <CompareGraph current={currentGraph} future={projectGraph(currentGraph, selectedStrategy) as GraphResponse} camera={camera} selectedNodeId={selectedNodeId} pins={pinnedPositions} onSelectNode={(node) => { void selectNode(node); }} onInspectEdge={inspectEdge} onNodeDrag={(event, node) => { dragRef.current = { key: String(node.node_id ?? node.id), x: event.clientX, y: event.clientY, origin: { x: node.x, y: node.y } }; }} />
                   : graphForStage
                     ? <SvgGraph graph={graphForStage} camera={camera} selectedNodeId={selectedNodeId} pins={pinnedPositions} onSelectNode={(node) => { void selectNode(node); }} onInspectEdge={inspectEdge} onNodeDrag={(event, node) => { dragRef.current = { key: String(node.node_id ?? node.id), x: event.clientX, y: event.clientY, origin: { x: node.x, y: node.y } }; }} />
-                    : <div className="graph-message"><strong>{message || (mode === "project" ? "Building repository map…" : mode === "architecture" ? "Loading architecture projection…" : "Select a symbol to inspect its neighborhood.")}</strong></div>}
+                    : <div className="graph-message"><strong>{message || (mode === "architecture" ? "Loading architecture projection…" : "Select a symbol to inspect its neighborhood.")}</strong></div>}
             </div>}
 
         {mode !== "history" && mode !== "changes" && <footer className="legend" aria-label="Evidence legend">
@@ -704,8 +840,8 @@ function App(): React.JSX.Element {
         </footer>}
       </section>
 
-      <aside className="inspector" aria-label="Evidence inspector">
-        <div className="section-title"><h2>Evidence</h2><span>{inspector.kind}</span></div>
+      <aside className="inspector floating-panel" aria-label="Evidence inspector" hidden={inspector.kind === "none" || inspectorDismissed}>
+        <PanelHeading title="Evidence" detail={inspector.kind} onClose={() => setInspectorDismissed(true)} />
         <Inspector inspector={inspector} onOpenRepresentative={(symbol, path) => { void openFocusedGraph(symbol, path); }} />
         {strategySet.length > 0 && selectedStrategy && <StrategyPanel strategies={strategySet} selected={selectedStrategy} onSelect={(strategy) => chooseStrategy(strategy)} onCopyAgent={copyAgent} onCopyMcp={copyMcp} />}
       </aside>
@@ -714,32 +850,42 @@ function App(): React.JSX.Element {
   </>;
 }
 
-function RailSection({ title, count, children, grow = false, maxClass }: { title: string; count: string; children: React.ReactNode; grow?: boolean; maxClass?: string }): React.JSX.Element {
-  return <section className={`rail__section${grow ? " rail__section--grow" : ""}`}>
-    <div className="section-title"><h2>{title}</h2><span>{count}</span></div>
+function RailSection({ title, count, children, maxClass, defaultOpen = false, onOpen, revision }: { title: string; count: string; children: React.ReactNode; grow?: boolean; maxClass?: string; defaultOpen?: boolean; onOpen?: () => Promise<void>; revision?: string }): React.JSX.Element {
+  const [open, setOpen] = useState(defaultOpen);
+  useEffect(() => { if (open) void onOpen?.(); }, [open, revision, onOpen]);
+  return <details className="rail__section" open={open} onToggle={e => setOpen(e.currentTarget.open)}>
+    <summary className="section-title"><h2>{title}</h2><span>{count}</span></summary>
     <div className="item-list" id={maxClass}>{children}</div>
-  </section>;
+  </details>;
 }
 
 function ItemButton({ title, subtitle, onClick }: { title: string; subtitle: string; onClick: () => void }): React.JSX.Element {
   return <button type="button" className="item" onClick={onClick}><strong>{title}</strong><small>{subtitle}</small></button>;
 }
 
+const ProjectCanvasSwitch = forwardRef<ProjectMapCanvasHandle, ProjectMapCanvasProps & { dimension: "2d" | "3d" }>(function ProjectCanvasSwitch({ dimension, ...props }, ref) {
+  return dimension === "2d" ? <ProjectCanvas {...props} ref={ref} /> : <ProjectMapCanvas {...props} ref={ref} />;
+});
+
 const ProjectMapCanvas = forwardRef<ProjectMapCanvasHandle, ProjectMapCanvasProps>(function ProjectMapCanvas(props, forwardedRef) {
+  const fallbackRef = useRef<ProjectMapCanvasHandle>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rendererRef = useRef<ProjectGraphRendererHandle | null>(null);
   const callbacksRef = useRef(props);
   const [size, setSize] = useState({ width: 980, height: 620 });
+  const [webglFailed, setWebglFailed] = useState(false);
   callbacksRef.current = props;
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
-    rendererRef.current = createProjectGraphRenderer(canvas, {
+    if (!canvas || webglFailed) return;
+    const lost = (event: Event): void => { event.preventDefault(); setWebglFailed(true); };
+    canvas.addEventListener("webglcontextlost", lost);
+    try { rendererRef.current = createProjectGraphRenderer(canvas, {
       onNodeSelect: (node) => callbacksRef.current.onNodeSelect(node),
       onNodeOpen: (node) => callbacksRef.current.onNodeOpen(node),
       onEdgeSelect: (edge, source, target) => callbacksRef.current.onEdgeSelect(edge, source, target)
-    });
+    }); } catch { canvas.removeEventListener("webglcontextlost", lost); setWebglFailed(true); return; }
     const observer = new ResizeObserver(() => {
       const parent = canvas.parentElement;
       if (parent) setSize({ width: Math.max(1, parent.clientWidth), height: Math.max(1, parent.clientHeight) });
@@ -747,21 +893,23 @@ const ProjectMapCanvas = forwardRef<ProjectMapCanvasHandle, ProjectMapCanvasProp
     if (canvas.parentElement) observer.observe(canvas.parentElement);
     return () => {
       observer.disconnect();
+      canvas.removeEventListener("webglcontextlost", lost);
       rendererRef.current?.dispose();
       rendererRef.current = null;
     };
-  }, []);
+  }, [webglFailed]);
 
-  const layout = useMemo(() => layoutProjectMap(props.graph, { width: size.width, height: size.height, pins: {} }) as ProjectLayout, [props.graph, size.height, size.width]);
-  useEffect(() => { rendererRef.current?.render(props.graph, layout, { selectedId: props.selectedId }); }, [layout, props.graph]);
+  const { layout, pending, error } = useProjectLayout(props.graph, size.width, size.height, !webglFailed);
+  useEffect(() => { rendererRef.current?.render(props.graph, layout || { width: size.width, height: size.height, nodes: [], communities: [] }, { selectedId: props.selectedId }); }, [layout, props.graph, size.width, size.height]);
   useEffect(() => { rendererRef.current?.setSelected(props.selectedId); }, [props.selectedId]);
   useImperativeHandle(forwardedRef, () => ({
-    zoom: (factor) => rendererRef.current?.zoom(factor),
-    resetView: () => rendererRef.current?.resetView(),
-    focusNode: (nodeId) => rendererRef.current?.focusNode(nodeId)
-  }), []);
+    zoom: (factor) => (webglFailed ? fallbackRef.current : rendererRef.current)?.zoom(factor),
+    resetView: () => (webglFailed ? fallbackRef.current : rendererRef.current)?.resetView(),
+    focusNode: (nodeId) => (webglFailed ? fallbackRef.current : rendererRef.current)?.focusNode(nodeId)
+  }), [webglFailed]);
 
-  return <canvas ref={canvasRef} className="project-three-canvas" aria-label="Three-dimensional repository dependency map" />;
+  if (webglFailed) return <ProjectCanvas {...props} ref={fallbackRef}/>;
+  return <><canvas ref={canvasRef} className="project-three-canvas" aria-label="Three-dimensional repository dependency map" aria-busy={pending} />{(pending || error) && <p className="layout-status" role="status">{error || "Arranging repository graph…"}</p>}<GraphNeighbors {...props} layout={layout}/></>;
 });
 
 function SvgGraph({ graph, camera, selectedNodeId, pins, onSelectNode, onInspectEdge, onNodeDrag }: {

@@ -1,0 +1,1315 @@
+{
+  "baseline": {
+    "all_passed": false,
+    "binary_sha256": "6359c51c275e7469f6b077e2c2dc6a8f72600311afc99dbb1894c3ffde7bb464",
+    "checks": 33,
+    "page_snapshot_ids": [],
+    "passed": 17,
+    "results": [
+      {
+        "case": "acronym_name",
+        "expected": [
+          "HTTPServer",
+          "HTTPServerFactory"
+        ],
+        "model_visible_bytes": 371,
+        "observed": [
+          "HTTPServer"
+        ],
+        "passed": false,
+        "profile": "full",
+        "reason": "search symbols or deterministic order differ"
+      },
+      {
+        "case": "body_conjunction",
+        "expected": [
+          "replenish"
+        ],
+        "model_visible_bytes": 267,
+        "observed": [],
+        "passed": false,
+        "profile": "full",
+        "reason": "search symbols or deterministic order differ"
+      },
+      {
+        "case": "body_requires_opt_in",
+        "expected": [],
+        "model_visible_bytes": 267,
+        "observed": [],
+        "passed": true,
+        "profile": "full"
+      },
+      {
+        "case": "legacy_literal_body",
+        "expected": [
+          "bodySingle"
+        ],
+        "model_visible_bytes": 374,
+        "observed": [
+          "bodySingle"
+        ],
+        "passed": true,
+        "profile": "full"
+      },
+      {
+        "case": "exact_name_precedence",
+        "expected": [
+          "HTTPServer",
+          "HTTPServerFactory",
+          "dispatch"
+        ],
+        "model_visible_bytes": 571,
+        "observed": [
+          "HTTPServer",
+          "HTTPServerFactory",
+          "dispatch"
+        ],
+        "passed": true,
+        "profile": "full"
+      },
+      {
+        "case": "conjunction_negative",
+        "expected": [],
+        "model_visible_bytes": 269,
+        "observed": [],
+        "passed": true,
+        "profile": "full"
+      },
+      {
+        "case": "unicode_name",
+        "expected": [
+          "ОбновитьКэш"
+        ],
+        "model_visible_bytes": 387,
+        "observed": [
+          "ОбновитьКэш"
+        ],
+        "passed": true,
+        "profile": "full"
+      },
+      {
+        "case": "language_filter",
+        "expected": [
+          "HTTPServer"
+        ],
+        "model_visible_bytes": 361,
+        "observed": [
+          "HTTPServer"
+        ],
+        "passed": true,
+        "profile": "full"
+      },
+      {
+        "case": "scope_filter",
+        "expected": [
+          "HTTPServer"
+        ],
+        "model_visible_bytes": 362,
+        "observed": [
+          "HTTPServer"
+        ],
+        "passed": true,
+        "profile": "full"
+      },
+      {
+        "case": "compact_fifty_rows",
+        "passed": false,
+        "profile": "full",
+        "reason": "compact rows omit search matches: 12/50"
+      },
+      {
+        "case": "page_0",
+        "passed": false,
+        "profile": "full",
+        "reason": "compact rows omit search matches: 12/20"
+      },
+      {
+        "case": "page_20",
+        "passed": false,
+        "profile": "full",
+        "reason": "compact rows omit search matches: 12/20"
+      },
+      {
+        "case": "page_40",
+        "passed": false,
+        "profile": "full",
+        "reason": "compact rows omit search matches: 12/20"
+      },
+      {
+        "case": "page_60",
+        "passed": false,
+        "profile": "full",
+        "reason": "compact rows omit search matches: 12/20"
+      },
+      {
+        "case": "acronym_repeat",
+        "expected": [
+          "HTTPServer",
+          "HTTPServerFactory"
+        ],
+        "model_visible_bytes": 371,
+        "observed": [
+          "HTTPServer"
+        ],
+        "passed": false,
+        "profile": "full",
+        "reason": "search symbols or deterministic order differ"
+      },
+      {
+        "case": "repeat_identity",
+        "passed": true,
+        "profile": "full"
+      },
+      {
+        "case": "acronym_name",
+        "expected": [
+          "HTTPServer",
+          "HTTPServerFactory"
+        ],
+        "model_visible_bytes": 371,
+        "observed": [
+          "HTTPServer"
+        ],
+        "passed": false,
+        "profile": "compact",
+        "reason": "search symbols or deterministic order differ"
+      },
+      {
+        "case": "body_conjunction",
+        "expected": [
+          "replenish"
+        ],
+        "model_visible_bytes": 267,
+        "observed": [],
+        "passed": false,
+        "profile": "compact",
+        "reason": "search symbols or deterministic order differ"
+      },
+      {
+        "case": "body_requires_opt_in",
+        "expected": [],
+        "model_visible_bytes": 267,
+        "observed": [],
+        "passed": true,
+        "profile": "compact"
+      },
+      {
+        "case": "legacy_literal_body",
+        "expected": [
+          "bodySingle"
+        ],
+        "model_visible_bytes": 374,
+        "observed": [
+          "bodySingle"
+        ],
+        "passed": true,
+        "profile": "compact"
+      },
+      {
+        "case": "exact_name_precedence",
+        "expected": [
+          "HTTPServer",
+          "HTTPServerFactory",
+          "dispatch"
+        ],
+        "model_visible_bytes": 571,
+        "observed": [
+          "HTTPServer",
+          "HTTPServerFactory",
+          "dispatch"
+        ],
+        "passed": true,
+        "profile": "compact"
+      },
+      {
+        "case": "conjunction_negative",
+        "expected": [],
+        "model_visible_bytes": 269,
+        "observed": [],
+        "passed": true,
+        "profile": "compact"
+      },
+      {
+        "case": "unicode_name",
+        "expected": [
+          "ОбновитьКэш"
+        ],
+        "model_visible_bytes": 387,
+        "observed": [
+          "ОбновитьКэш"
+        ],
+        "passed": true,
+        "profile": "compact"
+      },
+      {
+        "case": "language_filter",
+        "expected": [
+          "HTTPServer"
+        ],
+        "model_visible_bytes": 361,
+        "observed": [
+          "HTTPServer"
+        ],
+        "passed": true,
+        "profile": "compact"
+      },
+      {
+        "case": "scope_filter",
+        "expected": [
+          "HTTPServer"
+        ],
+        "model_visible_bytes": 362,
+        "observed": [
+          "HTTPServer"
+        ],
+        "passed": true,
+        "profile": "compact"
+      },
+      {
+        "case": "compact_fifty_rows",
+        "expected": [
+          "cursor_item_00",
+          "cursor_item_01",
+          "cursor_item_02",
+          "cursor_item_03",
+          "cursor_item_04",
+          "cursor_item_05",
+          "cursor_item_06",
+          "cursor_item_07",
+          "cursor_item_08",
+          "cursor_item_09",
+          "cursor_item_10",
+          "cursor_item_11",
+          "cursor_item_12",
+          "cursor_item_13",
+          "cursor_item_14",
+          "cursor_item_15",
+          "cursor_item_16",
+          "cursor_item_17",
+          "cursor_item_18",
+          "cursor_item_19",
+          "cursor_item_20",
+          "cursor_item_21",
+          "cursor_item_22",
+          "cursor_item_23",
+          "cursor_item_24",
+          "cursor_item_25",
+          "cursor_item_26",
+          "cursor_item_27",
+          "cursor_item_28",
+          "cursor_item_29",
+          "cursor_item_30",
+          "cursor_item_31",
+          "cursor_item_32",
+          "cursor_item_33",
+          "cursor_item_34",
+          "cursor_item_35",
+          "cursor_item_36",
+          "cursor_item_37",
+          "cursor_item_38",
+          "cursor_item_39",
+          "cursor_item_40",
+          "cursor_item_41",
+          "cursor_item_42",
+          "cursor_item_43",
+          "cursor_item_44",
+          "cursor_item_45",
+          "cursor_item_46",
+          "cursor_item_47",
+          "cursor_item_48",
+          "cursor_item_49"
+        ],
+        "model_visible_bytes": 1471,
+        "observed": [
+          "cursor_item_00",
+          "cursor_item_01",
+          "cursor_item_02",
+          "cursor_item_03",
+          "cursor_item_04",
+          "cursor_item_05",
+          "cursor_item_06",
+          "cursor_item_07",
+          "cursor_item_08",
+          "cursor_item_09",
+          "cursor_item_10",
+          "cursor_item_11"
+        ],
+        "passed": false,
+        "profile": "compact",
+        "reason": "search symbols or deterministic order differ"
+      },
+      {
+        "case": "page_0",
+        "expected": [
+          "cursor_item_00",
+          "cursor_item_01",
+          "cursor_item_02",
+          "cursor_item_03",
+          "cursor_item_04",
+          "cursor_item_05",
+          "cursor_item_06",
+          "cursor_item_07",
+          "cursor_item_08",
+          "cursor_item_09",
+          "cursor_item_10",
+          "cursor_item_11",
+          "cursor_item_12",
+          "cursor_item_13",
+          "cursor_item_14",
+          "cursor_item_15",
+          "cursor_item_16",
+          "cursor_item_17",
+          "cursor_item_18",
+          "cursor_item_19"
+        ],
+        "model_visible_bytes": 1471,
+        "observed": [
+          "cursor_item_00",
+          "cursor_item_01",
+          "cursor_item_02",
+          "cursor_item_03",
+          "cursor_item_04",
+          "cursor_item_05",
+          "cursor_item_06",
+          "cursor_item_07",
+          "cursor_item_08",
+          "cursor_item_09",
+          "cursor_item_10",
+          "cursor_item_11"
+        ],
+        "passed": false,
+        "profile": "compact",
+        "reason": "search symbols or deterministic order differ"
+      },
+      {
+        "case": "page_20",
+        "expected": [
+          "cursor_item_20",
+          "cursor_item_21",
+          "cursor_item_22",
+          "cursor_item_23",
+          "cursor_item_24",
+          "cursor_item_25",
+          "cursor_item_26",
+          "cursor_item_27",
+          "cursor_item_28",
+          "cursor_item_29",
+          "cursor_item_30",
+          "cursor_item_31",
+          "cursor_item_32",
+          "cursor_item_33",
+          "cursor_item_34",
+          "cursor_item_35",
+          "cursor_item_36",
+          "cursor_item_37",
+          "cursor_item_38",
+          "cursor_item_39"
+        ],
+        "model_visible_bytes": 1471,
+        "observed": [
+          "cursor_item_00",
+          "cursor_item_01",
+          "cursor_item_02",
+          "cursor_item_03",
+          "cursor_item_04",
+          "cursor_item_05",
+          "cursor_item_06",
+          "cursor_item_07",
+          "cursor_item_08",
+          "cursor_item_09",
+          "cursor_item_10",
+          "cursor_item_11"
+        ],
+        "passed": false,
+        "profile": "compact",
+        "reason": "search symbols or deterministic order differ"
+      },
+      {
+        "case": "page_40",
+        "expected": [
+          "cursor_item_40",
+          "cursor_item_41",
+          "cursor_item_42",
+          "cursor_item_43",
+          "cursor_item_44",
+          "cursor_item_45",
+          "cursor_item_46",
+          "cursor_item_47",
+          "cursor_item_48",
+          "cursor_item_49",
+          "cursor_item_50",
+          "cursor_item_51",
+          "cursor_item_52",
+          "cursor_item_53",
+          "cursor_item_54",
+          "cursor_item_55",
+          "cursor_item_56"
+        ],
+        "model_visible_bytes": 1471,
+        "observed": [
+          "cursor_item_00",
+          "cursor_item_01",
+          "cursor_item_02",
+          "cursor_item_03",
+          "cursor_item_04",
+          "cursor_item_05",
+          "cursor_item_06",
+          "cursor_item_07",
+          "cursor_item_08",
+          "cursor_item_09",
+          "cursor_item_10",
+          "cursor_item_11"
+        ],
+        "passed": false,
+        "profile": "compact",
+        "reason": "search symbols or deterministic order differ"
+      },
+      {
+        "case": "page_60",
+        "expected": [],
+        "model_visible_bytes": 1471,
+        "observed": [
+          "cursor_item_00",
+          "cursor_item_01",
+          "cursor_item_02",
+          "cursor_item_03",
+          "cursor_item_04",
+          "cursor_item_05",
+          "cursor_item_06",
+          "cursor_item_07",
+          "cursor_item_08",
+          "cursor_item_09",
+          "cursor_item_10",
+          "cursor_item_11"
+        ],
+        "passed": false,
+        "profile": "compact",
+        "reason": "search symbols or deterministic order differ"
+      },
+      {
+        "case": "acronym_repeat",
+        "expected": [
+          "HTTPServer",
+          "HTTPServerFactory"
+        ],
+        "model_visible_bytes": 371,
+        "observed": [
+          "HTTPServer"
+        ],
+        "passed": false,
+        "profile": "compact",
+        "reason": "search symbols or deterministic order differ"
+      },
+      {
+        "case": "repeat_identity",
+        "passed": true,
+        "profile": "compact"
+      },
+      {
+        "case": "snapshot_stability",
+        "passed": true
+      }
+    ],
+    "snapshot_tags": [
+      "c674c7a55172@9461001655955440"
+    ]
+  },
+  "candidate": {
+    "all_passed": true,
+    "binary_sha256": "2883bac46b61f4d82f0f367fc5ea8e830cf5c9a1fe7855bb37fc6254d2247159",
+    "checks": 33,
+    "page_snapshot_ids": [
+      "57a1b29203a535e3274bf6bd19ab3ff100a0b0bf75099d45200ad50a3e92a9eb"
+    ],
+    "passed": 33,
+    "results": [
+      {
+        "case": "acronym_name",
+        "expected": [
+          "HTTPServer",
+          "HTTPServerFactory"
+        ],
+        "model_visible_bytes": 685,
+        "observed": [
+          "HTTPServer",
+          "HTTPServerFactory"
+        ],
+        "passed": true,
+        "profile": "full"
+      },
+      {
+        "case": "body_conjunction",
+        "expected": [
+          "replenish"
+        ],
+        "model_visible_bytes": 563,
+        "observed": [
+          "replenish"
+        ],
+        "passed": true,
+        "profile": "full"
+      },
+      {
+        "case": "body_requires_opt_in",
+        "expected": [],
+        "model_visible_bytes": 445,
+        "observed": [],
+        "passed": true,
+        "profile": "full"
+      },
+      {
+        "case": "legacy_literal_body",
+        "expected": [
+          "bodySingle"
+        ],
+        "model_visible_bytes": 559,
+        "observed": [
+          "bodySingle"
+        ],
+        "passed": true,
+        "profile": "full"
+      },
+      {
+        "case": "exact_name_precedence",
+        "expected": [
+          "HTTPServer",
+          "HTTPServerFactory",
+          "dispatch"
+        ],
+        "model_visible_bytes": 774,
+        "observed": [
+          "HTTPServer",
+          "HTTPServerFactory",
+          "dispatch"
+        ],
+        "passed": true,
+        "profile": "full"
+      },
+      {
+        "case": "conjunction_negative",
+        "expected": [],
+        "model_visible_bytes": 447,
+        "observed": [],
+        "passed": true,
+        "profile": "full"
+      },
+      {
+        "case": "unicode_name",
+        "expected": [
+          "ОбновитьКэш"
+        ],
+        "model_visible_bytes": 581,
+        "observed": [
+          "ОбновитьКэш"
+        ],
+        "passed": true,
+        "profile": "full"
+      },
+      {
+        "case": "language_filter",
+        "expected": [
+          "HTTPServer"
+        ],
+        "model_visible_bytes": 548,
+        "observed": [
+          "HTTPServer"
+        ],
+        "passed": true,
+        "profile": "full"
+      },
+      {
+        "case": "scope_filter",
+        "expected": [
+          "HTTPServer"
+        ],
+        "model_visible_bytes": 556,
+        "observed": [
+          "HTTPServer"
+        ],
+        "passed": true,
+        "profile": "full"
+      },
+      {
+        "case": "compact_fifty_rows",
+        "expected": [
+          "cursor_item_00",
+          "cursor_item_01",
+          "cursor_item_02",
+          "cursor_item_03",
+          "cursor_item_04",
+          "cursor_item_05",
+          "cursor_item_06",
+          "cursor_item_07",
+          "cursor_item_08",
+          "cursor_item_09",
+          "cursor_item_10",
+          "cursor_item_11",
+          "cursor_item_12",
+          "cursor_item_13",
+          "cursor_item_14",
+          "cursor_item_15",
+          "cursor_item_16",
+          "cursor_item_17",
+          "cursor_item_18",
+          "cursor_item_19",
+          "cursor_item_20",
+          "cursor_item_21",
+          "cursor_item_22",
+          "cursor_item_23",
+          "cursor_item_24",
+          "cursor_item_25",
+          "cursor_item_26",
+          "cursor_item_27",
+          "cursor_item_28",
+          "cursor_item_29",
+          "cursor_item_30",
+          "cursor_item_31",
+          "cursor_item_32",
+          "cursor_item_33",
+          "cursor_item_34",
+          "cursor_item_35",
+          "cursor_item_36",
+          "cursor_item_37",
+          "cursor_item_38",
+          "cursor_item_39",
+          "cursor_item_40",
+          "cursor_item_41",
+          "cursor_item_42",
+          "cursor_item_43",
+          "cursor_item_44",
+          "cursor_item_45",
+          "cursor_item_46",
+          "cursor_item_47",
+          "cursor_item_48",
+          "cursor_item_49"
+        ],
+        "model_visible_bytes": 5916,
+        "observed": [
+          "cursor_item_00",
+          "cursor_item_01",
+          "cursor_item_02",
+          "cursor_item_03",
+          "cursor_item_04",
+          "cursor_item_05",
+          "cursor_item_06",
+          "cursor_item_07",
+          "cursor_item_08",
+          "cursor_item_09",
+          "cursor_item_10",
+          "cursor_item_11",
+          "cursor_item_12",
+          "cursor_item_13",
+          "cursor_item_14",
+          "cursor_item_15",
+          "cursor_item_16",
+          "cursor_item_17",
+          "cursor_item_18",
+          "cursor_item_19",
+          "cursor_item_20",
+          "cursor_item_21",
+          "cursor_item_22",
+          "cursor_item_23",
+          "cursor_item_24",
+          "cursor_item_25",
+          "cursor_item_26",
+          "cursor_item_27",
+          "cursor_item_28",
+          "cursor_item_29",
+          "cursor_item_30",
+          "cursor_item_31",
+          "cursor_item_32",
+          "cursor_item_33",
+          "cursor_item_34",
+          "cursor_item_35",
+          "cursor_item_36",
+          "cursor_item_37",
+          "cursor_item_38",
+          "cursor_item_39",
+          "cursor_item_40",
+          "cursor_item_41",
+          "cursor_item_42",
+          "cursor_item_43",
+          "cursor_item_44",
+          "cursor_item_45",
+          "cursor_item_46",
+          "cursor_item_47",
+          "cursor_item_48",
+          "cursor_item_49"
+        ],
+        "passed": true,
+        "profile": "full"
+      },
+      {
+        "case": "page_0",
+        "expected": [
+          "cursor_item_00",
+          "cursor_item_01",
+          "cursor_item_02",
+          "cursor_item_03",
+          "cursor_item_04",
+          "cursor_item_05",
+          "cursor_item_06",
+          "cursor_item_07",
+          "cursor_item_08",
+          "cursor_item_09",
+          "cursor_item_10",
+          "cursor_item_11",
+          "cursor_item_12",
+          "cursor_item_13",
+          "cursor_item_14",
+          "cursor_item_15",
+          "cursor_item_16",
+          "cursor_item_17",
+          "cursor_item_18",
+          "cursor_item_19"
+        ],
+        "model_visible_bytes": 2618,
+        "observed": [
+          "cursor_item_00",
+          "cursor_item_01",
+          "cursor_item_02",
+          "cursor_item_03",
+          "cursor_item_04",
+          "cursor_item_05",
+          "cursor_item_06",
+          "cursor_item_07",
+          "cursor_item_08",
+          "cursor_item_09",
+          "cursor_item_10",
+          "cursor_item_11",
+          "cursor_item_12",
+          "cursor_item_13",
+          "cursor_item_14",
+          "cursor_item_15",
+          "cursor_item_16",
+          "cursor_item_17",
+          "cursor_item_18",
+          "cursor_item_19"
+        ],
+        "passed": true,
+        "profile": "full"
+      },
+      {
+        "case": "page_20",
+        "expected": [
+          "cursor_item_20",
+          "cursor_item_21",
+          "cursor_item_22",
+          "cursor_item_23",
+          "cursor_item_24",
+          "cursor_item_25",
+          "cursor_item_26",
+          "cursor_item_27",
+          "cursor_item_28",
+          "cursor_item_29",
+          "cursor_item_30",
+          "cursor_item_31",
+          "cursor_item_32",
+          "cursor_item_33",
+          "cursor_item_34",
+          "cursor_item_35",
+          "cursor_item_36",
+          "cursor_item_37",
+          "cursor_item_38",
+          "cursor_item_39"
+        ],
+        "model_visible_bytes": 2661,
+        "observed": [
+          "cursor_item_20",
+          "cursor_item_21",
+          "cursor_item_22",
+          "cursor_item_23",
+          "cursor_item_24",
+          "cursor_item_25",
+          "cursor_item_26",
+          "cursor_item_27",
+          "cursor_item_28",
+          "cursor_item_29",
+          "cursor_item_30",
+          "cursor_item_31",
+          "cursor_item_32",
+          "cursor_item_33",
+          "cursor_item_34",
+          "cursor_item_35",
+          "cursor_item_36",
+          "cursor_item_37",
+          "cursor_item_38",
+          "cursor_item_39"
+        ],
+        "passed": true,
+        "profile": "full"
+      },
+      {
+        "case": "page_40",
+        "expected": [
+          "cursor_item_40",
+          "cursor_item_41",
+          "cursor_item_42",
+          "cursor_item_43",
+          "cursor_item_44",
+          "cursor_item_45",
+          "cursor_item_46",
+          "cursor_item_47",
+          "cursor_item_48",
+          "cursor_item_49",
+          "cursor_item_50",
+          "cursor_item_51",
+          "cursor_item_52",
+          "cursor_item_53",
+          "cursor_item_54",
+          "cursor_item_55",
+          "cursor_item_56"
+        ],
+        "model_visible_bytes": 2324,
+        "observed": [
+          "cursor_item_40",
+          "cursor_item_41",
+          "cursor_item_42",
+          "cursor_item_43",
+          "cursor_item_44",
+          "cursor_item_45",
+          "cursor_item_46",
+          "cursor_item_47",
+          "cursor_item_48",
+          "cursor_item_49",
+          "cursor_item_50",
+          "cursor_item_51",
+          "cursor_item_52",
+          "cursor_item_53",
+          "cursor_item_54",
+          "cursor_item_55",
+          "cursor_item_56"
+        ],
+        "passed": true,
+        "profile": "full"
+      },
+      {
+        "case": "page_60",
+        "expected": [],
+        "model_visible_bytes": 442,
+        "observed": [],
+        "passed": true,
+        "profile": "full"
+      },
+      {
+        "case": "acronym_repeat",
+        "expected": [
+          "HTTPServer",
+          "HTTPServerFactory"
+        ],
+        "model_visible_bytes": 685,
+        "observed": [
+          "HTTPServer",
+          "HTTPServerFactory"
+        ],
+        "passed": true,
+        "profile": "full"
+      },
+      {
+        "case": "repeat_identity",
+        "passed": true,
+        "profile": "full"
+      },
+      {
+        "case": "acronym_name",
+        "expected": [
+          "HTTPServer",
+          "HTTPServerFactory"
+        ],
+        "model_visible_bytes": 685,
+        "observed": [
+          "HTTPServer",
+          "HTTPServerFactory"
+        ],
+        "passed": true,
+        "profile": "compact"
+      },
+      {
+        "case": "body_conjunction",
+        "expected": [
+          "replenish"
+        ],
+        "model_visible_bytes": 563,
+        "observed": [
+          "replenish"
+        ],
+        "passed": true,
+        "profile": "compact"
+      },
+      {
+        "case": "body_requires_opt_in",
+        "expected": [],
+        "model_visible_bytes": 445,
+        "observed": [],
+        "passed": true,
+        "profile": "compact"
+      },
+      {
+        "case": "legacy_literal_body",
+        "expected": [
+          "bodySingle"
+        ],
+        "model_visible_bytes": 559,
+        "observed": [
+          "bodySingle"
+        ],
+        "passed": true,
+        "profile": "compact"
+      },
+      {
+        "case": "exact_name_precedence",
+        "expected": [
+          "HTTPServer",
+          "HTTPServerFactory",
+          "dispatch"
+        ],
+        "model_visible_bytes": 774,
+        "observed": [
+          "HTTPServer",
+          "HTTPServerFactory",
+          "dispatch"
+        ],
+        "passed": true,
+        "profile": "compact"
+      },
+      {
+        "case": "conjunction_negative",
+        "expected": [],
+        "model_visible_bytes": 447,
+        "observed": [],
+        "passed": true,
+        "profile": "compact"
+      },
+      {
+        "case": "unicode_name",
+        "expected": [
+          "ОбновитьКэш"
+        ],
+        "model_visible_bytes": 581,
+        "observed": [
+          "ОбновитьКэш"
+        ],
+        "passed": true,
+        "profile": "compact"
+      },
+      {
+        "case": "language_filter",
+        "expected": [
+          "HTTPServer"
+        ],
+        "model_visible_bytes": 548,
+        "observed": [
+          "HTTPServer"
+        ],
+        "passed": true,
+        "profile": "compact"
+      },
+      {
+        "case": "scope_filter",
+        "expected": [
+          "HTTPServer"
+        ],
+        "model_visible_bytes": 556,
+        "observed": [
+          "HTTPServer"
+        ],
+        "passed": true,
+        "profile": "compact"
+      },
+      {
+        "case": "compact_fifty_rows",
+        "expected": [
+          "cursor_item_00",
+          "cursor_item_01",
+          "cursor_item_02",
+          "cursor_item_03",
+          "cursor_item_04",
+          "cursor_item_05",
+          "cursor_item_06",
+          "cursor_item_07",
+          "cursor_item_08",
+          "cursor_item_09",
+          "cursor_item_10",
+          "cursor_item_11",
+          "cursor_item_12",
+          "cursor_item_13",
+          "cursor_item_14",
+          "cursor_item_15",
+          "cursor_item_16",
+          "cursor_item_17",
+          "cursor_item_18",
+          "cursor_item_19",
+          "cursor_item_20",
+          "cursor_item_21",
+          "cursor_item_22",
+          "cursor_item_23",
+          "cursor_item_24",
+          "cursor_item_25",
+          "cursor_item_26",
+          "cursor_item_27",
+          "cursor_item_28",
+          "cursor_item_29",
+          "cursor_item_30",
+          "cursor_item_31",
+          "cursor_item_32",
+          "cursor_item_33",
+          "cursor_item_34",
+          "cursor_item_35",
+          "cursor_item_36",
+          "cursor_item_37",
+          "cursor_item_38",
+          "cursor_item_39",
+          "cursor_item_40",
+          "cursor_item_41",
+          "cursor_item_42",
+          "cursor_item_43",
+          "cursor_item_44",
+          "cursor_item_45",
+          "cursor_item_46",
+          "cursor_item_47",
+          "cursor_item_48",
+          "cursor_item_49"
+        ],
+        "model_visible_bytes": 5916,
+        "observed": [
+          "cursor_item_00",
+          "cursor_item_01",
+          "cursor_item_02",
+          "cursor_item_03",
+          "cursor_item_04",
+          "cursor_item_05",
+          "cursor_item_06",
+          "cursor_item_07",
+          "cursor_item_08",
+          "cursor_item_09",
+          "cursor_item_10",
+          "cursor_item_11",
+          "cursor_item_12",
+          "cursor_item_13",
+          "cursor_item_14",
+          "cursor_item_15",
+          "cursor_item_16",
+          "cursor_item_17",
+          "cursor_item_18",
+          "cursor_item_19",
+          "cursor_item_20",
+          "cursor_item_21",
+          "cursor_item_22",
+          "cursor_item_23",
+          "cursor_item_24",
+          "cursor_item_25",
+          "cursor_item_26",
+          "cursor_item_27",
+          "cursor_item_28",
+          "cursor_item_29",
+          "cursor_item_30",
+          "cursor_item_31",
+          "cursor_item_32",
+          "cursor_item_33",
+          "cursor_item_34",
+          "cursor_item_35",
+          "cursor_item_36",
+          "cursor_item_37",
+          "cursor_item_38",
+          "cursor_item_39",
+          "cursor_item_40",
+          "cursor_item_41",
+          "cursor_item_42",
+          "cursor_item_43",
+          "cursor_item_44",
+          "cursor_item_45",
+          "cursor_item_46",
+          "cursor_item_47",
+          "cursor_item_48",
+          "cursor_item_49"
+        ],
+        "passed": true,
+        "profile": "compact"
+      },
+      {
+        "case": "page_0",
+        "expected": [
+          "cursor_item_00",
+          "cursor_item_01",
+          "cursor_item_02",
+          "cursor_item_03",
+          "cursor_item_04",
+          "cursor_item_05",
+          "cursor_item_06",
+          "cursor_item_07",
+          "cursor_item_08",
+          "cursor_item_09",
+          "cursor_item_10",
+          "cursor_item_11",
+          "cursor_item_12",
+          "cursor_item_13",
+          "cursor_item_14",
+          "cursor_item_15",
+          "cursor_item_16",
+          "cursor_item_17",
+          "cursor_item_18",
+          "cursor_item_19"
+        ],
+        "model_visible_bytes": 2618,
+        "observed": [
+          "cursor_item_00",
+          "cursor_item_01",
+          "cursor_item_02",
+          "cursor_item_03",
+          "cursor_item_04",
+          "cursor_item_05",
+          "cursor_item_06",
+          "cursor_item_07",
+          "cursor_item_08",
+          "cursor_item_09",
+          "cursor_item_10",
+          "cursor_item_11",
+          "cursor_item_12",
+          "cursor_item_13",
+          "cursor_item_14",
+          "cursor_item_15",
+          "cursor_item_16",
+          "cursor_item_17",
+          "cursor_item_18",
+          "cursor_item_19"
+        ],
+        "passed": true,
+        "profile": "compact"
+      },
+      {
+        "case": "page_20",
+        "expected": [
+          "cursor_item_20",
+          "cursor_item_21",
+          "cursor_item_22",
+          "cursor_item_23",
+          "cursor_item_24",
+          "cursor_item_25",
+          "cursor_item_26",
+          "cursor_item_27",
+          "cursor_item_28",
+          "cursor_item_29",
+          "cursor_item_30",
+          "cursor_item_31",
+          "cursor_item_32",
+          "cursor_item_33",
+          "cursor_item_34",
+          "cursor_item_35",
+          "cursor_item_36",
+          "cursor_item_37",
+          "cursor_item_38",
+          "cursor_item_39"
+        ],
+        "model_visible_bytes": 2661,
+        "observed": [
+          "cursor_item_20",
+          "cursor_item_21",
+          "cursor_item_22",
+          "cursor_item_23",
+          "cursor_item_24",
+          "cursor_item_25",
+          "cursor_item_26",
+          "cursor_item_27",
+          "cursor_item_28",
+          "cursor_item_29",
+          "cursor_item_30",
+          "cursor_item_31",
+          "cursor_item_32",
+          "cursor_item_33",
+          "cursor_item_34",
+          "cursor_item_35",
+          "cursor_item_36",
+          "cursor_item_37",
+          "cursor_item_38",
+          "cursor_item_39"
+        ],
+        "passed": true,
+        "profile": "compact"
+      },
+      {
+        "case": "page_40",
+        "expected": [
+          "cursor_item_40",
+          "cursor_item_41",
+          "cursor_item_42",
+          "cursor_item_43",
+          "cursor_item_44",
+          "cursor_item_45",
+          "cursor_item_46",
+          "cursor_item_47",
+          "cursor_item_48",
+          "cursor_item_49",
+          "cursor_item_50",
+          "cursor_item_51",
+          "cursor_item_52",
+          "cursor_item_53",
+          "cursor_item_54",
+          "cursor_item_55",
+          "cursor_item_56"
+        ],
+        "model_visible_bytes": 2324,
+        "observed": [
+          "cursor_item_40",
+          "cursor_item_41",
+          "cursor_item_42",
+          "cursor_item_43",
+          "cursor_item_44",
+          "cursor_item_45",
+          "cursor_item_46",
+          "cursor_item_47",
+          "cursor_item_48",
+          "cursor_item_49",
+          "cursor_item_50",
+          "cursor_item_51",
+          "cursor_item_52",
+          "cursor_item_53",
+          "cursor_item_54",
+          "cursor_item_55",
+          "cursor_item_56"
+        ],
+        "passed": true,
+        "profile": "compact"
+      },
+      {
+        "case": "page_60",
+        "expected": [],
+        "model_visible_bytes": 442,
+        "observed": [],
+        "passed": true,
+        "profile": "compact"
+      },
+      {
+        "case": "acronym_repeat",
+        "expected": [
+          "HTTPServer",
+          "HTTPServerFactory"
+        ],
+        "model_visible_bytes": 685,
+        "observed": [
+          "HTTPServer",
+          "HTTPServerFactory"
+        ],
+        "passed": true,
+        "profile": "compact"
+      },
+      {
+        "case": "repeat_identity",
+        "passed": true,
+        "profile": "compact"
+      },
+      {
+        "case": "snapshot_stability",
+        "passed": true
+      }
+    ],
+    "snapshot_tags": [
+      "c674c7a55172@9461001655955440"
+    ]
+  },
+  "fixture_revision": "c674c7a55172ca0fde60e2aff8d95cbfb17e5c93",
+  "fixture_sha256": "f16ec21c321ec85605bfdcc2dd304190241d6179ad34e75a8f56be44002a2750",
+  "method": "same synthetic source and public MCP queries",
+  "query_count": 15,
+  "schema_version": 1,
+  "scope": "search discovery and transport only"
+}

@@ -226,7 +226,23 @@ fn go_imported_heap_push_never_resolves_to_local_method_or_package() {
     .unwrap();
     let mut runtime = fixture.runtime();
     runtime.refresh(&fixture.root).unwrap();
-    assert_eq!(trace(&runtime, "Enqueue")["nodes"], result["nodes"]);
+    let updated = trace(&runtime, "Enqueue");
+    assert_ne!(
+        updated["nodes"][0]["symbol_ref"],
+        result["nodes"][0]["symbol_ref"]
+    );
+    assert_eq!(
+        nodes_without_snapshot_refs(&updated),
+        nodes_without_snapshot_refs(&result)
+    );
+}
+
+fn nodes_without_snapshot_refs(trace: &Value) -> Value {
+    let mut nodes = trace["nodes"].clone();
+    for node in nodes.as_array_mut().unwrap() {
+        node.as_object_mut().unwrap().remove("symbol_ref");
+    }
+    nodes
 }
 
 #[test]
@@ -467,8 +483,8 @@ fn go_own_module_import_survives_only_proven_unrelated_replacements() {
             .unwrap();
             assert!(runtime.refresh(&fixture.root).unwrap());
             assert_eq!(
-                trace(&runtime, "Login")["nodes"],
-                result["nodes"],
+                nodes_without_snapshot_refs(&trace(&runtime, "Login")),
+                nodes_without_snapshot_refs(&result),
                 "{label}: unrelated override restores proof"
             );
         }
@@ -576,7 +592,10 @@ fn go_implicit_import_package_clause_refresh_invalidates_unchanged_target_span()
     )
     .unwrap();
     assert!(runtime.refresh(&fixture.root).unwrap());
-    assert_eq!(trace(&runtime, "Login")["nodes"], before["nodes"]);
+    assert_eq!(
+        nodes_without_snapshot_refs(&trace(&runtime, "Login")),
+        nodes_without_snapshot_refs(&before)
+    );
     assert!(runtime.coverage().dynamic_dispatch.is_empty());
 }
 
