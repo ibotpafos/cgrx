@@ -1606,6 +1606,12 @@ fn internal_error(error: impl std::fmt::Display) -> JsonRpcError {
     JsonRpcError::typed(-32603, "cgrx.internal", error.to_string())
 }
 
+impl From<BackendError> for JsonRpcError {
+    fn from(error: BackendError) -> Self {
+        backend_error(error)
+    }
+}
+
 fn backend_error(error: BackendError) -> JsonRpcError {
     let rpc_code = match error.code.as_str() {
         "cgrx.handle_not_found" => -32004,

@@ -438,7 +438,7 @@ impl Router {
         if name == "find_examples" {
             validate_root(&root)?;
             let report = cgrx_cli::github_examples::find_examples(&root, json!(args))
-                .map_err(|e| error("cgrx.github_examples_failed", &format!("{e:?}")))?;
+                .map_err(JsonRpcError::from)?;
             return Ok(json!({"jsonrpc":"2.0","id":request.id,"result":{
                 "content":[{"type":"text","text":report.to_string()}],
                 "structuredContent":report
