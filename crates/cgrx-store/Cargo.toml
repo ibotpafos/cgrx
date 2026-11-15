@@ -15,7 +15,7 @@ serde.workspace = true
 serde_json.workspace = true
 memvid-core = { version = "=2.0.140", default-features = false, features = ["lex", "vec"] }
 # Shares Memvid's pinned ONNX Runtime; newer FastEmbed releases use a different ABI.
-fastembed = { version = "=5.2.0", default-features = false, features = ["ort-download-binaries", "hf-hub-rustls-tls"] }
+fastembed = { version = "=5.8.0", default-features = false, features = ["ort-download-binaries", "hf-hub-rustls-tls"] }
 
 [[test]]
 name = "crash_injection"
