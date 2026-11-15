@@ -45,7 +45,10 @@ fn openai_tool_contract() {
         );
         assert_eq!(
             tool["annotations"]["openWorldHint"],
-            tool["name"] == "prepare_candidate_patch"
+            matches!(
+                tool["name"].as_str(),
+                Some("find_examples" | "prepare_candidate_patch")
+            )
         );
         assert_eq!(tool["outputSchema"]["type"], "object");
     }

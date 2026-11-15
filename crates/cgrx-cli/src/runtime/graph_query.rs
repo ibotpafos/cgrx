@@ -456,6 +456,12 @@ impl super::Runtime {
                     "path":document.path,
                     "span":{"start":document.span_start,"end":document.span_end},
                     "matched_by":matched_by,
+                    "confidence": match matched_by {
+                        "symbol" => 0.95,
+                        "body" => 0.75,
+                        "fuzzy" => 0.55,
+                        _ => 0.0
+                    },
                     "callers":callers,
                     "callees":callees
                 })

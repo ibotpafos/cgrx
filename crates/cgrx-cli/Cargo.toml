@@ -24,6 +24,7 @@ cgrx-store.workspace = true
 cgrx-metrics.workspace = true
 blake3.workspace = true
 sha2 = "=0.10.9"
+sha1 = "=0.10.6"
 base64 = "=0.22.1"
 ast-grep-core = "=0.45.2"
 petgraph = { version = "=0.8.3", default-features = false, features = ["std"] }

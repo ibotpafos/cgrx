@@ -297,6 +297,15 @@ fn has_budget_exclusions(report: &cgrx_cli::OrientReport) -> bool {
 }
 
 impl ToolBackend for RuntimeMcpBackend {
+    fn find_examples(&mut self, arguments: Value) -> Result<Value, BackendError> {
+        let root = self.watch_root.as_ref().ok_or_else(|| {
+            BackendError::new(
+                "cgrx.github_examples_unavailable",
+                "managed local repository required",
+            )
+        })?;
+        cgrx_cli::github_examples::find_examples(root, arguments)
+    }
     fn ingest_runtime_evidence(
         &mut self,
         input_path: &str,

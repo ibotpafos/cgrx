@@ -53,6 +53,12 @@ struct MetricsLog {
 }
 
 pub trait ToolBackend: Send + Sync {
+    fn find_examples(&mut self, _arguments: Value) -> Result<Value, BackendError> {
+        Err(BackendError::new(
+            "cgrx.github_examples_unavailable",
+            "find_examples requires a configured GitHub MCP bridge",
+        ))
+    }
     fn quality_tool(&mut self, _operation: &str, _arguments: Value) -> Result<Value, BackendError> {
         Err(BackendError::new(
             "cgrx.quality_unavailable",
@@ -617,6 +623,18 @@ impl Server {
             self.snapshot = backend.snapshot().clone();
         }
         let structured = match call.name.as_str() {
+            "find_examples" => self
+                .backend
+                .as_mut()
+                .ok_or_else(|| {
+                    JsonRpcError::typed(
+                        -32602,
+                        "cgrx.github_examples_unavailable",
+                        "managed repository required",
+                    )
+                })?
+                .find_examples(call.arguments)
+                .map_err(backend_error)?,
             "scan_risks" => {
                 #[derive(Deserialize)]
                 #[serde(deny_unknown_fields)]
@@ -1586,6 +1604,12 @@ fn from_value<T: for<'de> Deserialize<'de>>(value: Value) -> Result<T, JsonRpcEr
 
 fn internal_error(error: impl std::fmt::Display) -> JsonRpcError {
     JsonRpcError::typed(-32603, "cgrx.internal", error.to_string())
+}
+
+impl From<BackendError> for JsonRpcError {
+    fn from(error: BackendError) -> Self {
+        backend_error(error)
+    }
 }
 
 fn backend_error(error: BackendError) -> JsonRpcError {

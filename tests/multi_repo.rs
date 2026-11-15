@@ -293,7 +293,7 @@ fn multi_repo_lazy_schema_and_notifications() {
     );
     let r = m.rpc("tools/list", json!({}));
     let ts = r["result"]["tools"].as_array().unwrap();
-    assert_eq!(ts.len(), 28);
+    assert_eq!(ts.len(), 29);
     for name in [
         "list_quality_candidates",
         "get_candidate_details",

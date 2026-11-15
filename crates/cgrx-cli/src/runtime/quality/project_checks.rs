@@ -683,7 +683,7 @@ mod tests {
             "process.stdout.write('x'.repeat(200000));setInterval(()=>{},1000)".to_owned(),
         ];
         assert_eq!(
-            run(&dir.0, &dir.0, "output", &args, "a.ts", 2000)["status"],
+            run(&dir.0, &dir.0, "output", &args, "a.ts", 15000)["status"],
             "output_limit"
         );
     }

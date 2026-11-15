@@ -17,7 +17,8 @@ use std::process::Command;
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-const TOOLS: [&str; 28] = [
+const TOOLS: [&str; 29] = [
+    "find_examples",
     "scan_risks",
     "check_change_gates",
     "check_repository_gates",
@@ -434,6 +435,15 @@ impl Router {
             .clock
             .checked_add(1)
             .ok_or_else(|| error("cgrx.repository_unavailable", "session counter exhausted"))?;
+        if name == "find_examples" {
+            validate_root(&root)?;
+            let report = cgrx_cli::github_examples::find_examples(&root, json!(args))
+                .map_err(JsonRpcError::from)?;
+            return Ok(json!({"jsonrpc":"2.0","id":request.id,"result":{
+                "content":[{"type":"text","text":report.to_string()}],
+                "structuredContent":report
+            }}));
+        }
         if !self.entries.contains_key(&root) {
             validate_root(&root)?;
             *cache = "miss";

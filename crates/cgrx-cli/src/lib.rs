@@ -2,6 +2,7 @@
 
 mod cargo_roots;
 pub mod file_watcher;
+pub mod github_examples;
 
 pub use file_watcher::{FileWatcher, FileWatcherEvent, NotifyWatcher};
 mod intent;

@@ -135,6 +135,7 @@ impl Toolset {
                 "explain_symbol",
             ],
             Self::Full => &[
+                "find_examples",
                 "status",
                 "memory_recall",
                 "search_graph",
@@ -290,7 +291,7 @@ mod tests {
         assert!(names.contains(&"ingest_runtime_evidence"));
         assert!(names.contains(&"find_similar"));
         assert!(names.contains(&"suggest_refactors"));
-        assert_eq!(names.len(), 29);
+        assert_eq!(names.len(), 30);
     }
 
     #[test]

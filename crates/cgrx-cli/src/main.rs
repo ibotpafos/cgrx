@@ -32,7 +32,7 @@ fn main() {
 fn run(args: Vec<String>) -> Result<(), String> {
     let Some(command) = args.first().map(String::as_str) else {
         return Err(
-            "expected init, index, observe, serve, visualize, search, orient, expand, status, check-gates, schema, skill, usage-report, or bench"
+            "expected init, index, observe, serve, visualize, search, examples, orient, expand, status, check-gates, schema, skill, usage-report, or bench"
                 .to_owned(),
         );
     };
@@ -46,6 +46,7 @@ fn run(args: Vec<String>) -> Result<(), String> {
         "init" => init(args.get(1).map(PathBuf::from))?,
         "index" => index(&args[1..])?,
         "observe" => observe(&args[1..])?,
+        "examples" => examples(&args[1..])?,
         "serve" => serve(&args[1..])?,
         "__memory-embed" if args.len() == 1 => {
             cgrx_store::serve_memory_model_worker().map_err(|_| "embedding worker failed")?;
@@ -77,6 +78,47 @@ fn run(args: Vec<String>) -> Result<(), String> {
         "bench" => bench(&args[1..])?,
         other => return Err(format!("unknown command {other}")),
     }
+    Ok(())
+}
+
+fn examples(args: &[String]) -> Result<(), String> {
+    validate_flags(
+        args,
+        &[
+            "--repo",
+            "--task",
+            "--query",
+            "--limit",
+            "--language",
+            "--budget",
+            "--json",
+        ],
+    )?;
+    if !args.iter().any(|arg| arg == "--json") {
+        return Err("examples requires --json".to_owned());
+    }
+    let root = Path::new(flag(args, "--repo")?);
+    let queries: Vec<_> = args
+        .windows(2)
+        .filter(|pair| pair[0] == "--query")
+        .map(|pair| pair[1].clone())
+        .collect();
+    let mut arguments = json!({"task":flag(args,"--task")?,"queries":queries});
+    for name in ["limit", "budget"] {
+        if let Some(value) = optional_flag(args, &format!("--{name}")) {
+            arguments[name] = json!(
+                value
+                    .parse::<u32>()
+                    .map_err(|_| format!("--{name} must be an integer"))?
+            );
+        }
+    }
+    if let Some(language) = optional_flag(args, "--language") {
+        arguments["language"] = json!(language);
+    }
+    let report = cgrx_cli::github_examples::find_examples(root, arguments)
+        .map_err(|error| format!("{error:?}"))?;
+    println!("{report}");
     Ok(())
 }
 

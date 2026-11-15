@@ -834,7 +834,7 @@ impl MemoryStore {
         if !dry_run && !removed_frames.is_empty() {
             drop(memory);
             self.edit_agent_copy(&retained_versions, |memory| {
-                for frame in removed_frames {
+                for &frame in &removed_frames {
                     memory.delete_frame(frame).map_err(memvid_backend_error)?;
                 }
                 Ok(())
@@ -1130,7 +1130,7 @@ impl MemoryStore {
         pending: Option<&PendingAgentWrite<'_>>,
         mut open: impl FnMut(&Path) -> memvid_core::Result<Memvid>,
     ) -> io::Result<bool> {
-        for attempt in 0..3 {
+        for attempt in 0..20 {
             let snapshot = self.copy_agent_memory()?;
             let outcome = (|| {
                 let mut memory = open(&snapshot.0).map_err(memvid_backend_error)?;
@@ -1166,7 +1166,7 @@ impl MemoryStore {
                     return Ok(true);
                 }
                 Err(error) => {
-                    if error.kind() != io::ErrorKind::WouldBlock || attempt == 2 {
+                    if error.kind() != io::ErrorKind::WouldBlock || attempt == 19 {
                         return Err(error);
                     }
                     std::thread::sleep(std::time::Duration::from_millis(10 * (attempt + 1)));
@@ -1256,15 +1256,29 @@ impl MemoryStore {
     fn edit_agent_copy(
         &self,
         expected: &[AgentMemoryRecord],
-        edit: impl FnOnce(&mut Memvid) -> io::Result<()>,
+        edit: impl FnMut(&mut Memvid) -> io::Result<()>,
     ) -> io::Result<Memvid> {
-        let snapshot = self.copy_agent_memory()?;
-        {
-            let mut memory = Memvid::open(&snapshot.0).map_err(memvid_backend_error)?;
-            memory.enable_lex().map_err(memvid_backend_error)?;
-            edit(&mut memory)?;
-            memory.commit().map_err(memvid_backend_error)?;
-        }
+        // Retry only disposable copies; the primary and logical mutation stay untouched.
+        let mut edit = edit;
+        let mut attempt = 0;
+        let snapshot = loop {
+            let snapshot = self.copy_agent_memory()?;
+            let result = (|| {
+                let mut memory = Memvid::open(&snapshot.0).map_err(memvid_backend_error)?;
+                memory.enable_lex().map_err(memvid_backend_error)?;
+                edit(&mut memory)?;
+                memory.commit().map_err(memvid_backend_error)
+            })();
+            match result {
+                Ok(()) => break snapshot,
+                Err(error) if error.kind() == io::ErrorKind::WouldBlock && attempt < 19 => {
+                    drop(snapshot);
+                    attempt += 1;
+                    std::thread::sleep(std::time::Duration::from_millis(10 * attempt));
+                }
+                Err(error) => return Err(error),
+            }
+        };
         // A successful close is insufficient: Drop ignores its own commit error.
         // Verify the committed copy through a read-only handle before publishing.
         if agent_journal_pending(&snapshot.0)? {
@@ -1396,9 +1410,9 @@ impl MemoryStore {
         let expected: Vec<_> = versions.into_iter().map(|(_, record)| record).collect();
         drop(memory);
         self.edit_agent_copy(&expected, |memory| {
-            for (frame, record) in missing {
-                append(memory, &record, Some(embed(&indexed_text(&record))?))?;
-                memory.delete_frame(frame).map_err(memvid_backend_error)?;
+            for (frame, record) in &missing {
+                append(memory, record, Some(embed(&indexed_text(record))?))?;
+                memory.delete_frame(*frame).map_err(memvid_backend_error)?;
             }
             Ok(())
         })
@@ -2675,6 +2689,37 @@ mod tests {
     }
 
     #[test]
+    fn disposable_edit_retries_busy_without_replaying_partial_deletion() {
+        let f = Fixture::new();
+        f.store
+            .agent_record(&f.input("Remove this assertion"), NOW)
+            .unwrap();
+        let _lock = acquire_writer_lock(&f.root).unwrap();
+        let original = fs::read(f.store.agent_path()).unwrap();
+        let mut calls = 0;
+        let mut memory = f
+            .store
+            .edit_agent_copy(&[], |memory| {
+                assert_eq!(fs::read(f.store.agent_path()).unwrap(), original);
+                let versions = read_versions(memory)?;
+                assert_eq!(versions.len(), 1);
+                memory
+                    .delete_frame(versions[0].0)
+                    .map_err(memvid_backend_error)?;
+                calls += 1;
+                if calls <= 3 {
+                    return Err(memvid_backend_error(MemvidError::Tantivy {
+                        reason: "Failed to acquire Lockfile: LockBusy. test".to_owned(),
+                    }));
+                }
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(calls, 4);
+        assert!(read_versions(&mut memory).unwrap().is_empty());
+    }
+
+    #[test]
     fn failed_backfill_and_invalid_copy_preserve_original_bytes_and_allow_retry() {
         let f = Fixture::new();
         for fact in ["First committed assertion", "Second committed assertion"] {
@@ -3453,6 +3498,33 @@ mod tests {
     }
 
     #[test]
+    fn journal_recovery_waits_past_brief_tantivy_contention() {
+        let f = Fixture::new();
+        let first = f
+            .store
+            .agent_record(&f.input("Preserved original"), NOW)
+            .unwrap()
+            .record;
+        let _lock = acquire_writer_lock(&f.root).unwrap();
+        let mut attempts = 0;
+        assert!(
+            f.store
+                .recover_agent_journal(Some(&PendingAgentWrite::Record(&first)), |path| {
+                    attempts += 1;
+                    if attempts <= 3 {
+                        Err(MemvidError::Tantivy {
+                            reason: "Failed to acquire Lockfile: LockBusy. test".to_owned(),
+                        })
+                    } else {
+                        Memvid::open(path)
+                    }
+                })
+                .unwrap()
+        );
+        assert_eq!(attempts, 4);
+    }
+
+    #[test]
     fn commit_recovery_never_claims_a_different_record_or_hides_corruption() {
         let f = Fixture::new();
         let first = f
@@ -3532,7 +3604,7 @@ mod tests {
                 })
                 .unwrap_err();
             assert_eq!(error.kind(), io::ErrorKind::WouldBlock);
-            assert_eq!(attempts, 3, "recovery attempts must be bounded");
+            assert_eq!(attempts, 20, "recovery attempts must be bounded");
             assert_eq!(fs::read(f.store.agent_path()).unwrap(), original_bytes);
             assert!(
                 !fs::read_dir(f.root.join(".cgrx/memory"))

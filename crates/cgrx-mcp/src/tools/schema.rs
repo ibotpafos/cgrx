@@ -42,6 +42,7 @@ pub(super) fn model_visible_schema() -> Value {
         }
     }});
     let mut tools = json!([
+            {"name":"find_examples","inputSchema":{"type":"object","additionalProperties":false,"required":["task","queries"],"properties":{"task":{"type":"string","minLength":1,"maxLength":4000},"queries":{"type":"array","minItems":1,"maxItems":3,"items":{"type":"string","minLength":1,"maxLength":512}},"limit":{"type":"integer","minimum":3,"maximum":5,"default":4},"language":{"type":"string"},"budget":{"type":"integer","minimum":2000,"maximum":12000,"default":6000}}}},
             {"name":"scan_risks","inputSchema":{"type":"object","additionalProperties":false,"properties":{"mode":{"enum":["changes"],"default":"changes"},"limit":{"type":"integer","minimum":1,"maximum":50,"default":20},"runs":test_runs.clone()}}},
             {"name":"check_change_gates","inputSchema":{"type":"object","properties":{"limit":{"type":"integer","minimum":1,"maximum":50},"fail_on":{"enum":["error","warning","none"],"default":"error"},"max_warning_findings":{"type":"integer","minimum":0,"maximum":10000,"default":0},"max_blocked_missions":{"type":"integer","minimum":0,"maximum":10000,"default":0},"max_coverage_gaps":{"type":"integer","minimum":0,"maximum":10000,"default":0},"max_unverified_impacts":{"type":"integer","minimum":0,"maximum":10000,"default":0},"runs":test_runs}}},
             {"name":"check_repository_gates","description":"Snapshot-bound architecture gate over package cycles, graph coupling, unresolved local dependencies and coverage; no LLM executed.","inputSchema":{"type":"object","properties":{"scope":path_or_scope.clone(),"package_depth":{"type":"integer","minimum":1,"maximum":4,"default":2},"fail_on":{"enum":["error","warning","none"],"default":"error"},"max_package_cycles":{"type":"integer","minimum":0,"maximum":1000000,"default":0},"max_package_fan_out":{"type":"integer","minimum":0,"maximum":1000000,"default":20},"max_symbol_fan_in":{"type":"integer","minimum":0,"maximum":1000000,"default":50},"max_unresolved_local_dependencies":{"type":"integer","minimum":0,"maximum":1000000,"default":0},"max_coverage_gaps":{"type":"integer","minimum":0,"maximum":1000000,"default":0}}}},
@@ -114,7 +115,7 @@ pub(super) fn model_visible_schema() -> Value {
         }
         let name = tool["name"].as_str().expect("tool name is static");
         let destructive = matches!(name, "memory_forget" | "prepare_candidate_patch");
-        let open_world = name == "prepare_candidate_patch";
+        let open_world = matches!(name, "find_examples" | "prepare_candidate_patch");
         let (title, description) = tool_metadata(name)
             .unwrap_or_else(|| panic!("missing OpenAI metadata for tool {name}"));
         tool["title"] = json!(title);
@@ -137,6 +138,10 @@ pub(super) fn model_visible_schema() -> Value {
 
 fn tool_metadata(name: &str) -> Option<(&'static str, &'static str)> {
     Some(match name {
+        "find_examples" => (
+            "Find public GitHub examples",
+            "Search an explicitly configured GitHub bridge for bounded public code examples; no repository source is uploaded.",
+        ),
         "scan_risks" => (
             "Scan change risks",
             "Risks from a Git commit to the current working tree, including committed and uncommitted changes. base defaults to HEAD. Exact current revision/symbol/hash needed to verify tests.",
