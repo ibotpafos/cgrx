@@ -11,6 +11,9 @@ cgrx-core = { path = "../cgrx-core" }
 cgrx-languages = { path = "../cgrx-languages" }
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.143"
+memvid-core = { version = "=2.0.140", default-features = false, features = ["lex", "vec"] }
+# Shares Memvid's pinned ONNX Runtime; newer FastEmbed releases use a different ABI.
+fastembed = { version = "=5.2.0", default-features = false, features = ["ort-download-binaries", "hf-hub-rustls-tls"] }
 
 [[test]]
 name = "crash_injection"

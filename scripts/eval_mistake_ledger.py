@@ -42,7 +42,7 @@ def trace_callees(binary, repo, caller, path):
                                   "direction": "callees", "depth": 1, "limit": 50}}},
     ]
     result = subprocess.run(
-        [str(binary), "serve", "--multi-repo"],
+        [str(binary), "serve", "--multi-repo", "--response-profile", "full"],
         input="".join(json.dumps(frame, separators=(",", ":")) + "\n" for frame in frames),
         text=True, capture_output=True, timeout=120,
     )

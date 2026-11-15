@@ -34,7 +34,7 @@ fn main() {
 fn run(args: Vec<String>) -> Result<(), String> {
     let Some(command) = args.first().map(String::as_str) else {
         return Err(
-            "expected init, index, observe, serve, visualize, orient, expand, status, check-gates, schema, skill, usage-report, or bench"
+            "expected init, index, observe, serve, visualize, orient, examples, expand, status, check-gates, schema, skill, usage-report, or bench"
                 .to_owned(),
         );
     };
@@ -50,6 +50,7 @@ fn run(args: Vec<String>) -> Result<(), String> {
         "observe" => observe(&args[1..])?,
         "serve" => serve(&args[1..])?,
         "visualize" => visualize::run(&args[1..])?,
+        "examples" => examples(&args[1..])?,
         "orient" => {
             if let Some(state) = optional_flag(&args[1..], "--state") {
                 runtime_orient(Path::new(state), &args[1..])?;
@@ -75,6 +76,47 @@ fn run(args: Vec<String>) -> Result<(), String> {
         "bench" => bench(&args[1..])?,
         other => return Err(format!("unknown command {other}")),
     }
+    Ok(())
+}
+
+fn examples(args: &[String]) -> Result<(), String> {
+    validate_flags(
+        args,
+        &[
+            "--repo",
+            "--task",
+            "--query",
+            "--limit",
+            "--language",
+            "--budget",
+            "--json",
+        ],
+    )?;
+    if !args.iter().any(|arg| arg == "--json") {
+        return Err("examples requires --json".to_owned());
+    }
+    let root = Path::new(flag(args, "--repo")?);
+    let queries: Vec<_> = args
+        .windows(2)
+        .filter(|pair| pair[0] == "--query")
+        .map(|pair| pair[1].clone())
+        .collect();
+    let mut arguments = json!({"task":flag(args,"--task")?,"queries":queries});
+    for name in ["limit", "budget"] {
+        if let Some(value) = optional_flag(args, &format!("--{name}")) {
+            arguments[name] = json!(
+                value
+                    .parse::<u32>()
+                    .map_err(|_| format!("--{name} must be an integer"))?
+            );
+        }
+    }
+    if let Some(language) = optional_flag(args, "--language") {
+        arguments["language"] = json!(language);
+    }
+    let report = cgrx_cli::github_examples::find_examples(root, arguments)
+        .map_err(|error| format!("{}: {}", error.code(), error.detail()))?;
+    println!("{report}");
     Ok(())
 }
 
@@ -906,6 +948,7 @@ fn open_managed_runtime_with_scip(
 }
 
 struct RuntimeMcpBackend {
+    _quality_worker: Option<cgrx_cli::QualityWorker>,
     risk_baseline: Option<cgrx_cli::RiskBaseline>,
     runtime: Runtime,
     watch_root: Option<PathBuf>,
@@ -928,7 +971,11 @@ struct ExpansionState {
 
 impl RuntimeMcpBackend {
     fn new(runtime: Runtime, watch_root: Option<PathBuf>) -> Self {
+        let quality_worker = watch_root
+            .as_ref()
+            .map(|root| runtime.start_quality_worker(root, None));
         Self {
+            _quality_worker: quality_worker,
             runtime,
             watch_root,
             managed_state: None,
@@ -951,7 +998,9 @@ impl RuntimeMcpBackend {
         state: PathBuf,
         scip_index: Option<PathBuf>,
     ) -> Self {
+        let quality_worker = runtime.start_quality_worker(&root, scip_index.clone());
         Self {
+            _quality_worker: Some(quality_worker),
             runtime,
             watch_root: Some(root),
             managed_state: Some(state),
@@ -965,6 +1014,15 @@ impl RuntimeMcpBackend {
     }
 
     fn refresh(&mut self) -> Result<(), BackendError> {
+        let _quality_graph_guard = if self.watch_root.is_some() {
+            Some(
+                self.runtime
+                    .quality_graph_guard()
+                    .map_err(|e| BackendError::new(e.code(), e.to_string()))?,
+            )
+        } else {
+            None
+        };
         let Some(root) = &self.watch_root else {
             return Ok(());
         };
@@ -1061,6 +1119,16 @@ fn has_budget_exclusions(report: &cgrx_cli::OrientReport) -> bool {
 }
 
 impl ToolBackend for RuntimeMcpBackend {
+    fn find_examples(&mut self, arguments: Value) -> Result<Value, BackendError> {
+        let root = self.watch_root.as_ref().ok_or_else(|| {
+            BackendError::new(
+                "cgrx.github_examples_unavailable",
+                "find_examples requires a managed local repository",
+            )
+        })?;
+        cgrx_cli::github_examples::find_examples(root, arguments)
+    }
+
     fn ingest_runtime_evidence(
         &mut self,
         input_path: &str,
@@ -1394,6 +1462,16 @@ impl ToolBackend for RuntimeMcpBackend {
             .map_err(|error| BackendError::new(error.code(), error.to_string()))
     }
 
+    fn quality_tool(&mut self, operation: &str, arguments: Value) -> Result<Value, BackendError> {
+        self.refresh()?;
+        let root = self.watch_root.as_ref().ok_or_else(|| {
+            BackendError::new("cgrx.quality_unavailable", "managed repository required")
+        })?;
+        self.runtime
+            .quality_tool(root, operation, arguments)
+            .map_err(|e| BackendError::new(e.code(), e.to_string()))
+    }
+
     fn suggest_refactors(
         &mut self,
         scope: Value,
@@ -1432,8 +1510,7 @@ impl ToolBackend for RuntimeMcpBackend {
         limit: u32,
     ) -> Result<Value, BackendError> {
         self.refresh()?;
-        let scope = serde_json::from_value(scope)
-            .map_err(|e| BackendError::new("cgrx.invalid_scope", e.to_string()))?;
+        let scope = graph_scope(&scope)?;
         self.runtime
             .explain_symbol(symbol, path, &scope, depth, limit as usize)
             .map_err(|error| BackendError::new(error.code(), error.to_string()))
@@ -1446,8 +1523,7 @@ impl ToolBackend for RuntimeMcpBackend {
         limit: u32,
     ) -> Result<Value, BackendError> {
         self.refresh()?;
-        let scope = serde_json::from_value(scope)
-            .map_err(|e| BackendError::new("cgrx.invalid_scope", e.to_string()))?;
+        let scope = graph_scope(&scope)?;
         self.runtime
             .detect_dead_code(&scope, language, limit as usize)
             .map_err(|error| BackendError::new(error.code(), error.to_string()))

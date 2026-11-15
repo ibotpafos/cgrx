@@ -12,6 +12,7 @@ mod index_helpers;
 mod observations;
 mod orient_helpers;
 mod php_resolution;
+pub mod quality;
 mod refactors;
 mod risks;
 mod scan_helpers;
@@ -289,6 +290,8 @@ struct StoredTsFileFacts {
 }
 
 pub struct Runtime {
+    quality_cancel: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
+    quality_deadline: Option<std::time::Instant>,
     state_root: PathBuf,
     stored: StoredIndex,
     similarity_background: refactors::SimilarityBackground,
@@ -769,7 +772,11 @@ impl Runtime {
         if let Ok(mut cache) = self.architecture_cache.write() {
             cache.clear();
         }
-        self.schedule_similarity_index_rebuild();
+        // Quality producers use their own bounded pair scan; do not duplicate the
+        // interactive runtime's larger similarity background job on every poll.
+        if self.quality_cancel.is_none() {
+            self.schedule_similarity_index_rebuild();
+        }
         Ok(self.stored.snapshot != previous_snapshot)
     }
 
@@ -839,6 +846,8 @@ impl Runtime {
             stored.similarity_index.clone(),
         );
         Ok(Self {
+            quality_cancel: None,
+            quality_deadline: None,
             state_root: state.to_path_buf(),
             base_snapshot: stored.snapshot.clone(),
             base_path_hashes: stored.path_hashes.clone(),

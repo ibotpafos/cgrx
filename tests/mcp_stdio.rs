@@ -149,7 +149,7 @@ fn unknown_handle_is_typed_error_not_empty_context() {
 }
 
 #[test]
-fn token_efficient_profile_does_not_duplicate_full_orient_report() {
+fn token_efficient_profile_returns_compact_structured_content() {
     let mut server = Server::new(snapshot()).with_response_profile(ResponseProfile::TokenEfficient);
     let response = dispatch(
         &mut server,
@@ -173,7 +173,7 @@ fn token_efficient_profile_does_not_duplicate_full_orient_report() {
             .expect("compact text"),
     )
     .expect("compact JSON");
-    assert!(response["result"].get("structuredContent").is_none());
+    assert_eq!(response["result"]["structuredContent"], visible);
     assert_eq!(visible["budget"], 600);
     assert!(visible.get("rcc").is_none());
     assert!(visible.get("qbec").is_none());

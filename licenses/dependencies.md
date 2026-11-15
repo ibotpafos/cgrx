@@ -37,6 +37,7 @@ Versions and declared licenses from Cargo.lock / Cargo metadata.
 | serde_derive-1.0.229 | MIT OR Apache-2.0 | https://github.com/serde-rs/serde |
 | serde_json-1.0.151 | MIT OR Apache-2.0 | https://github.com/serde-rs/json |
 | serde_spanned-0.6.9 | MIT OR Apache-2.0 | https://github.com/toml-rs/toml |
+| sha1-0.10.6 | MIT OR Apache-2.0 | https://github.com/RustCrypto/hashes |
 | shlex-2.0.1 | MIT OR Apache-2.0 | https://github.com/comex/rust-shlex |
 | streaming-iterator-0.1.9 | MIT OR Apache-2.0 | https://github.com/sfackler/streaming-iterator |
 | syn-3.0.4 | MIT OR Apache-2.0 | https://github.com/dtolnay/syn |
@@ -53,3 +54,7 @@ Versions and declared licenses from Cargo.lock / Cargo metadata.
 | unicode-ident-1.0.24 | (MIT OR Apache-2.0) AND Unicode-3.0 | https://github.com/dtolnay/unicode-ident |
 | winnow-0.7.15 | MIT | https://github.com/winnow-rs/winnow |
 | zmij-1.0.23 | MIT | https://github.com/dtolnay/zmij |
+
+| ast-grep-core-0.39.6 | MIT | https://github.com/ast-grep/ast-grep |
+
+| similar-2.7.0 | Apache-2.0 | https://github.com/mitsuhiko/similar |

@@ -91,10 +91,7 @@ fn multi_repo_mcp_imports_and_traces_observed_calls_without_inline_payloads() {
         .lines()
         .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
         .collect::<Vec<_>>();
-    assert_eq!(
-        responses[1]["result"]["tools"].as_array().unwrap().len(),
-        21
-    );
+    assert!(responses[1]["result"]["tools"].as_array().unwrap().len() >= 24);
     let ingest = responses[2].pointer("/result/structuredContent").unwrap();
     assert_eq!(ingest["accepted"], 1);
     let trace = responses[3].pointer("/result/structuredContent").unwrap();

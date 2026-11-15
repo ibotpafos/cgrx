@@ -59,7 +59,17 @@ struct Mcp {
 }
 impl Mcp {
     fn new(cwd: &Path, cap: &str, log: &Path) -> Self {
-        let mut child = Command::new(env!("CARGO_BIN_EXE_cgrx"))
+        Self::with_embeddings(cwd, cap, log, "off", None)
+    }
+    fn with_embeddings(
+        cwd: &Path,
+        cap: &str,
+        log: &Path,
+        mode: &str,
+        cache: Option<&Path>,
+    ) -> Self {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_cgrx"));
+        command
             .args([
                 "serve",
                 "--multi-repo",
@@ -72,11 +82,14 @@ impl Mcp {
             .env("CGRX_USAGE_LOG", log)
             .env("CGRX_CLIENT", "test")
             .env("CGRX_USAGE_SESSION", "test-session")
+            .env("CGRX_MEMORY_EMBEDDINGS", mode)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()
-            .unwrap();
+            .stderr(Stdio::null());
+        if let Some(cache) = cache {
+            command.env("CGRX_MEMORY_MODEL_CACHE", cache);
+        }
+        let mut child = command.spawn().unwrap();
         let input = child.stdin.take().unwrap();
         let output = BufReader::new(child.stdout.take().unwrap());
         Self {
@@ -127,6 +140,27 @@ fn error(v: &Value, code: &str) {
     assert_eq!(v["error"]["data"]["code"], code, "{v}");
 }
 #[test]
+fn empty_semantic_memory_recall_works_without_a_usable_model_cache() {
+    let d = Dir::new();
+    let repo = d.repo("empty-memory", "fn main() {}\n");
+    let blocked_cache = d.0.join("model-cache-is-a-file");
+    fs::write(&blocked_cache, "not a cache directory").unwrap();
+    let mut m = Mcp::with_embeddings(&d.0, "1", &d.0.join("log"), "on", Some(&blocked_cache));
+    let response = m.tool(
+        "memory_recall",
+        json!({"repo":repo,"query":"previous parser decisions"}),
+    );
+    assert!(response.get("result").is_some(), "{response}");
+    let recalled = &response["result"]["structuredContent"];
+    assert_eq!(recalled["results"], json!([]));
+    assert_eq!(recalled["search_mode"], "hybrid");
+    assert_eq!(recalled["truncated"], false);
+    assert_eq!(
+        fs::read_to_string(blocked_cache).unwrap(),
+        "not a cache directory"
+    );
+}
+#[test]
 fn multi_repo_lazy_schema_and_notifications() {
     let d = Dir::new();
     let mut m = Mcp::new(&d.0, "4", &d.0.join("log"));
@@ -142,7 +176,14 @@ fn multi_repo_lazy_schema_and_notifications() {
     );
     let r = m.rpc("tools/list", json!({}));
     let ts = r["result"]["tools"].as_array().unwrap();
-    assert_eq!(ts.len(), 21);
+    assert_eq!(ts.len(), 29);
+    for name in [
+        "list_quality_candidates",
+        "get_candidate_details",
+        "prepare_candidate_patch",
+    ] {
+        assert!(ts.iter().any(|t| t["name"] == name));
+    }
     for t in ts {
         assert!(
             t["inputSchema"]["required"]
@@ -222,6 +263,129 @@ fn multi_repo_architecture_returns_snapshot_bound_package_projection() {
     assert_eq!(next_payload["page"]["limit"], 1);
     assert!(next_payload["packages"].as_array().unwrap().is_empty());
 }
+
+#[test]
+fn multi_repo_memory_survives_eviction_restart_and_checks_current_sources() {
+    let d = Dir::new();
+    let a = d.repo("memory-a", "fn parse() {}\n");
+    let b = d.repo("memory-b", "fn parse() {}\n");
+    let log = d.0.join("memory-usage.jsonl");
+    let mut m = Mcp::new(&d.0, "1", &log);
+    let fact = "Invalidate the private-parser cache after editing source";
+    let first = m.tool(
+        "memory_record",
+        json!({"repo":a,"path":"main.rs",
+        "fact":fact,"confidence":800}),
+    );
+    let record = &first["result"]["structuredContent"]["record"];
+    let id = record["id"]
+        .as_str()
+        .unwrap_or_else(|| panic!("{first}"))
+        .to_owned();
+    let original_rev = record["provenance"]["rev"].clone();
+    let second = m.tool(
+        "memory_record",
+        json!({"repo":b,"path":"main.rs",
+        "fact":fact,"confidence":800}),
+    );
+    assert_ne!(second["result"]["structuredContent"]["record"]["id"], id);
+    assert!(a.join(".cgrx/memory/agent.mv2").is_file());
+    assert!(b.join(".cgrx/memory/agent.mv2").is_file());
+    let recalled = m.tool("memory_recall", json!({"repo":a,"query":"parser cache"}));
+    assert_eq!(
+        recalled["result"]["structuredContent"]["results"][0]["id"],
+        id
+    );
+    drop(m);
+    let mut m = Mcp::new(&d.0, "1", &log);
+    fs::write(a.join("unrelated.txt"), "unrelated change\n").unwrap();
+    git(&a, &["add", "unrelated.txt"]);
+    git(&a, &["commit", "-qm", "unrelated source"]);
+    let unchanged = m.tool("memory_recall", json!({"repo":a,"id":id}));
+    assert_eq!(
+        unchanged["result"]["structuredContent"]["results"][0]["freshness"],
+        "unchanged"
+    );
+    assert_ne!(
+        unchanged["result"]["structuredContent"]["snapshot"]["repo_revision"],
+        original_rev
+    );
+    fs::write(a.join("main.rs"), "fn parse() { panic!() }\n").unwrap();
+    let stale = m.tool("memory_recall", json!({"repo":a,"id":id}));
+    assert!(
+        stale["result"]["structuredContent"]["results"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    let review = m.tool(
+        "memory_recall",
+        json!({"repo":a,"id":id,"include_stale":true}),
+    );
+    assert_eq!(
+        review["result"]["structuredContent"]["results"][0]["freshness"],
+        "needs_review"
+    );
+    let foreign = m.tool("memory_update", json!({"repo":a,"id":id,"expected_version":1,
+        "reason":"foreign write","record":{"repo":b,"path":"main.rs","fact":"foreign","confidence":800}}));
+    error(&foreign, "cgrx.invalid_repository");
+    git(&a, &["add", "main.rs"]);
+    git(&a, &["commit", "-qm", "update parser"]);
+    let updated = m.tool(
+        "memory_update",
+        json!({"repo":a,"id":id,"expected_version":1,
+        "reason":"checked changed source","record":{"path":"main.rs",
+            "fact":"Parser now raises an error","confidence":800}}),
+    );
+    let payload = &updated["result"]["structuredContent"];
+    assert_eq!(payload["record"]["version"], 2, "{updated}");
+    assert_eq!(
+        payload["record"]["provenance"]["rev"],
+        payload["snapshot"]["repo_revision"]
+    );
+    assert_ne!(payload["record"]["provenance"]["rev"], original_rev);
+    error(
+        &m.tool(
+            "memory_forget",
+            json!({"repo":a,"id":id,"expected_version":1}),
+        ),
+        "cgrx.memory_conflict",
+    );
+    let forgotten = m.tool(
+        "memory_forget",
+        json!({"repo":a,"id":id,"expected_version":2}),
+    );
+    assert_eq!(
+        forgotten["result"]["structuredContent"]["removed_versions"],
+        2
+    );
+    drop(m);
+    let mut m = Mcp::new(&d.0, "1", &log);
+    let empty = m.tool(
+        "memory_recall",
+        json!({"repo":a,"id":id,"include_history":true}),
+    );
+    assert!(
+        empty["result"]["structuredContent"]["results"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    let isolated = m.tool("memory_recall", json!({"repo":b}));
+    assert_eq!(
+        isolated["result"]["structuredContent"]["results"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    let logged = fs::read_to_string(log).unwrap();
+    assert!(logged.contains("memory_update"));
+    assert!(!logged.contains("private-parser"));
+    assert!(!logged.contains("checked changed source"));
+    assert!(!logged.contains(&id));
+}
+
 #[test]
 fn multi_repo_invalid_flags() {
     let d = Dir::new();

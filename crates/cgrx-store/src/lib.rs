@@ -1,11 +1,16 @@
 //! Immutable, revision-pinned CGRX graph generations.
 
+mod agent_memory;
 mod delta;
 mod generation;
 mod memory;
 mod observations;
 mod segment;
 
+pub use agent_memory::{
+    AgentMemoryHit, AgentMemoryInput, AgentMemoryPublication, AgentMemoryQuery, AgentMemoryRecall,
+    AgentMemoryRecord, MemoryFreshness, MemoryKind, MemorySourceKind,
+};
 pub use delta::{
     DeltaKey, DeltaOverlay, DeltaRecord, FreshnessError, PathChange, PathError, PathId,
 };

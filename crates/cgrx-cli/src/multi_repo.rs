@@ -14,7 +14,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
-const TOOLS: [&str; 17] = [
+const TOOLS: [&str; 29] = [
+    "find_examples",
     "scan_risks",
     "check_change_gates",
     "check_repository_gates",
@@ -22,12 +23,23 @@ const TOOLS: [&str; 17] = [
     "orient",
     "expand",
     "status",
+    "memory_record",
+    "memory_recall",
+    "memory_update",
+    "memory_forget",
+    "check_framework_gates",
+    "check_security_gates",
     "search_graph",
     "get_outline",
     "get_architecture",
     "trace_path",
     "find_usages",
     "suggest_refactors",
+    "list_quality_candidates",
+    "get_candidate_details",
+    "prepare_candidate_patch",
+    "get_quality_index_status",
+    "update_quality_candidate_status",
     "get_code_snippet",
     "check_index_coverage",
     "explain_symbol",
@@ -137,10 +149,10 @@ impl Router {
                 if s.get("required").is_none() {
                     s["required"] = json!([]);
                 }
-                s["required"]
-                    .as_array_mut()
-                    .expect("required array")
-                    .push(json!("repo"));
+                let required = s["required"].as_array_mut().unwrap();
+                if !required.contains(&json!("repo")) {
+                    required.push(json!("repo"));
+                }
             }
             return serde_json::to_string(&JsonRpcResponse::success(
                 request.id.unwrap(),
@@ -213,6 +225,27 @@ impl Router {
             .to_hex()
             .to_string();
         *repo_id = Some(identity.clone());
+        if name == "find_examples" {
+            validate_root(&root)?;
+            let mut report =
+                cgrx_cli::github_examples::find_examples(&root, Value::Object(args))
+                    .map_err(|error| JsonRpcError::typed(-32602, error.code(), error.detail()))?;
+            report["repo_id"] = json!(identity);
+            refresh_payload_tokens(&mut report);
+            let mut result =
+                json!({"content":[{"type":"text","text":report.to_string()}],"isError":false});
+            result["structuredContent"] = report;
+            return serde_json::to_value(JsonRpcResponse::success(
+                request.id.expect("identified request"),
+                result,
+            ))
+            .map_err(|_| {
+                error(
+                    "cgrx.github_examples_unavailable",
+                    "cannot encode examples response",
+                )
+            });
+        }
         self.clock = self
             .clock
             .checked_add(1)
@@ -290,6 +323,9 @@ impl Router {
             // Only public continuation fields are rewritten, never sealed RCC/QBEC data.
             if let Some(structured) = result.get_mut("structuredContent") {
                 decorate(structured, &root, entry);
+                if structured.get("payload_tokens").is_some() {
+                    refresh_payload_tokens(structured);
+                }
             }
             if let Some(content) = result["content"].as_array_mut() {
                 for item in content {

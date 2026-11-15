@@ -156,8 +156,11 @@ fn schema_count_is_machine_readable_and_within_reviewed_runtime_tool_budget() {
         .expect("schema count is numeric");
     // 2700 covered the 16-tool schema before find_similar (duplicate-body
     // lookup over deterministic fingerprints) joined the reviewed surface.
-    // Bumped to 4150 after orient added optional adaptive budget presets.
-    assert!(count <= 4150, "schema count was {count}");
+    // Four typed memory commands bring the reviewed schema to 4976 tokens.
+    // One optional GitHub examples tool adds bounded query inputs and evidence
+    // retrieval. Its descriptions stay compact; further growth remains visible.
+    // Reviewed quality inventory, producer health and triage schemas are included.
+    assert!(count <= 6200, "schema count was {count}");
 }
 
 #[test]
@@ -213,6 +216,13 @@ fn skill_install_creates_user_skill_and_removes_legacy_agent_block() {
             .is_file()
     );
     assert!(skill.parent().unwrap().join("agents/openai.yaml").is_file());
+    assert!(
+        skill
+            .parent()
+            .unwrap()
+            .join("references/agent-memory.md")
+            .is_file()
+    );
 
     let remaining = fs::read_to_string(&agents).expect("migrated agent rules");
     assert!(remaining.contains("# Existing rule"));
@@ -824,7 +834,8 @@ fn serve_state_returns_refactor_candidates_and_compact_projection_rows() {
             "recommended_policy",
             "counterfactual_score",
             "reason_codes",
-            "strategy_id"
+            "strategy_id",
+            "quality_checks"
         ])
     );
     assert!(visible["payload_tokens"].as_u64().is_some());

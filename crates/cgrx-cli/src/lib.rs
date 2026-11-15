@@ -2,6 +2,7 @@
 
 mod cargo_roots;
 pub mod file_watcher;
+pub mod github_examples;
 
 pub use file_watcher::{FileWatcher, FileWatcherEvent, NotifyWatcher};
 mod intent;
@@ -22,3 +23,5 @@ pub use runtime::{
 pub fn git_executable() -> std::ffi::OsString {
     std::env::var_os("CGRX_GIT").unwrap_or_else(|| "git".into())
 }
+
+pub use runtime::quality::QualityWorker;

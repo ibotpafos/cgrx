@@ -71,3 +71,6 @@ mod experimental_tests {
         }
     }
 }
+
+mod quality;
+pub use quality::{HardcodeSite, QualityCheck, QualityFinding, check_quality, hardcode_sites};

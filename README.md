@@ -3,7 +3,8 @@
 **Local, evidence-oriented code intelligence for AI coding agents.**
 
 One Rust executable. One stdio MCP server. Multiple Git repositories selected
-explicitly on each request. No embedding service, hosted index or API key.
+explicitly on each request. Local graph queries require no embedding service,
+hosted index or API key.
 
 [Русская инструкция](docs/installation.md) ·
 [Releases](https://github.com/ibotpafos/cgrx/releases) ·
@@ -12,7 +13,13 @@ explicitly on each request. No embedding service, hosted index or API key.
 ## Features
 
 - Symbol search, exact source definitions and bounded caller/callee traces.
+- Experimental [GitHub implementation examples](docs/github-examples.md): 3–5
+  commit-pinned options with code, project-fit reasons and adaptation notes,
+  through an explicitly configured read-only GitHub MCP bridge.
 - Task-sized context with token budgets and follow-up retrieval handles.
+- Persistent [agent memory](docs/decision-memory.md): facts, episodes, procedures
+  and task checkpoints, with local multilingual search, source freshness and
+  versioned corrections.
 - Optional local semantic reranking of already-discovered candidates, with
   deterministic fallback and no authority over graph evidence or coverage gaps.
 - Coverage reporting: unresolved relationships remain unknown, not absent.
@@ -87,7 +94,9 @@ cargo install --locked --path crates/cgrx-cli
 ~~~
 
 The default executable path is $HOME/.cargo/bin/cgrx. Cargo downloads dependencies
-during installation; MCP queries require no runtime network client.
+during installation. Graph queries run locally; semantic memory downloads its
+embedding model on first use. Set `CGRX_MEMORY_EMBEDDINGS=off` for memory without
+that download; see [agent memory](docs/decision-memory.md) for cache configuration.
 A macOS Apple Silicon binary with SHA-256 checksums is available on the release page.
 
 ## Connect once, query many repositories
@@ -290,6 +299,10 @@ is not required by the released executable.
 | check_index_coverage | Recorded gaps for paths/scopes |
 | orient | Budgeted task context |
 | expand | Follow-up context using a returned handle |
+| memory_record | Persist a sourced fact, episode, procedure or task checkpoint |
+| memory_recall | Retrieve project memory with local multilingual search and source freshness |
+| memory_update | Correct a record with version checking and retained history |
+| memory_forget | Remove all versions of a memory from recall and search |
 | scan_risks | Candidate relationship risks, tests and deterministic parallel Change Missions |
 | check_change_gates | Conservative change gate with explicit pass, warning, failure and inconclusive states |
 | check_repository_gates | Architecture gate for cycles, coupling, unresolved local dependencies and graph coverage |

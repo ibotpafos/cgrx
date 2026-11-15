@@ -1309,6 +1309,14 @@ impl Runtime {
                 partial = true;
                 gaps.insert("REFACTOR_EVIDENCE_BUDGET");
             }
+            value["quality_checks"] = json!({
+                "scope": "candidate_snippets_only",
+                "offset_basis": "snippet_relative_bytes",
+                "input_basis": "indexed_search_text",
+                "left": cgrx_languages::check_quality(&candidate.language, &candidate.left.search_text),
+                "right": cgrx_languages::check_quality(&candidate.language, &candidate.right.search_text),
+                "limitations": "Syntax hints only: calls may be shadowed; unwrap/expect are not necessarily bugs. No taint or whole-repository analysis."
+            });
             value["runtime_profile"] =
                 runtime_profile(&candidate, observations.as_ref(), &definitive);
             values.push(value);
