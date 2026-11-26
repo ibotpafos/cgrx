@@ -5,7 +5,7 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::SystemTime;
+use std::time::{Instant, SystemTime};
 
 use cgrx_cli::{OrientPreparation, Runtime, RuntimeEvidenceFormat, TestRunRecord};
 use cgrx_core::{
@@ -17,7 +17,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 pub(super) struct RuntimeMcpBackend {
-    _quality_worker: Option<cgrx_cli::QualityWorker>,
+    quality_worker: Option<cgrx_cli::QualityWorker>,
     risk_baseline: Option<cgrx_cli::RiskBaseline>,
     runtime: Runtime,
     watch_root: Option<PathBuf>,
@@ -90,11 +90,8 @@ fn usize_argument(value: u32, name: &str) -> Result<usize, BackendError> {
 
 impl RuntimeMcpBackend {
     pub(super) fn new(runtime: Runtime, watch_root: Option<PathBuf>) -> Self {
-        let quality_worker = watch_root
-            .as_ref()
-            .map(|root| runtime.start_quality_worker(root, None));
         Self {
-            _quality_worker: quality_worker,
+            quality_worker: None,
             runtime,
             watch_root,
             managed_state: None,
@@ -121,9 +118,8 @@ impl RuntimeMcpBackend {
         scip_index: Option<PathBuf>,
     ) -> Self {
         let imported_scip_hash = runtime.scip_input_hash();
-        let quality_worker = runtime.start_quality_worker(&root, scip_index.clone());
         Self {
-            _quality_worker: Some(quality_worker),
+            quality_worker: None,
             runtime,
             watch_root: Some(root),
             managed_state: Some(state),
@@ -140,6 +136,11 @@ impl RuntimeMcpBackend {
     }
 
     fn refresh(&mut self) -> Result<(), BackendError> {
+        self.refresh_with_timing().map(|_| ())
+    }
+
+    fn refresh_with_timing(&mut self) -> Result<(u64, u64), BackendError> {
+        let started = Instant::now();
         let _quality_graph_guard = if self.watch_root.is_some() {
             Some(
                 self.runtime
@@ -149,11 +150,13 @@ impl RuntimeMcpBackend {
         } else {
             None
         };
+        let lock_wait_us = started.elapsed().as_micros() as u64;
+        let after_lock = Instant::now();
         let current_scip_hash = self.current_scip_hash()?;
         let scip_changed =
             current_scip_hash.is_some() && current_scip_hash != self.imported_scip_hash;
         let Some(root) = &self.watch_root else {
-            return Ok(());
+            return Ok((lock_wait_us, after_lock.elapsed().as_micros() as u64));
         };
         let mut changed = match self.runtime.refresh(root) {
             Ok(changed) => changed,
@@ -194,7 +197,10 @@ impl RuntimeMcpBackend {
             self.orient_preparations.clear();
             self.orient_preparation_order.clear();
         }
-        Ok(())
+        let refresh_us = after_lock.elapsed().as_micros() as u64;
+        drop(_quality_graph_guard);
+        self.runtime.schedule_profile(root);
+        Ok((lock_wait_us, refresh_us))
     }
 
     fn current_scip_hash(&mut self) -> Result<Option<Hash32>, BackendError> {
@@ -697,6 +703,10 @@ impl ToolBackend for RuntimeMcpBackend {
         let root = self.watch_root.as_ref().ok_or_else(|| {
             BackendError::new("cgrx.quality_unavailable", "managed repository required")
         })?;
+        self.quality_worker.get_or_insert_with(|| {
+            self.runtime
+                .start_quality_worker(root, self.scip_index.clone())
+        });
         self.runtime
             .quality_tool(root, operation, arguments)
             .map_err(|e| BackendError::new(e.code(), e.to_string()))
@@ -883,7 +893,7 @@ impl ToolBackend for RuntimeMcpBackend {
 
     fn status(&mut self, paths_or_scope: Value) -> Result<Value, BackendError> {
         const COVERAGE_OUTPUT_LIMIT: usize = 8;
-        self.refresh()?;
+        let (lock_wait_us, refresh_us) = self.refresh_with_timing()?;
         let scope = status_scope(&paths_or_scope)?;
         let coverage = self.runtime.coverage_for_scope(&scope);
         let mut coverage_gaps = Vec::new();
@@ -973,6 +983,9 @@ impl ToolBackend for RuntimeMcpBackend {
         {
             result["runtime_evidence"] = serde_json::to_value(runtime_evidence)
                 .map_err(|error| BackendError::new("cgrx.runtime_evidence", error.to_string()))?;
+        }
+        if env::var_os("CGRX_STATUS_TIMINGS").is_some() {
+            result["refresh_timing"] = json!({"lock_wait_us":lock_wait_us,"refresh_us":refresh_us});
         }
         Ok(result)
     }

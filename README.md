@@ -76,7 +76,7 @@ roadmap. The four phases toward competitive parity are:
 ## Install with one command
 
 ~~~sh
-curl -fsSL https://raw.githubusercontent.com/ibotpafos/cgrx/v0.1.0-alpha.18/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/ibotpafos/cgrx/v0.1.0-alpha.19/install.sh | sh
 ~~~
 
 Installs to `$HOME/.local/bin/cgrx`, without sudo. Apple Silicon macOS downloads
@@ -109,7 +109,7 @@ Native Windows is not supported.
 ~~~sh
 git clone https://github.com/ibotpafos/cgrx.git
 cd cgrx
-git checkout v0.1.0-alpha.18
+git checkout v0.1.0-alpha.19
 cargo install --locked --path crates/cgrx-cli
 ~~~
 
@@ -458,7 +458,6 @@ is not required by the released executable.
 | get_architecture | Paginated packages, proven call, implementation, local-import and static-reference boundaries, hotspots, cycles and weighted semantic communities |
 | trace_path | Caller/callee traversal |
 | find_usages | Proven direct or transitive incoming call/implementation sites |
-| find_similar | Exact duplicate bodies plus scored structural and shared-callee similarity |
 | get_code_snippet | Exact source definition |
 | check_index_coverage | Recorded gaps for paths/scopes |
 | orient | Budgeted task context |
@@ -549,7 +548,7 @@ digest. Previously issued `cgrxs1` references remain accepted in their original
 index and snapshot. Treat both formats as opaque strings and copy them from
 discovery results.
 
-`find_similar` keeps exact duplicate bodies in `matches` and reports heuristic
+The internal Rust API `Runtime::find_similar` (not advertised by MCP) keeps exact duplicate bodies in `matches` and reports heuristic
 near-duplicates, similar structure and shared proven functionality separately in
 `similar_matches`. The latter never upgrades a heuristic match into a proven
 duplicate. Indexing and watched refresh maintain a bounded snapshot-local
@@ -677,17 +676,12 @@ account; it is not a remote authenticated hosting service.
 
 ### Session metrics (opt-in)
 
-A second, independent opt-in log (`CGRX_METRICS_LOG`) records per-tool latency,
-error, and response-size samples as JSONL alongside the usage log. Nothing is
-written unless the variable is set, and no network calls are ever made.
+Write local tool-call metrics with `CGRX_USAGE_LOG` and summarize that same log:
 
 ~~~sh
-CGRX_METRICS_LOG=./cgrx-metrics.jsonl cgrx serve --root .
-cgrx metrics --log ./cgrx-metrics.jsonl --json --summary
+CGRX_USAGE_LOG=./cgrx-usage.jsonl cgrx serve --multi-repo
+cgrx usage-report --log ./cgrx-usage.jsonl --json
 ~~~
-
-The summary reports p50/p95 latency, error rate, and the top tools by response
-bytes — all aggregated locally from the log file.
 
 ## Development
 
@@ -708,6 +702,21 @@ python3 scripts/eval_refactors.py target/release/cgrx
 python3 scripts/benchmark_architecture.py --help
 ./target/release/cgrx bench orient --root . --samples 20 --task Runtime --budget 800 --scope 'crates/**' --json
 ~~~
+
+For automatic performance suggestions in other repositories, configure
+[trusted project workloads](docs/quality-continuous.md#optional-automatic-performance-suggestions).
+CGRX runs them in the background after the project is opened and returns
+review-only candidates via `get_quality_index_status`.
+
+For local web-layout performance triage, install Fast Anything separately and
+run `npm run profile:layout` after `npm ci`. The default input is a synthetic
+repository graph; pass a local graph JSON with
+`npm run profile:layout -- /path/to/graph.json` to investigate a particular
+shape. The command runs only `scan` and prints ranked candidates; its local
+`.fast/` artifacts are ignored. Treat candidates as hypotheses until layout
+checks and a repeatable before/after benchmark confirm a gain. It does not
+launch an agent, generate a port or apply changes. For the native Rust runtime,
+use CGRX's own benchmarks below, not the Node profiling wrapper.
 
 `bench orient` separates cold runtime open, working-tree refresh, full warm
 orientation, one-time preparation, and prepared repacking. This makes the cost

@@ -149,12 +149,13 @@ jobs:
 
       - name: Build Apple Silicon release
         env:
-          CGRX_BUILD_ID: ${{ github.event.workflow_run.head_sha }}
+          CGRX_SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
         if: steps.meta.outputs.changed == 'true' && steps.existing.outputs.skip != 'true'
         shell: bash
         run: |
           set -euo pipefail
-          cargo +1.89.0 build --locked --release -p cgrx-cli --target aarch64-apple-darwin
+          # MCP status accepts 32 hex characters as the compiled build ID.
+          CGRX_BUILD_ID="${CGRX_SOURCE_SHA:0:32}" cargo +1.89.0 build --locked --release -p cgrx-cli --target aarch64-apple-darwin
           binary=target/aarch64-apple-darwin/release/cgrx
           file "$binary" | grep -E 'arm64|aarch64'
           if [[ "$(uname -m)" == "arm64" || "$(uname -m)" == "aarch64" ]]; then

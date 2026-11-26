@@ -83,6 +83,16 @@ impl Mcp {
         mode: &str,
         cache: Option<&Path>,
     ) -> Self {
+        Self::start(cwd, cap, log, mode, cache, None)
+    }
+    fn start(
+        cwd: &Path,
+        cap: &str,
+        log: &Path,
+        mode: &str,
+        cache: Option<&Path>,
+        profile: Option<(&Path, &str)>,
+    ) -> Self {
         let mut command = Command::new(env!("CARGO_BIN_EXE_cgrx"));
         command
             .args([
@@ -98,11 +108,20 @@ impl Mcp {
             .env("CGRX_CLIENT", "test")
             .env("CGRX_USAGE_SESSION", "test-session")
             .env("CGRX_MEMORY_EMBEDDINGS", mode)
+            .env_remove("CGRX_TOOLSET")
+            .env_remove("CGRX_RESPONSE_PROFILE")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null());
         if let Some(cache) = cache {
             command.env("CGRX_MEMORY_MODEL_CACHE", cache);
+        }
+        command.env_remove("CGRX_FAST_ANYTHING_CONFIG");
+        if let Some((config, memory_mib)) = profile {
+            command
+                .args(["--memory-budget-mib", memory_mib])
+                .env("CGRX_FAST_ANYTHING_CONFIG", config)
+                .env("CGRX_QUALITY_POLL_MS", "100");
         }
         let mut child = command.spawn().unwrap();
         let input = child.stdin.take().unwrap();
@@ -293,7 +312,7 @@ fn multi_repo_lazy_schema_and_notifications() {
     );
     let r = m.rpc("tools/list", json!({}));
     let ts = r["result"]["tools"].as_array().unwrap();
-    assert_eq!(ts.len(), 29);
+    assert_eq!(ts.len(), cgrx_mcp::Toolset::Full.names().len());
     for name in [
         "list_quality_candidates",
         "get_candidate_details",
@@ -307,6 +326,15 @@ fn multi_repo_lazy_schema_and_notifications() {
                 .as_array()
                 .unwrap()
                 .contains(&json!("repo"))
+        );
+        let name = t["name"].as_str().unwrap();
+        let response = m.tool(name, json!({}));
+        let code = response["error"]["data"]["code"].as_str();
+        // Every advertised name must be routed. No repository is passed, so
+        // the request must stop at argument validation without running a tool.
+        assert!(
+            code.is_some() && code != Some("cgrx.tool_not_found"),
+            "{name}: {response}"
         );
     }
     assert!(!d.0.join(".git").exists());
@@ -799,6 +827,7 @@ fn multi_repo_invalid_flags() {
         vec!["serve", "--multi-repo", "--max-repos", "17"],
         vec!["serve", "--multi-repo", "--max-repos"],
         vec!["serve", "--multi-repo", "--wat"],
+        vec!["serve", "--multi-repo", "--toolset"],
     ] {
         let r = Command::new(env!("CARGO_BIN_EXE_cgrx"))
             .args(args)
@@ -2026,4 +2055,357 @@ fn repository_quality_gate_reuses_proven_architecture_and_warning_policy() {
         ),
         "cgrx.invalid_arguments",
     );
+}
+
+#[cfg(unix)]
+#[test]
+fn fast_anything_profiles_only_selected_clean_commits_and_returns_redacted_candidates() {
+    use std::{
+        os::unix::fs::PermissionsExt,
+        thread,
+        time::{Duration, Instant},
+    };
+
+    let d = Dir::new();
+    let root = d.repo("approved", "fn entry() {}\n");
+    let other = d.repo("unapproved", "fn entry() {}\n");
+    let script = "export function hot() { return 1 }\n";
+    fs::write(root.join("bench.mjs"), script).unwrap();
+    fs::write(other.join("bench.mjs"), script).unwrap();
+    git(&other, &["add", "bench.mjs"]);
+    git(&other, &["commit", "-qm", "unapproved workload"]);
+
+    let runner = d.0.join("fast-anything");
+    let calls = d.0.join("calls");
+    fs::write(&runner, format!(r#"#!/bin/sh
+set -eu
+test "$*" = "scan -- node bench.mjs"
+test -z "${{PROFILE_TEST_SECRET:-}}"
+sleep 0.5
+printf 'test-only write\n' >> bench.mjs
+printf '.\n' >> '{}'
+mkdir -p .fast
+cat > .fast/state.json <<'END'
+{{"hotspots":[{{"file":"bench.mjs","qualname":"hot","line":1,"share":0.68,"portability":0.8,"blockers":[],"source":"DO_NOT_PUBLISH_FIXTURE_SOURCE"}},{{"file":"../escape.mjs","qualname":"invalid","line":1,"share":0.7,"portability":0.9,"blockers":[]}}]}}
+END
+"#, calls.display())).unwrap();
+    fs::set_permissions(&runner, fs::Permissions::from_mode(0o700)).unwrap();
+    let config = d.0.join("profile.json");
+    fs::write(
+        &config,
+        json!({"binary":runner,"projects":[{"root":root,"command":["node","bench.mjs"]}]})
+            .to_string(),
+    )
+    .unwrap();
+
+    let wait = |m: &mut Mcp, repo: &Path, condition: fn(&Value) -> bool| {
+        let deadline = Instant::now() + Duration::from_secs(12);
+        loop {
+            let response = m.tool("get_quality_index_status", json!({"repo":repo}));
+            let value = &response["result"]["structuredContent"];
+            if condition(value) {
+                return value.clone();
+            }
+            assert!(Instant::now() < deadline, "{response}");
+            thread::sleep(Duration::from_millis(25));
+        }
+    };
+
+    let spawn = |memory_mib| {
+        Mcp::start(
+            &d.0,
+            "2",
+            &d.0.join("log"),
+            "off",
+            None,
+            Some((&config, memory_mib)),
+        )
+    };
+    let mut m = spawn("2048");
+    wait(&mut m, &root, |v| {
+        v["performance"]["status"] == "waiting_for_clean_commit"
+    });
+    let status = wait(&mut m, &other, |v| v["phase"] == "ready");
+    assert!(status.get("performance").is_none());
+    assert!(!calls.exists());
+
+    git(&root, &["add", "bench.mjs"]);
+    git(&root, &["commit", "-qm", "approved workload"]);
+    let read_report = |m: &mut Mcp| wait(m, &root, |v| v["performance"]["status"] == "ready");
+    let status = read_report(&mut m);
+    let profile = &status["performance"];
+    assert_eq!(profile["revision"], git_revision(&root, "HEAD"));
+    assert_eq!(profile["patch_applied"], false);
+    assert_eq!(profile["candidates"].as_array().unwrap().len(), 1);
+    assert_eq!(profile["candidates"][0]["symbol"], "hot");
+    assert!(!profile.to_string().contains("DO_NOT_PUBLISH"));
+    assert!(!root.join(".fast").exists());
+    assert_eq!(fs::read_to_string(root.join("bench.mjs")).unwrap(), script);
+    assert_eq!(fs::read_to_string(&calls).unwrap().lines().count(), 1);
+
+    drop(m);
+    let mut m = spawn("2048");
+    read_report(&mut m);
+    assert_eq!(fs::read_to_string(&calls).unwrap().lines().count(), 1);
+    git(&root, &["commit", "--allow-empty", "-qm", "new revision"]);
+    let revision = git_revision(&root, "HEAD");
+    let deadline = Instant::now() + Duration::from_secs(12);
+    loop {
+        let status = read_report(&mut m);
+        if status["performance"]["revision"] == revision {
+            break;
+        }
+        assert!(Instant::now() < deadline, "{status}");
+        thread::sleep(Duration::from_millis(25));
+    }
+    assert_eq!(fs::read_to_string(&calls).unwrap().lines().count(), 2);
+
+    drop(m);
+    git(&root, &["commit", "--allow-empty", "-qm", "eviction probe"]);
+    let mut m = spawn("1");
+    let status = m.tool("status", json!({"repo":root}));
+    assert_eq!(
+        status["result"]["structuredContent"]["resource_control"]["retained_repos"],
+        0
+    );
+    let report = read_report(&mut m);
+    assert_eq!(
+        report["performance"]["revision"],
+        git_revision(&root, "HEAD")
+    );
+    assert_eq!(fs::read_to_string(&calls).unwrap().lines().count(), 3);
+}
+
+#[test]
+fn multi_repo_toolset_selection_matches_advertisement_enforcement_and_redaction() {
+    use cgrx_mcp::Toolset;
+    let d = Dir::new();
+    let schema: Vec<Value> = serde_json::from_str(&cgrx_mcp::model_visible_schema_json()).unwrap();
+    for (env, flag, selected) in [
+        (None, None, Toolset::Full),
+        (None, Some("minimal"), Toolset::Minimal),
+        (None, Some("standard"), Toolset::Standard),
+        (None, Some("full"), Toolset::Full),
+        (Some(" MINIMAL "), Some("full"), Toolset::Minimal),
+        (Some("standard"), Some("minimal"), Toolset::Standard),
+        (Some("full"), Some("minimal"), Toolset::Full),
+        (Some("  "), Some("minimal"), Toolset::Minimal),
+        (Some(""), None, Toolset::Full),
+        (Some("invalid"), Some("full"), Toolset::Standard),
+        (None, Some("invalid"), Toolset::Standard),
+    ] {
+        let log = d.0.join("selection.jsonl");
+        let _ = fs::remove_file(&log);
+        let mut command = Command::new(env!("CARGO_BIN_EXE_cgrx"));
+        command
+            .args(["serve", "--multi-repo"])
+            .current_dir(&d.0)
+            .env_remove("CGRX_TOOLSET")
+            .env_remove("CGRX_RESPONSE_PROFILE")
+            .env("CGRX_USAGE_LOG", &log)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null());
+        if let Some(env) = env {
+            command.env("CGRX_TOOLSET", env);
+        }
+        if let Some(flag) = flag {
+            command.args(["--toolset", flag]);
+        }
+        let mut child = command.spawn().unwrap();
+        let input = child.stdin.take().unwrap();
+        let output = BufReader::new(child.stdout.take().unwrap());
+        let mut m = Mcp {
+            child,
+            input,
+            output,
+        };
+        let init = m.rpc("initialize", json!({}));
+        assert!(
+            init["result"]["instructions"]
+                .as_str()
+                .unwrap()
+                .contains(&format!("Toolset: {};", selected.label())),
+            "{init}"
+        );
+        let listed = m.rpc("tools/list", json!({}));
+        let tools = listed["result"]["tools"].as_array().unwrap();
+        let expected: Vec<_> = schema
+            .iter()
+            .filter(|t| selected.allows(t["name"].as_str().unwrap()))
+            .map(|t| &t["name"])
+            .collect();
+        assert_eq!(
+            tools.iter().map(|t| &t["name"]).collect::<Vec<_>>(),
+            expected
+        );
+        assert_eq!(tools.len(), selected.names().len());
+        for tool in schema
+            .iter()
+            .chain(std::iter::once(&json!({"name":"find_similar"})))
+        {
+            let name = tool["name"].as_str().unwrap();
+            // Bad arguments must never bypass the preset gate or open a repository.
+            let response = m.tool(
+                name,
+                json!({"repo": d.0.join("PRIVATE_SENTINEL"), "fact": ""}),
+            );
+            if selected.allows(name) {
+                assert!(
+                    response["error"]["data"]["code"].is_string(),
+                    "{name}: {response}"
+                );
+                assert_ne!(
+                    response["error"]["data"]["code"], "cgrx.tool_not_found",
+                    "{name}: {response}"
+                );
+            } else {
+                error(&response, "cgrx.tool_not_found");
+                assert_eq!(response["error"]["code"], -32602);
+            }
+        }
+        error(
+            &m.tool("PRIVATE_SENTINEL", json!({})),
+            "cgrx.tool_not_found",
+        );
+        let logged = fs::read_to_string(&log).unwrap();
+        assert!(!logged.contains("PRIVATE_SENTINEL"));
+        let events: Vec<Value> = logged
+            .lines()
+            .map(|s| serde_json::from_str(s).unwrap())
+            .collect();
+        assert_eq!(events.len(), schema.len() + 2);
+        for (event, tool) in events.iter().zip(&schema) {
+            assert_eq!(event["tool"], tool["name"]);
+            assert_eq!(event["cache"], "none");
+            assert!(event["repo_id"].is_null());
+        }
+        assert_eq!(events[schema.len()]["tool"], "unknown");
+        assert_eq!(events.last().unwrap()["tool"], "unknown");
+        assert!(!d.0.join(".git").exists());
+    }
+}
+
+#[test]
+fn multi_repo_selected_toolset_preserves_routing_and_response_profile_precedence() {
+    let d = Dir::new();
+    let a = d.repo("a", "fn Same() -> u32 { 111 }\n");
+    let b = d.repo("b", "fn Same() -> u32 { 222 }\n");
+    for (env, flag, full) in [
+        (None, None, false),
+        (None, Some("full"), true),
+        (Some("compact"), Some("full"), false),
+        (Some("full"), Some("token-efficient"), true),
+    ] {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_cgrx"));
+        command
+            .args(["serve", "--multi-repo", "--toolset", "minimal"])
+            .current_dir(&d.0)
+            .env_remove("CGRX_TOOLSET")
+            .env_remove("CGRX_RESPONSE_PROFILE")
+            .env_remove("CGRX_FAST_ANYTHING_CONFIG")
+            .env("CGRX_MEMORY_EMBEDDINGS", "off")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null());
+        if let Some(env) = env {
+            command.env("CGRX_RESPONSE_PROFILE", env);
+        }
+        if let Some(flag) = flag {
+            command.args(["--response-profile", flag]);
+        }
+        let mut child = command.spawn().unwrap();
+        let input = child.stdin.take().unwrap();
+        let output = BufReader::new(child.stdout.take().unwrap());
+        let mut m = Mcp {
+            child,
+            input,
+            output,
+        };
+        let init = m.rpc("initialize", json!({}));
+        let profile = if full { "full" } else { "token-efficient" };
+        assert!(
+            init["result"]["instructions"]
+                .as_str()
+                .unwrap()
+                .contains(&format!("response profile: {profile}.")),
+            "{init}"
+        );
+        for (repo, yes, no) in [(&a, "111", "222"), (&b, "222", "111"), (&a, "111", "222")] {
+            let response = snippet(&mut m, repo);
+            let result = &response["result"];
+            assert!(result["structuredContent"].is_object(), "{response}");
+            let visible: Value =
+                serde_json::from_str(result["content"][0]["text"].as_str().unwrap()).unwrap();
+            assert_eq!(visible["repo"], json!(repo));
+            let source = visible["source"].as_str().unwrap();
+            assert!(source.contains(yes), "{response}");
+            assert!(!source.contains(no), "{response}");
+            if full {
+                assert!(
+                    result["structuredContent"]["source"]
+                        .as_str()
+                        .unwrap()
+                        .contains(yes)
+                );
+            } else {
+                assert_eq!(result["structuredContent"], visible);
+            }
+        }
+    }
+}
+
+#[test]
+fn single_repo_presets_match_the_wire_schema_and_reject_unadvertised_tools() {
+    use cgrx_core::{Hash32, RepoSnapshot};
+    use cgrx_mcp::{Server, Toolset};
+    let schema: Vec<Value> = serde_json::from_str(&cgrx_mcp::model_visible_schema_json()).unwrap();
+    for (preset, count) in [
+        (Toolset::Minimal, 10),
+        (Toolset::Standard, 17),
+        (Toolset::Full, 29),
+    ] {
+        let mut server = Server::new(RepoSnapshot {
+            repo_revision: String::new(),
+            working_tree_digest: Hash32([0; 32]),
+            graph_generation: 0,
+        })
+        .with_toolset(preset);
+        let response: Value = serde_json::from_str(
+            &server.dispatch_line(
+                &json!({
+                    "jsonrpc":"2.0", "id":1, "method":"tools/list", "params":{}
+                })
+                .to_string(),
+            ),
+        )
+        .unwrap();
+        let tools = response["result"]["tools"].as_array().unwrap();
+        assert_eq!(tools.len(), count);
+        assert_eq!(tools.len(), preset.names().len());
+        for name in preset.names() {
+            assert!(tools.iter().any(|tool| tool["name"] == *name), "{name}");
+        }
+        for tool in schema
+            .iter()
+            .chain(std::iter::once(&json!({"name":"find_similar"})))
+        {
+            let name = tool["name"].as_str().unwrap();
+            if preset.allows(name) {
+                continue;
+            }
+            let response: Value = serde_json::from_str(
+                &server.dispatch_line(
+                    &json!({
+                        "jsonrpc":"2.0", "id":2, "method":"tools/call",
+                        "params":{"name":name, "arguments":{"fact":""}}
+                    })
+                    .to_string(),
+                ),
+            )
+            .unwrap();
+            error(&response, "cgrx.tool_not_found");
+            assert_eq!(response["error"]["code"], -32602);
+        }
+    }
 }

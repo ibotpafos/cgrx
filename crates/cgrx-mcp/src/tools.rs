@@ -36,6 +36,7 @@ pub struct Server {
     snapshot: RepoSnapshot,
     backend: Option<Box<dyn ToolBackend>>,
     memory: Option<MemoryStore>,
+    memory_attachment_error: Option<std::io::ErrorKind>,
     usage_log: Option<UsageLog>,
     metrics_log: Option<MetricsLog>,
     toolset: Toolset,
@@ -374,6 +375,7 @@ impl Server {
             snapshot,
             backend: None,
             memory: None,
+            memory_attachment_error: None,
             usage_log: None,
             metrics_log: None,
             // Library/programmatic default is permissive; the `serve` command narrows
@@ -390,6 +392,7 @@ impl Server {
             snapshot: backend.snapshot().clone(),
             backend: Some(Box::new(backend)),
             memory: None,
+            memory_attachment_error: None,
             usage_log: None,
             metrics_log: None,
             toolset: Toolset::Full,
@@ -414,6 +417,18 @@ impl Server {
     /// Attach the durable decision-memory store rooted at the managed repository.
     pub fn set_memory_store(&mut self, store: MemoryStore) {
         self.memory = Some(store);
+        self.memory_attachment_error = None;
+    }
+
+    /// Keep graph tools available when memory cannot be opened; retain no raw error text.
+    pub fn attach_memory_store(&mut self, root: impl AsRef<Path>) {
+        match MemoryStore::open(root) {
+            Ok(store) => self.set_memory_store(store),
+            Err(error) => {
+                self.memory = None;
+                self.memory_attachment_error = Some(error.kind());
+            }
+        }
     }
 
     pub fn enable_usage_log(
@@ -1468,6 +1483,16 @@ impl Server {
 
     fn memory_store(&self) -> Result<&MemoryStore, JsonRpcError> {
         self.memory.as_ref().ok_or_else(|| {
+            if let Some(kind) = self.memory_attachment_error {
+                let mut error = JsonRpcError::typed(
+                    -32020,
+                    "cgrx.memory_unavailable",
+                    format!("memory store attachment failed: {kind}; graph tools remain available"),
+                );
+                error.data.as_mut().expect("typed error data")["io_kind"] =
+                    json!(format!("{kind:?}"));
+                return error;
+            }
             JsonRpcError::typed(
                 -32020,
                 "cgrx.memory_unavailable",
@@ -1713,3 +1738,6 @@ fn handle_matches(handle: &str, snapshot: &RepoSnapshot) -> bool {
 
 #[cfg(test)]
 mod openai_metadata_tests;
+
+#[cfg(test)]
+mod memory_attachment_tests;

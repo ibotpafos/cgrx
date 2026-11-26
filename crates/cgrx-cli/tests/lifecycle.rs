@@ -275,6 +275,8 @@ impl Mcp {
         command
             .args(["serve", "--multi-repo"])
             .env("CGRX_RESPONSE_PROFILE", profile)
+            .env_remove("CGRX_FAST_ANYTHING_CONFIG")
+            .env_remove("CGRX_TOOLSET")
             .current_dir(cwd);
         if let Some(path) = usage_log {
             command.env("CGRX_USAGE_LOG", path);
@@ -784,4 +786,61 @@ fn mock_responses_follow_complete_requests_under_parallel_load() {
             });
         }
     });
+}
+
+#[test]
+fn status_only_defers_quality_worker_until_requested() {
+    let repo = Fixture::new();
+    let mut mcp = Mcp::start(repo.path());
+    assert!(mcp.status(repo.path()).get("result").is_some());
+    let lease = repo.path().join(".git/cgrx/managed/quality-worker.lease");
+    thread::sleep(Duration::from_millis(300));
+    assert!(
+        !lease.exists(),
+        "status started a background quality worker"
+    );
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        let response = mcp.request(
+            "tools/call",
+            json!({
+                "name":"get_quality_index_status","arguments":{"repo":repo.path()}
+            }),
+        );
+        assert!(response.get("error").is_none(), "{response}");
+        if response["result"]["structuredContent"]["phase"] == "ready" {
+            assert!(lease.exists());
+            break;
+        }
+        assert!(Instant::now() < deadline, "{response}");
+        thread::sleep(Duration::from_millis(25));
+    }
+}
+
+#[test]
+fn held_quality_graph_lock_returns_busy_and_next_request_succeeds() {
+    let repo = Fixture::new();
+    let mut mcp = Mcp::start(repo.path());
+    assert!(mcp.status(repo.path()).get("result").is_some());
+    let lock = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(repo.path().join(".git/cgrx/managed/quality-runtime.lock"))
+        .unwrap();
+    lock.lock().unwrap();
+    let response = mcp
+        .try_request(
+            "tools/call",
+            json!({
+                "name":"status","arguments":{"repo":repo.path()}
+            }),
+            Duration::from_secs(5),
+        )
+        .expect("bounded wait");
+    assert_eq!(
+        response["error"]["data"]["code"], "cgrx.quality_busy",
+        "{response}"
+    );
+    drop(lock);
+    assert!(mcp.status(repo.path()).get("result").is_some());
 }

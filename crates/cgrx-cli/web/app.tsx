@@ -20,10 +20,7 @@ import { createRoot } from "react-dom/client";
 import { defineWebGitGraph } from "@web-git-graph/web";
 import { edgeStyle, layoutGraph } from "./layout.js";
 import { CgrxGitGraphProvider } from "./git-history.js";
-import {
-  createProjectGraphRenderer,
-  type ProjectGraphRendererHandle
-} from "./project-three.js";
+import type { ProjectGraphRendererHandle } from "./project-three.js";
 import {
   graphEvidenceQuery,
   runtimeAgentHandoff,
@@ -874,6 +871,7 @@ const ProjectMapCanvas = forwardRef<ProjectMapCanvasHandle, ProjectMapCanvasProp
   const callbacksRef = useRef(props);
   const [size, setSize] = useState({ width: 980, height: 620 });
   const [webglFailed, setWebglFailed] = useState(false);
+  const [rendererReady, setRendererReady] = useState(false);
   callbacksRef.current = props;
 
   useEffect(() => {
@@ -881,17 +879,24 @@ const ProjectMapCanvas = forwardRef<ProjectMapCanvasHandle, ProjectMapCanvasProp
     if (!canvas || webglFailed) return;
     const lost = (event: Event): void => { event.preventDefault(); setWebglFailed(true); };
     canvas.addEventListener("webglcontextlost", lost);
-    try { rendererRef.current = createProjectGraphRenderer(canvas, {
-      onNodeSelect: (node) => callbacksRef.current.onNodeSelect(node),
-      onNodeOpen: (node) => callbacksRef.current.onNodeOpen(node),
-      onEdgeSelect: (edge, source, target) => callbacksRef.current.onEdgeSelect(edge, source, target)
-    }); } catch { canvas.removeEventListener("webglcontextlost", lost); setWebglFailed(true); return; }
+    let cancelled = false;
+    // The fixed local asset is external to app.js; leaving 3D cancels initialization.
+    void import("./project-three.js").then(({ createProjectGraphRenderer }) => {
+      if (cancelled) return;
+      rendererRef.current = createProjectGraphRenderer(canvas, {
+        onNodeSelect: (node) => callbacksRef.current.onNodeSelect(node),
+        onNodeOpen: (node) => callbacksRef.current.onNodeOpen(node),
+        onEdgeSelect: (edge, source, target) => callbacksRef.current.onEdgeSelect(edge, source, target)
+      });
+      setRendererReady(true);
+    }).catch(() => { if (!cancelled) setWebglFailed(true); });
     const observer = new ResizeObserver(() => {
       const parent = canvas.parentElement;
       if (parent) setSize({ width: Math.max(1, parent.clientWidth), height: Math.max(1, parent.clientHeight) });
     });
     if (canvas.parentElement) observer.observe(canvas.parentElement);
     return () => {
+      cancelled = true;
       observer.disconnect();
       canvas.removeEventListener("webglcontextlost", lost);
       rendererRef.current?.dispose();
@@ -900,16 +905,16 @@ const ProjectMapCanvas = forwardRef<ProjectMapCanvasHandle, ProjectMapCanvasProp
   }, [webglFailed]);
 
   const { layout, pending, error } = useProjectLayout(props.graph, size.width, size.height, !webglFailed);
-  useEffect(() => { rendererRef.current?.render(props.graph, layout || { width: size.width, height: size.height, nodes: [], communities: [] }, { selectedId: props.selectedId }); }, [layout, props.graph, size.width, size.height]);
-  useEffect(() => { rendererRef.current?.setSelected(props.selectedId); }, [props.selectedId]);
+  useEffect(() => { rendererRef.current?.render(props.graph, layout || { width: size.width, height: size.height, nodes: [], communities: [] }, { selectedId: props.selectedId }); }, [layout, props.graph, size.width, size.height, rendererReady]);
+  useEffect(() => { rendererRef.current?.setSelected(props.selectedId); }, [props.selectedId, rendererReady]);
   useImperativeHandle(forwardedRef, () => ({
     zoom: (factor) => (webglFailed ? fallbackRef.current : rendererRef.current)?.zoom(factor),
     resetView: () => (webglFailed ? fallbackRef.current : rendererRef.current)?.resetView(),
     focusNode: (nodeId) => (webglFailed ? fallbackRef.current : rendererRef.current)?.focusNode(nodeId)
   }), [webglFailed]);
 
-  if (webglFailed) return <ProjectCanvas {...props} ref={fallbackRef}/>;
-  return <><canvas ref={canvasRef} className="project-three-canvas" aria-label="Three-dimensional repository dependency map" aria-busy={pending} />{(pending || error) && <p className="layout-status" role="status">{error || "Arranging repository graph…"}</p>}<GraphNeighbors {...props} layout={layout}/></>;
+  if (webglFailed) return <><ProjectCanvas {...props} ref={fallbackRef}/><p className="layout-status" role="status">3D unavailable. Showing 2D map.</p></>;
+  return <><canvas ref={canvasRef} className="project-three-canvas" aria-label="Three-dimensional repository dependency map" aria-busy={pending || !rendererReady} />{(pending || error || !rendererReady) && <p className="layout-status" role="status">{error || (!rendererReady ? "Loading 3D map…" : "Arranging repository graph…")}</p>}<GraphNeighbors {...props} layout={layout}/></>;
 });
 
 function SvgGraph({ graph, camera, selectedNodeId, pins, onSelectNode, onInspectEdge, onNodeDrag }: {

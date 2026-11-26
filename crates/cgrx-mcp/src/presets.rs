@@ -8,7 +8,7 @@
 //! |           | `get_code_snippet`, `check_index_coverage`, `check_framework_gates`, `memory_recall`           |
 //! | `standard`|`minimal` + `orient`, `expand`, `get_architecture`, `explain_symbol`, memory writes (default) |
 //! | `full`    | All tools including `scan_risks`, `check_change_gates`, `check_repository_gates`,          |
-//! |           | `ingest_runtime_evidence`, `find_similar`, `suggest_refactors`, `explain_symbol`,          |
+//! |           | `ingest_runtime_evidence`, `suggest_refactors`, `explain_symbol`,          |
 //! |           | `detect_dead_code`                                                                        |
 
 use serde::Deserialize;
@@ -154,7 +154,6 @@ impl Toolset {
                 "check_change_gates",
                 "check_repository_gates",
                 "ingest_runtime_evidence",
-                "find_similar",
                 "suggest_refactors",
                 "list_quality_candidates",
                 "get_candidate_details",
@@ -289,9 +288,9 @@ mod tests {
         assert!(names.contains(&"check_change_gates"));
         assert!(names.contains(&"check_repository_gates"));
         assert!(names.contains(&"ingest_runtime_evidence"));
-        assert!(names.contains(&"find_similar"));
+        assert!(!names.contains(&"find_similar"));
         assert!(names.contains(&"suggest_refactors"));
-        assert_eq!(names.len(), 30);
+        assert_eq!(names.len(), 29);
     }
 
     #[test]

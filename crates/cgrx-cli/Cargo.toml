@@ -21,7 +21,6 @@ cgrx-languages.workspace = true
 cgrx-mcp.workspace = true
 cgrx-retrieval.workspace = true
 cgrx-store.workspace = true
-cgrx-metrics.workspace = true
 blake3.workspace = true
 sha2 = "=0.10.9"
 sha1 = "=0.10.6"

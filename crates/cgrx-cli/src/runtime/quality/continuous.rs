@@ -43,11 +43,20 @@ impl Runtime {
             .write(true)
             .open(self.state_root.join(name))
             .map_err(|_| error("cgrx.quality_state_io", "cannot open quality state lock"))?;
+        let deadline = Instant::now() + Duration::from_secs(2);
         loop {
             self.quality_check_cancel()?;
             match file.try_lock() {
                 Ok(()) => return Ok(file),
-                Err(std::fs::TryLockError::WouldBlock) => thread::sleep(Duration::from_millis(10)),
+                Err(std::fs::TryLockError::WouldBlock) => {
+                    if Instant::now() >= deadline {
+                        return Err(error(
+                            "cgrx.quality_busy",
+                            "quality state is busy; retry the request",
+                        ));
+                    }
+                    thread::sleep(Duration::from_millis(10));
+                }
                 Err(std::fs::TryLockError::Error(_)) => {
                     return Err(error("cgrx.quality_state_io", "cannot lock quality state"));
                 }
@@ -133,7 +142,9 @@ impl Runtime {
                         Ok(json!({"phase":"ready","snapshot":index["snapshot"],"analysis":index["analysis"],"candidate_count":index["candidates"].as_array().map(Vec::len),"partial":index["partial"],"poll_ms":interval,"updated_at_unix":now(),"producer_pid":std::process::id()}))
                     })();
                     let report=match attempt {Ok(v)=>v,Err(e)=>json!({"phase":"error","code":e.code(),"updated_at_unix":now(),"poll_ms":interval,"producer_pid":std::process::id()})};
-                    if let Some(r)=runtime.as_ref(){let _=r.quality_write_json(&state.join("quality-worker-status.json"),&report);}
+                    if let Some(r)=runtime.as_ref(){
+                        let _=r.quality_write_json(&state.join("quality-worker-status.json"),&report);
+                    }
                 }
                 let guard=signaled.0.lock().unwrap();let _wait=signaled.1.wait_timeout_while(guard,Duration::from_millis(interval),|_|!stopped.load(Ordering::Acquire));
             }
@@ -147,13 +158,18 @@ impl Runtime {
         }
         QualityWorker { stop, wake, join }
     }
-    pub(super) fn quality_worker_status(&self) -> Result<Value, RuntimeError> {
+    pub(super) fn quality_worker_status(&self, root: &Path) -> Result<Value, RuntimeError> {
         let mut status = fs::read(self.state_root.join("quality-worker-status.json"))
             .ok()
             .and_then(|b| serde_json::from_slice::<Value>(&b).ok())
             .unwrap_or(json!({"phase":"not_started"}));
         status["fresh"] = json!(status["snapshot"] == json!(self.snapshot()));
         status["requested_snapshot"] = json!(self.snapshot());
+        if let Some(performance) =
+            super::profile_jobs::status(root, &self.state_root, &self.snapshot().repo_revision)
+        {
+            status["performance"] = performance;
+        }
         Ok(status)
     }
     pub(super) fn quality_states(&self) -> Result<Value, RuntimeError> {

@@ -11,6 +11,8 @@ use std::{
     path::Path,
 };
 mod continuous;
+mod fast_anything;
+mod profile_jobs;
 mod project_checks;
 mod verification;
 pub use continuous::QualityWorker;
@@ -543,7 +545,7 @@ impl Runtime {
             return Err(error("cgrx.invalid_arguments", "kind must be a string"));
         }
         if operation == "get_quality_index_status" {
-            return self.quality_worker_status();
+            return self.quality_worker_status(root);
         }
         if args.get("status").is_some_and(|v| !v.is_string())
             || ["include_resolved", "include_inactive"]

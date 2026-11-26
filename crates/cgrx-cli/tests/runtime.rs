@@ -4584,3 +4584,26 @@ fn reindex_after_new_commit_rebuilds_for_the_new_snapshot() {
     assert_ne!(second.snapshot, first.snapshot);
     assert_eq!(second.indexed_files, first.indexed_files);
 }
+
+#[test]
+fn dead_code_keeps_outgoing_counts_before_truncation() {
+    let repo = repository_with_file(
+        "dead-code-edges",
+        "main.py",
+        b"def leaf_a():\n    return 1\n\ndef leaf_b():\n    return 2\n\ndef fan():\n    return leaf_a() + leaf_b()\n\ndef solo():\n    return 3\n",
+    );
+    let state = TestDirectory::new("dead-code-edges-state");
+    Runtime::index(repo.path(), state.path()).unwrap();
+    let runtime = Runtime::open(state.path()).unwrap();
+    let scope = Scope {
+        include: vec!["**".into()],
+        exclude: vec![],
+        relation_kinds: vec![RelationKind::Calls],
+        max_depth: 1,
+    };
+    let result = runtime.detect_dead_code(&scope, Some("python"), 1).unwrap();
+    assert_eq!(result["total"], 2);
+    assert_eq!(result["truncated"], true);
+    assert_eq!(result["dead_symbols"][0]["symbol"], "fan");
+    assert_eq!(result["dead_symbols"][0]["outgoing_calls"], 2);
+}

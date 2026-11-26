@@ -3,13 +3,15 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io;
-use std::io::Read;
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 
 use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
+use memvid_core::footer::{CommitFooter, FOOTER_SIZE};
 use memvid_core::io::header::HeaderCodec;
+use memvid_core::types::{SketchTrack, SketchVariant, Toc};
 use memvid_core::{DocMetadata, EmbeddedWal, Memvid, MemvidError, PutOptions, TimelineQuery};
 use serde::{Deserialize, Serialize};
 
@@ -1133,9 +1135,18 @@ impl MemoryStore {
         for attempt in 0..20 {
             let snapshot = self.copy_agent_memory()?;
             let outcome = (|| {
+                let pending_wal = agent_journal_pending(&snapshot.0)?;
+                if pending_wal {
+                    detach_sketch_before_replay(&snapshot.0)?;
+                }
                 let mut memory = open(&snapshot.0).map_err(memvid_backend_error)?;
                 let versions = read_versions(&mut memory)?;
                 let inventory = storage_inventory(&mut memory)?;
+                if pending_wal {
+                    *memory.sketches_mut() = SketchTrack::default();
+                    memory.build_all_sketches(SketchVariant::Small);
+                    memory.commit().map_err(memvid_backend_error)?;
+                }
                 // Drop may finalize SDK writes and ignores its own commit error.
                 // A cached TOC is not evidence that the closed file is durable.
                 drop(memory);
@@ -1230,25 +1241,25 @@ impl MemoryStore {
     /// Never expose that partial initialization at the primary path.
     fn create_agent_memory(
         &self,
-        create: impl FnOnce(&Path) -> memvid_core::Result<Memvid>,
-    ) -> io::Result<Memvid> {
-        let snapshot = self.new_agent_copy()?;
-        {
-            let mut memory = create(&snapshot.0).map_err(memvid_backend_error)?;
-            memory.enable_lex().map_err(memvid_backend_error)?;
-            memory.commit().map_err(memvid_backend_error)?;
-        }
-        if agent_journal_pending(&snapshot.0)? {
-            return Err(invalid_data("new memory still has pending journal entries"));
-        }
-        {
+        mut create: impl FnMut(&Path) -> memvid_core::Result<Memvid>,
+    ) -> io::Result<()> {
+        let snapshot = retry_memory_setup(|| {
+            let snapshot = self.new_agent_copy()?;
+            {
+                let mut memory = create(&snapshot.0).map_err(memvid_backend_error)?;
+                memory.enable_lex().map_err(memvid_backend_error)?;
+                memory.commit().map_err(memvid_backend_error)?;
+            }
+            if agent_journal_pending(&snapshot.0)? {
+                return Err(invalid_data("new memory still has pending journal entries"));
+            }
             let mut verified = Memvid::open_read_only(&snapshot.0).map_err(memvid_backend_error)?;
             if !storage_inventory(&mut verified)?.is_empty() {
                 return Err(invalid_data("new memory must have an empty inventory"));
             }
-        }
-        self.publish_agent_copy(snapshot)?;
-        Memvid::open(self.agent_path()).map_err(memvid_backend_error)
+            Ok(snapshot)
+        })?;
+        self.publish_agent_copy(snapshot)
     }
 
     /// Derived writes cannot change assertions or discard unmentioned history.
@@ -1314,16 +1325,16 @@ impl MemoryStore {
                 "primary memory is missing; abandoned copies require review",
             ));
         }
-        let mut memory = if path.exists() {
+        if path.exists() {
             // Decode through upstream public IO APIs, without changing the header
             // or WAL. Clean opens do not copy the store or load a second index.
             if agent_journal_pending(&path)? {
                 self.recover_agent_journal(None, |path| Memvid::open(path))?;
             }
-            Memvid::open(&path).map_err(memvid_backend_error)?
         } else {
-            self.create_agent_memory(|path| Memvid::create(path))?
-        };
+            self.create_agent_memory(|path| Memvid::create(path))?;
+        }
+        let mut memory = retry_memory_setup(|| Memvid::open(&path).map_err(memvid_backend_error))?;
         if !abandoned.is_empty() {
             // Abrupt termination skips RecoveryFile::drop. A successful primary
             // open and complete envelope validation establish which file to keep.
@@ -1494,6 +1505,52 @@ fn agent_journal_pending(path: &Path) -> io::Result<bool> {
     let header = HeaderCodec::decode(&bytes).map_err(memvid_backend_error)?;
     let wal = EmbeddedWal::open_read_only(&file, &header).map_err(memvid_backend_error)?;
     Ok(wal.stats().pending_bytes != 0)
+}
+
+// Memvid 2.0.140 replays the WAL before loading sketches. Its index rebuild can
+// overwrite the old sketch bytes while retaining the manifest. Detach only that
+// derived index on the disposable copy; regenerate it from active frames after replay.
+fn detach_sketch_before_replay(path: &Path) -> io::Result<()> {
+    let mut file = fs::OpenOptions::new().read(true).write(true).open(path)?;
+    let mut bytes = [0; memvid_core::constants::HEADER_SIZE];
+    file.read_exact(&mut bytes)?;
+    let mut header = HeaderCodec::decode(&bytes).map_err(memvid_backend_error)?;
+    let mut trailer = [0; FOOTER_SIZE];
+    let trailer_start = file.seek(SeekFrom::End(-(FOOTER_SIZE as i64)))?;
+    file.read_exact(&mut trailer)?;
+    let mut footer =
+        CommitFooter::decode(&trailer).ok_or_else(|| invalid_data("invalid recovery footer"))?;
+    let toc_start = trailer_start
+        .checked_sub(footer.toc_len)
+        .filter(|&start| {
+            start == header.footer_offset
+                && start >= header.wal_offset.saturating_add(header.wal_size)
+                && footer.toc_len <= 64 * 1024 * 1024
+        })
+        .ok_or_else(|| invalid_data("invalid recovery TOC bounds"))?;
+    let mut original = vec![0; footer.toc_len as usize];
+    file.seek(SeekFrom::Start(toc_start))?;
+    file.read_exact(&mut original)?;
+    if !footer.hash_matches(&original) {
+        return Err(invalid_data("invalid recovery TOC hash"));
+    }
+    let mut toc = Toc::decode(&original).map_err(memvid_backend_error)?;
+    toc.verify_checksum().map_err(memvid_backend_error)?;
+    if toc.sketch_track.take().is_none() {
+        return Ok(());
+    }
+    toc.toc_checksum = [0; 32];
+    toc.toc_checksum = Toc::calculate_checksum(&toc.encode().map_err(memvid_backend_error)?);
+    let updated = toc.encode().map_err(memvid_backend_error)?;
+    footer.toc_len = updated.len() as u64;
+    footer.toc_hash = *blake3::hash(&updated).as_bytes();
+    file.seek(SeekFrom::Start(toc_start))?;
+    file.write_all(&updated)?;
+    file.write_all(&footer.encode())?;
+    let end = file.stream_position()?;
+    file.set_len(end)?;
+    header.toc_checksum = toc.toc_checksum;
+    HeaderCodec::write(&mut file, &header).map_err(memvid_backend_error)
 }
 
 fn is_agent_recovery_name(name: &std::ffi::OsStr) -> bool {
@@ -1837,6 +1894,19 @@ fn bounded_text(text: &str, label: &str, max: usize) -> io::Result<()> {
 
 fn memvid_error(error: impl std::fmt::Display) -> io::Error {
     io::Error::other(error.to_string())
+}
+
+// Retry SDK setup only, never a logical append or an unconfirmed commit.
+fn retry_memory_setup<T>(mut attempt: impl FnMut() -> io::Result<T>) -> io::Result<T> {
+    for delay_ms in [10, 20, 40, 80, 160] {
+        match attempt() {
+            Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                std::thread::sleep(std::time::Duration::from_millis(delay_ms));
+            }
+            outcome => return outcome,
+        }
+    }
+    attempt()
 }
 
 fn transient_memvid_busy(error: &MemvidError) -> bool {
@@ -3432,6 +3502,71 @@ mod tests {
     }
 
     #[test]
+    fn replay_pending_write_preserves_committed_sketch_and_history() {
+        assert_pending_replay(false);
+    }
+
+    #[test]
+    fn replay_pending_write_rebuilds_an_overwritten_sketch() {
+        assert_pending_replay(true);
+    }
+
+    fn assert_pending_replay(damage_sketch: bool) {
+        let f = Fixture::new();
+        let first = f
+            .store
+            .agent_record(&f.input("Original decision"), NOW)
+            .unwrap()
+            .record;
+        let mut expected = first.clone();
+        expected.version = 2;
+        expected.updated_unix_nanos = NOW + 1;
+        expected.update_reason = Some("Verified replacement".to_owned());
+        expected.decision.fact = (0..200)
+            .map(|i| format!("replacement{i}"))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let path = f.store.agent_path();
+        let lock = acquire_writer_lock(&f.root).unwrap();
+        let mut memory = f.store.open_agent_memory(&lock).unwrap();
+        assert!(memory.has_sketches());
+        append(&mut memory, &expected, Some(vec![0.25; 384])).unwrap();
+        // Take the pre-commit WAL image before Memvid's Drop can commit it.
+        let pending = f.root.join("pending.mv2");
+        fs::copy(&path, &pending).unwrap();
+        drop(memory);
+        fs::rename(pending, &path).unwrap();
+        if damage_sketch {
+            let raw = fs::read(&path).unwrap();
+            let footer = memvid_core::footer::find_last_valid_footer(&raw).unwrap();
+            let sketch = Toc::decode(footer.toc_bytes).unwrap().sketch_track.unwrap();
+            let mut file = fs::OpenOptions::new().write(true).open(&path).unwrap();
+            file.seek(SeekFrom::Start(sketch.bytes_offset)).unwrap();
+            file.write_all(b"overwritten!").unwrap();
+            file.sync_all().unwrap();
+        }
+        assert!(agent_journal_pending(&path).unwrap());
+        assert!(
+            f.store
+                .recover_agent_journal(Some(&PendingAgentWrite::Update(&expected, 1)), |p| {
+                    Memvid::open(p)
+                })
+                .unwrap()
+        );
+        assert!(!agent_journal_pending(&path).unwrap());
+        let mut memory = Memvid::open_read_only(&path).unwrap();
+        assert_eq!(memory.sketch_stats().entry_count, 2);
+        let history = read_versions(&mut memory).unwrap();
+        assert_eq!(history.len(), 2);
+        assert_eq!(history[0].1, first);
+        assert_eq!(history[1].1, expected);
+        assert_eq!(
+            memory.frame_embedding(history[1].0).unwrap(),
+            Some(vec![0.25; 384])
+        );
+    }
+
+    #[test]
     fn failed_commit_recovers_exact_wal_update_without_replaying_mutation() {
         let f = Fixture::new();
         let first = f
@@ -3635,12 +3770,52 @@ mod tests {
     }
 
     #[test]
+    fn cold_memory_initialization_retries_busy_on_a_new_copy() {
+        let f = Fixture::new();
+        let lock = acquire_writer_lock(&f.root).unwrap();
+        let attempts = std::cell::RefCell::new(Vec::<PathBuf>::new());
+        let outcome = f.store.create_agent_memory(|path| {
+            let mut attempts = attempts.borrow_mut();
+            assert!(!f.store.agent_path().exists());
+            assert!(fs::read(path).unwrap().is_empty());
+            if let Some(previous) = attempts.last() {
+                assert!(!previous.exists());
+                attempts.push(path.to_path_buf());
+                Memvid::create(path)
+            } else {
+                attempts.push(path.to_path_buf());
+                fs::write(path, b"discard this partial initialization").unwrap();
+                Err(MemvidError::Tantivy {
+                    reason: "Failed to acquire Lockfile: LockBusy. test".to_owned(),
+                })
+            }
+        });
+        if let Err(error) = outcome {
+            panic!("cold initialization failed: {error:?}");
+        }
+        assert_eq!(attempts.borrow().len(), 2);
+        assert_ne!(attempts.borrow()[0], attempts.borrow()[1]);
+        assert!(f.store.abandoned_agent_copies(&lock).unwrap().is_empty());
+        drop(lock);
+        let item = f
+            .store
+            .agent_record(&f.input("First observation"), NOW)
+            .unwrap();
+        let recalled = f.store.agent_recall(&f.query(None)).unwrap().results;
+        assert_eq!(recalled.len(), 1);
+        assert_eq!(recalled[0].record, item.record);
+        assert_eq!(item.record.version, 1);
+    }
+
+    #[test]
     fn failed_initialization_keeps_primary_absent_and_allows_a_safe_retry() {
         let f = Fixture::new();
         let lock = acquire_writer_lock(&f.root).unwrap();
+        let mut attempts = 0;
         let error = f
             .store
             .create_agent_memory(|path| {
+                attempts += 1;
                 // SDK create can write its header/WAL before a staging-lock error.
                 fs::write(path, b"incomplete SDK initialization").unwrap();
                 Err(MemvidError::Tantivy {
@@ -3650,6 +3825,7 @@ mod tests {
             .err()
             .unwrap();
         assert_eq!(error.kind(), io::ErrorKind::WouldBlock);
+        assert_eq!(attempts, 6);
         assert!(!f.store.agent_path().exists());
         assert!(f.store.abandoned_agent_copies(&lock).unwrap().is_empty());
         drop(lock);

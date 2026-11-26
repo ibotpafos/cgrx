@@ -1017,7 +1017,7 @@ pub(super) fn compact_status(value: &Value) -> Value {
         .take(8)
         .cloned()
         .collect();
-    json!({
+    let mut result = json!({
         "at": snapshot_tag(snapshot),
         "freshness": value.get("freshness"),
         "server": value.get("server"),
@@ -1028,7 +1028,11 @@ pub(super) fn compact_status(value: &Value) -> Value {
         "gap_kinds": value.get("coverage_summary"),
         "gaps": gaps,
         "more": value.get("coverage_gaps_truncated"),
-    })
+    });
+    if let Some(timing) = value.get("refresh_timing") {
+        result["refresh_timing"] = timing.clone();
+    }
+    result
 }
 
 pub(super) fn compact_uncertainty_counts(uncertainties: Option<&Value>) -> Value {
