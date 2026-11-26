@@ -1241,25 +1241,25 @@ impl MemoryStore {
     /// Never expose that partial initialization at the primary path.
     fn create_agent_memory(
         &self,
-        create: impl FnOnce(&Path) -> memvid_core::Result<Memvid>,
-    ) -> io::Result<Memvid> {
-        let snapshot = self.new_agent_copy()?;
-        {
-            let mut memory = create(&snapshot.0).map_err(memvid_backend_error)?;
-            memory.enable_lex().map_err(memvid_backend_error)?;
-            memory.commit().map_err(memvid_backend_error)?;
-        }
-        if agent_journal_pending(&snapshot.0)? {
-            return Err(invalid_data("new memory still has pending journal entries"));
-        }
-        {
+        mut create: impl FnMut(&Path) -> memvid_core::Result<Memvid>,
+    ) -> io::Result<()> {
+        let snapshot = retry_memory_setup(|| {
+            let snapshot = self.new_agent_copy()?;
+            {
+                let mut memory = create(&snapshot.0).map_err(memvid_backend_error)?;
+                memory.enable_lex().map_err(memvid_backend_error)?;
+                memory.commit().map_err(memvid_backend_error)?;
+            }
+            if agent_journal_pending(&snapshot.0)? {
+                return Err(invalid_data("new memory still has pending journal entries"));
+            }
             let mut verified = Memvid::open_read_only(&snapshot.0).map_err(memvid_backend_error)?;
             if !storage_inventory(&mut verified)?.is_empty() {
                 return Err(invalid_data("new memory must have an empty inventory"));
             }
-        }
-        self.publish_agent_copy(snapshot)?;
-        Memvid::open(self.agent_path()).map_err(memvid_backend_error)
+            Ok(snapshot)
+        })?;
+        self.publish_agent_copy(snapshot)
     }
 
     /// Derived writes cannot change assertions or discard unmentioned history.
@@ -1325,16 +1325,16 @@ impl MemoryStore {
                 "primary memory is missing; abandoned copies require review",
             ));
         }
-        let mut memory = if path.exists() {
+        if path.exists() {
             // Decode through upstream public IO APIs, without changing the header
             // or WAL. Clean opens do not copy the store or load a second index.
             if agent_journal_pending(&path)? {
                 self.recover_agent_journal(None, |path| Memvid::open(path))?;
             }
-            Memvid::open(&path).map_err(memvid_backend_error)?
         } else {
-            self.create_agent_memory(|path| Memvid::create(path))?
-        };
+            self.create_agent_memory(|path| Memvid::create(path))?;
+        }
+        let mut memory = retry_memory_setup(|| Memvid::open(&path).map_err(memvid_backend_error))?;
         if !abandoned.is_empty() {
             // Abrupt termination skips RecoveryFile::drop. A successful primary
             // open and complete envelope validation establish which file to keep.
@@ -1894,6 +1894,19 @@ fn bounded_text(text: &str, label: &str, max: usize) -> io::Result<()> {
 
 fn memvid_error(error: impl std::fmt::Display) -> io::Error {
     io::Error::other(error.to_string())
+}
+
+// Retry SDK setup only, never a logical append or an unconfirmed commit.
+fn retry_memory_setup<T>(mut attempt: impl FnMut() -> io::Result<T>) -> io::Result<T> {
+    for delay_ms in [10, 20, 40, 80, 160] {
+        match attempt() {
+            Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                std::thread::sleep(std::time::Duration::from_millis(delay_ms));
+            }
+            outcome => return outcome,
+        }
+    }
+    attempt()
 }
 
 fn transient_memvid_busy(error: &MemvidError) -> bool {
@@ -3757,12 +3770,52 @@ mod tests {
     }
 
     #[test]
+    fn cold_memory_initialization_retries_busy_on_a_new_copy() {
+        let f = Fixture::new();
+        let lock = acquire_writer_lock(&f.root).unwrap();
+        let attempts = std::cell::RefCell::new(Vec::<PathBuf>::new());
+        let outcome = f.store.create_agent_memory(|path| {
+            let mut attempts = attempts.borrow_mut();
+            assert!(!f.store.agent_path().exists());
+            assert!(fs::read(path).unwrap().is_empty());
+            if let Some(previous) = attempts.last() {
+                assert!(!previous.exists());
+                attempts.push(path.to_path_buf());
+                Memvid::create(path)
+            } else {
+                attempts.push(path.to_path_buf());
+                fs::write(path, b"discard this partial initialization").unwrap();
+                Err(MemvidError::Tantivy {
+                    reason: "Failed to acquire Lockfile: LockBusy. test".to_owned(),
+                })
+            }
+        });
+        if let Err(error) = outcome {
+            panic!("cold initialization failed: {error:?}");
+        }
+        assert_eq!(attempts.borrow().len(), 2);
+        assert_ne!(attempts.borrow()[0], attempts.borrow()[1]);
+        assert!(f.store.abandoned_agent_copies(&lock).unwrap().is_empty());
+        drop(lock);
+        let item = f
+            .store
+            .agent_record(&f.input("First observation"), NOW)
+            .unwrap();
+        let recalled = f.store.agent_recall(&f.query(None)).unwrap().results;
+        assert_eq!(recalled.len(), 1);
+        assert_eq!(recalled[0].record, item.record);
+        assert_eq!(item.record.version, 1);
+    }
+
+    #[test]
     fn failed_initialization_keeps_primary_absent_and_allows_a_safe_retry() {
         let f = Fixture::new();
         let lock = acquire_writer_lock(&f.root).unwrap();
+        let mut attempts = 0;
         let error = f
             .store
             .create_agent_memory(|path| {
+                attempts += 1;
                 // SDK create can write its header/WAL before a staging-lock error.
                 fs::write(path, b"incomplete SDK initialization").unwrap();
                 Err(MemvidError::Tantivy {
@@ -3772,6 +3825,7 @@ mod tests {
             .err()
             .unwrap();
         assert_eq!(error.kind(), io::ErrorKind::WouldBlock);
+        assert_eq!(attempts, 6);
         assert!(!f.store.agent_path().exists());
         assert!(f.store.abandoned_agent_copies(&lock).unwrap().is_empty());
         drop(lock);
