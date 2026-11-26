@@ -1,5 +1,6 @@
 .worktrees/
 .superpowers/
+/.fast/
 .cgrx/*
 !.cgrx/quality-checks.json
 __pycache__/

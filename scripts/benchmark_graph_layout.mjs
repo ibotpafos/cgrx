@@ -2,7 +2,18 @@ import { readFile } from 'node:fs/promises';
 import { performance } from 'node:perf_hooks';
 import { layoutRepositoryMap } from '../crates/cgrx-cli/web/dense-layout.js';
 import { projectCodeMap } from '../crates/cgrx-cli/web/repository-map.js';
-const graph = projectCodeMap(JSON.parse(await readFile(process.argv[2], 'utf8')));
+function syntheticGraph() {
+  const nodes = Array.from({ length: 1400 }, (_, i) => ({
+    node_id: String(i), symbol: `fn_${i}`, path: `crates/pkg${i % 12}/lib.rs`
+  }));
+  const edges = nodes.flatMap(({ node_id }, i) => [1, 7, 31].map(offset => ({
+    source: node_id, target: String((i + offset) % nodes.length), relation: 'CALLS'
+  })));
+  return { nodes, edges, total_nodes: nodes.length, total_edges: edges.length };
+}
+
+const input = process.argv[2] ? JSON.parse(await readFile(process.argv[2], 'utf8')) : syntheticGraph();
+const graph = projectCodeMap(input);
 const samples = [];
 for (let i = 0; i < 3; i++) {
   const before = performance.now();

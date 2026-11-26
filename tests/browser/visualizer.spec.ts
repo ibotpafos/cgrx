@@ -17,14 +17,22 @@ test.beforeAll(async () => {
 test.afterAll(() => { server?.kill(); if (root) rmSync(root, { recursive: true, force: true }); });
 test('real backend: project graph, keyboard search, 3D and lazy panels under CSP', async ({ page }) => {
   const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
+  const lazyRequests: string[] = [];
+  page.on('request', request => { if (request.url().endsWith('/assets/project-three.js')) lazyRequests.push(request.url()); });
   await page.goto(url);
   await expect(page.locator('.project-sigma')).toHaveAttribute('data-rendered-nodes', '2');
+  expect(lazyRequests).toHaveLength(0);
   await expect(page.getByRole('button', { name: '3D', exact: true })).toBeVisible();
   await page.getByRole('button', { name: '3D', exact: true }).click();
   await expect(page.locator('.project-three-canvas')).toHaveAttribute('data-rendered-nodes', '2');
   await expect(page.locator('.project-three-canvas')).toHaveAttribute('data-rendered-edges', '1');
+  expect(lazyRequests).toHaveLength(1);
   await page.getByRole('button', { name: '2D', exact: true }).click();
   await expect(page.locator('.project-sigma')).toHaveAttribute('data-rendered-edges', '1');
+  await page.getByRole('button', { name: '3D', exact: true }).click();
+  await expect(page.locator('.project-three-canvas')).toHaveAttribute('data-rendered-nodes', '2');
+  expect(lazyRequests).toHaveLength(1);
+  await page.getByRole('button', { name: '2D', exact: true }).click();
   await page.locator('#search-input').fill('caller');
   await page.locator('#search-input').press('Enter');
   await page.locator('summary').filter({ hasText: 'Matches' }).click();
@@ -53,4 +61,70 @@ test('context loss falls back to explicitly bounded SVG', async ({ page }) => {
   });
   await expect(page.getByText(/SVG fallback limited to 500 nodes/)).toBeVisible();
   await expect(page.locator('.map-node')).toHaveCount(500);
+});
+
+for (const failure of ['import', 'webgl', 'context loss']) {
+  test(`3D ${failure} failure preserves the 2D map and accessible controls`, async ({ page }) => {
+    if (failure === 'import') await page.route('**/assets/project-three.js', route => route.abort());
+    if (failure === 'webgl') await page.addInitScript(() => {
+      const getContext = HTMLCanvasElement.prototype.getContext;
+      HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement, ...args: Parameters<typeof getContext>) {
+        if (this.classList.contains('project-three-canvas')) return null;
+        return getContext.apply(this, args);
+      } as typeof getContext;
+    });
+    await page.goto(url);
+    await expect(page.locator('.project-sigma')).toHaveAttribute('data-rendered-nodes', '2');
+    await page.getByRole('button', { name: '3D', exact: true }).click();
+    if (failure === 'context loss') {
+      await expect(page.locator('.project-three-canvas')).toHaveAttribute('data-rendered-nodes', '2');
+      await page.locator('.project-three-canvas').evaluate((canvas: HTMLCanvasElement) => {
+        canvas.getContext('webgl2')?.getExtension('WEBGL_lose_context')?.loseContext();
+      });
+    }
+    await expect(page.getByRole('status').filter({ hasText: '3D unavailable. Showing 2D map.' })).toBeVisible();
+    await expect(page.locator('.project-sigma')).toHaveAttribute('data-rendered-nodes', '2');
+    await expect(page.getByRole('button', { name: '3D', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await page.getByRole('button', { name: '2D', exact: true }).click();
+    await expect(page.locator('.project-sigma')).toHaveAttribute('data-rendered-nodes', '2');
+  });
+}
+
+test('leaving 3D before the asset arrives cancels initialization and allows re-entry', async ({ page }) => {
+  const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  await page.route('**/assets/project-three.js', async route => { await gate; await route.continue(); });
+  await page.goto(url);
+  await expect(page.locator('.project-sigma')).toHaveAttribute('data-rendered-nodes', '2');
+  await page.getByRole('button', { name: '3D', exact: true }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'Loading 3D map…' })).toBeVisible();
+  await expect(page.locator('.project-three-canvas')).toHaveAttribute('aria-busy', 'true');
+  await page.getByRole('button', { name: '2D', exact: true }).click();
+  const response = page.waitForResponse('**/assets/project-three.js');
+  release();
+  await response;
+  await expect(page.locator('.project-sigma')).toHaveAttribute('data-rendered-nodes', '2');
+  await expect(page.locator('.project-three-canvas')).toHaveCount(0);
+  await page.getByRole('button', { name: '3D', exact: true }).click();
+  await expect(page.locator('.project-three-canvas')).toHaveAttribute('data-rendered-nodes', '2');
+  await expect(page.locator('.project-three-canvas')).toHaveAttribute('aria-busy', 'false');
+  expect(errors).toEqual([]);
+});
+
+test('failed 3D import still reaches SVG when WebGL is unavailable', async ({ page }) => {
+  await page.route('**/assets/project-three.js', route => route.abort());
+  await page.addInitScript(() => {
+    const getContext = HTMLCanvasElement.prototype.getContext;
+    HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement, ...args: Parameters<typeof getContext>) {
+      if (String(args[0]).includes('webgl')) return null;
+      return getContext.apply(this, args);
+    } as typeof getContext;
+  });
+  await page.goto(url);
+  await expect(page.locator('.map-node')).toHaveCount(2);
+  await page.getByRole('button', { name: '3D', exact: true }).click();
+  await expect(page.getByRole('status').filter({ hasText: '3D unavailable. Showing 2D map.' })).toBeVisible();
+  await expect(page.locator('.map-node')).toHaveCount(2);
+  await expect(page.locator('.project-three-canvas')).toHaveCount(0);
 });

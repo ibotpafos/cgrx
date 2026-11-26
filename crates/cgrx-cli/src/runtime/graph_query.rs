@@ -505,11 +505,12 @@ impl super::Runtime {
         }
         let mut scoped = ScopedQuery::new(&self.stored, scope, path_in_scope);
         let arcs = scoped.definitive_arcs(&self.stored);
-        // Count incoming calls for each SYNTAX node
-        let mut incoming: BTreeMap<u64, usize> = BTreeMap::new();
-        for arc in &arcs {
+        let mut incoming = BTreeSet::new();
+        let mut outgoing = BTreeMap::<u64, usize>::new();
+        for arc in arcs {
             if arc.kind == RelationKind::Calls {
-                *incoming.entry(arc.target).or_default() += 1;
+                incoming.insert(arc.target);
+                *outgoing.entry(arc.source).or_default() += 1;
             }
         }
         // Find SYNTAX documents with zero incoming calls
@@ -518,14 +519,13 @@ impl super::Runtime {
             .into_iter()
             .filter(|document| {
                 language.is_none_or(|lang| document_language(document) == Some(lang))
-                    && !incoming.contains_key(&document.node_id)
+                    && !incoming.contains(&document.node_id)
             })
             .map(|document| {
-                let outgoing = arcs
-                    .iter()
-                    .filter(|arc| arc.source == document.node_id && arc.kind == RelationKind::Calls)
-                    .count();
-                (document, outgoing)
+                (
+                    document,
+                    outgoing.get(&document.node_id).copied().unwrap_or(0),
+                )
             })
             .collect();
         candidates.sort_by_key(|(doc, outgoing)| (doc.path.clone(), doc.span_start, *outgoing));

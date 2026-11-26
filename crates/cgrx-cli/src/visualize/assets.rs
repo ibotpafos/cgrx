@@ -8,3 +8,4 @@ pub(super) const WEB_GIT_GRAPH: &str = include_str!("../../web/vendor/web-git-gr
 pub(super) const APP: &str = include_str!("../../web/app.js");
 pub(super) const LAYOUT_WORKER: &str = include_str!("../../web/layout-worker.bundle.js");
 pub(super) const TOPOLOGY_WORKER: &str = include_str!("../../web/topology-worker.bundle.js");
+pub(super) const PROJECT_THREE: &str = include_str!("../../web/project-three.js");

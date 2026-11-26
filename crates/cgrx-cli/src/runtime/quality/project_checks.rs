@@ -7,6 +7,7 @@ use std::{
     fs, io,
     path::{Path, PathBuf},
     process::{Command, Stdio},
+    sync::atomic::{AtomicBool, Ordering},
     time::{Duration, Instant},
 };
 #[derive(Deserialize)]
@@ -47,6 +48,7 @@ fn excluded(name: &str) -> bool {
         name,
         ".git"
             | ".cgrx"
+            | ".fast"
             | ".ssh"
             | ".aws"
             | ".npmrc"
@@ -263,6 +265,273 @@ fn copy_snapshot(root: &Path, dest: &Path, b: &mut Budget) -> io::Result<()> {
     }
     Ok(())
 }
+pub(super) fn profile_clean_revision(root: &Path, revision: &str, stop: &AtomicBool) -> bool {
+    let Ok(scratch) = super::verification::temporary() else {
+        return false;
+    };
+    let Some(root) = root.to_str() else {
+        return false;
+    };
+    for (label, args, expected) in [
+        (
+            "status",
+            vec![
+                "-c",
+                "core.fsmonitor=false",
+                "-c",
+                "core.untrackedCache=false",
+                "status",
+                "--porcelain=v1",
+                "--untracked-files=normal",
+            ],
+            "",
+        ),
+        ("head", vec!["rev-parse", "--verify", "HEAD"], revision),
+    ] {
+        let argv = ["git", "--no-replace-objects", "-C", root]
+            .into_iter()
+            .chain(args)
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        let run = run_bounded(&scratch.0, &scratch.0, label, &argv, 1_000, Some(stop));
+        if run["status"] != "passed"
+            || !fs::read_to_string(scratch.0.join(format!("{label}.out")))
+                .is_ok_and(|value| value.trim() == expected)
+        {
+            return false;
+        }
+    }
+    !revision.is_empty()
+}
+
+// Profile inputs are committed blobs; generated dependencies are explicit, bounded copies.
+pub(super) fn copy_for_profile(
+    root: &Path,
+    dest: &Path,
+    revision: &str,
+    source_paths: &[PathBuf],
+    dependency_roots: &[PathBuf],
+    stop: &AtomicBool,
+) -> io::Result<()> {
+    let scratch = super::verification::temporary()?;
+    let mut b = Budget {
+        files: 0,
+        bytes: 0,
+        start: Instant::now(),
+        max_bytes: default_snapshot_bytes(),
+        max_files: default_snapshot_files(),
+        timeout_ms: 5_000,
+        dependency_roots: dependency_roots.to_vec(),
+    };
+    if !matches!(revision.len(), 40 | 64) || !revision.bytes().all(|c| c.is_ascii_hexdigit()) {
+        return Err(bad("invalid_revision"));
+    }
+    let git = |args: &[&str], label: &str, limit: u64, b: &Budget| -> io::Result<Vec<u8>> {
+        let remaining = b
+            .timeout_ms
+            .saturating_sub(b.start.elapsed().as_millis() as u64);
+        if remaining == 0 || stop.load(Ordering::Acquire) {
+            return Err(bad("snapshot_timeout_or_cancelled"));
+        }
+        let root_arg = root.to_str().ok_or_else(|| bad("unsafe_snapshot_path"))?;
+        let argv = [
+            "git",
+            "--no-replace-objects",
+            "--literal-pathspecs",
+            "-C",
+            root_arg,
+        ]
+        .into_iter()
+        .chain(args.iter().copied())
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+        let result = run_bounded_limit(
+            &scratch.0,
+            &scratch.0,
+            label,
+            &argv,
+            remaining,
+            Some(stop),
+            limit,
+        );
+        if result["status"] != "passed" {
+            return Err(bad(match result["status"].as_str() {
+                Some("output_limit") => "snapshot_byte_budget_exceeded",
+                Some("timeout" | "cancelled") => "snapshot_timeout_or_cancelled",
+                _ => "committed_blob_unavailable",
+            }));
+        }
+        fs::read(scratch.0.join(format!("{label}.out")))
+    };
+    if source_paths.is_empty()
+        || source_paths
+            .iter()
+            .chain(dependency_roots)
+            .any(|p| !profile_path_valid(p))
+    {
+        return Err(bad("unsafe_snapshot_path"));
+    }
+    let mut tree_args = vec!["ls-tree", "-r", "-z", "-l", revision, "--"];
+    for path in source_paths.iter().chain(dependency_roots) {
+        tree_args.push(path.to_str().ok_or_else(|| bad("unsafe_snapshot_path"))?);
+    }
+    let tree = git(&tree_args, "tree", 32 * 1024 * 1024, &b)?;
+    fs::create_dir_all(dest)?;
+    for record in tree.split(|c| *c == 0).filter(|r| !r.is_empty()) {
+        // Count every selected inventory entry, including excluded entries.
+        b.files += 1;
+        if b.files > b.max_files {
+            return Err(bad("snapshot_entry_budget_exceeded"));
+        }
+        let record = std::str::from_utf8(record).map_err(|_| bad("non_utf8_snapshot_path"))?;
+        let (header, name) = record
+            .split_once('\t')
+            .ok_or_else(|| bad("invalid_git_inventory"))?;
+        let path = Path::new(name);
+        if dependency_roots.iter().any(|p| path.starts_with(p)) {
+            return Err(bad("dependency_contains_committed_source"));
+        }
+        if !source_paths.iter().any(|p| path.starts_with(p))
+            || excluded_from_copy(path)
+            || path.components().any(|c| c.as_os_str() == "node_modules")
+        {
+            continue;
+        }
+        if !profile_path_valid(path) {
+            return Err(bad("unsafe_snapshot_path"));
+        }
+        let fields = header.split_whitespace().collect::<Vec<_>>();
+        if fields.len() != 4 || fields[1] != "blob" || !matches!(fields[0], "100644" | "100755") {
+            return Err(bad("unsupported_committed_entry"));
+        }
+        let size: u64 = fields[3].parse().map_err(|_| bad("invalid_blob_size"))?;
+        if size > b.max_bytes.saturating_sub(b.bytes) {
+            return Err(bad("snapshot_byte_budget_exceeded"));
+        }
+        // shortcut: one Git process per blob; batch if real workloads hit the copy deadline.
+        let bytes = git(&["cat-file", "blob", fields[2]], "blob", size, &b)?;
+        if bytes.len() as u64 != size {
+            return Err(bad("invalid_blob_size"));
+        }
+        b.bytes += size;
+        let to = dest.join(path);
+        fs::create_dir_all(to.parent().unwrap())?;
+        fs::write(&to, bytes)?;
+        #[cfg(unix)]
+        if fields[0] == "100755" {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(to, fs::Permissions::from_mode(0o755))?;
+        }
+    }
+    fn dependencies(
+        root: &Path,
+        dest: &Path,
+        path: &Path,
+        b: &mut Budget,
+        stop: &AtomicBool,
+    ) -> io::Result<()> {
+        if stop.load(Ordering::Acquire) || b.start.elapsed() >= Duration::from_millis(b.timeout_ms)
+        {
+            return Err(bad("snapshot_timeout_or_cancelled"));
+        }
+        b.files += 1;
+        if b.files > b.max_files {
+            return Err(bad("snapshot_entry_budget_exceeded"));
+        }
+        if b.excluded(path) {
+            return Ok(());
+        }
+        let from = root.join(path);
+        let to = dest.join(path);
+        let meta = fs::symlink_metadata(&from)?;
+        // Reject links, including ancestor links, rather than importing unselected data.
+        if meta.is_symlink() || from.canonicalize()? != from {
+            return Err(bad("unsafe_dependency_symlink"));
+        }
+        if meta.is_dir() {
+            fs::create_dir_all(&to)?;
+            for entry in fs::read_dir(from)? {
+                dependencies(root, dest, &path.join(entry?.file_name()), b, stop)?;
+            }
+        } else if meta.is_file() {
+            use std::io::Read;
+            let remaining = b.max_bytes.saturating_sub(b.bytes);
+            if meta.len() > remaining {
+                return Err(bad("snapshot_byte_budget_exceeded"));
+            }
+            let mut bytes = Vec::new();
+            fs::File::open(from)?
+                .take(remaining + 1)
+                .read_to_end(&mut bytes)?;
+            if bytes.len() as u64 > remaining {
+                return Err(bad("snapshot_byte_budget_exceeded"));
+            }
+            b.bytes += bytes.len() as u64;
+            fs::create_dir_all(to.parent().unwrap())?;
+            // Never replace a committed blob with mutable generated data.
+            use std::io::Write;
+            fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(to)?
+                .write_all(&bytes)?;
+        } else {
+            return Err(bad("special_file_not_supported"));
+        }
+        Ok(())
+    }
+    let root = root.canonicalize()?;
+    for path in dependency_roots {
+        if !profile_path_valid(path) || b.excluded(path) {
+            return Err(bad("unsafe_dependency_root"));
+        }
+        dependencies(&root, dest, path, &mut b, stop)?;
+    }
+    if stop.load(Ordering::Acquire) || b.start.elapsed() >= Duration::from_millis(b.timeout_ms) {
+        return Err(bad("snapshot_timeout_or_cancelled"));
+    }
+    Ok(())
+}
+
+pub(super) fn profile_path_valid(path: &Path) -> bool {
+    !path.as_os_str().is_empty()
+        && path.as_os_str().len() <= 512
+        && path
+            .components()
+            .all(|c| matches!(c, std::path::Component::Normal(_)))
+        && !excluded_from_copy(&Path::new("node_modules").join(path))
+        && !path.components().next().is_some_and(|c| {
+            matches!(
+                c.as_os_str().to_str(),
+                Some("local" | "evidence" | "WORKSPACE.local.md")
+            )
+        })
+        && !path.components().any(|c| {
+            c.as_os_str()
+                .to_string_lossy()
+                .chars()
+                .any(char::is_control)
+        })
+}
+
+pub(super) fn profile_copy_reason(error: &io::Error) -> &'static str {
+    match error.to_string().as_str() {
+        "invalid_revision" => "invalid_revision",
+        "snapshot_timeout_or_cancelled" => "snapshot_timeout_or_cancelled",
+        "snapshot_byte_budget_exceeded" => "snapshot_byte_budget_exceeded",
+        "snapshot_entry_budget_exceeded" => "snapshot_entry_budget_exceeded",
+        "unsupported_committed_entry" => "unsupported_committed_entry",
+        "dependency_contains_committed_source" => "dependency_contains_committed_source",
+        "unsafe_dependency_symlink" => "unsafe_dependency_symlink",
+        "unsafe_dependency_root" => "unsafe_dependency_root",
+        "unsafe_snapshot_path" | "non_utf8_snapshot_path" => "unsafe_snapshot_path",
+        "committed_blob_unavailable" => "committed_blob_unavailable",
+        _ if error.kind() == io::ErrorKind::NotFound => "source_or_dependency_missing",
+        _ if error.kind() == io::ErrorKind::AlreadyExists => "dependency_overlaps_source",
+        _ => "snapshot_io_unavailable",
+    }
+}
+
 fn hashes(root: &Path) -> io::Result<BTreeMap<PathBuf, String>> {
     fn visit(root: &Path, path: &Path, out: &mut BTreeMap<PathBuf, String>) -> io::Result<()> {
         for e in fs::read_dir(path)? {
@@ -307,6 +576,31 @@ fn run(root: &Path, logs: &Path, label: &str, argv: &[String], path: &str, timeo
         .iter()
         .map(|s| s.replace("{path}", path))
         .collect::<Vec<_>>();
+    let mut result = run_bounded(root, logs, label, &argv, timeout, None);
+    result["command"] = json!(argv);
+    result
+}
+
+pub(super) fn run_bounded(
+    root: &Path,
+    logs: &Path,
+    label: &str,
+    argv: &[String],
+    timeout: u64,
+    stop: Option<&AtomicBool>,
+) -> Value {
+    run_bounded_limit(root, logs, label, argv, timeout, stop, 131072)
+}
+
+fn run_bounded_limit(
+    root: &Path,
+    logs: &Path,
+    label: &str,
+    argv: &[String],
+    timeout: u64,
+    stop: Option<&AtomicBool>,
+    output_limit: u64,
+) -> Value {
     let execute = || -> io::Result<Value> {
         let stdout = logs.join(format!("{label}.out"));
         let stderr = logs.join(format!("{label}.err"));
@@ -352,6 +646,7 @@ fn run(root: &Path, logs: &Path, label: &str, argv: &[String], path: &str, timeo
             .env("npm_config_ignore_scripts", "true")
             .env("GIT_CONFIG_NOSYSTEM", "1")
             .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_NO_LAZY_FETCH", "1")
             .stdin(Stdio::null())
             .stdout(Stdio::from(out))
             .stderr(Stdio::from(err));
@@ -370,8 +665,12 @@ fn run(root: &Path, logs: &Path, label: &str, argv: &[String], path: &str, timeo
         let mut reason = None;
         let status = loop {
             let bytes = fs::metadata(&stdout)?.len() + fs::metadata(&stderr)?.len();
-            if bytes > 131072 || start.elapsed() > Duration::from_millis(timeout) {
-                reason = Some(if bytes > 131072 {
+            let cancelled = stop.is_some_and(|flag| flag.load(Ordering::Acquire));
+            if cancelled || bytes > output_limit || start.elapsed() > Duration::from_millis(timeout)
+            {
+                reason = Some(if cancelled {
+                    "cancelled"
+                } else if bytes > output_limit {
                     "output_limit"
                 } else {
                     "timeout"
@@ -388,15 +687,16 @@ fn run(root: &Path, logs: &Path, label: &str, argv: &[String], path: &str, timeo
         };
         #[cfg(unix)]
         kill_group(pid);
+        if fs::metadata(&stdout)?.len() + fs::metadata(&stderr)?.len() > output_limit {
+            reason = Some("output_limit");
+        }
         Ok(
             json!({"status":reason.unwrap_or(if status.success(){"passed"}else{"failed"}),"exit_code":status.code(),"duration_ms":start.elapsed().as_millis(),
             "output_bytes":fs::metadata(&stdout)?.len()+fs::metadata(&stderr)?.len(),"diagnostics":"withheld: project output may contain secrets"}),
         )
     };
-    let mut result = execute()
-        .unwrap_or_else(|_| json!({"status":"unavailable","reason":"command_or_io_unavailable"}));
-    result["command"] = json!(argv);
-    result
+    execute()
+        .unwrap_or_else(|_| json!({"status":"unavailable","reason":"command_or_io_unavailable"}))
 }
 fn check_config(root: &Path) -> io::Result<Config> {
     let p = root.join(".cgrx/quality-checks.json").canonicalize()?;
@@ -568,6 +868,263 @@ pub(super) fn verify(root: &Path, path: &str, before: &str, after: &str, diff: &
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn git(root: &Path, args: &[&str]) -> String {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(root)
+            .env_remove("GIT_CONFIG_COUNT")
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        String::from_utf8(output.stdout).unwrap().trim().to_owned()
+    }
+
+    fn committed_fixture() -> (CopyDir, String) {
+        let src = super::super::verification::temporary().unwrap();
+        git(&src.0, &["init", "-q"]);
+        fs::write(src.0.join("bench.py"), "committed").unwrap();
+        fs::write(src.0.join("unused.py"), "unused").unwrap();
+        git(&src.0, &["add", "."]);
+        git(
+            &src.0,
+            &[
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@example.invalid",
+                "commit",
+                "-qm",
+                "fixture",
+            ],
+        );
+        let revision = git(&src.0, &["rev-parse", "HEAD"]);
+        (src, revision)
+    }
+
+    #[test]
+    fn profile_copies_exact_revision_even_with_assume_unchanged() {
+        let (src, revision) = committed_fixture();
+        git(&src.0, &["update-index", "--assume-unchanged", "bench.py"]);
+        fs::write(src.0.join("bench.py"), "mutable secret").unwrap();
+        assert!(profile_clean_revision(
+            &src.0,
+            &revision,
+            &AtomicBool::new(false)
+        ));
+        fs::create_dir_all(src.0.join("node_modules/unneeded")).unwrap();
+        fs::write(src.0.join("node_modules/unneeded/raw"), "private").unwrap();
+        let dst = super::super::verification::temporary().unwrap();
+        copy_for_profile(
+            &src.0,
+            &dst.0,
+            &revision,
+            &["bench.py".into()],
+            &[],
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+        assert_eq!(
+            fs::read_to_string(dst.0.join("bench.py")).unwrap(),
+            "committed"
+        );
+        assert!(!dst.0.join("unused.py").exists());
+        assert!(!dst.0.join("node_modules").exists());
+        // An older exact revision is independent of the index and current HEAD too.
+        git(
+            &src.0,
+            &["update-index", "--no-assume-unchanged", "bench.py"],
+        );
+        git(&src.0, &["add", "bench.py"]);
+        git(
+            &src.0,
+            &[
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@example.invalid",
+                "commit",
+                "-qm",
+                "next",
+            ],
+        );
+        let dst = super::super::verification::temporary().unwrap();
+        copy_for_profile(
+            &src.0,
+            &dst.0,
+            &revision,
+            &["bench.py".into()],
+            &[],
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+        assert_eq!(
+            fs::read_to_string(dst.0.join("bench.py")).unwrap(),
+            "committed"
+        );
+    }
+
+    #[test]
+    fn profile_dependencies_are_explicit_and_bounded() {
+        let (src, revision) = committed_fixture();
+        fs::create_dir_all(src.0.join("node_modules/needed/dist")).unwrap();
+        fs::create_dir_all(src.0.join("node_modules/other")).unwrap();
+        fs::write(
+            src.0.join("node_modules/needed/dist/index.js"),
+            "dependency",
+        )
+        .unwrap();
+        fs::write(src.0.join("node_modules/needed/.env"), "private").unwrap();
+        let dst = super::super::verification::temporary().unwrap();
+        let deps = [PathBuf::from("node_modules/needed")];
+        copy_for_profile(
+            &src.0,
+            &dst.0,
+            &revision,
+            &["bench.py".into()],
+            &deps,
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+        assert!(dst.0.join("node_modules/needed/dist/index.js").is_file());
+        assert!(!dst.0.join("node_modules/needed/.env").exists());
+        assert!(!dst.0.join("node_modules/other").exists());
+        fs::File::create(src.0.join("node_modules/needed/huge"))
+            .unwrap()
+            .set_len(default_snapshot_bytes() + 1)
+            .unwrap();
+        let dst = super::super::verification::temporary().unwrap();
+        let error = copy_for_profile(
+            &src.0,
+            &dst.0,
+            &revision,
+            &["bench.py".into()],
+            &deps,
+            &AtomicBool::new(false),
+        )
+        .unwrap_err();
+        assert_eq!(profile_copy_reason(&error), "snapshot_byte_budget_exceeded");
+        let error = copy_for_profile(
+            &src.0,
+            &dst.0,
+            &revision,
+            &["bench.py".into()],
+            &[],
+            &AtomicBool::new(true),
+        )
+        .unwrap_err();
+        assert_eq!(profile_copy_reason(&error), "snapshot_timeout_or_cancelled");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn profile_rejects_committed_links_and_dependency_ancestor_links() {
+        let (src, _) = committed_fixture();
+        std::os::unix::fs::symlink("/etc/passwd", src.0.join("link.py")).unwrap();
+        git(&src.0, &["add", "link.py"]);
+        git(
+            &src.0,
+            &[
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@example.invalid",
+                "commit",
+                "-qm",
+                "link",
+            ],
+        );
+        let revision = git(&src.0, &["rev-parse", "HEAD"]);
+        let dst = super::super::verification::temporary().unwrap();
+        let error = copy_for_profile(
+            &src.0,
+            &dst.0,
+            &revision,
+            &["link.py".into()],
+            &[],
+            &AtomicBool::new(false),
+        )
+        .unwrap_err();
+        assert_eq!(profile_copy_reason(&error), "unsupported_committed_entry");
+        let external = super::super::verification::temporary().unwrap();
+        fs::create_dir(external.0.join("dist")).unwrap();
+        std::os::unix::fs::symlink(&external.0, src.0.join("deps")).unwrap();
+        let error = copy_for_profile(
+            &src.0,
+            &dst.0,
+            &revision,
+            &["bench.py".into()],
+            &["deps/dist".into()],
+            &AtomicBool::new(false),
+        )
+        .unwrap_err();
+        assert_eq!(profile_copy_reason(&error), "unsafe_dependency_symlink");
+        assert_eq!(
+            profile_copy_reason(&io::Error::other("private /host/path token")),
+            "snapshot_io_unavailable"
+        );
+    }
+
+    #[test]
+    fn profile_dependencies_cannot_import_mutable_committed_source() {
+        let (src, revision) = committed_fixture();
+        fs::write(src.0.join("bench.py"), "mutable secret").unwrap();
+        let dst = super::super::verification::temporary().unwrap();
+        let error = copy_for_profile(
+            &src.0,
+            &dst.0,
+            &revision,
+            &["unused.py".into()],
+            &["bench.py".into()],
+            &AtomicBool::new(false),
+        )
+        .unwrap_err();
+        assert_eq!(
+            profile_copy_reason(&error),
+            "dependency_contains_committed_source"
+        );
+        assert!(!dst.0.join("bench.py").exists());
+    }
+
+    #[test]
+    fn profile_copy_config_paths_are_relative_and_non_sensitive() {
+        for path in [
+            "",
+            ".",
+            "../escape",
+            "/absolute",
+            "bench/../escape",
+            ".env",
+            "node_modules/pkg/.env",
+            "local/data",
+            ".fast/state.json",
+            "a\n.py",
+        ] {
+            assert!(!profile_path_valid(Path::new(path)), "{path}");
+        }
+        for path in ["bench.py", "bench", "node_modules/pkg", "service/dist"] {
+            assert!(profile_path_valid(Path::new(path)), "{path}");
+        }
+    }
+
+    #[test]
+    fn fast_exiting_command_still_obeys_output_budget() {
+        let dir = super::super::verification::temporary().unwrap();
+        let argv = vec![
+            "node".to_owned(),
+            "-e".to_owned(),
+            "process.stdout.write('x'.repeat(200000))".to_owned(),
+        ];
+        assert_eq!(
+            run_bounded(&dir.0, &dir.0, "output", &argv, 10000, None)["status"],
+            "output_limit"
+        );
+    }
+
     #[test]
     fn compiled_dependency_directories_are_copied() {
         assert!(!excluded_from_copy(Path::new(
@@ -665,6 +1222,16 @@ mod tests {
             "original"
         );
     }
+    #[cfg(unix)]
+    #[test]
+    fn background_command_can_be_cancelled() {
+        let dir = super::super::verification::temporary().unwrap();
+        let stop = AtomicBool::new(true);
+        let args = ["/bin/sleep".to_owned(), "10".to_owned()];
+        let result = run_bounded(&dir.0, &dir.0, "cancel", &args, 10_000, Some(&stop));
+        assert_eq!(result["status"], "cancelled");
+    }
+
     #[test]
     fn command_timeout_and_output_limit_are_not_success() {
         let dir = super::super::verification::temporary().unwrap();

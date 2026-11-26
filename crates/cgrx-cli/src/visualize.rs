@@ -895,6 +895,7 @@ fn static_response(path: &str) -> Option<HttpResponse> {
         "/assets/runtime-evidence.js" => HttpResponse::javascript(assets::RUNTIME_EVIDENCE),
         "/assets/vendor/web-git-graph.js" => HttpResponse::javascript(assets::WEB_GIT_GRAPH),
         "/assets/app.js" => HttpResponse::javascript(assets::APP),
+        "/assets/project-three.js" => HttpResponse::javascript(assets::PROJECT_THREE),
         _ => return None,
     })
 }

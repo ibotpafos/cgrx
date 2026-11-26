@@ -184,7 +184,7 @@ fn tool_metadata(name: &str) -> Option<(&'static str, &'static str)> {
         ),
         "get_quality_index_status" => (
             "Check background quality index",
-            "Inspect background producer freshness, incremental file parse/reuse counts, resource bounds and errors without forcing a quality scan.",
+            "Inspect the background quality index and report optional review-only Fast Anything hotspots for configured projects, without starting a scan.",
         ),
         "update_quality_candidate_status" => (
             "Set finding status",

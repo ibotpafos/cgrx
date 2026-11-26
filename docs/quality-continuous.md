@@ -6,11 +6,74 @@
 
 ## Producer and incremental work
 
-Each managed repository starts a cancellable worker when opened by MCP. A cross-process file lease elects one producer per managed state; standbys take over on a later poll. Default polling is 2 seconds; CGRX_QUALITY_POLL_MS accepts 100..60000 ms. Runtime refresh uses existing source fingerprints and graph extraction. The producer memoizes AST hardcode sites and declaration visibility by indexed file hash, and removes deleted paths from its memo. Unchanged supported files reuse their facts without AST reparsing. Candidate graph context and bounded duplicate search are recomputed globally on a changed snapshot to avoid invalid reverse dependencies; this is file-fact incremental, not a fully incremental graph/pair algorithm.
+The first quality call starts a cancellable graph worker. Ordinary graph
+requests may schedule a configured Fast Anything profile, but do not start a
+second graph runtime for it. Graph and quality locks wait at most two seconds;
+`cgrx.quality_busy` means the request can be retried. Set
+`CGRX_STATUS_TIMINGS=1` for diagnostic `status.refresh_timing` (graph lock
+wait and refresh under the lock). A cross-process file lease elects one producer per managed state; standbys take over on a later poll. Default polling is 2 seconds; CGRX_QUALITY_POLL_MS accepts 100..60000 ms. Runtime refresh uses existing source fingerprints and graph extraction. The producer memoizes AST hardcode sites and declaration visibility by indexed file hash, and removes deleted paths from its memo. Unchanged supported files reuse their facts without AST reparsing. Candidate graph context and bounded duplicate search are recomputed globally on a changed snapshot to avoid invalid reverse dependencies; this is file-fact incremental, not a fully incremental graph/pair algorithm.
 
 Bounds retain the MVP's 500 files, 2,000 definitions, 20,000 duplicate pair budget, per-kind 300 candidates and 100 hardcode sites/file. Worker analysis has a 10-second deadline and cancellation checks between bounded units. Repo refresh/reindex has the existing runtime bounds; the analysis deadline does not interrupt native parser calls or Git refresh. Drop signals cancellation, wakes the worker and joins it. Snapshots prevent stale caches being served; publication is atomic. Source/triage/index locks serialize processes. Status/health errors are explicit.
 
 `get_quality_index_status {repo}` reports phase, snapshot, fresh, producer_pid and analysis.parsed_files/reused_files. Index state and memo are in quality-candidates-v1.json and quality-file-facts-v2.json under managed state, not source files. A foreground request can synchronously fill a not-yet-ready snapshot.
+
+## Optional automatic performance suggestions
+
+Set `CGRX_FAST_ANYTHING_CONFIG` in the CGRX server's environment to an absolute
+path to a local JSON configuration **outside the repositories**. For example:
+
+```json
+{
+  "binary": "/home/me/.local/bin/fast-anything",
+  "projects": [
+    {
+      "root": "/home/me/projects/example",
+      "command": ["node", "scripts/bench.mjs"],
+      "source_paths": ["scripts/bench.mjs", "bench/fixtures", "package.json"],
+      "dependency_roots": ["node_modules/benchmark-dependency"]
+    },
+    {
+      "root": "/home/me/projects/another-example",
+      "command": ["python3", "bench.py"]
+    }
+  ]
+}
+```
+
+Use canonical worktree roots and a small benchmark that exits on its own.
+Version one accepts a relative Node or Python script entrypoint plus arguments;
+it does not guess commands, install dependencies, profile native Rust, or start
+long-lived dev servers. The profiler itself is an installed executable outside
+the checkout. Restart the MCP server after editing its configuration.
+
+When an MCP request observes a configured repository, it can schedule
+`fast-anything scan` for that clean Git HEAD. The process runs one profile at
+a time outside the graph cache; eviction does not cancel an active scan.
+Waiting work is bounded, and new requests can retry scheduling it. Dirty or
+untracked files defer scans. Only successful reports survive as cached results;
+failures have a 60-second cooldown, including across restarts.
+
+Tracked files come from the pinned commit's Git objects, not from the checkout.
+By default only the benchmark entrypoint is copied. Add required tracked
+files/directories to `source_paths` and explicitly list any installed local
+inputs in `dependency_roots`; nothing from `node_modules` is copied
+automatically. Selected symbolic links are not supported. An ignored dependency
+change alone does not invalidate the cache. Revisions can be rerun by changing
+the configured workload or clearing the managed `fast-anything-v1.json` while
+the server is stopped.
+
+This runs trusted project code in a temporary copy (not an OS or network
+sandbox). Prefer synthetic inputs, never enable unknown repositories, and have
+dependencies available locally. Copying is budgeted to 50,000 entries / 256 MiB
+and checks a 5-second copy budget; the subprocess has a 10-second deadline and
+a 128 KiB diagnostic-output budget. No source is copied back. No agent is
+started and `port`, `go` and `enable` are never invoked.
+
+Read `get_quality_index_status {repo}` to see its optional `performance`
+field: revision, status, duration and up to five review-only hotspot candidates.
+Only bounded paths, symbols, locations and numeric scores are returned. Raw
+profiler output, source and recordings are not published. Use an independent
+before/after benchmark and correctness tests before adopting a recommendation.
 
 ## Decisions
 
@@ -19,3 +82,5 @@ Bounds retain the MVP's 500 files, 2,000 definitions, 20,000 duplicate pair budg
 `list_quality_candidates` hides dismissed/fixed by default. Use status, include_resolved and include_inactive to inspect decisions/history. A finding absent from a bounded/partial index is not automatically proved fixed. `fixed` is an explicit user-reported resolution, with still_detected=true while it remains in current detection. A substantive change reopens even a manually fixed finding. Pagination snapshot describes code; restart pagination after mutating triage.
 
 Triage state is quality-finding-states-v1.json, separate from disposable graph caches. No source literals are retained: site facts carry offsets, identifiers and content hashes. Patch preparation remains review-only and never deletes unproven dead code or changes source automatically.
+
+For dead-code triage, prefer `list_quality_candidates` with `kind: "dead_code"`. The legacy `detect_dead_code` only counts incoming static calls within the requested scope.

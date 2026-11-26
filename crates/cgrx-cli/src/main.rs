@@ -23,7 +23,9 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 fn main() {
-    if let Err(error) = run(env::args().skip(1).collect()) {
+    let result = run(env::args().skip(1).collect());
+    Runtime::stop_profile_jobs();
+    if let Err(error) = result {
         eprintln!("cgrx: {error}");
         std::process::exit(2);
     }
@@ -872,10 +874,8 @@ fn serve(args: &[String]) -> Result<(), String> {
             memory_root,
         )
     };
-    if let Some(dir) = memory_root
-        && let Ok(store) = cgrx_store::MemoryStore::open(dir)
-    {
-        server.set_memory_store(store);
+    if let Some(dir) = memory_root {
+        server.attach_memory_store(dir);
     }
     if let Ok(path) = env::var("CGRX_USAGE_LOG") {
         let client = env::var("CGRX_CLIENT").unwrap_or_else(|_| "unknown".to_owned());

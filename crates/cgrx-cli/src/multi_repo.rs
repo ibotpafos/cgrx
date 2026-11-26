@@ -5,8 +5,8 @@ use crate::resources::{self, Limits};
 use cgrx_capsule::Tokenizer;
 use cgrx_core::{Hash32, RepoSnapshot};
 use cgrx_mcp::{
-    JsonRpcError, JsonRpcRequest, JsonRpcResponse, ResponseProfile, Server,
-    model_visible_schema_json, resolve_response_profile,
+    JsonRpcError, JsonRpcRequest, JsonRpcResponse, ResponseProfile, Server, Toolset,
+    model_visible_schema_json, resolve_response_profile, resolve_toolset,
 };
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -14,40 +14,19 @@ use std::fs::{self, OpenOptions};
 use std::io::{self, BufRead, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::OnceLock;
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-const TOOLS: [&str; 29] = [
-    "find_examples",
-    "scan_risks",
-    "check_change_gates",
-    "check_repository_gates",
-    "ingest_runtime_evidence",
-    "orient",
-    "expand",
-    "status",
-    "memory_record",
-    "memory_recall",
-    "memory_update",
-    "memory_forget",
-    "check_framework_gates",
-    "check_security_gates",
-    "search_graph",
-    "get_outline",
-    "get_architecture",
-    "trace_path",
-    "find_usages",
-    "suggest_refactors",
-    "list_quality_candidates",
-    "get_candidate_details",
-    "prepare_candidate_patch",
-    "get_quality_index_status",
-    "update_quality_candidate_status",
-    "get_code_snippet",
-    "check_index_coverage",
-    "explain_symbol",
-    "detect_dead_code",
-];
+fn tool_schema() -> &'static [Value] {
+    static SCHEMA: OnceLock<Vec<Value>> = OnceLock::new();
+    SCHEMA
+        .get_or_init(|| serde_json::from_str(&model_visible_schema_json()).expect("static schema"))
+}
+
+fn is_public_tool(name: &str) -> bool {
+    tool_schema().iter().any(|tool| tool["name"] == name)
+}
 
 struct Entry {
     server: Server,
@@ -62,6 +41,7 @@ struct Router {
     entries: BTreeMap<PathBuf, Entry>,
     max_repos: usize,
     response_profile: ResponseProfile,
+    toolset: Toolset,
     clock: u64,
     nonce: String,
     limits: Limits,
@@ -74,6 +54,7 @@ pub(super) fn serve(args: &[String]) -> Result<(), String> {
     let mut max_repos = 1;
     let mut limits = Limits::default();
     let mut response_profile_arg = None;
+    let mut toolset_arg = None;
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
@@ -85,6 +66,14 @@ pub(super) fn serve(args: &[String]) -> Result<(), String> {
                     .and_then(|s| s.parse::<usize>().ok())
                     .filter(|n| (1..=16).contains(n))
                     .ok_or("--max-repos requires an integer from 1 to 16")?;
+            }
+            "--toolset" => {
+                i += 1;
+                toolset_arg = Some(
+                    args.get(i)
+                        .ok_or("--toolset requires minimal, standard or full")?
+                        .as_str(),
+                );
             }
             "--response-profile" => {
                 i += 1;
@@ -138,7 +127,11 @@ pub(super) fn serve(args: &[String]) -> Result<(), String> {
         std::env::var("CGRX_RESPONSE_PROFILE").ok().as_deref(),
         response_profile_arg,
     );
-    let mut router = Router::new(max_repos, response_profile);
+    let toolset = resolve_toolset(
+        std::env::var("CGRX_TOOLSET").ok().as_deref(),
+        Some(toolset_arg.unwrap_or("full")),
+    );
+    let mut router = Router::new(max_repos, response_profile, toolset);
     router.limits = limits;
     cgrx_store::configure_memory_model_worker(std::env::current_exe().map_err(|e| e.to_string())?)
         .map_err(|e| e.to_string())?;
@@ -196,17 +189,19 @@ pub(super) fn serve(args: &[String]) -> Result<(), String> {
 }
 
 impl Router {
-    fn new(max_repos: usize, response_profile: ResponseProfile) -> Self {
+    fn new(max_repos: usize, response_profile: ResponseProfile, toolset: Toolset) -> Self {
         Self {
             transport: Server::new(RepoSnapshot {
                 repo_revision: String::new(),
                 working_tree_digest: Hash32([0; 32]),
                 graph_generation: 0,
             })
-            .with_response_profile(response_profile),
+            .with_response_profile(response_profile)
+            .with_toolset(toolset),
             entries: BTreeMap::new(),
             max_repos,
             response_profile,
+            toolset,
             clock: 0,
             nonce: format!(
                 "{}-{}",
@@ -286,9 +281,12 @@ impl Router {
             .expect("ping response");
         }
         if request.method == "tools/list" {
-            let mut schema: Value =
-                serde_json::from_str(&model_visible_schema_json()).expect("static schema");
-            for tool in schema.as_array_mut().expect("tools array") {
+            let mut schema: Vec<_> = tool_schema()
+                .iter()
+                .filter(|tool| self.toolset.allows(tool["name"].as_str().unwrap()))
+                .cloned()
+                .collect();
+            for tool in &mut schema {
                 tool["inputSchema"]["properties"]["repo"] = json!({"type":"string","description":"Absolute local Git worktree root. Required on every call."});
                 let s = &mut tool["inputSchema"];
                 if s.get("required").is_none() {
@@ -314,7 +312,11 @@ impl Router {
         let id = request.id.clone().unwrap();
         // Reject invalid memory input without loading a graph, queuing behind
         // inference work, or starting any repository mutation.
-        let validation = cgrx_mcp::validate_memory_arguments(&name, &request.params["arguments"]);
+        let validation = if !is_public_tool(&name) || !self.toolset.allows(&name) {
+            Err(error("cgrx.tool_not_found", "unknown or disabled tool"))
+        } else {
+            cgrx_mcp::validate_memory_arguments(&name, &request.params["arguments"])
+        };
         let permit = validation
             .as_ref()
             .ok()
@@ -397,9 +399,6 @@ impl Router {
         cache: &mut &'static str,
     ) -> Result<Value, JsonRpcError> {
         let name = request.params["name"].as_str().unwrap_or("");
-        if !TOOLS.contains(&name) {
-            return Err(error("cgrx.tool_not_found", "unknown tool"));
-        }
         let mut args = request.params["arguments"]
             .as_object()
             .cloned()
@@ -487,10 +486,9 @@ impl Router {
                             root.clone(),
                             state,
                         ))
-                        .with_response_profile(self.response_profile);
-                        if let Ok(store) = cgrx_store::MemoryStore::open(&root) {
-                            server.set_memory_store(store);
-                        }
+                        .with_response_profile(self.response_profile)
+                        .with_toolset(self.toolset);
+                        server.attach_memory_store(&root);
                         server
                     },
                     repo_id: identity,
@@ -660,7 +658,7 @@ fn record_usage(
     let snapshot = &response["result"]["structuredContent"]["snapshot"];
     let event = json!({
         "event":"tool_call", "timestamp_ms":SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_millis(),
-        "client":client,"session":session,"tool":if TOOLS.contains(&name) {name} else {"unknown"},
+        "client":client,"session":session,"tool":if is_public_tool(name) {name} else {"unknown"},
         "ok":response.get("error").is_none(),"latency_us":started.elapsed().as_micros(),
         "request_bytes":request_bytes,"response_bytes":response_bytes,
         "repo_revision":snapshot["repo_revision"].as_str().unwrap_or(""),"graph_generation":snapshot["graph_generation"].as_u64().unwrap_or(0),
