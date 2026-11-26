@@ -3,13 +3,15 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io;
-use std::io::Read;
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 
 use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
+use memvid_core::footer::{CommitFooter, FOOTER_SIZE};
 use memvid_core::io::header::HeaderCodec;
+use memvid_core::types::{SketchTrack, SketchVariant, Toc};
 use memvid_core::{DocMetadata, EmbeddedWal, Memvid, MemvidError, PutOptions, TimelineQuery};
 use serde::{Deserialize, Serialize};
 
@@ -1133,9 +1135,18 @@ impl MemoryStore {
         for attempt in 0..20 {
             let snapshot = self.copy_agent_memory()?;
             let outcome = (|| {
+                let pending_wal = agent_journal_pending(&snapshot.0)?;
+                if pending_wal {
+                    detach_sketch_before_replay(&snapshot.0)?;
+                }
                 let mut memory = open(&snapshot.0).map_err(memvid_backend_error)?;
                 let versions = read_versions(&mut memory)?;
                 let inventory = storage_inventory(&mut memory)?;
+                if pending_wal {
+                    *memory.sketches_mut() = SketchTrack::default();
+                    memory.build_all_sketches(SketchVariant::Small);
+                    memory.commit().map_err(memvid_backend_error)?;
+                }
                 // Drop may finalize SDK writes and ignores its own commit error.
                 // A cached TOC is not evidence that the closed file is durable.
                 drop(memory);
@@ -1494,6 +1505,52 @@ fn agent_journal_pending(path: &Path) -> io::Result<bool> {
     let header = HeaderCodec::decode(&bytes).map_err(memvid_backend_error)?;
     let wal = EmbeddedWal::open_read_only(&file, &header).map_err(memvid_backend_error)?;
     Ok(wal.stats().pending_bytes != 0)
+}
+
+// Memvid 2.0.140 replays the WAL before loading sketches. Its index rebuild can
+// overwrite the old sketch bytes while retaining the manifest. Detach only that
+// derived index on the disposable copy; regenerate it from active frames after replay.
+fn detach_sketch_before_replay(path: &Path) -> io::Result<()> {
+    let mut file = fs::OpenOptions::new().read(true).write(true).open(path)?;
+    let mut bytes = [0; memvid_core::constants::HEADER_SIZE];
+    file.read_exact(&mut bytes)?;
+    let mut header = HeaderCodec::decode(&bytes).map_err(memvid_backend_error)?;
+    let mut trailer = [0; FOOTER_SIZE];
+    let trailer_start = file.seek(SeekFrom::End(-(FOOTER_SIZE as i64)))?;
+    file.read_exact(&mut trailer)?;
+    let mut footer =
+        CommitFooter::decode(&trailer).ok_or_else(|| invalid_data("invalid recovery footer"))?;
+    let toc_start = trailer_start
+        .checked_sub(footer.toc_len)
+        .filter(|&start| {
+            start == header.footer_offset
+                && start >= header.wal_offset.saturating_add(header.wal_size)
+                && footer.toc_len <= 64 * 1024 * 1024
+        })
+        .ok_or_else(|| invalid_data("invalid recovery TOC bounds"))?;
+    let mut original = vec![0; footer.toc_len as usize];
+    file.seek(SeekFrom::Start(toc_start))?;
+    file.read_exact(&mut original)?;
+    if !footer.hash_matches(&original) {
+        return Err(invalid_data("invalid recovery TOC hash"));
+    }
+    let mut toc = Toc::decode(&original).map_err(memvid_backend_error)?;
+    toc.verify_checksum().map_err(memvid_backend_error)?;
+    if toc.sketch_track.take().is_none() {
+        return Ok(());
+    }
+    toc.toc_checksum = [0; 32];
+    toc.toc_checksum = Toc::calculate_checksum(&toc.encode().map_err(memvid_backend_error)?);
+    let updated = toc.encode().map_err(memvid_backend_error)?;
+    footer.toc_len = updated.len() as u64;
+    footer.toc_hash = *blake3::hash(&updated).as_bytes();
+    file.seek(SeekFrom::Start(toc_start))?;
+    file.write_all(&updated)?;
+    file.write_all(&footer.encode())?;
+    let end = file.stream_position()?;
+    file.set_len(end)?;
+    header.toc_checksum = toc.toc_checksum;
+    HeaderCodec::write(&mut file, &header).map_err(memvid_backend_error)
 }
 
 fn is_agent_recovery_name(name: &std::ffi::OsStr) -> bool {
@@ -3429,6 +3486,71 @@ mod tests {
         let before = fs::read(f.store.agent_path()).unwrap();
         assert!(f.store.compact_agent_memory(&versions).is_err());
         assert_eq!(fs::read(f.store.agent_path()).unwrap(), before);
+    }
+
+    #[test]
+    fn replay_pending_write_preserves_committed_sketch_and_history() {
+        assert_pending_replay(false);
+    }
+
+    #[test]
+    fn replay_pending_write_rebuilds_an_overwritten_sketch() {
+        assert_pending_replay(true);
+    }
+
+    fn assert_pending_replay(damage_sketch: bool) {
+        let f = Fixture::new();
+        let first = f
+            .store
+            .agent_record(&f.input("Original decision"), NOW)
+            .unwrap()
+            .record;
+        let mut expected = first.clone();
+        expected.version = 2;
+        expected.updated_unix_nanos = NOW + 1;
+        expected.update_reason = Some("Verified replacement".to_owned());
+        expected.decision.fact = (0..200)
+            .map(|i| format!("replacement{i}"))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let path = f.store.agent_path();
+        let lock = acquire_writer_lock(&f.root).unwrap();
+        let mut memory = f.store.open_agent_memory(&lock).unwrap();
+        assert!(memory.has_sketches());
+        append(&mut memory, &expected, Some(vec![0.25; 384])).unwrap();
+        // Take the pre-commit WAL image before Memvid's Drop can commit it.
+        let pending = f.root.join("pending.mv2");
+        fs::copy(&path, &pending).unwrap();
+        drop(memory);
+        fs::rename(pending, &path).unwrap();
+        if damage_sketch {
+            let raw = fs::read(&path).unwrap();
+            let footer = memvid_core::footer::find_last_valid_footer(&raw).unwrap();
+            let sketch = Toc::decode(footer.toc_bytes).unwrap().sketch_track.unwrap();
+            let mut file = fs::OpenOptions::new().write(true).open(&path).unwrap();
+            file.seek(SeekFrom::Start(sketch.bytes_offset)).unwrap();
+            file.write_all(b"overwritten!").unwrap();
+            file.sync_all().unwrap();
+        }
+        assert!(agent_journal_pending(&path).unwrap());
+        assert!(
+            f.store
+                .recover_agent_journal(Some(&PendingAgentWrite::Update(&expected, 1)), |p| {
+                    Memvid::open(p)
+                })
+                .unwrap()
+        );
+        assert!(!agent_journal_pending(&path).unwrap());
+        let mut memory = Memvid::open_read_only(&path).unwrap();
+        assert_eq!(memory.sketch_stats().entry_count, 2);
+        let history = read_versions(&mut memory).unwrap();
+        assert_eq!(history.len(), 2);
+        assert_eq!(history[0].1, first);
+        assert_eq!(history[1].1, expected);
+        assert_eq!(
+            memory.frame_embedding(history[1].0).unwrap(),
+            Some(vec![0.25; 384])
+        );
     }
 
     #[test]
